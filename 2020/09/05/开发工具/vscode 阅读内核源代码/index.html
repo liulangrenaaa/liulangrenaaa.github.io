@@ -30,7 +30,7 @@
 <meta property="og:description" content="相信大多数人使用vscode阅读内核源码跟我一开始的做法是一样的： 121. 下载vscode,安装Remote-ssh,C&#x2F;C++解析等工具2. 建立 kernel workspace,添加kernel代码 其实这样从我实际的体验来说都要比 SI,Vim 要方便一点了，但是我们还是会遇到 找 12341. 不到清晰的定义，类似于多个slab slub slob的代码，通常都是乱跳转2.">
 <meta property="og:locale">
 <meta property="article:published_time" content="2020-09-05T06:47:40.000Z">
-<meta property="article:modified_time" content="2020-09-05T09:05:19.596Z">
+<meta property="article:modified_time" content="2020-09-05T13:21:39.967Z">
 <meta property="article:author" content="Su Hui">
 <meta property="article:tag" content="开发工具">
 <meta name="twitter:card" content="summary">
@@ -194,7 +194,7 @@
       <div class="site-state-item site-state-posts">
           <a href="/archives/">
         
-          <span class="site-state-item-count">4</span>
+          <span class="site-state-item-count">5</span>
           <span class="site-state-item-name">posts</span>
         </a>
       </div>
@@ -207,7 +207,7 @@
       <div class="site-state-item site-state-tags">
             <a href="/tags/">
           
-        <span class="site-state-item-count">5</span>
+        <span class="site-state-item-count">6</span>
         <span class="site-state-item-name">tags</span></a>
       </div>
   </nav>
@@ -271,7 +271,7 @@
       <span class="post-meta-item-text">Posted on</span>
       
 
-      <time title="Created: 2020-09-05 14:47:40 / Modified: 17:05:19" itemprop="dateCreated datePublished" datetime="2020-09-05T14:47:40+08:00">2020-09-05</time>
+      <time title="Created: 2020-09-05 14:47:40 / Modified: 21:21:39" itemprop="dateCreated datePublished" datetime="2020-09-05T14:47:40+08:00">2020-09-05</time>
     </span>
     <span class="post-meta-item">
       <span class="post-meta-item-icon">
@@ -305,8 +305,11 @@
 <li>先编译bzImage<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">mkdir out</span><br><span class="line">cp .config .&#x2F;out&#x2F;.config</span><br><span class="line">make -j8 bzImage O&#x3D;.&#x2F;out</span><br></pre></td></tr></table></figure></li>
 <li>生成compile_commands.json<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">.&#x2F;scripts&#x2F;gen_compile_commands.py -d .&#x2F;out&#x2F;</span><br></pre></td></tr></table></figure></li>
 <li>配置 .vscode/c_cpp_properties.json<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">&#123;</span><br><span class="line">    .....</span><br><span class="line">    &quot;compileCommands&quot;: &quot;$&#123;WorkspaceFolder&#125;&#x2F;out&#x2F;compile_commands.json&quot;</span><br><span class="line">    .....</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-到此为止，基本上在浏览内核代码上不会有困难了 </li>
+到此为止，基本上在浏览内核代码上不会有困难了</li>
 </ol>
+<p>贴一下 .vscode/c_cpp_properties.json 配置</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line">&#123;</span><br><span class="line">    &quot;env&quot;: &#123;</span><br><span class="line">      &quot;myDefaultIncludePath&quot;: [&quot;$&#123;workspaceFolder&#125;&quot;, &quot;$&#123;workspaceFolder&#125;&#x2F;include&quot;],</span><br><span class="line">      &quot;myCompilerPath&quot;: &quot;&#x2F;usr&#x2F;local&#x2F;bin&#x2F;gcc-9&quot;</span><br><span class="line">    &#125;,</span><br><span class="line">    &quot;configurations&quot;: [</span><br><span class="line">      &#123;</span><br><span class="line">        &quot;name&quot;: &quot;linux-kernel&quot;,</span><br><span class="line">        &quot;intelliSenseMode&quot;: &quot;gcc-x64&quot;,</span><br><span class="line">        &quot;includePath&quot;: [&quot;$&#123;myDefaultIncludePath&#125;&quot;],</span><br><span class="line">        &quot;defines&quot;: [</span><br><span class="line">            &quot;__KERNEL__&quot;,</span><br><span class="line">            &quot;BAR&#x3D;100&quot;],</span><br><span class="line">        &quot;compilerPath&quot;: &quot;&#x2F;usr&#x2F;bin&#x2F;clang&quot;,</span><br><span class="line">        &quot;cStandard&quot;: &quot;c11&quot;,</span><br><span class="line">        &quot;cppStandard&quot;: &quot;c++17&quot;,</span><br><span class="line">        &quot;compileCommands&quot;: &quot;$&#123;workspaceFolder&#125;&#x2F;out&#x2F;compile_commands.json&quot;,</span><br><span class="line">        &quot;browse&quot;: &#123;</span><br><span class="line">          &quot;path&quot;: [&quot;$&#123;workspaceFolder&#125;&quot;],</span><br><span class="line">          &quot;limitSymbolsToIncludedHeaders&quot;: true,</span><br><span class="line">          &quot;databaseFilename&quot;: &quot;&quot;</span><br><span class="line">        &#125;</span><br><span class="line">      &#125;</span><br><span class="line">    ],</span><br><span class="line">    &quot;version&quot;: 4</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>注意”intelliSenseMode”: “gcc-x64” 不同平台配置不一样，我是代码放在ubuntu20上，所以是gcc-x64</p>
 
     </div>
 
@@ -323,6 +326,9 @@
 
           <div class="post-nav">
             <div class="post-nav-item">
+                <a href="/2020/09/05/memory/%E9%9D%A2%E8%AF%95/%E5%86%99%E4%B8%80%E4%B8%AA%E6%B6%88%E8%80%97%E5%AE%8C%E7%89%A9%E7%90%86%E5%86%85%E5%AD%98%E7%9A%84%E7%A8%8B%E5%BA%8F/%E6%B6%88%E8%80%97%E7%89%A9%E7%90%86%E5%86%85%E5%AD%98/" rel="prev" title="快速消耗完物理内存">
+                  <i class="fa fa-chevron-left"></i> 快速消耗完物理内存
+                </a>
             </div>
             <div class="post-nav-item">
                 <a href="/2020/09/05/%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7/vim%20vscode%20si/" rel="next" title="IDE选择">
