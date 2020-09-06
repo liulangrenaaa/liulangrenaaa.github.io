@@ -22,16 +22,23 @@
     var CONFIG = {"hostname":"liulangrenaaa.github.io","root":"/","scheme":"Muse","version":"8.0.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12},"copycode":false,"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"Searching...","empty":"We didn't find any results for the search: ${query}","hits_time":"${hits} results found in ${time} ms","hits":"${hits} results found"}};
   </script>
 
-  <meta property="og:type" content="website">
-<meta property="og:title" content="liulangren 读核之旅">
-<meta property="og:url" content="https://liulangrenaaa.github.io/tags/OOM/index.html">
+  <meta name="description" content="lockup定义后续有空深入详细分析一下-&#x3D;-">
+<meta property="og:type" content="article">
+<meta property="og:title" content="linux lockup问题">
+<meta property="og:url" content="https://liulangrenaaa.github.io/2020/09/12/%E8%BF%9B%E7%A8%8B%E7%AE%A1%E7%90%86/lockup%E9%97%AE%E9%A2%98/index.html">
 <meta property="og:site_name" content="liulangren 读核之旅">
+<meta property="og:description" content="lockup定义后续有空深入详细分析一下-&#x3D;-">
 <meta property="og:locale">
+<meta property="article:published_time" content="2020-09-12T06:47:40.000Z">
+<meta property="article:modified_time" content="2020-09-06T17:55:07.937Z">
 <meta property="article:author" content="Su Hui">
+<meta property="article:tag" content="进程调度">
+<meta property="article:tag" content="hardlockup">
+<meta property="article:tag" content="softlockup">
 <meta name="twitter:card" content="summary">
 
 
-<link rel="canonical" href="https://liulangrenaaa.github.io/tags/OOM/">
+<link rel="canonical" href="https://liulangrenaaa.github.io/2020/09/12/%E8%BF%9B%E7%A8%8B%E7%AE%A1%E7%90%86/lockup%E9%97%AE%E9%A2%98/">
 
 
 <script class="page-configurations">
@@ -39,12 +46,12 @@
   CONFIG.page = {
     sidebar: "",
     isHome : false,
-    isPost : false,
+    isPost : true,
     lang   : 'cn'
   };
 </script>
 
-  <title>Tag: OOM | liulangren 读核之旅</title>
+  <title>linux lockup问题 | liulangren 读核之旅</title>
   
 
 
@@ -164,7 +171,7 @@
 
   <aside class="sidebar">
 
-    <div class="sidebar-inner sidebar-overview-active">
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
       <ul class="sidebar-nav">
         <li class="sidebar-nav-toc">
           Table of Contents
@@ -176,6 +183,7 @@
 
       <!--noindex-->
       <section class="post-toc-wrap sidebar-panel">
+          <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#lockup%E5%AE%9A%E4%B9%89"><span class="nav-number">1.</span> <span class="nav-text">lockup定义</span></a></li></ol></div>
       </section>
       <!--/noindex-->
 
@@ -229,53 +237,101 @@
 </noscript>
 
 
-    <div class="main-inner tag posts-collapse">
+    <div class="main-inner post posts-expand">
       
 
       
 
+    
   
   
-  
-  <div class="post-block">
-    <div class="post-content">
-      <div class="collection-title">
-        <h2 class="collection-header">OOM
-          <small>Tag</small>
-        </h2>
-      </div>
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
+    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/09/12/%E8%BF%9B%E7%A8%8B%E7%AE%A1%E7%90%86/lockup%E9%97%AE%E9%A2%98/">
 
-      
-    <div class="collection-year">
-      <span class="collection-header">2020</span>
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="Su Hui">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liulangren 读核之旅">
+    </span>
+
+    
+    
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          linux lockup问题
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">Posted on</span>
+
+      <time title="Created: 2020-09-12 14:47:40" itemprop="dateCreated datePublished" datetime="2020-09-12T14:47:40+08:00">2020-09-12</time>
+    </span>
+      <span class="post-meta-item">
+        <span class="post-meta-item-icon">
+          <i class="far fa-calendar-check"></i>
+        </span>
+        <span class="post-meta-item-text">Edited on</span>
+        <time title="Modified: 2020-09-07 01:55:07" itemprop="dateModified" datetime="2020-09-07T01:55:07+08:00">2020-09-07</time>
+      </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">In</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/linux%E5%86%85%E6%A0%B8/" itemprop="url" rel="index"><span itemprop="name">linux内核</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+        <h2 id="lockup定义"><a href="#lockup定义" class="headerlink" title="lockup定义"></a>lockup定义</h2><p>后续有空深入详细分析一下-=-</p>
+
     </div>
 
-  <article itemscope itemtype="http://schema.org/Article">
-    <header class="post-header">
-      <div class="post-meta-container">
-        <time itemprop="dateCreated"
-              datetime="2020-09-05T14:47:40+08:00"
-              content="2020-09-05">
-          09-05
-        </time>
-      </div>
+    
+    
+    
 
-      <div class="post-title">
-          <a class="post-title-link" href="/2020/09/05/memory/%E9%9D%A2%E8%AF%95/%E5%86%99%E4%B8%80%E4%B8%AA%E6%B6%88%E8%80%97%E5%AE%8C%E7%89%A9%E7%90%86%E5%86%85%E5%AD%98%E7%9A%84%E7%A8%8B%E5%BA%8F/%E6%B6%88%E8%80%97%E7%89%A9%E7%90%86%E5%86%85%E5%AD%98/" itemprop="url">
-            <span itemprop="name">快速消耗完物理内存</span>
-          </a>
-      </div>
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E8%BF%9B%E7%A8%8B%E8%B0%83%E5%BA%A6/" rel="tag"># 进程调度</a>
+              <a href="/tags/hardlockup/" rel="tag"># hardlockup</a>
+              <a href="/tags/softlockup/" rel="tag"># softlockup</a>
+          </div>
 
-      
-    </header>
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2020/09/11/%E5%B9%B6%E5%8F%91%E9%97%AE%E9%A2%98/%E6%AD%BB%E9%94%81%E9%97%AE%E9%A2%98/" rel="prev" title="linux内核死锁检测">
+                  <i class="fa fa-chevron-left"></i> linux内核死锁检测
+                </a>
+            </div>
+            <div class="post-nav-item">
+            </div>
+          </div>
+    </footer>
   </article>
-
-    </div>
-  </div>
   
   
-  
-
   
 
 

@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="cn">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.1.1">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@5.14.0/css/all.min.css">
+  <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/animate.css@3.1.1/animate.min.css">
+
+<script class="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"liulangrenaaa.github.io","root":"/","scheme":"Muse","version":"8.0.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12},"copycode":false,"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"Searching...","empty":"We didn't find any results for the search: ${query}","hits_time":"${hits} results found in ${time} ms","hits":"${hits} results found"}};
+  </script>
+
+  <meta name="description" content="hungtask 定义我们先看一段实际hungtask的 dmesg打印 123456789101112131415[45312.818392] INFO: task ftpd:17682 blocked for more than 120 seconds.[45312.818470]       Tainted: G           OE     5.4.44 #1[45312.818472">
+<meta property="og:type" content="article">
+<meta property="og:title" content="linux hungtask问题">
+<meta property="og:url" content="https://liulangrenaaa.github.io/2020/09/08/%E8%BF%9B%E7%A8%8B%E7%AE%A1%E7%90%86/hung_task%E9%97%AE%E9%A2%98/index.html">
+<meta property="og:site_name" content="liulangren 读核之旅">
+<meta property="og:description" content="hungtask 定义我们先看一段实际hungtask的 dmesg打印 123456789101112131415[45312.818392] INFO: task ftpd:17682 blocked for more than 120 seconds.[45312.818470]       Tainted: G           OE     5.4.44 #1[45312.818472">
+<meta property="og:locale">
+<meta property="article:published_time" content="2020-09-08T06:47:40.000Z">
+<meta property="article:modified_time" content="2020-09-06T17:53:48.359Z">
+<meta property="article:author" content="Su Hui">
+<meta property="article:tag" content="进程调度">
+<meta property="article:tag" content="hungtask">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://liulangrenaaa.github.io/2020/09/08/%E8%BF%9B%E7%A8%8B%E7%AE%A1%E7%90%86/hung_task%E9%97%AE%E9%A2%98/">
+
+
+<script class="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'cn'
+  };
+</script>
+
+  <title>linux hungtask问题 | liulangren 读核之旅</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  body { margin-top: 2rem; }
+
+  .use-motion .menu-item,
+  .use-motion .sidebar,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header {
+    visibility: visible;
+  }
+
+  .use-motion .header,
+  .use-motion .site-brand-container .toggle,
+  .use-motion .footer { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle,
+  .use-motion .custom-logo-image {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line {
+    transform: scaleX(1);
+  }
+
+  .search-pop-overlay, .sidebar-nav { display: none; }
+  .sidebar-panel { display: block; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <h1 class="site-title">liulangren 读核之旅</h1>
+      <i class="logo-line"></i>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>Categories</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+        
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <section class="post-toc-wrap sidebar-panel">
+          <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#hungtask-%E5%AE%9A%E4%B9%89"><span class="nav-number">1.</span> <span class="nav-text">hungtask 定义</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#hungtask-%E6%A3%80%E6%B5%8B%E7%9A%84%E5%AE%9E%E7%8E%B0"><span class="nav-number">2.</span> <span class="nav-text">hungtask 检测的实现</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#hungtask-%E8%A1%8C%E4%B8%BA%E6%8E%A7%E5%88%B6"><span class="nav-number">3.</span> <span class="nav-text">hungtask 行为控制</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%80%BB%E7%BB%93"><span class="nav-number">4.</span> <span class="nav-text">总结</span></a></li></ol></div>
+      </section>
+      <!--/noindex-->
+
+      <section class="site-overview-wrap sidebar-panel">
+        <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+  <p class="site-author-name" itemprop="name">Su Hui</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">10</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">3</span>
+        <span class="site-state-item-name">categories</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">16</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+
+
+
+      </section>
+    </div>
+  </aside>
+  <div class="sidebar-dimmer"></div>
+
+
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+
+    <div class="main-inner post posts-expand">
+      
+
+      
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
+    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/09/08/%E8%BF%9B%E7%A8%8B%E7%AE%A1%E7%90%86/hung_task%E9%97%AE%E9%A2%98/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="Su Hui">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liulangren 读核之旅">
+    </span>
+
+    
+    
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          linux hungtask问题
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">Posted on</span>
+
+      <time title="Created: 2020-09-08 14:47:40" itemprop="dateCreated datePublished" datetime="2020-09-08T14:47:40+08:00">2020-09-08</time>
+    </span>
+      <span class="post-meta-item">
+        <span class="post-meta-item-icon">
+          <i class="far fa-calendar-check"></i>
+        </span>
+        <span class="post-meta-item-text">Edited on</span>
+        <time title="Modified: 2020-09-07 01:53:48" itemprop="dateModified" datetime="2020-09-07T01:53:48+08:00">2020-09-07</time>
+      </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">In</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/linux%E5%86%85%E6%A0%B8/" itemprop="url" rel="index"><span itemprop="name">linux内核</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+        <h2 id="hungtask-定义"><a href="#hungtask-定义" class="headerlink" title="hungtask 定义"></a>hungtask 定义</h2><p>我们先看一段实际hungtask的 dmesg打印</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">[45312.818392] INFO: task ftpd:17682 blocked for more than 120 seconds.</span><br><span class="line">[45312.818470]       Tainted: G           OE     5.4.44 #1</span><br><span class="line">[45312.818472] &quot;echo 0 &gt; &#x2F;proc&#x2F;sys&#x2F;kernel&#x2F;hung_task_timeout_secs&quot; disables this message.</span><br><span class="line">[45312.818474] ftpd     D    0 17682      2 0x80004000</span><br><span class="line">[45312.818478] Call Trace:</span><br><span class="line">[45312.818698]  __schedule+0x2e3&#x2F;0x740</span><br><span class="line">[45312.818700]  schedule+0x42&#x2F;0xb0</span><br><span class="line">[45312.818702]  schedule_timeout+0x152&#x2F;0x2f0</span><br><span class="line">[45312.818755]  ? __next_timer_interrupt+0xe0&#x2F;0xe0</span><br><span class="line">[45312.818756]  msleep+0x2e&#x2F;0x40</span><br><span class="line">[45312.818760]  ftpd+0xaa&#x2F;0x170 [ftpd]</span><br><span class="line">[45312.818804]  kthread+0x104&#x2F;0x140</span><br><span class="line">[45312.818806]  ? 0xffffffffc05bb000</span><br><span class="line">[45312.818807]  ? kthread_park+0x90&#x2F;0x90</span><br><span class="line">[45312.818808]  ret_from_fork+0x35&#x2F;0x40</span><br></pre></td></tr></table></figure>
+<p>第一行就写了 pid为 17682的 task被 block阻塞了超过120s得不到执行，这种往往只是打印hungtask的线程 和 backtrace而已，实际中一般也不会导致panic，但是这种问题确是我们不能忽略的点，有可能这就是后面会出事故的点</p>
+<p>hungtask是内核的一种自我保护行为，在检测到一个线程长时间（可设置）处于D状态之后，会打印出线程相关信息和backtrace.</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">sh@ubuntu:&#x2F;var&#x2F;crash$ ps -aux |grep ftpd</span><br><span class="line">root       18007  0.0  0.0      0     0 ?        D    01:01   0:00 [ftpd]</span><br></pre></td></tr></table></figure>
+
+<p>D 状态也是进程的一种状态，对应内核中的 TASK_UNINTERRUPTIBLE 状态，一般等待磁盘IO的线程会设置为 TASK_UNINTERRUPTIBLE 状态，此状态无法wakeup，不管是 wake_up_process，还是kill -9去尝试杀死他 都不能将 TASK_UNINTERRUPTIBLE 状态线程唤醒，只有等他自己wakeup。</p>
+<p>同时linux内核在统计系统load的时候也将 TASK_UNINTERRUPTIBLE 状态的现场统计了进去，这样如果系统中出现D状态线程之后，整体系统的load就会较高，但是CPU loading却很小，几乎为0。这种统计方式也使得linux系统中loadavg这个参考指标的意义不是那么的大了。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">sh@ubuntu:~$ top</span><br><span class="line">top - 01:04:54 up 13:09,  3 users,  load average: 2.05, 1.06, 0.49</span><br><span class="line">Tasks: 341 total,   1 running, 340 sleeping,   0 stopped,   0 zombie</span><br><span class="line">%Cpu(s):  0.1 us,  0.1 sy,  0.0 ni, 99.8 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st</span><br><span class="line">MiB Mem :   3716.5 total,    249.5 free,   2034.2 used,   1432.7 buff&#x2F;cache</span><br><span class="line">MiB Swap:   2048.0 total,   1557.2 free,    490.8 used.   1398.5 avail Mem </span><br><span class="line"></span><br><span class="line">    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND                                                                  </span><br><span class="line">   2253 rlk       20   0  299752  13200  10788 S   0.3   0.3   0:36.83 vmtoolsd                                                                 </span><br><span class="line">  18184 rlk       20   0   20700   4292   3384 R   0.3   0.1   0:00.08 top                                                                      </span><br></pre></td></tr></table></figure>
+
+<p>什么样的线程会处于D状态，即 TASK_UNINTERRUPTIBLE 状态呢?</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">1. 磁盘IO线程，在等待磁盘读入数据的过程中会将自己设置为 TASK_UNINTERRUPTIBLE 状态</span><br><span class="line">2. 还有一个 msleep()，这个API会先将线程状态设置为 TASK_UNINTERRUPTIBLE,再调用 schedule_timeouot()</span><br><span class="line"></span><br><span class="line">void msleep(unsigned int msecs)</span><br><span class="line">&#123;</span><br><span class="line">	unsigned long timeout &#x3D; msecs_to_jiffies(msecs) + 1;</span><br><span class="line"></span><br><span class="line">	while (timeout)</span><br><span class="line">		timeout &#x3D; schedule_timeout_uninterruptible(timeout);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="hungtask-检测的实现"><a href="#hungtask-检测的实现" class="headerlink" title="hungtask 检测的实现"></a>hungtask 检测的实现</h2><p>上面讲了hungtask的原理，下面通过代码走读的方式来分析一下hungtask实现细节</p>
+<p>首先是init, hungtask机制在初始化的时候使用kthread_run 运行了一个 [khungtaskd]线程，hungtask 主要工作就是在 hungtaskd 线程中完成的</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br></pre></td><td class="code"><pre><span class="line">&#x2F;&#x2F;这是主要干活的</span><br><span class="line">static void check_hung_task(struct task_struct *t, unsigned long timeout)</span><br><span class="line">&#123;</span><br><span class="line">	unsigned long switch_count &#x3D; t-&gt;nvcsw + t-&gt;nivcsw;</span><br><span class="line"></span><br><span class="line">	if (switch_count !&#x3D; t-&gt;last_switch_count) &#123; &#x2F;&#x2F;此task 没有hungtask</span><br><span class="line">		t-&gt;last_switch_count &#x3D; switch_count;</span><br><span class="line">		t-&gt;last_switch_time &#x3D; jiffies;</span><br><span class="line">		return;</span><br><span class="line">	&#125;</span><br><span class="line">	if (time_is_after_jiffies(t-&gt;last_switch_time + timeout * HZ)) </span><br><span class="line">		return; &#x2F;&#x2F; 此task虽然hung了，但是还未到 120s &#x3D;&#x3D; 120 * HZ</span><br><span class="line"></span><br><span class="line">	if (sysctl_hung_task_warnings) &#123;</span><br><span class="line">		pr_err(&quot;INFO: task %s:%d blocked for more than %ld seconds.\n&quot;,</span><br><span class="line">		       t-&gt;comm, t-&gt;pid, (jiffies - t-&gt;last_switch_time) &#x2F; HZ);</span><br><span class="line">		xxxx &#x2F;&#x2F;提示信息</span><br><span class="line">		sched_show_task(t);</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">&#x2F;*</span><br><span class="line"> * Check whether a TASK_UNINTERRUPTIBLE does not get woken up for</span><br><span class="line"> * a really long time (120 seconds). If that happens, print out a warning.</span><br><span class="line"> *&#x2F;</span><br><span class="line">static void check_hung_uninterruptible_tasks(unsigned long timeout)</span><br><span class="line">&#123;</span><br><span class="line">	for_each_process_thread(g, t) &#123; &#x2F;&#x2F;遍历所有线程</span><br><span class="line">		if (t-&gt;state &#x3D;&#x3D; TASK_UNINTERRUPTIBLE) &#x2F;&#x2F; check当前线程是否处于D状态</span><br><span class="line">			check_hung_task(t, timeout);</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">&#x2F;*</span><br><span class="line"> * kthread which checks for tasks stuck in D state</span><br><span class="line"> *&#x2F;</span><br><span class="line">static int watchdog(void *dummy)</span><br><span class="line">&#123;</span><br><span class="line">	unsigned long hung_last_checked &#x3D; jiffies;</span><br><span class="line"></span><br><span class="line">	set_user_nice(current, 0);</span><br><span class="line"></span><br><span class="line">	for ( ; ; ) &#123; &#x2F;&#x2F; 是内核守护线程，所以直接一个for循环</span><br><span class="line">		unsigned long timeout &#x3D; sysctl_hung_task_timeout_secs;</span><br><span class="line">		unsigned long interval &#x3D; sysctl_hung_task_check_interval_secs;</span><br><span class="line">		long t;</span><br><span class="line"></span><br><span class="line">		if (interval &#x3D;&#x3D; 0)</span><br><span class="line">			interval &#x3D; timeout;</span><br><span class="line">		interval &#x3D; min_t(unsigned long, interval, timeout);</span><br><span class="line">		t &#x3D; hung_timeout_jiffies(hung_last_checked, interval);</span><br><span class="line">		if (t &lt;&#x3D; 0) &#123; &#x2F;&#x2F; 因为最后调用的是 schedule_timout_interruptible()，可以被唤醒，所以需要判断一下</span><br><span class="line">			if (!atomic_xchg(&amp;reset_hung_task, 0) &amp;&amp; !hung_detector_suspended)</span><br><span class="line">				check_hung_uninterruptible_tasks(timeout); &#x2F;&#x2F; 给所有线程检查是否处于D状态</span><br><span class="line">			hung_last_checked &#x3D; jiffies;</span><br><span class="line">			continue;</span><br><span class="line">		&#125;</span><br><span class="line">		schedule_timeout_interruptible(t);</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	return 0;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">static int __init hung_task_init(void) &#x2F;&#x2F; 初始化 khungtaskd，主体是 watchdog 函数</span><br><span class="line">&#123;</span><br><span class="line">	atomic_notifier_chain_register(&amp;panic_notifier_list, &amp;panic_block);</span><br><span class="line"></span><br><span class="line">	&#x2F;* Disable hung task detector on suspend *&#x2F;</span><br><span class="line">	pm_notifier(hungtask_pm_notify, 0);</span><br><span class="line"></span><br><span class="line">	watchdog_task &#x3D; kthread_run(watchdog, NULL, &quot;khungtaskd&quot;);</span><br><span class="line"></span><br><span class="line">	return 0;</span><br><span class="line">&#125;</span><br><span class="line">subsys_initcall(hung_task_init);</span><br></pre></td></tr></table></figure>
+<p>hungtask机制  如何判断这个线程一直没有进行切换得到运行呢？<br>主要用的是 task_struct的几个成员， nvcsw nivcsw last_switch_count<br>分别对应 非自愿上下文切换次数，自愿上下文切换次数，上次检查时上下文总切换次数。<br>通过在扫描时，比较这几个成员的值就可以清晰的看到在两次扫描之间有没有进行过上下文切换</p>
+<p>hungtask机制  如何判断这个线程超过120s都没有得到运行呢？<br>主要用的是 task_struct 的 last_switch_time 成员，利用 last_switch_time + timeout * HZ 和 jiffies 比较就可以轻易得出是否超过120s没有被调度过</p>
+<h2 id="hungtask-行为控制"><a href="#hungtask-行为控制" class="headerlink" title="hungtask 行为控制"></a>hungtask 行为控制</h2><p>一般系统中出现hungtask 可能都是短暂的异常，一般就打印一下 info 和 backtrace 即可，但是kernel也提供了相关的选择，比如可以选择hungtask的时候直接panic</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">echo 1 &gt;  &#x2F;proc&#x2F;sys&#x2F;kernel&#x2F;hung_task_panic # hungtask的时候直接 panic</span><br><span class="line">echo 120 &gt; &#x2F;proc&#x2F;sys&#x2F;kernel&#x2F;hung_task_timeout_secs # 一个任务处于D状态多久我们认为他是hungtask了</span><br><span class="line">echo 3 &gt; &#x2F;proc&#x2F;sys&#x2F;kernel&#x2F;hung_task_check_interval_secs # 内核多久进行一次hungtask扫描</span><br><span class="line">echo 7 &gt; &#x2F;proc&#x2F;sys&#x2F;kernel&#x2F;hung_task_warnings # 设置hungtask的warning的等级</span><br></pre></td></tr></table></figure>
+
+<p>其实这些控制参数都对应在上面代码中，由于篇幅原因，精简了一下代码</p>
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>一般hungtask出现，肯定会伴随着 D状态 的线程产生，且超过设定时间一直处于D状态，没有被调度过</p>
+<p>D状态，即 TASK_UNINTERRUPTIBLE 线程，一般产生于</p>
+<ol>
+<li>IO磁盘等待上</li>
+<li>msleep 调用接口上</li>
+<li>一些锁机制在等待锁的持有者的时候也会将线程状态设为 TASK_UNINTERRUPTIBLE，那样如果出现某些类型锁的死锁的时候也会出现 hungtask</li>
+</ol>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E8%BF%9B%E7%A8%8B%E8%B0%83%E5%BA%A6/" rel="tag"># 进程调度</a>
+              <a href="/tags/hungtask/" rel="tag"># hungtask</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2020/09/07/page_cache/page%20cache%E4%BA%A7%E7%94%9F/" rel="prev" title="page cache如何产生的">
+                  <i class="fa fa-chevron-left"></i> page cache如何产生的
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2020/09/11/%E5%B9%B6%E5%8F%91%E9%97%AE%E9%A2%98/%E6%AD%BB%E9%94%81%E9%97%AE%E9%A2%98/" rel="next" title="linux内核死锁检测">
+                  linux内核死锁检测 <i class="fa fa-chevron-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+  
+  
+  
+
+
+
+      
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      const activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      const commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      
+
+      
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2020</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Su Hui</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/muse/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a>
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <script src="//cdn.jsdelivr.net/npm/animejs@3.2.0/lib/anime.min.js"></script>
+<script src="/js/utils.js"></script><script src="/js/motion.js"></script><script src="/js/schemes/muse.js"></script><script src="/js/next-boot.js"></script>
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>
