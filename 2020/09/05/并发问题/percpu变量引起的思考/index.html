@@ -22,22 +22,22 @@
     var CONFIG = {"hostname":"liulangrenaaa.github.io","root":"/","scheme":"Muse","version":"8.0.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12},"copycode":false,"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"Searching...","empty":"We didn't find any results for the search: ${query}","hits_time":"${hits} results found in ${time} ms","hits":"${hits} results found"}};
   </script>
 
-  <meta name="description" content="page cache">
+  <meta name="description" content="疑问 内核为什么要引入per-cpu变量？解决了什么问题？ per-cpu变量如何实现的？ 是否可以用数组实现per-cpu变量？ per-cpu变量访问有什么原则？ 如果一个per-cpu变量既可以在线程上下文中访问，又可以在中断上下文中访问，需要保护吗？  接下来我们就带着以上的疑问继续往下看 内核为什么要引入per-cpu变量？解决了什么问题？per-cpu变量是Linux内核中的一种同步机">
 <meta property="og:type" content="article">
-<meta property="og:title" content="page 如何产生的">
-<meta property="og:url" content="https://liulangrenaaa.github.io/2020/09/05/page_cache/page%20cache%E4%BA%A7%E7%94%9F/index.html">
+<meta property="og:title" content="per-cpu变量引起的思考">
+<meta property="og:url" content="https://liulangrenaaa.github.io/2020/09/05/%E5%B9%B6%E5%8F%91%E9%97%AE%E9%A2%98/percpu%E5%8F%98%E9%87%8F%E5%BC%95%E8%B5%B7%E7%9A%84%E6%80%9D%E8%80%83/index.html">
 <meta property="og:site_name" content="liulangren 读核之旅">
-<meta property="og:description" content="page cache">
+<meta property="og:description" content="疑问 内核为什么要引入per-cpu变量？解决了什么问题？ per-cpu变量如何实现的？ 是否可以用数组实现per-cpu变量？ per-cpu变量访问有什么原则？ 如果一个per-cpu变量既可以在线程上下文中访问，又可以在中断上下文中访问，需要保护吗？  接下来我们就带着以上的疑问继续往下看 内核为什么要引入per-cpu变量？解决了什么问题？per-cpu变量是Linux内核中的一种同步机">
 <meta property="og:locale">
 <meta property="article:published_time" content="2020-09-05T06:47:40.000Z">
-<meta property="article:modified_time" content="2020-09-05T07:41:25.593Z">
+<meta property="article:modified_time" content="2020-09-05T15:43:29.559Z">
 <meta property="article:author" content="Su Hui">
-<meta property="article:tag" content="文件系统">
-<meta property="article:tag" content="page_cache">
+<meta property="article:tag" content="内核同步">
+<meta property="article:tag" content="per-cpu">
 <meta name="twitter:card" content="summary">
 
 
-<link rel="canonical" href="https://liulangrenaaa.github.io/2020/09/05/page_cache/page%20cache%E4%BA%A7%E7%94%9F/">
+<link rel="canonical" href="https://liulangrenaaa.github.io/2020/09/05/%E5%B9%B6%E5%8F%91%E9%97%AE%E9%A2%98/percpu%E5%8F%98%E9%87%8F%E5%BC%95%E8%B5%B7%E7%9A%84%E6%80%9D%E8%80%83/">
 
 
 <script class="page-configurations">
@@ -50,7 +50,7 @@
   };
 </script>
 
-  <title>page 如何产生的 | liulangren 读核之旅</title>
+  <title>per-cpu变量引起的思考 | liulangren 读核之旅</title>
   
 
 
@@ -182,7 +182,7 @@
 
       <!--noindex-->
       <section class="post-toc-wrap sidebar-panel">
-          <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#page-cache"><span class="nav-number">1.</span> <span class="nav-text">page cache</span></a></li></ol></div>
+          <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%96%91%E9%97%AE"><span class="nav-number">1.</span> <span class="nav-text">疑问</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%86%85%E6%A0%B8%E4%B8%BA%E4%BB%80%E4%B9%88%E8%A6%81%E5%BC%95%E5%85%A5per-cpu%E5%8F%98%E9%87%8F%EF%BC%9F%E8%A7%A3%E5%86%B3%E4%BA%86%E4%BB%80%E4%B9%88%E9%97%AE%E9%A2%98%EF%BC%9F"><span class="nav-number">2.</span> <span class="nav-text">内核为什么要引入per-cpu变量？解决了什么问题？</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#per-cpu%E5%8F%98%E9%87%8F%E5%A6%82%E4%BD%95%E5%AE%9E%E7%8E%B0%E7%9A%84%EF%BC%9F"><span class="nav-number">3.</span> <span class="nav-text">per-cpu变量如何实现的？</span></a></li></ol></div>
       </section>
       <!--/noindex-->
 
@@ -196,7 +196,7 @@
       <div class="site-state-item site-state-posts">
           <a href="/archives/">
         
-          <span class="site-state-item-count">5</span>
+          <span class="site-state-item-count">7</span>
           <span class="site-state-item-name">posts</span>
         </a>
       </div>
@@ -209,7 +209,7 @@
       <div class="site-state-item site-state-tags">
             <a href="/tags/">
           
-        <span class="site-state-item-count">7</span>
+        <span class="site-state-item-count">11</span>
         <span class="site-state-item-name">tags</span></a>
       </div>
   </nav>
@@ -245,7 +245,7 @@
   
   
   <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
-    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/09/05/page_cache/page%20cache%E4%BA%A7%E7%94%9F/">
+    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/09/05/%E5%B9%B6%E5%8F%91%E9%97%AE%E9%A2%98/percpu%E5%8F%98%E9%87%8F%E5%BC%95%E8%B5%B7%E7%9A%84%E6%80%9D%E8%80%83/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
       <meta itemprop="image" content="/images/avatar.gif">
@@ -261,7 +261,7 @@
     
       <header class="post-header">
         <h1 class="post-title" itemprop="name headline">
-          page 如何产生的
+          per-cpu变量引起的思考
         </h1>
 
         <div class="post-meta-container">
@@ -273,7 +273,7 @@
       <span class="post-meta-item-text">Posted on</span>
       
 
-      <time title="Created: 2020-09-05 14:47:40 / Modified: 15:41:25" itemprop="dateCreated datePublished" datetime="2020-09-05T14:47:40+08:00">2020-09-05</time>
+      <time title="Created: 2020-09-05 14:47:40 / Modified: 23:43:29" itemprop="dateCreated datePublished" datetime="2020-09-05T14:47:40+08:00">2020-09-05</time>
     </span>
     <span class="post-meta-item">
       <span class="post-meta-item-icon">
@@ -295,7 +295,22 @@
     
     
     <div class="post-body" itemprop="articleBody">
-        <h2 id="page-cache"><a href="#page-cache" class="headerlink" title="page cache"></a>page cache</h2>
+        <h2 id="疑问"><a href="#疑问" class="headerlink" title="疑问"></a>疑问</h2><ol>
+<li>内核为什么要引入per-cpu变量？解决了什么问题？</li>
+<li>per-cpu变量如何实现的？</li>
+<li>是否可以用数组实现per-cpu变量？</li>
+<li>per-cpu变量访问有什么原则？</li>
+<li>如果一个per-cpu变量既可以在线程上下文中访问，又可以在中断上下文中访问，需要保护吗？</li>
+</ol>
+<p>接下来我们就带着以上的疑问继续往下看</p>
+<h2 id="内核为什么要引入per-cpu变量？解决了什么问题？"><a href="#内核为什么要引入per-cpu变量？解决了什么问题？" class="headerlink" title="内核为什么要引入per-cpu变量？解决了什么问题？"></a>内核为什么要引入per-cpu变量？解决了什么问题？</h2><p>per-cpu变量是Linux内核中的一种同步机制。 当系统中的所有CPU访问并共享变量V时，CPU0修改变量V的值。</p>
+<p>CPU1也会同时修改变量V，这将导致变量V的值不正确。如果使用了原子锁，CPU0只能等待修改。</p>
+<p>这种方式有两个缺点：</p>
+<p>（1）原子操作很耗时</p>
+<p>（2）现在，所有CPU都具有L1高速缓存，因此许多CPU同时访问变量将导致高速缓存一致性问题。 当CPU修改共享变量V时，其他CPU上的相应缓存行必须无效，这会导致性能损失。</p>
+<p>per-cpu变量提供了解决上述问题的有趣功能。 它将变量的副本分配给系统中的每个处理器。 在多处理器系统中，当处理器只能访问其所属变量的副本时，无需考虑与其他处理器的竞争，因此可以充分利用处理器的本地硬件缓存来提高性能。 。</p>
+<h2 id="per-cpu变量如何实现的？"><a href="#per-cpu变量如何实现的？" class="headerlink" title="per-cpu变量如何实现的？"></a>per-cpu变量如何实现的？</h2><p>这里分 静态per-cpu变量 和 动态per-cpu变量<br>首先看一下使用的 API</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">&#x2F;&#x2F; 静态定义 include&#x2F;linux&#x2F;Percpu-def.h </span><br><span class="line">#define DECLARE_PER_CPU(type, name)                    \</span><br><span class="line">    DECLARE_PER_CPU_SECTION(type, name, &quot;&quot;)</span><br><span class="line"></span><br><span class="line">#define DEFINE_PER_CPU(type, name)                    \</span><br><span class="line">    DEFINE_PER_CPU_SECTION(type, name, &quot;&quot;)</span><br><span class="line"></span><br><span class="line">&#x2F;&#x2F; 动态定义 include&#x2F;linux&#x2F;percpu.h</span><br><span class="line">#define alloc_percpu(type)	\</span><br><span class="line">	(typeof(type) __percpu *)__alloc_percpu(sizeof(type), __alignof__(type))</span><br><span class="line"></span><br><span class="line">void free_percpu(void __percpu *__pdata);</span><br></pre></td></tr></table></figure>
     </div>
 
     
@@ -304,21 +319,18 @@
 
     <footer class="post-footer">
           <div class="post-tags">
-              <a href="/tags/%E6%96%87%E4%BB%B6%E7%B3%BB%E7%BB%9F/" rel="tag"># 文件系统</a>
-              <a href="/tags/page-cache/" rel="tag"># page_cache</a>
+              <a href="/tags/%E5%86%85%E6%A0%B8%E5%90%8C%E6%AD%A5/" rel="tag"># 内核同步</a>
+              <a href="/tags/per-cpu/" rel="tag"># per-cpu</a>
           </div>
 
         
 
           <div class="post-nav">
             <div class="post-nav-item">
-                <a href="/2020/09/05/%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7/vim%20vscode%20si/" rel="prev" title="IDE选择">
-                  <i class="fa fa-chevron-left"></i> IDE选择
-                </a>
             </div>
             <div class="post-nav-item">
-                <a href="/2020/09/05/%E4%B8%8D%E5%BF%98%E5%88%9D%E5%BF%83/" rel="next" title="欢迎来到liulangren的读核之旅">
-                  欢迎来到liulangren的读核之旅 <i class="fa fa-chevron-right"></i>
+                <a href="/2020/09/05/memory/%E9%9D%A2%E8%AF%95/%E5%86%99%E4%B8%80%E4%B8%AA%E6%B6%88%E8%80%97%E5%AE%8C%E7%89%A9%E7%90%86%E5%86%85%E5%AD%98%E7%9A%84%E7%A8%8B%E5%BA%8F/%E6%B6%88%E8%80%97%E7%89%A9%E7%90%86%E5%86%85%E5%AD%98/" rel="next" title="快速消耗完物理内存">
+                  快速消耗完物理内存 <i class="fa fa-chevron-right"></i>
                 </a>
             </div>
           </div>
