@@ -120,6 +120,7 @@
 
   <div class="site-nav-right">
     <div class="toggle popup-trigger">
+        <i class="fa fa-search fa-fw fa-lg"></i>
     </div>
   </div>
 </div>
@@ -153,11 +154,35 @@
     <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
 
   </li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>Search
+        </a>
+      </li>
   </ul>
 </nav>
 
 
 
+  <div class="search-pop-overlay">
+    <div class="popup search-popup">
+        <div class="search-header">
+  <span class="search-icon">
+    <i class="fa fa-search"></i>
+  </span>
+  <div class="search-input-container"></div>
+  <span class="popup-btn-close">
+    <i class="fa fa-times-circle"></i>
+  </span>
+</div>
+<div class="search-result-container">
+  <div class="algolia-stats"><hr></div>
+  <div class="algolia-hits"></div>
+  <div class="algolia-pagination"></div>
+</div>
+
+      
+    </div>
+  </div>
 
 </div>
         
@@ -330,8 +355,8 @@
 
           <div class="post-nav">
             <div class="post-nav-item">
-                <a href="/2020/09/05/%E4%B8%8D%E5%BF%98%E5%88%9D%E5%BF%83/" rel="prev" title="欢迎来到liulangren的读核之旅">
-                  <i class="fa fa-chevron-left"></i> 欢迎来到liulangren的读核之旅
+                <a href="/2020/09/05/memory/%E9%9D%A2%E8%AF%95/%E5%86%99%E4%B8%80%E4%B8%AA%E6%B6%88%E8%80%97%E5%AE%8C%E7%89%A9%E7%90%86%E5%86%85%E5%AD%98%E7%9A%84%E7%A8%8B%E5%BA%8F/%E6%B6%88%E8%80%97%E7%89%A9%E7%90%86%E5%86%85%E5%AD%98/" rel="prev" title="快速消耗完物理内存">
+                  <i class="fa fa-chevron-left"></i> 快速消耗完物理内存
                 </a>
             </div>
             <div class="post-nav-item">
@@ -403,6 +428,10 @@
   
 
 
+
+
+  <script src="//cdn.jsdelivr.net/npm/algoliasearch@4.4.0/dist/algoliasearch-lite.umd.js"></script>
+<script src="//cdn.jsdelivr.net/npm/instantsearch.js@4.7.1/dist/instantsearch.production.min.js"></script><script src="/js/algolia-search.js"></script>
 
 
 
