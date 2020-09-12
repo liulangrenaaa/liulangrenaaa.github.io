@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="cn">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.1.1">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@5.14.0/css/all.min.css">
+  <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/animate.css@3.1.1/animate.min.css">
+
+<script class="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"liulangrenaaa.github.io","root":"/","scheme":"Muse","version":"8.0.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12},"copycode":false,"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"Searching...","empty":"We didn't find any results for the search: ${query}","hits_time":"${hits} results found in ${time} ms","hits":"${hits} results found"}};
+  </script>
+
+  <meta name="description" content="bpf epbf bcc bpftrace 关系bpf 与 ebpf关系BPF 是 Berkeley Packet Filter简称，现在也被称为cBPF(classic BPF)，要用于 tcpdump 和 seccomp，BPF早在1992 年就诞生了。 eBPF 是Enahnced Berkeley Packet Filter简称，诞生于2011年。其实 eBPF 本身其实远没有想象中的复杂">
+<meta property="og:type" content="article">
+<meta property="og:title" content="bpftrace">
+<meta property="og:url" content="https://liulangrenaaa.github.io/2020/09/12/%E5%86%85%E6%A0%B8%E8%A7%82%E6%B5%8B/bpf%E7%9B%B8%E5%85%B3/bpftrace/index.html">
+<meta property="og:site_name" content="liulangren 读核之旅">
+<meta property="og:description" content="bpf epbf bcc bpftrace 关系bpf 与 ebpf关系BPF 是 Berkeley Packet Filter简称，现在也被称为cBPF(classic BPF)，要用于 tcpdump 和 seccomp，BPF早在1992 年就诞生了。 eBPF 是Enahnced Berkeley Packet Filter简称，诞生于2011年。其实 eBPF 本身其实远没有想象中的复杂">
+<meta property="og:locale">
+<meta property="article:published_time" content="2020-09-12T06:47:40.000Z">
+<meta property="article:modified_time" content="2020-09-12T14:48:28.404Z">
+<meta property="article:author" content="Su Hui">
+<meta property="article:tag" content="bpf">
+<meta property="article:tag" content="bpftrace">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://liulangrenaaa.github.io/2020/09/12/%E5%86%85%E6%A0%B8%E8%A7%82%E6%B5%8B/bpf%E7%9B%B8%E5%85%B3/bpftrace/">
+
+
+<script class="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'cn'
+  };
+</script>
+
+  <title>bpftrace | liulangren 读核之旅</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  body { margin-top: 2rem; }
+
+  .use-motion .menu-item,
+  .use-motion .sidebar,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header {
+    visibility: visible;
+  }
+
+  .use-motion .header,
+  .use-motion .site-brand-container .toggle,
+  .use-motion .footer { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle,
+  .use-motion .custom-logo-image {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line {
+    transform: scaleX(1);
+  }
+
+  .search-pop-overlay, .sidebar-nav { display: none; }
+  .sidebar-panel { display: block; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <h1 class="site-title">liulangren 读核之旅</h1>
+      <i class="logo-line"></i>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>Categories</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+        
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <section class="post-toc-wrap sidebar-panel">
+          <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#bpf-epbf-bcc-bpftrace-%E5%85%B3%E7%B3%BB"><span class="nav-number">1.</span> <span class="nav-text">bpf epbf bcc bpftrace 关系</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#bpf-%E4%B8%8E-ebpf%E5%85%B3%E7%B3%BB"><span class="nav-number">1.1.</span> <span class="nav-text">bpf 与 ebpf关系</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#bcc-%E4%B8%8E-ebpf"><span class="nav-number">1.2.</span> <span class="nav-text">bcc 与 ebpf</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#bpftrace-%E4%B8%8E-ebpf"><span class="nav-number">1.3.</span> <span class="nav-text">bpftrace 与 ebpf</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#bpftrace%E4%B8%80%E8%A1%8C%E4%BB%A3%E7%A0%81%E5%91%8A%E8%AF%89%E4%BD%A0%E6%80%A7%E8%83%BD%E9%97%AE%E9%A2%98%E5%9C%A8%E5%93%AA"><span class="nav-number">2.</span> <span class="nav-text">bpftrace一行代码告诉你性能问题在哪</span></a></li></ol></div>
+      </section>
+      <!--/noindex-->
+
+      <section class="site-overview-wrap sidebar-panel">
+        <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+  <p class="site-author-name" itemprop="name">Su Hui</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">11</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">4</span>
+        <span class="site-state-item-name">categories</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">17</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+
+
+
+      </section>
+    </div>
+  </aside>
+  <div class="sidebar-dimmer"></div>
+
+
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+
+    <div class="main-inner post posts-expand">
+      
+
+      
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
+    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/09/12/%E5%86%85%E6%A0%B8%E8%A7%82%E6%B5%8B/bpf%E7%9B%B8%E5%85%B3/bpftrace/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="Su Hui">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liulangren 读核之旅">
+    </span>
+
+    
+    
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          bpftrace
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">Posted on</span>
+      
+
+      <time title="Created: 2020-09-12 14:47:40 / Modified: 22:48:28" itemprop="dateCreated datePublished" datetime="2020-09-12T14:47:40+08:00">2020-09-12</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">In</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/kernel-debug/" itemprop="url" rel="index"><span itemprop="name">kernel debug</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+        <h2 id="bpf-epbf-bcc-bpftrace-关系"><a href="#bpf-epbf-bcc-bpftrace-关系" class="headerlink" title="bpf epbf bcc bpftrace 关系"></a>bpf epbf bcc bpftrace 关系</h2><h3 id="bpf-与-ebpf关系"><a href="#bpf-与-ebpf关系" class="headerlink" title="bpf 与 ebpf关系"></a>bpf 与 ebpf关系</h3><p>BPF 是 Berkeley Packet Filter简称，现在也被称为cBPF(classic BPF)，要用于 tcpdump 和 seccomp，BPF早在1992 年就诞生了。</p>
+<p>eBPF 是Enahnced Berkeley Packet Filter简称，诞生于2011年。<br>其实 eBPF 本身其实远没有想象中的复杂，我们可以把内核想象成一个庞大而复杂的电路，如果电路出现了异常，我们可以通过使用万用表测量电路，如果当前电路不能满足需求，但又不能推倒重新设计，我们需要串入其他元件。eBPF 之于电路，既是万用表，也是各种功能元件。再回到内核中的 eBPF，内核预先在各个关键路径埋设了 eBPF 程序入口，用户可以编写不同类型的 eBPF 程序，将 eBPF 程序 attach 在内核中不同路径中执行。</p>
+<h3 id="bcc-与-ebpf"><a href="#bcc-与-ebpf" class="headerlink" title="bcc 与 ebpf"></a>bcc 与 ebpf</h3><p>bcc 是 ebpf compile collection简称，是一个包含丰富的内核跟踪分析的 eBPF 工具集，使得 “编 写 BPF 代码-编译成字节码-注入内核-获取结果-展示” 整个过程更加便捷。</p>
+<h3 id="bpftrace-与-ebpf"><a href="#bpftrace-与-ebpf" class="headerlink" title="bpftrace 与 ebpf"></a>bpftrace 与 ebpf</h3><p>bpftrace 可以动态跟踪分析内核，bpftrace 提供了一种类 awk 和 C 的语言，使用 bpftrace 语言编写各种跟踪和分析脚本，并编译成 eBPF 字节码与内核交互，从而实现动态跟踪 Linux 内核。</p>
+<p>总的来说bcc 和 bpftrace都是基于 ebpf特性实现的工具，实际使用中我发现bpftrace尤其好用相对于ftrace、perf等。后面会有相应的对比分析。</p>
+<h2 id="bpftrace一行代码告诉你性能问题在哪"><a href="#bpftrace一行代码告诉你性能问题在哪" class="headerlink" title="bpftrace一行代码告诉你性能问题在哪"></a>bpftrace一行代码告诉你性能问题在哪</h2><p>下面主要是 bpftrace 的一些使用方法</p>
+<ol>
+<li><p>列出所有探测点，并且可以添加搜索项，也可以管道传递给grep</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">&quot;bpftrace -l&quot;</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>观察文件open事件</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">bpftrace -e &#39;tracepoint:syscalls:sys_enter_openat &#123; printf(&quot;%s %s\n&quot;, comm, str(args-&gt;filename)); &#125;&#39;</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>进程系统调用数量统计</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">bpftrace -e &#39;tracepoint:raw_syscalls:sys_enter &#123; @[comm] &#x3D; count(); &#125;&#39;</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>read系统调用的分布<br>/xxx/: 可以过滤{}中执行的条件，一般可以是进程名，pid等</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">bpftrace -e &#39;tracepoint:syscalls:sys_exit_read &#x2F;pid &#x3D;&#x3D; 18644&#x2F; &#123; @bytes &#x3D; hist(args-&gt;ret); &#125;&#39;</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>分析内核实时函数栈<br>profile:是采样</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">bpftrace -e &#39;profile:hz:99 &#123; @[kstack] &#x3D; count(); &#125;&#39;</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>调度器跟踪</p>
+</li>
+</ol>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">bpftrace -e &#39;tracepoint:sched:sched_switch &#123; @[kstack] &#x3D; count(); &#125;&#39;</span><br></pre></td></tr></table></figure>
+<p>具体有哪些参数变量可以使用，可以参考 <code>/sys/kernel/debug/tracing/events/</code> 里面具体某个跟踪项的 <code>format</code> 选项，里面列出了可以使用的变量，结构等</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line">sh@ubuntu[root]:&#x2F;sys&#x2F;kernel&#x2F;debug&#x2F;tracing&#x2F;events&#x2F;sched&#x2F;sched_switch# cat format </span><br><span class="line">name: sched_switch</span><br><span class="line">ID: 323</span><br><span class="line">format:</span><br><span class="line">        field:unsigned short common_type;       offset:0;       size:2; signed:0;</span><br><span class="line">        field:unsigned char common_flags;       offset:2;       size:1; signed:0;</span><br><span class="line">        field:unsigned char common_preempt_count;       offset:3;       size:1; signed:0;</span><br><span class="line">        field:int common_pid;   offset:4;       size:4; signed:1;</span><br><span class="line"></span><br><span class="line">        field:char prev_comm[16];       offset:8;       size:16;        signed:1;</span><br><span class="line">        field:pid_t prev_pid;   offset:24;      size:4; signed:1;</span><br><span class="line">        field:int prev_prio;    offset:28;      size:4; signed:1;</span><br><span class="line">        field:long prev_state;  offset:32;      size:8; signed:1;</span><br><span class="line">        field:char next_comm[16];       offset:40;      size:16;        signed:1;</span><br><span class="line">        field:pid_t next_pid;   offset:56;      size:4; signed:1;</span><br><span class="line">        field:int next_prio;    offset:60;      size:4; signed:1;</span><br><span class="line"></span><br><span class="line">print fmt: &quot;prev_comm&#x3D;%s prev_pid&#x3D;%d prev_prio&#x3D;%d prev_state&#x3D;%s%s &#x3D;&#x3D;&gt; next_comm&#x3D;%s next_pid&#x3D;%d next_prio&#x3D;%d&quot;, REC-&gt;prev_comm, REC-&gt;prev_pid, REC-&gt;prev_prio, (REC-&gt;prev_state &amp; ((((0x0000 | 0x0001 | 0x0002 | 0x0004 | 0x0008 | 0x0010 | 0x0020 | 0x0040) + 1) &lt;&lt; 1) - 1)) ? __print_flags(REC-&gt;prev_state &amp; ((((0x0000 | 0x0001 | 0x0002 | 0x0004 | 0x0008 | 0x0010 | 0x0020 | 0x0040) + 1) &lt;&lt; 1) - 1), &quot;|&quot;, &#123; 0x0001, &quot;S&quot; &#125;, &#123; 0x0002, &quot;D&quot; &#125;, &#123; 0x0004, &quot;T&quot; &#125;, &#123; 0x0008, &quot;t&quot; &#125;, &#123; 0x0010, &quot;X&quot; &#125;, &#123; 0x0020, &quot;Z&quot; &#125;, &#123; 0x0040, &quot;P&quot; &#125;, &#123; 0x0080, &quot;I&quot; &#125;) : &quot;R&quot;, REC-&gt;prev_state &amp; (((0x0000 | 0x0001 | 0x0002 | 0x0004 | 0x0008 | 0x0010 | 0x0020 | 0x0040) + 1) &lt;&lt; 1) ? &quot;+&quot; : &quot;&quot;, REC-&gt;next_comm, REC-&gt;next_pid, REC-&gt;next_prio</span><br><span class="line">sh@ubuntu[root]:&#x2F;sys&#x2F;kernel&#x2F;debug&#x2F;tracing&#x2F;events&#x2F;sched&#x2F;sched_switch# </span><br></pre></td></tr></table></figure>
+
+<p>更多的需要去动手实践，在项目中灵活运用 <code>bpftrace</code> 这样的神器<br>更多资料可以参考：<br><a target="_blank" rel="noopener" href="http://www.brendangregg.com/ebpf.html">brendan大神的博客</a><br><a target="_blank" rel="noopener" href="https://github.com/iovisor/bpftrace/blob/master/docs/tutorial_one_liners_chinese.md">bpftrace的一行代码</a></p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/bpf/" rel="tag"># bpf</a>
+              <a href="/tags/bpftrace/" rel="tag"># bpftrace</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2020/09/12/%E8%BF%9B%E7%A8%8B%E7%AE%A1%E7%90%86/lockup%E9%97%AE%E9%A2%98/" rel="prev" title="linux lockup问题">
+                  <i class="fa fa-chevron-left"></i> linux lockup问题
+                </a>
+            </div>
+            <div class="post-nav-item">
+            </div>
+          </div>
+    </footer>
+  </article>
+  
+  
+  
+
+
+
+      
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      const activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      const commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      
+
+      
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2020</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Su Hui</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/muse/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a>
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <script src="//cdn.jsdelivr.net/npm/animejs@3.2.0/lib/anime.min.js"></script>
+<script src="/js/utils.js"></script><script src="/js/motion.js"></script><script src="/js/schemes/muse.js"></script><script src="/js/next-boot.js"></script>
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

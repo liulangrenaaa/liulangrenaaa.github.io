@@ -30,10 +30,10 @@
 <meta property="og:description" content="什么是内核线程？内核线程就是一直运行在内核态的线程，与一般用户态进程的明显区别是 task-&gt;mm &#x3D;&#x3D; NULL，就是没有自己的地址空间，所有的内核线程都共享一个地址空间 前段时间遇到一个模块卸载之后，crash的问题，我大概抽象了一下源码： 12345678910111213141516171819202122232425262728int run_flag &#x3D; 0;struc">
 <meta property="og:locale">
 <meta property="article:published_time" content="2020-09-06T10:11:40.000Z">
-<meta property="article:modified_time" content="2020-09-06T10:11:39.114Z">
+<meta property="article:modified_time" content="2020-09-06T18:07:23.752Z">
 <meta property="article:author" content="Su Hui">
-<meta property="article:tag" content="进程管理">
 <meta property="article:tag" content="kthread">
+<meta property="article:tag" content="进程调度">
 <meta name="twitter:card" content="summary">
 
 
@@ -196,20 +196,20 @@
       <div class="site-state-item site-state-posts">
           <a href="/archives/">
         
-          <span class="site-state-item-count">10</span>
+          <span class="site-state-item-count">11</span>
           <span class="site-state-item-name">posts</span>
         </a>
       </div>
       <div class="site-state-item site-state-categories">
             <a href="/categories/">
           
-        <span class="site-state-item-count">3</span>
+        <span class="site-state-item-count">4</span>
         <span class="site-state-item-name">categories</span></a>
       </div>
       <div class="site-state-item site-state-tags">
             <a href="/tags/">
           
-        <span class="site-state-item-count">16</span>
+        <span class="site-state-item-count">17</span>
         <span class="site-state-item-name">tags</span></a>
       </div>
   </nav>
@@ -271,10 +271,16 @@
         <i class="far fa-calendar"></i>
       </span>
       <span class="post-meta-item-text">Posted on</span>
-      
 
-      <time title="Created: 2020-09-06 18:11:40 / Modified: 18:11:39" itemprop="dateCreated datePublished" datetime="2020-09-06T18:11:40+08:00">2020-09-06</time>
+      <time title="Created: 2020-09-06 18:11:40" itemprop="dateCreated datePublished" datetime="2020-09-06T18:11:40+08:00">2020-09-06</time>
     </span>
+      <span class="post-meta-item">
+        <span class="post-meta-item-icon">
+          <i class="far fa-calendar-check"></i>
+        </span>
+        <span class="post-meta-item-text">Edited on</span>
+        <time title="Modified: 2020-09-07 02:07:23" itemprop="dateModified" datetime="2020-09-07T02:07:23+08:00">2020-09-07</time>
+      </span>
     <span class="post-meta-item">
       <span class="post-meta-item-icon">
         <i class="far fa-folder"></i>
@@ -322,8 +328,8 @@
 
     <footer class="post-footer">
           <div class="post-tags">
-              <a href="/tags/%E8%BF%9B%E7%A8%8B%E7%AE%A1%E7%90%86/" rel="tag"># 进程管理</a>
               <a href="/tags/kthread/" rel="tag"># kthread</a>
+              <a href="/tags/%E8%BF%9B%E7%A8%8B%E8%B0%83%E5%BA%A6/" rel="tag"># 进程调度</a>
           </div>
 
         
