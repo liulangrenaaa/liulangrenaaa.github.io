@@ -22,21 +22,23 @@
     var CONFIG = {"hostname":"liulangrenaaa.github.io","root":"/","scheme":"Muse","version":"8.0.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12},"copycode":false,"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"Searching...","empty":"We didn't find any results for the search: ${query}","hits_time":"${hits} results found in ${time} ms","hits":"${hits} results found"}};
   </script>
 
-  <meta name="description" content="总有那么几条经常使用，但有比较难记住的命令，做个记录。  ln 创建软连接  12345ln -s   实际文件&#x2F;目录          软链接文件&#x2F;目录ln -s &#x2F;usr&#x2F;sbin&#x2F;trace-bpfcc &#x2F;usr&#x2F;bin&#x2F;traceln -s   实际文件          硬链接文件 &#x2F;&#x2F;目">
+  <meta name="description" content="实际工作中经常会遇到一些某个业务的重要的配置文件被删除了，或者某个重要的配置文件被串改了，而这个文件目录 往往又隐藏很深，不太可能被别的业务删除或者篡改，那么如何找到删除文件或者篡改文件的真凶呢。 首先删除一个文件我们一般会使用rm 来做，对应vfs层的就是 unlink方法，可以对unlink跟踪。这里当然可以使用 ftrace工具，但是我已经习惯使用 bpftrace了如下对 unlink的操">
 <meta property="og:type" content="article">
-<meta property="og:title" content="那些经常忘记的shell命令">
-<meta property="og:url" content="https://liulangrenaaa.github.io/2020/09/12/%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7/%E7%BB%8F%E5%B8%B8%E5%BF%98%E8%AE%B0%E7%9A%84shell%E5%91%BD%E4%BB%A4/index.html">
+<meta property="og:title" content="文件异常删除、修改">
+<meta property="og:url" content="https://liulangrenaaa.github.io/2020/09/14/%E5%86%85%E6%A0%B8%E8%A7%82%E6%B5%8B/bpf%E7%9B%B8%E5%85%B3/%E6%96%87%E4%BB%B6%E5%BC%82%E5%B8%B8%E5%88%A0%E9%99%A4%E3%80%81%E4%BF%AE%E6%94%B9/index.html">
 <meta property="og:site_name" content="liulangren 读核之旅">
-<meta property="og:description" content="总有那么几条经常使用，但有比较难记住的命令，做个记录。  ln 创建软连接  12345ln -s   实际文件&#x2F;目录          软链接文件&#x2F;目录ln -s &#x2F;usr&#x2F;sbin&#x2F;trace-bpfcc &#x2F;usr&#x2F;bin&#x2F;traceln -s   实际文件          硬链接文件 &#x2F;&#x2F;目">
+<meta property="og:description" content="实际工作中经常会遇到一些某个业务的重要的配置文件被删除了，或者某个重要的配置文件被串改了，而这个文件目录 往往又隐藏很深，不太可能被别的业务删除或者篡改，那么如何找到删除文件或者篡改文件的真凶呢。 首先删除一个文件我们一般会使用rm 来做，对应vfs层的就是 unlink方法，可以对unlink跟踪。这里当然可以使用 ftrace工具，但是我已经习惯使用 bpftrace了如下对 unlink的操">
 <meta property="og:locale">
-<meta property="article:published_time" content="2020-09-12T06:47:40.000Z">
-<meta property="article:modified_time" content="2020-09-12T15:14:50.823Z">
+<meta property="article:published_time" content="2020-09-14T06:47:40.000Z">
+<meta property="article:modified_time" content="2020-09-13T12:37:59.820Z">
 <meta property="article:author" content="Su Hui">
-<meta property="article:tag" content="shell">
+<meta property="article:tag" content="bpf">
+<meta property="article:tag" content="bpftrace">
+<meta property="article:tag" content="问题系统">
 <meta name="twitter:card" content="summary">
 
 
-<link rel="canonical" href="https://liulangrenaaa.github.io/2020/09/12/%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7/%E7%BB%8F%E5%B8%B8%E5%BF%98%E8%AE%B0%E7%9A%84shell%E5%91%BD%E4%BB%A4/">
+<link rel="canonical" href="https://liulangrenaaa.github.io/2020/09/14/%E5%86%85%E6%A0%B8%E8%A7%82%E6%B5%8B/bpf%E7%9B%B8%E5%85%B3/%E6%96%87%E4%BB%B6%E5%BC%82%E5%B8%B8%E5%88%A0%E9%99%A4%E3%80%81%E4%BF%AE%E6%94%B9/">
 
 
 <script class="page-configurations">
@@ -49,7 +51,7 @@
   };
 </script>
 
-  <title>那些经常忘记的shell命令 | liulangren 读核之旅</title>
+  <title>文件异常删除、修改 | liulangren 读核之旅</title>
   
 
 
@@ -243,7 +245,7 @@
   
   
   <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
-    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/09/12/%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7/%E7%BB%8F%E5%B8%B8%E5%BF%98%E8%AE%B0%E7%9A%84shell%E5%91%BD%E4%BB%A4/">
+    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/09/14/%E5%86%85%E6%A0%B8%E8%A7%82%E6%B5%8B/bpf%E7%9B%B8%E5%85%B3/%E6%96%87%E4%BB%B6%E5%BC%82%E5%B8%B8%E5%88%A0%E9%99%A4%E3%80%81%E4%BF%AE%E6%94%B9/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
       <meta itemprop="image" content="/images/avatar.gif">
@@ -259,7 +261,7 @@
     
       <header class="post-header">
         <h1 class="post-title" itemprop="name headline">
-          那些经常忘记的shell命令
+          文件异常删除、修改
         </h1>
 
         <div class="post-meta-container">
@@ -269,17 +271,23 @@
         <i class="far fa-calendar"></i>
       </span>
       <span class="post-meta-item-text">Posted on</span>
-      
 
-      <time title="Created: 2020-09-12 14:47:40 / Modified: 23:14:50" itemprop="dateCreated datePublished" datetime="2020-09-12T14:47:40+08:00">2020-09-12</time>
+      <time title="Created: 2020-09-14 14:47:40" itemprop="dateCreated datePublished" datetime="2020-09-14T14:47:40+08:00">2020-09-14</time>
     </span>
+      <span class="post-meta-item">
+        <span class="post-meta-item-icon">
+          <i class="far fa-calendar-check"></i>
+        </span>
+        <span class="post-meta-item-text">Edited on</span>
+        <time title="Modified: 2020-09-13 20:37:59" itemprop="dateModified" datetime="2020-09-13T20:37:59+08:00">2020-09-13</time>
+      </span>
     <span class="post-meta-item">
       <span class="post-meta-item-icon">
         <i class="far fa-folder"></i>
       </span>
       <span class="post-meta-item-text">In</span>
         <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-          <a href="/categories/shell%E8%84%9A%E6%9C%AC/" itemprop="url" rel="index"><span itemprop="name">shell脚本</span></a>
+          <a href="/categories/kernel-debug/" itemprop="url" rel="index"><span itemprop="name">kernel debug</span></a>
         </span>
     </span>
 
@@ -293,43 +301,19 @@
     
     
     <div class="post-body" itemprop="articleBody">
-        <p>总有那么几条经常使用，但有比较难记住的命令，做个记录。</p>
-<ol>
-<li>ln 创建软连接</li>
-</ol>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">ln -s   实际文件&#x2F;目录          软链接文件&#x2F;目录</span><br><span class="line">ln -s &#x2F;usr&#x2F;sbin&#x2F;trace-bpfcc &#x2F;usr&#x2F;bin&#x2F;trace</span><br><span class="line"></span><br><span class="line">ln -s   实际文件          硬链接文件 &#x2F;&#x2F;目录无法使用硬链接</span><br><span class="line">ln  &#x2F;usr&#x2F;sbin&#x2F;trace-bpfcc &#x2F;usr&#x2F;bin&#x2F;trace</span><br></pre></td></tr></table></figure>
+        <p>实际工作中经常会遇到一些某个业务的重要的配置文件被删除了，或者某个重要的配置文件被串改了，而这个文件目录 往往又隐藏很深，不太可能被别的业务删除或者篡改，那么如何找到删除文件或者篡改文件的真凶呢。</p>
+<p>首先删除一个文件我们一般会使用rm 来做，对应vfs层的就是 unlink方法，可以对unlink跟踪。<br>这里当然可以使用 ftrace工具，但是我已经习惯使用 bpftrace了<br>如下对 unlink的操作进行跟踪</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">sh@ubuntu[root]:&#x2F;home&#x2F;rlk&#x2F;workspace&#x2F;test# bpftrace -e &#39;kprobe:vfs_unlink &#123;printf(&quot;pid: [%d], comm: [%s]\n&quot;, pid, comm)&#125;&#39;</span><br><span class="line">Attaching 1 probe...</span><br><span class="line">pid: [95301], comm: [rm]</span><br></pre></td></tr></table></figure>
 
-<ol start="2">
-<li>tar</li>
-</ol>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"></span><br></pre></td></tr></table></figure>
+<p>这样的打印信息会很多，如果是在生产环境上，有用的信息往往来不及筛选就会被淹没掉，这时可以加上对删除文件名的限制过滤</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">sh@ubuntu[root]:&#x2F;sys&#x2F;kernel&#x2F;debug&#x2F;tracing# cd events&#x2F;syscalls&#x2F;sys_enter_unlinkat</span><br><span class="line">sh@ubuntu[root]:&#x2F;sys&#x2F;kernel&#x2F;debug&#x2F;tracing&#x2F;events&#x2F;syscalls&#x2F;sys_enter_unlinkat# ls</span><br><span class="line">enable  filter  format  hist  id  trigger</span><br><span class="line">sh@ubuntu[root]:&#x2F;sys&#x2F;kernel&#x2F;debug&#x2F;tracing&#x2F;events&#x2F;syscalls&#x2F;sys_enter_unlinkat# cat format </span><br><span class="line">name: sys_enter_unlinkat</span><br><span class="line">ID: 722</span><br><span class="line">format:</span><br><span class="line">	field:unsigned short common_type;	offset:0;	size:2;	signed:0;</span><br><span class="line">	field:unsigned char common_flags;	offset:2;	size:1;	signed:0;</span><br><span class="line">	field:unsigned char common_preempt_count;	offset:3;	size:1;	signed:0;</span><br><span class="line">	field:int common_pid;	offset:4;	size:4;	signed:1;</span><br><span class="line"></span><br><span class="line">	field:int __syscall_nr;	offset:8;	size:4;	signed:1;</span><br><span class="line">	field:int dfd;	offset:16;	size:8;	signed:0;</span><br><span class="line">	field:const char * pathname;	offset:24;	size:8;	signed:0;</span><br><span class="line">	field:int flag;	offset:32;	size:8;	signed:0;</span><br><span class="line"></span><br><span class="line">print fmt: &quot;dfd: 0x%08lx, pathname: 0x%08lx, flag: 0x%08lx&quot;, ((unsigned long)(REC-&gt;dfd)), ((unsigned long)(REC-&gt;pathname)), ((unsigned long)(REC-&gt;flag))</span><br></pre></td></tr></table></figure>
 
-<ol start="3">
-<li><p>zip</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">zip 解压 aaa.zip文件</span><br><span class="line"></span><br><span class="line">zip 将 aaa文件夹压缩成为 aaa.zip</span><br><span class="line"></span><br><span class="line">zip 将 aaa文件压缩为 aaa.zip</span><br><span class="line"></span><br><span class="line">zip 将 aaa bbb 文件压缩为 aaa.zip</span><br></pre></td></tr></table></figure>
-</li>
-<li><p>3</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">&#96;&#96;&#96;</span><br><span class="line"></span><br><span class="line">5. 3</span><br><span class="line"></span><br></pre></td></tr></table></figure>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line">6. 3</span><br><span class="line"></span><br></pre></td></tr></table></figure>
-<pre><code></code></pre>
-</li>
-<li><p>3</p>
-</li>
-<li><p>3</p>
-</li>
-<li><p>3</p>
-</li>
-<li><p>3</p>
-</li>
-<li><p>3</p>
-</li>
-<li><p>3</p>
-</li>
-<li><p>3</p>
-</li>
-<li><p>3</p>
-</li>
-</ol>
+<p>可以看出 pathname 就是文件名，下面我们添加对文件名是asdf文件删除的监控，可以清晰的看到pid, comm, 删除的文件名</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">sh@ubuntu[root]:&#x2F;home&#x2F;rlk&#x2F;workspace&#x2F;test# bpftrace -e &#39;tracepoint:syscalls:sys_enter_unlinkat &#x2F;str(args-&gt;pathname) &#x3D;&#x3D; &quot;asdf&quot;&#x2F; &#123;printf(&quot;pid: [%d], comm: [%s], rm [%s]\n&quot;, pid, comm, str(args-&gt;pathname))&#125;&#39;</span><br><span class="line">Attaching 1 probe...</span><br><span class="line">pid: [95566], comm: [rm], rm [asdf]</span><br></pre></td></tr></table></figure>
+
+<p>这里需要注意 <code>str(args-&gt;pathname)</code> 的用法</p>
+<p>这里我们使用的是tracepoint来跟踪的，如果你的机器上支持BTF，使用kprobe来跟踪也是可以的，过滤相关条件的时候比较复杂。</p>
+<p>同理记录篡改文件也很好办，可以跟踪有哪些进程写入了这个文件或者打开了这个文件，都是有嫌疑的。</p>
 
     </div>
 
@@ -339,21 +323,20 @@
 
     <footer class="post-footer">
           <div class="post-tags">
-              <a href="/tags/shell/" rel="tag"># shell</a>
+              <a href="/tags/bpf/" rel="tag"># bpf</a>
+              <a href="/tags/bpftrace/" rel="tag"># bpftrace</a>
+              <a href="/tags/%E9%97%AE%E9%A2%98%E7%B3%BB%E7%BB%9F/" rel="tag"># 问题系统</a>
           </div>
 
         
 
           <div class="post-nav">
             <div class="post-nav-item">
-                <a href="/2020/09/12/%E5%86%85%E6%A0%B8%E8%A7%82%E6%B5%8B/bpf%E7%9B%B8%E5%85%B3/bpftrace/" rel="prev" title="bpftrace">
-                  <i class="fa fa-chevron-left"></i> bpftrace
+                <a href="/2020/09/14/%E5%B9%B6%E5%8F%91%E9%97%AE%E9%A2%98/mmap_sem%E5%8F%AF%E6%89%A9%E5%B1%95%E9%97%AE%E9%A2%98/" rel="prev" title="mmap_sem可扩展问题">
+                  <i class="fa fa-chevron-left"></i> mmap_sem可扩展问题
                 </a>
             </div>
             <div class="post-nav-item">
-                <a href="/2020/09/13/%E5%86%85%E6%A0%B8%E8%A7%82%E6%B5%8B/%E6%80%A7%E8%83%BD%E7%A8%B3%E5%AE%9A%E6%80%A7/60s%E5%AE%9A%E4%BD%8D%E5%86%85%E6%A0%B8%E6%80%A7%E8%83%BD%E7%93%B6%E9%A2%88/" rel="next" title="60s定位内核性能瓶颈">
-                  60s定位内核性能瓶颈 <i class="fa fa-chevron-right"></i>
-                </a>
             </div>
           </div>
     </footer>
