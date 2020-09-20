@@ -189,7 +189,7 @@
       <div class="site-state-item site-state-posts">
           <a href="/archives/">
         
-          <span class="site-state-item-count">18</span>
+          <span class="site-state-item-count">19</span>
           <span class="site-state-item-name">posts</span>
         </a>
       </div>
@@ -202,7 +202,7 @@
       <div class="site-state-item site-state-tags">
             <a href="/tags/">
           
-        <span class="site-state-item-count">30</span>
+        <span class="site-state-item-count">32</span>
         <span class="site-state-item-name">tags</span></a>
       </div>
   </nav>
@@ -233,6 +233,104 @@
       
 
       
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
+    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/09/11/%E5%B9%B6%E5%8F%91%E9%97%AE%E9%A2%98/%E6%AD%BB%E9%94%81%E9%97%AE%E9%A2%98/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="Su Hui">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liulangren 读核之旅">
+    </span>
+
+    
+    
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/2020/09/11/%E5%B9%B6%E5%8F%91%E9%97%AE%E9%A2%98/%E6%AD%BB%E9%94%81%E9%97%AE%E9%A2%98/" class="post-title-link" itemprop="url">linux内核死锁检测</a>
+        </h2>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">Posted on</span>
+
+      <time title="Created: 2020-09-11 14:47:40" itemprop="dateCreated datePublished" datetime="2020-09-11T14:47:40+08:00">2020-09-11</time>
+    </span>
+      <span class="post-meta-item">
+        <span class="post-meta-item-icon">
+          <i class="far fa-calendar-check"></i>
+        </span>
+        <span class="post-meta-item-text">Edited on</span>
+        <time title="Modified: 2020-09-07 01:54:59" itemprop="dateModified" datetime="2020-09-07T01:54:59+08:00">2020-09-07</time>
+      </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">In</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/linux%E5%86%85%E6%A0%B8/" itemprop="url" rel="index"><span itemprop="name">linux内核</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+          <h2 id="死锁类型"><a href="#死锁类型" class="headerlink" title="死锁类型"></a>死锁类型</h2><p>大概可以将linux内核中死锁分为以下两类</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">1. AA型死锁</span><br><span class="line">2. AB-BA型死锁</span><br></pre></td></tr></table></figure>
+
+<h2 id="AA型死锁"><a href="#AA型死锁" class="headerlink" title="AA型死锁"></a>AA型死锁</h2><p>AA型死锁主要是两个代码路径竞争同一把锁造成的：</p>
+<ol>
+<li>进程连续连续两次申请同一把锁就会导致在在第二次申请这把锁的时候死锁</li>
+<li>或者是读写锁，同一代码路径先申请了读锁，然后在读锁没有释放的前提下又申请了写者锁，这就会导致在申请写者锁的时候发生死锁</li>
+<li>或者在具有抢占关系的代码路径上申请同一把锁，比如进程申请了一把锁A，然后发生了中断或者软中断都会抢占进程，如果在中断或者软中断中又去申请这把锁就会导致死锁的发生</li>
+</ol>
+<h2 id="AB-BA型死锁"><a href="#AB-BA型死锁" class="headerlink" title="AB-BA型死锁"></a>AB-BA型死锁</h2><p>AB-BA型死锁 主要是对两把锁加锁顺序不确定导致的死锁：</p>
+<ol>
+<li>假设进程1，2执行过程中都需要持有AB两个锁，进程1线申请到了A锁，进程2申请到了B锁，此时进程1尝试去获取B锁，进程2尝试去获取A锁都无法成功，进程1等待进程2使用完B锁，进程2等待进程1使用完A锁，这就导致了ABBA的死锁情况</li>
+<li>还有一种情形是和中断上下文中，进程1需要顺序持有A-B两把锁，进程2会持有B锁，中断会持有A锁。假设T时刻进程1已经持有了A锁，进程2已经持有了B锁，然后进程A去尝试获取B锁，此时中断打断了进程2，试图获取A锁，这样又完美的形成了AB-BA的死锁</li>
+</ol>
+<p>想要避免AB-BA死锁的问题，最简单有效的一个办法就是定义获取锁的顺序，不要在不同代码路径下获取不同锁的顺序不一样，破坏死锁的条件。如果大家获取锁的顺序都是一样的，死锁概率会降低很多。</p>
+<h2 id="lockdep"><a href="#lockdep" class="headerlink" title="lockdep"></a>lockdep</h2><p>其实想要在内核成千上百个锁中定义好持有锁的顺序，并且coder严格按照要求来执行的可能性很小，内核同时也提供了死锁检测的工具lockdep。<br>开启这个工具只需要开启下面这两个宏</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">CONFIG_PROVE_LOCKING&#x3D;y</span><br><span class="line">CONFIG_DEBUG_LOCK_ALLOC&#x3D;y</span><br></pre></td></tr></table></figure>
+<p>在menuconfig之后会自动打开CONFIG_LOCKDEP这个宏，重新编译替换内核就可以检测kernel中的死锁问题了..</p>
+<h2 id="lockdep实现原理"><a href="#lockdep实现原理" class="headerlink" title="lockdep实现原理"></a>lockdep实现原理</h2><p>开个头，后面好好分析一下-=-</p>
+<h2 id="案列分析"><a href="#案列分析" class="headerlink" title="案列分析"></a>案列分析</h2><p>开个头，后面好好分析一下-=-</p>
+
+      
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+        <div class="post-eof"></div>
+      
+    </footer>
+  </article>
+  
+  
+  
+
       
   
   
