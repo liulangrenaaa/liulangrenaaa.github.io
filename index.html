@@ -189,7 +189,7 @@
       <div class="site-state-item site-state-posts">
           <a href="/archives/">
         
-          <span class="site-state-item-count">16</span>
+          <span class="site-state-item-count">18</span>
           <span class="site-state-item-name">posts</span>
         </a>
       </div>
@@ -202,7 +202,7 @@
       <div class="site-state-item site-state-tags">
             <a href="/tags/">
           
-        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-count">30</span>
         <span class="site-state-item-name">tags</span></a>
       </div>
   </nav>
@@ -233,6 +233,223 @@
       
 
       
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
+    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/09/20/%E5%B9%B6%E5%8F%91%E9%97%AE%E9%A2%98/softirq%E4%BD%95%E6%97%B6%E4%BC%9A%E8%A2%AB%E6%89%A7%E8%A1%8C/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="Su Hui">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liulangren 读核之旅">
+    </span>
+
+    
+    
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/2020/09/20/%E5%B9%B6%E5%8F%91%E9%97%AE%E9%A2%98/softirq%E4%BD%95%E6%97%B6%E4%BC%9A%E8%A2%AB%E6%89%A7%E8%A1%8C/" class="post-title-link" itemprop="url">softirq何时会被执行</a>
+        </h2>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">Posted on</span>
+
+      <time title="Created: 2020-09-20 14:47:40" itemprop="dateCreated datePublished" datetime="2020-09-20T14:47:40+08:00">2020-09-20</time>
+    </span>
+      <span class="post-meta-item">
+        <span class="post-meta-item-icon">
+          <i class="far fa-calendar-check"></i>
+        </span>
+        <span class="post-meta-item-text">Edited on</span>
+        <time title="Modified: 2020-09-21 00:42:02" itemprop="dateModified" datetime="2020-09-21T00:42:02+08:00">2020-09-21</time>
+      </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">In</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/linux%E5%86%85%E6%A0%B8/" itemprop="url" rel="index"><span itemprop="name">linux内核</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+          <p>很多人可能都知道中断irq，但是对软中断softfirq却比较陌生，软中断这个概念是纯软件意义上的，与中断依赖于硬件行为不一样。在linux中，软中断主要用于执行irq中没有执行，但又不是很紧急的事情，现在linux内核中为每个CPU都分配了一个线程 <code>[ksoftirqd/n]</code>，用来执行软中断。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">sh@ubuntu[root]:&#x2F;sys&#x2F;kernel&#x2F;debug&#x2F;tracing# ps -aux |grep soft</span><br><span class="line">root          10  0.0  0.0      0     0 ?        S    9月19   0:19 [ksoftirqd&#x2F;0]</span><br><span class="line">root          18  0.0  0.0      0     0 ?        S    9月19   0:17 [ksoftirqd&#x2F;1]</span><br><span class="line">root          24  0.0  0.0      0     0 ?        S    9月19   0:18 [ksoftirqd&#x2F;2]</span><br><span class="line">root          30  0.0  0.0      0     0 ?        S    9月19   0:21 [ksoftirqd&#x2F;3]</span><br></pre></td></tr></table></figure>
+
+<p>具体软中断分以下几种</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">enum&#123;</span><br><span class="line">	HI_SOFTIRQ&#x3D;0,</span><br><span class="line">	TIMER_SOFTIRQ,</span><br><span class="line">	NET_TX_SOFTIRQ,</span><br><span class="line">	NET_RX_SOFTIRQ,</span><br><span class="line">	BLOCK_SOFTIRQ,</span><br><span class="line">	IRQ_POLL_SOFTIRQ,</span><br><span class="line">	TASKLET_SOFTIRQ,</span><br><span class="line">	SCHED_SOFTIRQ,</span><br><span class="line">	HRTIMER_SOFTIRQ, &#x2F;* Unused, but kept as tools rely on the numbering. Sigh! *&#x2F;</span><br><span class="line">	RCU_SOFTIRQ,    &#x2F;* Preferable RCU should always be the last softirq *&#x2F;</span><br><span class="line">	NR_SOFTIRQS</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<p>通过 <code>open_softirq</code> 初始化</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">static struct softirq_action softirq_vec[NR_SOFTIRQS] __cacheline_aligned_in_smp;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">void open_softirq(int nr, void (*action)(struct softirq_action *))</span><br><span class="line">&#123;</span><br><span class="line">	softirq_vec[nr].action &#x3D; action;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>触发软中断的时候通过 <code>raise_softirq</code> 来触发</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">void raise_softirq(unsigned int nr)</span><br><span class="line">&#123;</span><br><span class="line">	unsigned long flags;</span><br><span class="line"></span><br><span class="line">	local_irq_save(flags);</span><br><span class="line">	raise_softirq_irqoff(nr);</span><br><span class="line">	local_irq_restore(flags);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>但tasklet机制直接使用了 <code>raise_softirq_irqoff</code>，搜索代码可以发现其他类型的softirq也基本都是用 <code>raise_softirq_irqoff</code> 触发。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">static void __tasklet_schedule_common(struct tasklet_struct *t,</span><br><span class="line">				      struct tasklet_head __percpu *headp,</span><br><span class="line">				      unsigned int softirq_nr)</span><br><span class="line">&#123;</span><br><span class="line">	struct tasklet_head *head;</span><br><span class="line">	unsigned long flags;</span><br><span class="line"></span><br><span class="line">	local_irq_save(flags);</span><br><span class="line">	head &#x3D; this_cpu_ptr(headp);</span><br><span class="line">	t-&gt;next &#x3D; NULL;</span><br><span class="line">	*head-&gt;tail &#x3D; t;</span><br><span class="line">	head-&gt;tail &#x3D; &amp;(t-&gt;next);</span><br><span class="line">	raise_softirq_irqoff(softirq_nr);</span><br><span class="line">	local_irq_restore(flags);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>来看下 <code>raise_softirq_irqoff</code> 实现，</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">#define local_softirq_pending_ref irq_stat.__softirq_pending</span><br><span class="line">#define or_softirq_pending(x)	(__this_cpu_or(local_softirq_pending_ref, (x)))</span><br><span class="line"></span><br><span class="line">void __raise_softirq_irqoff(unsigned int nr)</span><br><span class="line">&#123;</span><br><span class="line">	trace_softirq_raise(nr);       &#x2F;&#x2F; 软中断 raise 的 tracepoint 点</span><br><span class="line">	or_softirq_pending(1UL &lt;&lt; nr); &#x2F;&#x2F; 设置当前cpu的软中断pending状态</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">inline void raise_softirq_irqoff(unsigned int nr)</span><br><span class="line">&#123;</span><br><span class="line">	__raise_softirq_irqoff(nr);</span><br><span class="line">	if (!in_interrupt())</span><br><span class="line">		wakeup_softirqd(); &#x2F;&#x2F;如果不是中断上下文，就需要唤醒 ksoftirqd来执行相关软中断，这也保证了在线程上下文中软中断可以得到较快执行</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>__raise_softirq_irqoff 仅仅是设置 __softirq_pending 标志位，这有两个作用</p>
+<ol>
+<li>如果当前是中断irq上下文，在 irq_exit 之后，检查 local_softirq_pending，判断有软中断需要执行</li>
+<li>如果当前是线程上下文，在 ksoftirq 线程中检查标志位，最后执行相关的软中断</li>
+<li>如果当前在临界区上，在打开中断时，可以检测pending的软中断如何去执行</li>
+</ol>
+<p>irq_exit的情况</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line">static inline void invoke_softirq(void)</span><br><span class="line">&#123; &#x2F;&#x2F;不考虑软中断强制线程化，简化代码</span><br><span class="line">	if (ksoftirqd_running(local_softirq_pending()))</span><br><span class="line">		return;</span><br><span class="line">   __do_softirq();</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">void irq_exit(void)  </span><br><span class="line">&#123;</span><br><span class="line">#ifndef __ARCH_IRQ_EXIT_IRQS_DISABLED</span><br><span class="line">	local_irq_disable();</span><br><span class="line">#else</span><br><span class="line">	lockdep_assert_irqs_disabled();</span><br><span class="line">#endif</span><br><span class="line">	account_irq_exit_time(current);</span><br><span class="line">	preempt_count_sub(HARDIRQ_OFFSET);</span><br><span class="line">	if (!in_interrupt() &amp;&amp; local_softirq_pending())</span><br><span class="line">		invoke_softirq();   &#x2F;&#x2F;在中断退出之后，如果有 pending的软中断，就需要执行 软中断</span><br><span class="line"></span><br><span class="line">	tick_irq_exit();</span><br><span class="line">	rcu_irq_exit();</span><br><span class="line">	trace_hardirq_exit(); &#x2F;* must be last! *&#x2F;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>ksoftirq线程</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">static void run_ksoftirqd(unsigned int cpu)</span><br><span class="line">&#123;</span><br><span class="line">	local_irq_disable();</span><br><span class="line">	if (local_softirq_pending()) &#123;</span><br><span class="line">		&#x2F;*</span><br><span class="line">		 * We can safely run softirq on inline stack, as we are not deep</span><br><span class="line">		 * in the task stack here.</span><br><span class="line">		 *&#x2F;</span><br><span class="line">		__do_softirq();</span><br><span class="line">		local_irq_enable();</span><br><span class="line">		cond_resched();</span><br><span class="line">		return;</span><br><span class="line">	&#125;</span><br><span class="line">	local_irq_enable();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>开启中断的情况下</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">void __local_bh_enable_ip(unsigned long ip, unsigned int cnt)</span><br><span class="line">&#123;</span><br><span class="line">	WARN_ON_ONCE(in_irq());</span><br><span class="line">	lockdep_assert_irqs_enabled();</span><br><span class="line">	preempt_count_sub(cnt - 1);</span><br><span class="line">	if (unlikely(!in_interrupt() &amp;&amp; local_softirq_pending())) &#123;</span><br><span class="line">        &#x2F;&#x2F; 如果不在中断中，且 softirq 有pending的位，就需要执行软中断</span><br><span class="line">		do_softirq();</span><br><span class="line">	&#125;</span><br><span class="line">	preempt_count_dec();</span><br><span class="line">	preempt_check_resched();</span><br><span class="line">&#125;</span><br><span class="line">EXPORT_SYMBOL(__local_bh_enable_ip);</span><br><span class="line"></span><br><span class="line">static inline void local_bh_enable(void)</span><br><span class="line">&#123;</span><br><span class="line">	__local_bh_enable_ip(_THIS_IP_, SOFTIRQ_DISABLE_OFFSET);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h2 id="do-softirq"><a href="#do-softirq" class="headerlink" title="__do_softirq"></a>__do_softirq</h2><p>不管是退出中断时执行软中断，还是在ksoftirqd中執行软中断，最终都会执行到 <code>__do_softirq</code> 这个函数</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br></pre></td><td class="code"><pre><span class="line">#define MAX_SOFTIRQ_TIME  msecs_to_jiffies(2)       &#x2F;&#x2F;2ms</span><br><span class="line">#define MAX_SOFTIRQ_RESTART 10</span><br><span class="line"></span><br><span class="line">asmlinkage __visible void __softirq_entry __do_softirq(void)</span><br><span class="line">&#123;</span><br><span class="line">	unsigned long end &#x3D; jiffies + MAX_SOFTIRQ_TIME;</span><br><span class="line">	unsigned long old_flags &#x3D; current-&gt;flags;</span><br><span class="line">	int max_restart &#x3D; MAX_SOFTIRQ_RESTART;</span><br><span class="line">	struct softirq_action *h;</span><br><span class="line">	bool in_hardirq;</span><br><span class="line">	__u32 pending;</span><br><span class="line">	int softirq_bit;</span><br><span class="line"></span><br><span class="line">	&#x2F;*</span><br><span class="line">	 * Mask out PF_MEMALLOC as the current task context is borrowed for the</span><br><span class="line">	 * softirq. A softirq handled, such as network RX, might set PF_MEMALLOC</span><br><span class="line">	 * again if the socket is related to swapping.</span><br><span class="line">	 *&#x2F;</span><br><span class="line">	current-&gt;flags &amp;&#x3D; ~PF_MEMALLOC;</span><br><span class="line"></span><br><span class="line">	pending &#x3D; local_softirq_pending();</span><br><span class="line">	account_irq_enter_time(current);</span><br><span class="line"></span><br><span class="line">	__local_bh_disable_ip(_RET_IP_, SOFTIRQ_OFFSET);</span><br><span class="line">	in_hardirq &#x3D; lockdep_softirq_start();</span><br><span class="line"></span><br><span class="line">restart:</span><br><span class="line">	&#x2F;* Reset the pending bitmask before enabling irqs *&#x2F;</span><br><span class="line">	set_softirq_pending(0);</span><br><span class="line"></span><br><span class="line">	local_irq_enable();</span><br><span class="line"></span><br><span class="line">	h &#x3D; softirq_vec;</span><br><span class="line"></span><br><span class="line">	while ((softirq_bit &#x3D; ffs(pending))) &#123; &#x2F;&#x2F;循环执行 pending的软中断</span><br><span class="line">		unsigned int vec_nr;</span><br><span class="line">		int prev_count;</span><br><span class="line"></span><br><span class="line">		h +&#x3D; softirq_bit - 1;</span><br><span class="line"></span><br><span class="line">		vec_nr &#x3D; h - softirq_vec;</span><br><span class="line">		prev_count &#x3D; preempt_count();</span><br><span class="line"></span><br><span class="line">		kstat_incr_softirqs_this_cpu(vec_nr);</span><br><span class="line"></span><br><span class="line">		trace_softirq_entry(vec_nr);  &#x2F;&#x2F;trace 软中断执行</span><br><span class="line">		h-&gt;action(h);</span><br><span class="line">		trace_softirq_exit(vec_nr);   &#x2F;&#x2F;trace 软中断退出</span><br><span class="line">		if (unlikely(prev_count !&#x3D; preempt_count())) &#123;</span><br><span class="line">			pr_err(&quot;huh, entered softirq %u %s %p with preempt_count %08x, exited with %08x?\n&quot;,</span><br><span class="line">			       vec_nr, softirq_to_name[vec_nr], h-&gt;action,</span><br><span class="line">			       prev_count, preempt_count());</span><br><span class="line">			preempt_count_set(prev_count);</span><br><span class="line">		&#125;</span><br><span class="line">		h++;</span><br><span class="line">		pending &gt;&gt;&#x3D; softirq_bit;</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	if (__this_cpu_read(ksoftirqd) &#x3D;&#x3D; current)</span><br><span class="line">		rcu_softirq_qs();</span><br><span class="line">	local_irq_disable();</span><br><span class="line"></span><br><span class="line">	pending &#x3D; local_softirq_pending();</span><br><span class="line">	if (pending) &#123;</span><br><span class="line">		if (time_before(jiffies, end) &amp;&amp; !need_resched() &amp;&amp;</span><br><span class="line">		    --max_restart) &#x2F;&#x2F;如果又有pending的软中断了，看看是否执行超时了 2ms，且 restart 不能超过10次</span><br><span class="line">			goto restart; &#x2F;&#x2F;未超时</span><br><span class="line"></span><br><span class="line">		wakeup_softirqd(); &#x2F;&#x2F;超时 2ms，唤醒softirqd去执行软中断</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	lockdep_softirq_end(in_hardirq);</span><br><span class="line">	account_irq_exit_time(current);</span><br><span class="line">	__local_bh_enable(SOFTIRQ_OFFSET);</span><br><span class="line">	WARN_ON_ONCE(in_interrupt());</span><br><span class="line">	current_restore_flags(old_flags, PF_MEMALLOC);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="do-softirq-1"><a href="#do-softirq-1" class="headerlink" title="do_softirq"></a>do_softirq</h2><p><code>do_softirq</code> 和 其他代码路径下执行软中断不一样，最终执行代码的是 <code>do_softirq_own_stack</code>，后续分析 -=-！</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line">void do_softirq_own_stack(void)</span><br><span class="line">&#123;</span><br><span class="line">	struct irq_stack *irqstk;</span><br><span class="line">	u32 *isp, *prev_esp;</span><br><span class="line"></span><br><span class="line">	irqstk &#x3D; __this_cpu_read(softirq_stack_ptr);</span><br><span class="line"></span><br><span class="line">	&#x2F;* build the stack frame on the softirq stack *&#x2F;</span><br><span class="line">	isp &#x3D; (u32 *) ((char *)irqstk + sizeof(*irqstk));</span><br><span class="line"></span><br><span class="line">	&#x2F;* Push the previous esp onto the stack *&#x2F;</span><br><span class="line">	prev_esp &#x3D; (u32 *)irqstk;</span><br><span class="line">	*prev_esp &#x3D; current_stack_pointer;</span><br><span class="line"></span><br><span class="line">	call_on_stack(__do_softirq, isp);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">asmlinkage __visible void do_softirq(void)</span><br><span class="line">&#123;</span><br><span class="line">	unsigned long flags;</span><br><span class="line">	local_irq_save(flags);</span><br><span class="line">	if (local_softirq_pending() &amp;&amp; !ksoftirqd_running(pending))</span><br><span class="line">		do_softirq_own_stack();</span><br><span class="line">	local_irq_restore(flags);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="如何观察softirq"><a href="#如何观察softirq" class="headerlink" title="如何观察softirq"></a>如何观察softirq</h2><p>在softirq处理过程中（非ksoftirqd线程），在该local cpu上的其他进程是无法进行调度的，不管进程有多高的优先级。因此这点势必对系统实时性造成影响。</p>
+<ol>
+<li>通过 <code>/proc/softirqs</code> ，配合 <code>watch</code> 命令来观察</li>
+<li>通过一些tracepoint来观察</li>
+</ol>
+
+      
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+        <div class="post-eof"></div>
+      
+    </footer>
+  </article>
+  
+  
+  
+
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
+    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/09/19/%E5%86%85%E6%A0%B8%E8%A7%82%E6%B5%8B/ftrace/ftrace%E5%8F%AF%E4%BB%A5%E7%9C%8B%E7%9A%84%E5%87%A0%E4%B8%AA%E5%8F%82%E6%95%B0/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="Su Hui">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liulangren 读核之旅">
+    </span>
+
+    
+    
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/2020/09/19/%E5%86%85%E6%A0%B8%E8%A7%82%E6%B5%8B/ftrace/ftrace%E5%8F%AF%E4%BB%A5%E7%9C%8B%E7%9A%84%E5%87%A0%E4%B8%AA%E5%8F%82%E6%95%B0/" class="post-title-link" itemprop="url">ftrace可以看的几个参数</a>
+        </h2>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">Posted on</span>
+
+      <time title="Created: 2020-09-19 10:00:40" itemprop="dateCreated datePublished" datetime="2020-09-19T10:00:40+08:00">2020-09-19</time>
+    </span>
+      <span class="post-meta-item">
+        <span class="post-meta-item-icon">
+          <i class="far fa-calendar-check"></i>
+        </span>
+        <span class="post-meta-item-text">Edited on</span>
+        <time title="Modified: 2020-09-20 19:46:45" itemprop="dateModified" datetime="2020-09-20T19:46:45+08:00">2020-09-20</time>
+      </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">In</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/linux%E5%86%85%E6%A0%B8/" itemprop="url" rel="index"><span itemprop="name">linux内核</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+          <p>Ftrace是一个内部跟踪器，旨在帮助系统的开发人员和设计人员查找内核内部发生的情况。 它可以用于调试或分析在用户空间之外发生的延迟和性能问题。</p>
+<p>尽管通常将ftrace视为函数跟踪器，但实际上它是多个分类跟踪实用程序的框架。 可以进行延迟跟踪，以检查禁用和启用中断之间的情况以及抢占以及从唤醒任务到计划任务的时间。</p>
+<p>ftrace的最常见用途之一是事件跟踪。 整个内核中有数百个静态事件点，可以通过tracefs文件系统启用这些事件点，以查看内核某些部分的情况。</p>
+<h2 id="irqsoff"><a href="#irqsoff" class="headerlink" title="irqsoff"></a>irqsoff</h2><p>我们都知道linux执行中断的时候都是关中断的，也不存在什么中断嵌套，中断被禁时CPU无法响应任何其他外部事件（除了NMI和SMI）。<br>万一某个驱动开发者代码没有注意将临界区设置的比较大，或者中断处理函数中执行了较多内容，就会直接导致调度延迟增大，直接表现为业务抖动较大，我们有没有什么手段观测这个关中断的时间长短呢?答案是肯定的：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">sh@ubuntu[root]:&#x2F;sys&#x2F;kernel&#x2F;debug&#x2F;tracing# cat &#x2F;sys&#x2F;kernel&#x2F;debug&#x2F;tracing&#x2F;available_tracers </span><br><span class="line">hwlat blk mmiotrace function_graph wakeup_dl wakeup_rt wakeup irqsoff function nop</span><br></pre></td></tr></table></figure>
+<p>irqsoff 这个 tracer 就是来完成这个使命的</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br></pre></td><td class="code"><pre><span class="line">sh@ubuntu[root]:~# echo 0 &gt; &#x2F;sys&#x2F;kernel&#x2F;debug&#x2F;tracing&#x2F;tracing_on </span><br><span class="line">sh@ubuntu[root]:~# echo irqsoff &gt; &#x2F;sys&#x2F;kernel&#x2F;debug&#x2F;tracing&#x2F;current_tracer</span><br><span class="line">sh@ubuntu[root]:~# echo 0 &gt; &#x2F;sys&#x2F;kernel&#x2F;debug&#x2F;tracing&#x2F;tracing_max_latency </span><br><span class="line">sh@ubuntu[root]:~# echo 1 &gt; &#x2F;sys&#x2F;kernel&#x2F;debug&#x2F;tracing&#x2F;tracing_on </span><br><span class="line">sh@ubuntu[root]:~# sleep 5</span><br><span class="line">sh@ubuntu[root]:~# echo 0 &gt; &#x2F;sys&#x2F;kernel&#x2F;debug&#x2F;tracing&#x2F;tracing_on </span><br><span class="line">sh@ubuntu[root]:~# cat &#x2F;sys&#x2F;kernel&#x2F;debug&#x2F;tracing&#x2F;trace | head -n 30</span><br><span class="line"># tracer: irqsoff</span><br><span class="line">#</span><br><span class="line"># irqsoff latency trace v1.1.5 on 5.4.44</span><br><span class="line"># --------------------------------------------------------------------</span><br><span class="line"># latency: 769 us, #15&#x2F;15, CPU#2 | (M:desktop VP:0, KP:0, SP:0 HP:0 #P:4)</span><br><span class="line">#    -----------------</span><br><span class="line">#    | task: kworker&#x2F;2:0-5528 (uid:0 nice:0 policy:0 rt_prio:0)</span><br><span class="line">#    -----------------</span><br><span class="line">#  &#x3D;&gt; started at: e1000_update_stats</span><br><span class="line">#  &#x3D;&gt; ended at:   e1000_update_stats</span><br><span class="line">#</span><br><span class="line">#</span><br><span class="line">#                  _------&#x3D;&gt; CPU#            </span><br><span class="line">#                 &#x2F; _-----&#x3D;&gt; irqs-off        </span><br><span class="line">#                | &#x2F; _----&#x3D;&gt; need-resched    </span><br><span class="line">#                || &#x2F; _---&#x3D;&gt; hardirq&#x2F;softirq </span><br><span class="line">#                ||| &#x2F; _--&#x3D;&gt; preempt-depth   </span><br><span class="line">#                |||| &#x2F;     delay            </span><br><span class="line">#  cmd     pid   ||||| time  |   caller      </span><br><span class="line">#     \   &#x2F;      |||||  \    |   &#x2F;         </span><br><span class="line">kworker&#x2F;-5528    2d...    0us!: _raw_spin_lock_irqsave &lt;-e1000_update_stats</span><br><span class="line">kworker&#x2F;-5528    2d...  609us : e1000_read_phy_reg &lt;-e1000_update_stats</span><br><span class="line">kworker&#x2F;-5528    2d...  610us : _raw_spin_lock_irqsave &lt;-e1000_read_phy_reg</span><br><span class="line">kworker&#x2F;-5528    2d...  620us : __const_udelay &lt;-e1000_read_phy_reg</span><br><span class="line">kworker&#x2F;-5528    2d...  620us+: delay_tsc &lt;-__const_udelay</span><br><span class="line">kworker&#x2F;-5528    2d...  678us : _raw_spin_unlock_irqrestore &lt;-e1000_read_phy_reg</span><br><span class="line">kworker&#x2F;-5528    2d...  679us : e1000_read_phy_reg &lt;-e1000_update_stats</span><br><span class="line">kworker&#x2F;-5528    2d...  679us : _raw_spin_lock_irqsave &lt;-e1000_read_phy_reg</span><br><span class="line">kworker&#x2F;-5528    2d...  687us : __const_udelay &lt;-e1000_read_phy_reg</span><br><span class="line">kworker&#x2F;-5528    2d...  688us+: delay_tsc &lt;-__const_udelay</span><br><span class="line">kworker&#x2F;-5528    2d...  770us : tracer_hardirqs_on &lt;-e1000_update_stats</span><br><span class="line">kworker&#x2F;-5528    2d...  774us : &lt;stack trace&gt;</span><br><span class="line"> &#x3D;&gt; e1000_update_stats</span><br><span class="line"> &#x3D;&gt; e1000_watchdog</span><br><span class="line"> &#x3D;&gt; process_one_work</span><br><span class="line"> &#x3D;&gt; worker_thread</span><br><span class="line"> &#x3D;&gt; kthread</span><br><span class="line"> &#x3D;&gt; ret_from_fork</span><br><span class="line">sh@ubuntu[root]:~# cat &#x2F;sys&#x2F;kernel&#x2F;debug&#x2F;tracing&#x2F;tracing_max_latency </span><br><span class="line">769</span><br></pre></td></tr></table></figure>
+<p>可以看到 <code>tracing_max_latency</code> 是 769，意味着系统最长关中断时间就是 769us.<br>(要重置最大值，需要将0回显到tracing_max_latency中)</p>
+<p>这是未设置函数跟踪的结果 可以 <code>echo 1 &gt; /sys/kernel/debug/tracing/options/function-trace</code> 获取更详细输出</p>
+<h2 id="preemptoff"><a href="#preemptoff" class="headerlink" title="preemptoff"></a>preemptoff</h2><p>禁用抢占功能后，我们可能会收到中断，但无法抢占该任务，优先级较高的任务必须等待再次启用抢占功能，才能抢占优先级较低的任务。</p>
+<p>preemptoff跟踪程序将跟踪禁用抢占的位置。 与irqsoff跟踪器一样，它记录禁用了抢占的最大延迟。 preemptoff跟踪器的控制与irqsoff跟踪器非常相似。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br></pre></td><td class="code"><pre><span class="line"># echo preemptoff &gt; current_tracer</span><br><span class="line"># echo 1 &gt; tracing_on</span><br><span class="line"># echo 0 &gt; tracing_max_latency</span><br><span class="line"># ls -ltr</span><br><span class="line">[...]</span><br><span class="line"># echo 0 &gt; tracing_on</span><br><span class="line"># cat trace</span><br><span class="line"># tracer: preemptoff</span><br><span class="line">#</span><br><span class="line"># preemptoff latency trace v1.1.5 on 3.8.0-test+</span><br><span class="line"># --------------------------------------------------------------------</span><br><span class="line"># latency: 46 us, #4&#x2F;4, CPU#1 | (M:preempt VP:0, KP:0, SP:0 HP:0 #P:4)</span><br><span class="line">#    -----------------</span><br><span class="line">#    | task: sshd-1991 (uid:0 nice:0 policy:0 rt_prio:0)</span><br><span class="line">#    -----------------</span><br><span class="line">#  &#x3D;&gt; started at: do_IRQ</span><br><span class="line">#  &#x3D;&gt; ended at:   do_IRQ</span><br><span class="line">#</span><br><span class="line">#</span><br><span class="line">#                  _------&#x3D;&gt; CPU#</span><br><span class="line">#                 &#x2F; _-----&#x3D;&gt; irqs-off</span><br><span class="line">#                | &#x2F; _----&#x3D;&gt; need-resched</span><br><span class="line">#                || &#x2F; _---&#x3D;&gt; hardirq&#x2F;softirq</span><br><span class="line">#                ||| &#x2F; _--&#x3D;&gt; preempt-depth</span><br><span class="line">#                |||| &#x2F;     delay</span><br><span class="line">#  cmd     pid   ||||| time  |   caller</span><br><span class="line">#     \   &#x2F;      |||||  \    |   &#x2F;</span><br><span class="line">    sshd-1991    1d.h.    0us+: irq_enter &lt;-do_IRQ</span><br><span class="line">    sshd-1991    1d..1   46us : irq_exit &lt;-do_IRQ</span><br><span class="line">    sshd-1991    1d..1   47us+: trace_preempt_on &lt;-do_IRQ</span><br><span class="line">    sshd-1991    1d..1   52us : &lt;stack trace&gt;</span><br><span class="line"> &#x3D;&gt; sub_preempt_count</span><br><span class="line"> &#x3D;&gt; irq_exit</span><br><span class="line"> &#x3D;&gt; do_IRQ</span><br><span class="line"> &#x3D;&gt; ret_from_intr</span><br></pre></td></tr></table></figure>
+
+<h2 id="preemptirqsoff"><a href="#preemptirqsoff" class="headerlink" title="preemptirqsoff"></a>preemptirqsoff</h2><p>preemptirqsoff 是以上两者的和，会显示禁止 抢占或者中断的最长时间<br>比如</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">local_irq_disable();</span><br><span class="line">call_function_with_irqs_off();</span><br><span class="line">preempt_disable();</span><br><span class="line">call_function_with_irqs_and_preemption_off();</span><br><span class="line">local_irq_enable();</span><br><span class="line">call_function_with_preemption_off();</span><br><span class="line">preempt_enable();</span><br></pre></td></tr></table></figure>
+
+<h2 id="wakeup、wakeup-rt"><a href="#wakeup、wakeup-rt" class="headerlink" title="wakeup、wakeup_rt"></a>wakeup、wakeup_rt</h2><p>wakeup、wakeup_rt 是 trace一个进程从进入CPU的就绪队列到真正被执行的时间的一个tracer，即跟踪调度器的延迟。</p>
+<p>参考<a target="_blank" rel="noopener" href="https://www.kernel.org/doc/html/v4.18/trace/ftrace.html#irqsoff">ftrace 内核文档</a></p>
+
+      
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+        <div class="post-eof"></div>
+      
+    </footer>
+  </article>
+  
+  
+  
+
       
   
   
@@ -668,6 +885,100 @@
   
   
   <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
+    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/09/12/%E8%BF%9B%E7%A8%8B%E7%AE%A1%E7%90%86/lockup%E9%97%AE%E9%A2%98/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="Su Hui">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liulangren 读核之旅">
+    </span>
+
+    
+    
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/2020/09/12/%E8%BF%9B%E7%A8%8B%E7%AE%A1%E7%90%86/lockup%E9%97%AE%E9%A2%98/" class="post-title-link" itemprop="url">linux lockup问题</a>
+        </h2>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">Posted on</span>
+
+      <time title="Created: 2020-09-12 14:47:40" itemprop="dateCreated datePublished" datetime="2020-09-12T14:47:40+08:00">2020-09-12</time>
+    </span>
+      <span class="post-meta-item">
+        <span class="post-meta-item-icon">
+          <i class="far fa-calendar-check"></i>
+        </span>
+        <span class="post-meta-item-text">Edited on</span>
+        <time title="Modified: 2020-09-08 00:10:07" itemprop="dateModified" datetime="2020-09-08T00:10:07+08:00">2020-09-08</time>
+      </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">In</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/linux%E5%86%85%E6%A0%B8/" itemprop="url" rel="index"><span itemprop="name">linux内核</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+          <h2 id="lockup定义"><a href="#lockup定义" class="headerlink" title="lockup定义"></a>lockup定义</h2><p>lockup是指是指某段内核代码占着CPU不放。</p>
+<p>lockup分两种：hard lockup 与 soft lockup，区别是hard lockup是屏蔽系统中断情况下发生的。</p>
+<p>有几个概念需要澄清一下：</p>
+<ol>
+<li>发生lockup的一定是内核代码，因为用户态代码都是可以抢占的。</li>
+<li>在内核态代码中发生lockup时，一般伴随着 preempt_disable()或者local_irq_disable()，产生lockup 的基本条件是禁止抢占，当然禁止中断这种就更猛了</li>
+</ol>
+<h2 id="Soft-lockup"><a href="#Soft-lockup" class="headerlink" title="Soft lockup"></a>Soft lockup</h2><p>Soft lockup是指CPU被内核代码一直占用着，系统某个CPU上超过20s其他进程无法得到运行。<br>系统是如何检测 Soft lockup的呢？</p>
+<h3 id="实现机制"><a href="#实现机制" class="headerlink" title="实现机制"></a>实现机制</h3><p>设立涉及到几个概念：一般优先级的普通进程，最高优先级的watchdog/?内核线程，Hr-timer时钟中断，其中Hr-timer可以打断watchdog/?执行，watchdog/?可以打断普通优先级的进程执行。</p>
+<p>Soft lockup机制在初始化的时候会init一个 Hr-timer，定时执行<br>在执行过程中</p>
+<ol>
+<li>获取 percpu变量 watchdog_touch_ts 的值</li>
+<li>唤醒 watchdog/? 内核线程</li>
+<li>比较 当前timestamp 和 watchdog_touch_ts值</li>
+<li>内核线程会用当前的time_stamp 更新 watchdog_touch_ts</li>
+</ol>
+
+      
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+        <div class="post-eof"></div>
+      
+    </footer>
+  </article>
+  
+  
+  
+
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
     <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/09/12/%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7/%E7%BB%8F%E5%B8%B8%E5%BF%98%E8%AE%B0%E7%9A%84shell%E5%91%BD%E4%BB%A4/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
@@ -885,100 +1196,6 @@
   
   
   <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
-    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/09/12/%E8%BF%9B%E7%A8%8B%E7%AE%A1%E7%90%86/lockup%E9%97%AE%E9%A2%98/">
-
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="image" content="/images/avatar.gif">
-      <meta itemprop="name" content="Su Hui">
-      <meta itemprop="description" content="">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="liulangren 读核之旅">
-    </span>
-
-    
-    
-      <header class="post-header">
-        <h2 class="post-title" itemprop="name headline">
-          
-            <a href="/2020/09/12/%E8%BF%9B%E7%A8%8B%E7%AE%A1%E7%90%86/lockup%E9%97%AE%E9%A2%98/" class="post-title-link" itemprop="url">linux lockup问题</a>
-        </h2>
-
-        <div class="post-meta-container">
-          <div class="post-meta">
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-calendar"></i>
-      </span>
-      <span class="post-meta-item-text">Posted on</span>
-
-      <time title="Created: 2020-09-12 14:47:40" itemprop="dateCreated datePublished" datetime="2020-09-12T14:47:40+08:00">2020-09-12</time>
-    </span>
-      <span class="post-meta-item">
-        <span class="post-meta-item-icon">
-          <i class="far fa-calendar-check"></i>
-        </span>
-        <span class="post-meta-item-text">Edited on</span>
-        <time title="Modified: 2020-09-08 00:10:07" itemprop="dateModified" datetime="2020-09-08T00:10:07+08:00">2020-09-08</time>
-      </span>
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-folder"></i>
-      </span>
-      <span class="post-meta-item-text">In</span>
-        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-          <a href="/categories/linux%E5%86%85%E6%A0%B8/" itemprop="url" rel="index"><span itemprop="name">linux内核</span></a>
-        </span>
-    </span>
-
-  
-</div>
-
-        </div>
-      </header>
-
-    
-    
-    
-    <div class="post-body" itemprop="articleBody">
-          <h2 id="lockup定义"><a href="#lockup定义" class="headerlink" title="lockup定义"></a>lockup定义</h2><p>lockup是指是指某段内核代码占着CPU不放。</p>
-<p>lockup分两种：hard lockup 与 soft lockup，区别是hard lockup是屏蔽系统中断情况下发生的。</p>
-<p>有几个概念需要澄清一下：</p>
-<ol>
-<li>发生lockup的一定是内核代码，因为用户态代码都是可以抢占的。</li>
-<li>在内核态代码中发生lockup时，一般伴随着 preempt_disable()或者local_irq_disable()，产生lockup 的基本条件是禁止抢占，当然禁止中断这种就更猛了</li>
-</ol>
-<h2 id="Soft-lockup"><a href="#Soft-lockup" class="headerlink" title="Soft lockup"></a>Soft lockup</h2><p>Soft lockup是指CPU被内核代码一直占用着，系统某个CPU上超过20s其他进程无法得到运行。<br>系统是如何检测 Soft lockup的呢？</p>
-<h3 id="实现机制"><a href="#实现机制" class="headerlink" title="实现机制"></a>实现机制</h3><p>设立涉及到几个概念：一般优先级的普通进程，最高优先级的watchdog/?内核线程，Hr-timer时钟中断，其中Hr-timer可以打断watchdog/?执行，watchdog/?可以打断普通优先级的进程执行。</p>
-<p>Soft lockup机制在初始化的时候会init一个 Hr-timer，定时执行<br>在执行过程中</p>
-<ol>
-<li>获取 percpu变量 watchdog_touch_ts 的值</li>
-<li>唤醒 watchdog/? 内核线程</li>
-<li>比较 当前timestamp 和 watchdog_touch_ts值</li>
-<li>内核线程会用当前的time_stamp 更新 watchdog_touch_ts</li>
-</ol>
-
-      
-    </div>
-
-    
-    
-    
-
-    <footer class="post-footer">
-        <div class="post-eof"></div>
-      
-    </footer>
-  </article>
-  
-  
-  
-
-      
-  
-  
-  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
     <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/09/11/%E5%B9%B6%E5%8F%91%E9%97%AE%E9%A2%98/%E6%AD%BB%E9%94%81%E9%97%AE%E9%A2%98/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
@@ -1057,191 +1274,6 @@
 <h2 id="lockdep实现原理"><a href="#lockdep实现原理" class="headerlink" title="lockdep实现原理"></a>lockdep实现原理</h2><p>开个头，后面好好分析一下-=-</p>
 <h2 id="案列分析"><a href="#案列分析" class="headerlink" title="案列分析"></a>案列分析</h2><p>开个头，后面好好分析一下-=-</p>
 
-      
-    </div>
-
-    
-    
-    
-
-    <footer class="post-footer">
-        <div class="post-eof"></div>
-      
-    </footer>
-  </article>
-  
-  
-  
-
-      
-  
-  
-  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
-    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/09/08/%E8%BF%9B%E7%A8%8B%E7%AE%A1%E7%90%86/hung_task%E9%97%AE%E9%A2%98/">
-
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="image" content="/images/avatar.gif">
-      <meta itemprop="name" content="Su Hui">
-      <meta itemprop="description" content="">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="liulangren 读核之旅">
-    </span>
-
-    
-    
-      <header class="post-header">
-        <h2 class="post-title" itemprop="name headline">
-          
-            <a href="/2020/09/08/%E8%BF%9B%E7%A8%8B%E7%AE%A1%E7%90%86/hung_task%E9%97%AE%E9%A2%98/" class="post-title-link" itemprop="url">linux hungtask问题</a>
-        </h2>
-
-        <div class="post-meta-container">
-          <div class="post-meta">
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-calendar"></i>
-      </span>
-      <span class="post-meta-item-text">Posted on</span>
-
-      <time title="Created: 2020-09-08 14:47:40" itemprop="dateCreated datePublished" datetime="2020-09-08T14:47:40+08:00">2020-09-08</time>
-    </span>
-      <span class="post-meta-item">
-        <span class="post-meta-item-icon">
-          <i class="far fa-calendar-check"></i>
-        </span>
-        <span class="post-meta-item-text">Edited on</span>
-        <time title="Modified: 2020-09-07 01:53:48" itemprop="dateModified" datetime="2020-09-07T01:53:48+08:00">2020-09-07</time>
-      </span>
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-folder"></i>
-      </span>
-      <span class="post-meta-item-text">In</span>
-        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-          <a href="/categories/linux%E5%86%85%E6%A0%B8/" itemprop="url" rel="index"><span itemprop="name">linux内核</span></a>
-        </span>
-    </span>
-
-  
-</div>
-
-        </div>
-      </header>
-
-    
-    
-    
-    <div class="post-body" itemprop="articleBody">
-          <h2 id="hungtask-定义"><a href="#hungtask-定义" class="headerlink" title="hungtask 定义"></a>hungtask 定义</h2><p>我们先看一段实际hungtask的 dmesg打印</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">[45312.818392] INFO: task ftpd:17682 blocked for more than 120 seconds.</span><br><span class="line">[45312.818470]       Tainted: G           OE     5.4.44 #1</span><br><span class="line">[45312.818472] &quot;echo 0 &gt; &#x2F;proc&#x2F;sys&#x2F;kernel&#x2F;hung_task_timeout_secs&quot; disables this message.</span><br><span class="line">[45312.818474] ftpd     D    0 17682      2 0x80004000</span><br><span class="line">[45312.818478] Call Trace:</span><br><span class="line">[45312.818698]  __schedule+0x2e3&#x2F;0x740</span><br><span class="line">[45312.818700]  schedule+0x42&#x2F;0xb0</span><br><span class="line">[45312.818702]  schedule_timeout+0x152&#x2F;0x2f0</span><br><span class="line">[45312.818755]  ? __next_timer_interrupt+0xe0&#x2F;0xe0</span><br><span class="line">[45312.818756]  msleep+0x2e&#x2F;0x40</span><br><span class="line">[45312.818760]  ftpd+0xaa&#x2F;0x170 [ftpd]</span><br><span class="line">[45312.818804]  kthread+0x104&#x2F;0x140</span><br><span class="line">[45312.818806]  ? 0xffffffffc05bb000</span><br><span class="line">[45312.818807]  ? kthread_park+0x90&#x2F;0x90</span><br><span class="line">[45312.818808]  ret_from_fork+0x35&#x2F;0x40</span><br></pre></td></tr></table></figure>
-<p>第一行就写了 pid为 17682的 task被 block阻塞了超过120s得不到执行，这种往往只是打印hungtask的线程 和 backtrace而已，实际中一般也不会导致panic，但是这种问题确是我们不能忽略的点，有可能这就是后面会出事故的点</p>
-<p>hungtask是内核的一种自我保护行为，在检测到一个线程长时间（可设置）处于D状态之后，会打印出线程相关信息和backtrace.</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">sh@ubuntu:&#x2F;var&#x2F;crash$ ps -aux |grep ftpd</span><br><span class="line">root       18007  0.0  0.0      0     0 ?        D    01:01   0:00 [ftpd]</span><br></pre></td></tr></table></figure>
-
-<p>D 状态也是进程的一种状态，对应内核中的 TASK_UNINTERRUPTIBLE 状态，一般等待磁盘IO的线程会设置为 TASK_UNINTERRUPTIBLE 状态，此状态无法wakeup，不管是 wake_up_process，还是kill -9去尝试杀死他 都不能将 TASK_UNINTERRUPTIBLE 状态线程唤醒，只有等他自己wakeup。</p>
-<p>同时linux内核在统计系统load的时候也将 TASK_UNINTERRUPTIBLE 状态的现场统计了进去，这样如果系统中出现D状态线程之后，整体系统的load就会较高，但是CPU loading却很小，几乎为0。这种统计方式也使得linux系统中loadavg这个参考指标的意义不是那么的大了。</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">sh@ubuntu:~$ top</span><br><span class="line">top - 01:04:54 up 13:09,  3 users,  load average: 2.05, 1.06, 0.49</span><br><span class="line">Tasks: 341 total,   1 running, 340 sleeping,   0 stopped,   0 zombie</span><br><span class="line">%Cpu(s):  0.1 us,  0.1 sy,  0.0 ni, 99.8 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st</span><br><span class="line">MiB Mem :   3716.5 total,    249.5 free,   2034.2 used,   1432.7 buff&#x2F;cache</span><br><span class="line">MiB Swap:   2048.0 total,   1557.2 free,    490.8 used.   1398.5 avail Mem </span><br><span class="line"></span><br><span class="line">    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND                                                                  </span><br><span class="line">   2253 rlk       20   0  299752  13200  10788 S   0.3   0.3   0:36.83 vmtoolsd                                                                 </span><br><span class="line">  18184 rlk       20   0   20700   4292   3384 R   0.3   0.1   0:00.08 top                                                                      </span><br></pre></td></tr></table></figure>
-
-<p>什么样的线程会处于D状态，即 TASK_UNINTERRUPTIBLE 状态呢?</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">1. 磁盘IO线程，在等待磁盘读入数据的过程中会将自己设置为 TASK_UNINTERRUPTIBLE 状态</span><br><span class="line">2. 还有一个 msleep()，这个API会先将线程状态设置为 TASK_UNINTERRUPTIBLE,再调用 schedule_timeouot()</span><br><span class="line"></span><br><span class="line">void msleep(unsigned int msecs)</span><br><span class="line">&#123;</span><br><span class="line">	unsigned long timeout &#x3D; msecs_to_jiffies(msecs) + 1;</span><br><span class="line"></span><br><span class="line">	while (timeout)</span><br><span class="line">		timeout &#x3D; schedule_timeout_uninterruptible(timeout);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<h2 id="hungtask-检测的实现"><a href="#hungtask-检测的实现" class="headerlink" title="hungtask 检测的实现"></a>hungtask 检测的实现</h2><p>上面讲了hungtask的原理，下面通过代码走读的方式来分析一下hungtask实现细节</p>
-<p>首先是init, hungtask机制在初始化的时候使用kthread_run 运行了一个 [khungtaskd]线程，hungtask 主要工作就是在 hungtaskd 线程中完成的</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br></pre></td><td class="code"><pre><span class="line">&#x2F;&#x2F;这是主要干活的</span><br><span class="line">static void check_hung_task(struct task_struct *t, unsigned long timeout)</span><br><span class="line">&#123;</span><br><span class="line">	unsigned long switch_count &#x3D; t-&gt;nvcsw + t-&gt;nivcsw;</span><br><span class="line"></span><br><span class="line">	if (switch_count !&#x3D; t-&gt;last_switch_count) &#123; &#x2F;&#x2F;此task 没有hungtask</span><br><span class="line">		t-&gt;last_switch_count &#x3D; switch_count;</span><br><span class="line">		t-&gt;last_switch_time &#x3D; jiffies;</span><br><span class="line">		return;</span><br><span class="line">	&#125;</span><br><span class="line">	if (time_is_after_jiffies(t-&gt;last_switch_time + timeout * HZ)) </span><br><span class="line">		return; &#x2F;&#x2F; 此task虽然hung了，但是还未到 120s &#x3D;&#x3D; 120 * HZ</span><br><span class="line"></span><br><span class="line">	if (sysctl_hung_task_warnings) &#123;</span><br><span class="line">		pr_err(&quot;INFO: task %s:%d blocked for more than %ld seconds.\n&quot;,</span><br><span class="line">		       t-&gt;comm, t-&gt;pid, (jiffies - t-&gt;last_switch_time) &#x2F; HZ);</span><br><span class="line">		xxxx &#x2F;&#x2F;提示信息</span><br><span class="line">		sched_show_task(t);</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">&#x2F;*</span><br><span class="line"> * Check whether a TASK_UNINTERRUPTIBLE does not get woken up for</span><br><span class="line"> * a really long time (120 seconds). If that happens, print out a warning.</span><br><span class="line"> *&#x2F;</span><br><span class="line">static void check_hung_uninterruptible_tasks(unsigned long timeout)</span><br><span class="line">&#123;</span><br><span class="line">	for_each_process_thread(g, t) &#123; &#x2F;&#x2F;遍历所有线程</span><br><span class="line">		if (t-&gt;state &#x3D;&#x3D; TASK_UNINTERRUPTIBLE) &#x2F;&#x2F; check当前线程是否处于D状态</span><br><span class="line">			check_hung_task(t, timeout);</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">&#x2F;*</span><br><span class="line"> * kthread which checks for tasks stuck in D state</span><br><span class="line"> *&#x2F;</span><br><span class="line">static int watchdog(void *dummy)</span><br><span class="line">&#123;</span><br><span class="line">	unsigned long hung_last_checked &#x3D; jiffies;</span><br><span class="line"></span><br><span class="line">	set_user_nice(current, 0);</span><br><span class="line"></span><br><span class="line">	for ( ; ; ) &#123; &#x2F;&#x2F; 是内核守护线程，所以直接一个for循环</span><br><span class="line">		unsigned long timeout &#x3D; sysctl_hung_task_timeout_secs;</span><br><span class="line">		unsigned long interval &#x3D; sysctl_hung_task_check_interval_secs;</span><br><span class="line">		long t;</span><br><span class="line"></span><br><span class="line">		if (interval &#x3D;&#x3D; 0)</span><br><span class="line">			interval &#x3D; timeout;</span><br><span class="line">		interval &#x3D; min_t(unsigned long, interval, timeout);</span><br><span class="line">		t &#x3D; hung_timeout_jiffies(hung_last_checked, interval);</span><br><span class="line">		if (t &lt;&#x3D; 0) &#123; &#x2F;&#x2F; 因为最后调用的是 schedule_timout_interruptible()，可以被唤醒，所以需要判断一下</span><br><span class="line">			if (!atomic_xchg(&amp;reset_hung_task, 0) &amp;&amp; !hung_detector_suspended)</span><br><span class="line">				check_hung_uninterruptible_tasks(timeout); &#x2F;&#x2F; 给所有线程检查是否处于D状态</span><br><span class="line">			hung_last_checked &#x3D; jiffies;</span><br><span class="line">			continue;</span><br><span class="line">		&#125;</span><br><span class="line">		schedule_timeout_interruptible(t);</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	return 0;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">static int __init hung_task_init(void) &#x2F;&#x2F; 初始化 khungtaskd，主体是 watchdog 函数</span><br><span class="line">&#123;</span><br><span class="line">	atomic_notifier_chain_register(&amp;panic_notifier_list, &amp;panic_block);</span><br><span class="line"></span><br><span class="line">	&#x2F;* Disable hung task detector on suspend *&#x2F;</span><br><span class="line">	pm_notifier(hungtask_pm_notify, 0);</span><br><span class="line"></span><br><span class="line">	watchdog_task &#x3D; kthread_run(watchdog, NULL, &quot;khungtaskd&quot;);</span><br><span class="line"></span><br><span class="line">	return 0;</span><br><span class="line">&#125;</span><br><span class="line">subsys_initcall(hung_task_init);</span><br></pre></td></tr></table></figure>
-<p>hungtask机制  如何判断这个线程一直没有进行切换得到运行呢？<br>主要用的是 task_struct的几个成员， nvcsw nivcsw last_switch_count<br>分别对应 非自愿上下文切换次数，自愿上下文切换次数，上次检查时上下文总切换次数。<br>通过在扫描时，比较这几个成员的值就可以清晰的看到在两次扫描之间有没有进行过上下文切换</p>
-<p>hungtask机制  如何判断这个线程超过120s都没有得到运行呢？<br>主要用的是 task_struct 的 last_switch_time 成员，利用 last_switch_time + timeout * HZ 和 jiffies 比较就可以轻易得出是否超过120s没有被调度过</p>
-<h2 id="hungtask-行为控制"><a href="#hungtask-行为控制" class="headerlink" title="hungtask 行为控制"></a>hungtask 行为控制</h2><p>一般系统中出现hungtask 可能都是短暂的异常，一般就打印一下 info 和 backtrace 即可，但是kernel也提供了相关的选择，比如可以选择hungtask的时候直接panic</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">echo 1 &gt;  &#x2F;proc&#x2F;sys&#x2F;kernel&#x2F;hung_task_panic # hungtask的时候直接 panic</span><br><span class="line">echo 120 &gt; &#x2F;proc&#x2F;sys&#x2F;kernel&#x2F;hung_task_timeout_secs # 一个任务处于D状态多久我们认为他是hungtask了</span><br><span class="line">echo 3 &gt; &#x2F;proc&#x2F;sys&#x2F;kernel&#x2F;hung_task_check_interval_secs # 内核多久进行一次hungtask扫描</span><br><span class="line">echo 7 &gt; &#x2F;proc&#x2F;sys&#x2F;kernel&#x2F;hung_task_warnings # 设置hungtask的warning的等级</span><br></pre></td></tr></table></figure>
-
-<p>其实这些控制参数都对应在上面代码中，由于篇幅原因，精简了一下代码</p>
-<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>一般hungtask出现，肯定会伴随着 D状态 的线程产生，且超过设定时间一直处于D状态，没有被调度过</p>
-<p>D状态，即 TASK_UNINTERRUPTIBLE 线程，一般产生于</p>
-<ol>
-<li>IO磁盘等待上</li>
-<li>msleep 调用接口上</li>
-<li>一些锁机制在等待锁的持有者的时候也会将线程状态设为 TASK_UNINTERRUPTIBLE，那样如果出现某些类型锁的死锁的时候也会出现 hungtask</li>
-</ol>
-
-      
-    </div>
-
-    
-    
-    
-
-    <footer class="post-footer">
-        <div class="post-eof"></div>
-      
-    </footer>
-  </article>
-  
-  
-  
-
-      
-  
-  
-  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
-    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/09/07/page_cache/page%20cache%E4%BA%A7%E7%94%9F/">
-
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="image" content="/images/avatar.gif">
-      <meta itemprop="name" content="Su Hui">
-      <meta itemprop="description" content="">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="liulangren 读核之旅">
-    </span>
-
-    
-    
-      <header class="post-header">
-        <h2 class="post-title" itemprop="name headline">
-          
-            <a href="/2020/09/07/page_cache/page%20cache%E4%BA%A7%E7%94%9F/" class="post-title-link" itemprop="url">page cache如何产生的</a>
-        </h2>
-
-        <div class="post-meta-container">
-          <div class="post-meta">
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-calendar"></i>
-      </span>
-      <span class="post-meta-item-text">Posted on</span>
-
-      <time title="Created: 2020-09-07 14:47:40" itemprop="dateCreated datePublished" datetime="2020-09-07T14:47:40+08:00">2020-09-07</time>
-    </span>
-      <span class="post-meta-item">
-        <span class="post-meta-item-icon">
-          <i class="far fa-calendar-check"></i>
-        </span>
-        <span class="post-meta-item-text">Edited on</span>
-        <time title="Modified: 2020-09-06 23:12:16" itemprop="dateModified" datetime="2020-09-06T23:12:16+08:00">2020-09-06</time>
-      </span>
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-folder"></i>
-      </span>
-      <span class="post-meta-item-text">In</span>
-        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-          <a href="/categories/linux%E5%86%85%E6%A0%B8/" itemprop="url" rel="index"><span itemprop="name">linux内核</span></a>
-        </span>
-    </span>
-
-  
-</div>
-
-        </div>
-      </header>
-
-    
-    
-    
-    <div class="post-body" itemprop="articleBody">
-          <h2 id="page-cache"><a href="#page-cache" class="headerlink" title="page cache"></a>page cache</h2>
       
     </div>
 
