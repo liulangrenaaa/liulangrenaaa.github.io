@@ -189,7 +189,7 @@
       <div class="site-state-item site-state-posts">
           <a href="/archives/">
         
-          <span class="site-state-item-count">19</span>
+          <span class="site-state-item-count">20</span>
           <span class="site-state-item-name">posts</span>
         </a>
       </div>
@@ -202,7 +202,7 @@
       <div class="site-state-item site-state-tags">
             <a href="/tags/">
           
-        <span class="site-state-item-count">32</span>
+        <span class="site-state-item-count">33</span>
         <span class="site-state-item-name">tags</span></a>
       </div>
   </nav>
@@ -233,6 +233,118 @@
       
 
       
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
+    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/09/22/%E7%94%9F%E6%B4%BB%E6%84%9F%E6%82%9F/%E8%AE%B0%E5%BD%95%E7%AC%AC%E4%B8%80%E4%B8%AAkernel%20patch/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="Su Hui">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liulangren 读核之旅">
+    </span>
+
+    
+    
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/2020/09/22/%E7%94%9F%E6%B4%BB%E6%84%9F%E6%82%9F/%E8%AE%B0%E5%BD%95%E7%AC%AC%E4%B8%80%E4%B8%AAkernel%20patch/" class="post-title-link" itemprop="url">记录第一个kernel patch</a>
+        </h2>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">Posted on</span>
+
+      <time title="Created: 2020-09-22 23:00:00" itemprop="dateCreated datePublished" datetime="2020-09-22T23:00:00+08:00">2020-09-22</time>
+    </span>
+      <span class="post-meta-item">
+        <span class="post-meta-item-icon">
+          <i class="far fa-calendar-check"></i>
+        </span>
+        <span class="post-meta-item-text">Edited on</span>
+        <time title="Modified: 2020-10-19 01:20:41" itemprop="dateModified" datetime="2020-10-19T01:20:41+08:00">2020-10-19</time>
+      </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">In</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/%E7%94%9F%E6%B4%BB%E6%84%9F%E6%82%9F/" itemprop="url" rel="index"><span itemprop="name">生活感悟</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+          <p>之前也提过两个patch给社区不过都被否了，很多大佬第一次提patch也是从改改标点开始的。<br>最近在看文件系统相关的代码，看到有个地方定义和注释不一致，可以给社区贡献一下，也顺便记录一下，搭建环境的过程（之前用的ubuntu18虚拟机被我删了…现在用ubuntu20重新搞一下）</p>
+<h2 id="修改代码，形成patch"><a href="#修改代码，形成patch" class="headerlink" title="修改代码，形成patch"></a>修改代码，形成patch</h2><p>其实我这个patch很简单，只是修改一个注释而已：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">sh@ubuntu:~&#x2F;workspace&#x2F;linux$ git diff</span><br><span class="line">diff --git a&#x2F;include&#x2F;linux&#x2F;jbd2.h b&#x2F;include&#x2F;linux&#x2F;jbd2.h</span><br><span class="line">index 08f904943ab2..a1ef05412acf 100644</span><br><span class="line">--- a&#x2F;include&#x2F;linux&#x2F;jbd2.h</span><br><span class="line">+++ b&#x2F;include&#x2F;linux&#x2F;jbd2.h</span><br><span class="line">@@ -452,8 +452,8 @@ struct jbd2_inode &#123;</span><br><span class="line"> struct jbd2_revoke_table_s;</span><br><span class="line"> </span><br><span class="line"> &#x2F;**</span><br><span class="line">- * struct handle_s - The handle_s type is the concrete type associated with</span><br><span class="line">- *     handle_t.</span><br><span class="line">+ * struct jbd2_journal_handle - The jbd2_journal_handle type is the concrete</span><br><span class="line">+ *     type associated with handle_t.</span><br><span class="line">  * @h_transaction: Which compound transaction is this update a part of?</span><br><span class="line">  * @h_journal: Which journal handle belongs to - used iff h_reserved set.</span><br><span class="line">  * @h_rsv_handle: Handle reserved for finishing the logical operation.</span><br><span class="line">sh@ubuntu:~&#x2F;workspace&#x2F;linux$ </span><br></pre></td></tr></table></figure>
+
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">sh@ubuntu:~&#x2F;workspace&#x2F;linux$ git log -1</span><br><span class="line">commit f8db1794205285c44d4b0b7d83f0fda1b9adec00 (HEAD -&gt; master)</span><br><span class="line">Author: Hui Su &lt;sh_def@163.com&gt;</span><br><span class="line">Date:   Tue Sep 22 23:28:05 2020 +0800</span><br><span class="line"></span><br><span class="line">    FIX the comment of struct jbd2_journal_handle</span><br><span class="line">    </span><br><span class="line">    the struct name was modified long ago, but the comment still</span><br><span class="line">    use struct handle_s.</span><br><span class="line">    </span><br><span class="line">    Signed-off-by: Hui Su &lt;sh_def@163.com&gt;</span><br><span class="line">sh@ubuntu:~&#x2F;workspace&#x2F;linux$</span><br><span class="line">sh@ubuntu:~&#x2F;workspace&#x2F;linux$</span><br><span class="line">sh@ubuntu:~&#x2F;workspace&#x2F;linux$ git format-patch HEAD^</span><br><span class="line">0001-FIX-the-comment-of-struct-jbd2_journal_handle.patch</span><br><span class="line">sh@ubuntu:~&#x2F;workspace&#x2F;linux$</span><br></pre></td></tr></table></figure>
+
+<h2 id="找到修改代码部分的maintainer"><a href="#找到修改代码部分的maintainer" class="headerlink" title="找到修改代码部分的maintainer"></a>找到修改代码部分的maintainer</h2><ol>
+<li>先用 <code>perl scripts/checkpatch.pl</code> 检查patch有无语法错误</li>
+<li>再用 <code>perl scripts/get_maintainer.pl</code> 获取patch修改的代码的 maintainer<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">sh@ubuntu:~&#x2F;workspace&#x2F;linux$ perl scripts&#x2F;checkpatch.pl  0001-FIX-the-comment-of-struct-jbd2_journal_handle.patch </span><br><span class="line">total: 0 errors, 0 warnings, 10 lines checked</span><br><span class="line"></span><br><span class="line">0001-FIX-the-comment-of-struct-jbd2_journal_handle.patch has no obvious style problems and is ready for submission.</span><br><span class="line">sh@ubuntu:~&#x2F;workspace&#x2F;linux$ </span><br><span class="line">sh@ubuntu:~&#x2F;workspace&#x2F;linux$ perl scripts&#x2F;get_maintainer.pl  0001-FIX-the-comment-of-struct-jbd2_journal_handle.patch </span><br><span class="line">&quot;Theodore Ts&#39;o&quot; &lt;tytso@mit.edu&gt; (maintainer:JOURNALLING LAYER FOR BLOCK DEVICES (JBD2))</span><br><span class="line">Jan Kara &lt;jack@suse.com&gt; (maintainer:JOURNALLING LAYER FOR BLOCK DEVICES (JBD2))</span><br><span class="line">linux-ext4@vger.kernel.org (open list:JOURNALLING LAYER FOR BLOCK DEVICES (JBD2))</span><br><span class="line">linux-kernel@vger.kernel.org (open list)</span><br><span class="line">sh@ubuntu:~&#x2F;workspace&#x2F;linux$</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<h2 id="安装配置邮件客户端"><a href="#安装配置邮件客户端" class="headerlink" title="安装配置邮件客户端"></a>安装配置邮件客户端</h2><p>安装下面工具</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">sudo apt-get install sendmail</span><br><span class="line">sudo apt  install mutt</span><br><span class="line">sudo apt install smtp</span><br></pre></td></tr></table></figure>
+
+<p>配置一下</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line">sh@ubuntu:~$ cat .muttrc </span><br><span class="line">set sendmail&#x3D;&quot;&#x2F;usr&#x2F;bin&#x2F;msmtp&quot;</span><br><span class="line">set envelope_from&#x3D;yes</span><br><span class="line">set realname&#x3D;&quot;Hui Su&quot;</span><br><span class="line">set from&#x3D;sh_def@163.com</span><br><span class="line">set use_from&#x3D;yes</span><br><span class="line">set envelope_from&#x3D;yes</span><br><span class="line">sh@ubuntu:~$ </span><br><span class="line">sh@ubuntu:~$ </span><br><span class="line">sh@ubuntu:~$ </span><br><span class="line">sh@ubuntu:~$ cat .msmtprc </span><br><span class="line">account default</span><br><span class="line">host smtp.163.com</span><br><span class="line">port 25</span><br><span class="line">from sh_def@163.com</span><br><span class="line">auth plain</span><br><span class="line">tls off</span><br><span class="line">user sh_def@163.com</span><br><span class="line">password #这里填授权码</span><br><span class="line">sh@ubuntu:~$ </span><br></pre></td></tr></table></figure>
+
+<p>测试一下</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">sh@ubuntu:~$ echo &quot;test&quot; |mutt -s &quot;my_first_test&quot; xxx@163.com</span><br><span class="line">sh@ubuntu:~$ echo &quot;test&quot; |mutt -s &quot;my_first_test&quot; xxxx@qq.com</span><br></pre></td></tr></table></figure>
+<p>吐槽一下，如果是第一次配置还是比较难搞的<br>参考<a target="_blank" rel="noopener" href="https://learnku.com/articles/13307/mutt-mail-sending">参考</a></p>
+<h2 id="git-配置"><a href="#git-配置" class="headerlink" title="git 配置"></a>git 配置</h2><p>这个应该在 git commit 阶段就已经配置好了，不赘述</p>
+<h2 id="推送patch"><a href="#推送patch" class="headerlink" title="推送patch"></a>推送patch</h2><p>只需要在各个邮箱之间加上,即可，不赘述</p>
+<h2 id="回复邮件"><a href="#回复邮件" class="headerlink" title="回复邮件"></a>回复邮件</h2><p>一般情况下社区大佬都会在几天到一周内回复你的patch邮件，如果你的patch需要修改，<br>然后你需要重新回复他们的邮件，这应该如何做呢</p>
+<ol>
+<li><p>第一步配置好fetchmail</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line">sh@ubuntu:~$ sudo apt install fetchmail </span><br><span class="line">[sudo] password for rlk: </span><br><span class="line">Reading package lists... Done</span><br><span class="line">Building dependency tree       </span><br><span class="line">Reading state information... Done</span><br><span class="line">fetchmail is already the newest version (6.4.2-2).</span><br><span class="line">0 upgraded, 0 newly installed, 0 to remove and 369 not upgraded.</span><br><span class="line">sh@ubuntu:~$ cat ~&#x2F;.fetchmailrc </span><br><span class="line">poll pop3.163.com</span><br><span class="line">protocol POP3</span><br><span class="line">user &quot;xxx@163.com&quot; </span><br><span class="line">password &quot;客户端授权码&quot;</span><br><span class="line">sh@ubuntu:~$ ll | grep rc | grep fetch</span><br><span class="line">-rwx------  1 rlk  rlk       83 10月  8 01:38 .fetchmailrc*</span><br><span class="line"></span><br><span class="line"># 接收邮件</span><br><span class="line">sh@ubuntu:~$ fetchmail  -v</span><br><span class="line">fetchmail: 6.4.2 querying pop3.163.com (protocol POP3) at 2020年10月08日 星期四 01时38分51秒: poll started</span><br><span class="line">Trying to connect to 220.181.12.110&#x2F;110...connected.</span><br><span class="line">fetchmail: POP3&lt; +OK Welcome to coremail Mail Pop3 Server (163coms[10774b260cc7a37d26d71b52404dcf5cs])</span><br><span class="line">fetchmail: POP3&gt; CAPA</span><br><span class="line">fetchmail: POP3&lt; +OK Capability list follows</span><br><span class="line">...............</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>查看接收的邮件<br>然后直接 mutt 就可以看到接收到的邮件了</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br></pre></td><td class="code"><pre><span class="line">q:Quit  d:Del  u:Undel  s:Save  m:Mail  r:Reply  g:Group  ?:Help</span><br><span class="line">   1 O + 9月 09 iovisor-dev@lis ( 378) [iovisor-dev] iovisor-dev@lists.iovisor.org Daily Summary</span><br><span class="line">   2   + 9月 22 Mail Delivery S (  50) Returned mail: see transcript for details</span><br><span class="line">   3   + 9月 22 Mail Delivery S (  50) Returned mail: see transcript for details</span><br><span class="line">   4 O F 9月 23 To sh_def@163.c (  75) [PATCH] mm,page_alloc: fix the count of free pages</span><br><span class="line">   5 O T 9月 23 Jan Kara        (  38) ┬─&gt;Re: [PATCH] FIX the comment of struct jbd2_journal_handle</span><br><span class="line">   6 O T 10月 03 Theodore Y. Ts&#39; (  11) └─&gt;Re: [PATCH] FIX the comment of struct jbd2_journal_handle</span><br><span class="line">   7 O + 9月 25 Josh Poimboeuf  (   3) ┬─&gt;Re: [PATCH] mm,kmemleak-test.c: move kmemleak-test.c to samples dir</span><br><span class="line">   8 O T 10月 05 Catalin Marinas (  12) └─&gt;Re: [PATCH] mm,kmemleak-test.c: move kmemleak-test.c to samples dir</span><br><span class="line">   9 O T 9月 25 akpm@linux-foun ( 313) + mmkmemleak-testc-move-kmemleak-testc-to-samples-dir.patch added to -mm tree</span><br><span class="line">  10 O T 9月 25 akpm@linux-foun (  92) + mm-fix-some-comments-in-page_allocc-and-mempolicyc.patch added to -mm tree</span><br><span class="line">  11 O T 9月 28 Ira Weiny       (  57) Re: [PATCH] mm&#x2F;vmalloc.c: check the addr first</span><br><span class="line">  12 O T 9月 28 akpm@linux-foun (  56) + mm-vmscan-fix-comments-for-isolate_lru_page.patch added to -mm tree</span><br><span class="line">  13 O T 9月 28 akpm@linux-foun (  59) + mm-vmallocc-update-the-comment-in-__vmalloc_area_node.patch added to -mm tree</span><br><span class="line">  14 O T 9月 28 akpm@linux-foun (  66) + mm-vmallocc-fix-the-comment-of-find_vm_area.patch added to -mm tree</span><br><span class="line">  15 O T 9月 28 akpm@linux-foun (  65) + mmz3fold-use-xx_zalloc-instead-xx_alloc-and-memset.patch added to -mm tree</span><br><span class="line">  16 O + 9月 29 haifei.wang@car ( 312) 阿里云&#x2F;今日头条Linux内核研发专家职位推荐</span><br><span class="line">  17 O T 9月 29 Dietmar Eggeman (  59) Re: [PATCH] sched,fair: use list_for_each_entry() in print_cfs_stats()</span><br><span class="line">  18 O + 9月 29 iovisor-dev@lis ( 378) [iovisor-dev] iovisor-dev@lists.iovisor.org Daily Summary</span><br><span class="line">  19 O T 9月 29 Steven Rostedt  (  61) Re: [PATCH] sched&#x2F;rt.c remove unnecessary parameter in pick_next_rt_entity</span><br><span class="line">  20 O T 9月 30 boris.ostrovsky (  13) Re: [PATCH] arch&#x2F;x86: fix some typos in xen_pagetable_p2m_free()</span><br><span class="line">  21 O T 10月 01 David Hildenbra (  57) Re: [PATCH] mm: fix some comments in page_alloc.c and mempolicy.c</span><br><span class="line">  22 O T 10月 01 Joe Perches     (  14) └─&gt;</span><br><span class="line">  23 O + 10月 01 iovisor-dev@lis ( 378) [iovisor-dev] iovisor-dev@lists.iovisor.org Daily Summary</span><br><span class="line">  24 O   10月 02 George Worden   (   1)</span><br><span class="line">  25 O T 10月 02 akpm@linux-foun (  81) [to-be-updated] mm-fix-some-comments-in-page_allocc-and-mempolicyc.patch removed from -mm tree</span><br><span class="line">  26 O + 10月 08 流浪人          (  75) Re:[PATCH] mm&#x2F;hugetlb.c: just use put_page_testzero() instead of page_count()</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">---Mutt: &#x2F;var&#x2F;mail&#x2F;rlk [Msgs:26 Old:24 Post:8 174K]---(threads&#x2F;date)---------------------------------------------------------------------------------------------------------------------------------(all)--</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>回复邮件<br><a target="_blank" rel="noopener" href="https://lkml.org/lkml/2020/9/22/824">我的第一个patch</a></p>
+</li>
+</ol>
+
+      
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+        <div class="post-eof"></div>
+      
+    </footer>
+  </article>
+  
+  
+  
+
       
   
   
@@ -557,7 +669,7 @@
   
   
   <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
-    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/09/18/memory/%E9%9D%A2%E8%AF%95/%E5%86%99%E4%B8%80%E4%B8%AA%E6%B6%88%E8%80%97%E5%AE%8C%E7%89%A9%E7%90%86%E5%86%85%E5%AD%98%E7%9A%84%E7%A8%8B%E5%BA%8F/%E5%AE%9A%E4%BD%8Dslub%E5%86%85%E5%AD%98%E6%B3%84%E9%9C%B2%E7%9A%84%E5%9B%9B%E7%A7%8D%E6%96%B9%E6%B3%95/">
+    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/09/18/memory/%E9%9D%A2%E8%AF%95/%E5%86%99%E4%B8%80%E4%B8%AA%E6%B6%88%E8%80%97%E5%AE%8C%E7%89%A9%E7%90%86%E5%86%85%E5%AD%98%E7%9A%84%E7%A8%8B%E5%BA%8F/%E5%AE%9A%E4%BD%8Dslub%E5%86%85%E5%AD%98%E6%B3%84%E9%9C%B2%E7%9A%84%E5%87%A0%E7%A7%8D%E6%96%B9%E6%B3%95/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
       <meta itemprop="image" content="/images/avatar.gif">
@@ -574,7 +686,7 @@
       <header class="post-header">
         <h2 class="post-title" itemprop="name headline">
           
-            <a href="/2020/09/18/memory/%E9%9D%A2%E8%AF%95/%E5%86%99%E4%B8%80%E4%B8%AA%E6%B6%88%E8%80%97%E5%AE%8C%E7%89%A9%E7%90%86%E5%86%85%E5%AD%98%E7%9A%84%E7%A8%8B%E5%BA%8F/%E5%AE%9A%E4%BD%8Dslub%E5%86%85%E5%AD%98%E6%B3%84%E9%9C%B2%E7%9A%84%E5%9B%9B%E7%A7%8D%E6%96%B9%E6%B3%95/" class="post-title-link" itemprop="url">定位slub内存泄露的四种方法</a>
+            <a href="/2020/09/18/memory/%E9%9D%A2%E8%AF%95/%E5%86%99%E4%B8%80%E4%B8%AA%E6%B6%88%E8%80%97%E5%AE%8C%E7%89%A9%E7%90%86%E5%86%85%E5%AD%98%E7%9A%84%E7%A8%8B%E5%BA%8F/%E5%AE%9A%E4%BD%8Dslub%E5%86%85%E5%AD%98%E6%B3%84%E9%9C%B2%E7%9A%84%E5%87%A0%E7%A7%8D%E6%96%B9%E6%B3%95/" class="post-title-link" itemprop="url">定位slub内存泄露的几种方法</a>
         </h2>
 
         <div class="post-meta-container">
@@ -592,7 +704,7 @@
           <i class="far fa-calendar-check"></i>
         </span>
         <span class="post-meta-item-text">Edited on</span>
-        <time title="Modified: 2020-09-19 17:29:48" itemprop="dateModified" datetime="2020-09-19T17:29:48+08:00">2020-09-19</time>
+        <time title="Modified: 2020-09-23 03:24:14" itemprop="dateModified" datetime="2020-09-23T03:24:14+08:00">2020-09-23</time>
       </span>
     <span class="post-meta-item">
       <span class="post-meta-item-icon">
@@ -988,209 +1100,6 @@
   
   
   <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
-    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/09/12/%E8%BF%9B%E7%A8%8B%E7%AE%A1%E7%90%86/lockup%E9%97%AE%E9%A2%98/">
-
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="image" content="/images/avatar.gif">
-      <meta itemprop="name" content="Su Hui">
-      <meta itemprop="description" content="">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="liulangren 读核之旅">
-    </span>
-
-    
-    
-      <header class="post-header">
-        <h2 class="post-title" itemprop="name headline">
-          
-            <a href="/2020/09/12/%E8%BF%9B%E7%A8%8B%E7%AE%A1%E7%90%86/lockup%E9%97%AE%E9%A2%98/" class="post-title-link" itemprop="url">linux lockup问题</a>
-        </h2>
-
-        <div class="post-meta-container">
-          <div class="post-meta">
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-calendar"></i>
-      </span>
-      <span class="post-meta-item-text">Posted on</span>
-
-      <time title="Created: 2020-09-12 14:47:40" itemprop="dateCreated datePublished" datetime="2020-09-12T14:47:40+08:00">2020-09-12</time>
-    </span>
-      <span class="post-meta-item">
-        <span class="post-meta-item-icon">
-          <i class="far fa-calendar-check"></i>
-        </span>
-        <span class="post-meta-item-text">Edited on</span>
-        <time title="Modified: 2020-09-08 00:10:07" itemprop="dateModified" datetime="2020-09-08T00:10:07+08:00">2020-09-08</time>
-      </span>
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-folder"></i>
-      </span>
-      <span class="post-meta-item-text">In</span>
-        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-          <a href="/categories/linux%E5%86%85%E6%A0%B8/" itemprop="url" rel="index"><span itemprop="name">linux内核</span></a>
-        </span>
-    </span>
-
-  
-</div>
-
-        </div>
-      </header>
-
-    
-    
-    
-    <div class="post-body" itemprop="articleBody">
-          <h2 id="lockup定义"><a href="#lockup定义" class="headerlink" title="lockup定义"></a>lockup定义</h2><p>lockup是指是指某段内核代码占着CPU不放。</p>
-<p>lockup分两种：hard lockup 与 soft lockup，区别是hard lockup是屏蔽系统中断情况下发生的。</p>
-<p>有几个概念需要澄清一下：</p>
-<ol>
-<li>发生lockup的一定是内核代码，因为用户态代码都是可以抢占的。</li>
-<li>在内核态代码中发生lockup时，一般伴随着 preempt_disable()或者local_irq_disable()，产生lockup 的基本条件是禁止抢占，当然禁止中断这种就更猛了</li>
-</ol>
-<h2 id="Soft-lockup"><a href="#Soft-lockup" class="headerlink" title="Soft lockup"></a>Soft lockup</h2><p>Soft lockup是指CPU被内核代码一直占用着，系统某个CPU上超过20s其他进程无法得到运行。<br>系统是如何检测 Soft lockup的呢？</p>
-<h3 id="实现机制"><a href="#实现机制" class="headerlink" title="实现机制"></a>实现机制</h3><p>设立涉及到几个概念：一般优先级的普通进程，最高优先级的watchdog/?内核线程，Hr-timer时钟中断，其中Hr-timer可以打断watchdog/?执行，watchdog/?可以打断普通优先级的进程执行。</p>
-<p>Soft lockup机制在初始化的时候会init一个 Hr-timer，定时执行<br>在执行过程中</p>
-<ol>
-<li>获取 percpu变量 watchdog_touch_ts 的值</li>
-<li>唤醒 watchdog/? 内核线程</li>
-<li>比较 当前timestamp 和 watchdog_touch_ts值</li>
-<li>内核线程会用当前的time_stamp 更新 watchdog_touch_ts</li>
-</ol>
-
-      
-    </div>
-
-    
-    
-    
-
-    <footer class="post-footer">
-        <div class="post-eof"></div>
-      
-    </footer>
-  </article>
-  
-  
-  
-
-      
-  
-  
-  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
-    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/09/12/%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7/%E7%BB%8F%E5%B8%B8%E5%BF%98%E8%AE%B0%E7%9A%84shell%E5%91%BD%E4%BB%A4/">
-
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="image" content="/images/avatar.gif">
-      <meta itemprop="name" content="Su Hui">
-      <meta itemprop="description" content="">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="liulangren 读核之旅">
-    </span>
-
-    
-    
-      <header class="post-header">
-        <h2 class="post-title" itemprop="name headline">
-          
-            <a href="/2020/09/12/%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7/%E7%BB%8F%E5%B8%B8%E5%BF%98%E8%AE%B0%E7%9A%84shell%E5%91%BD%E4%BB%A4/" class="post-title-link" itemprop="url">那些经常忘记的shell命令</a>
-        </h2>
-
-        <div class="post-meta-container">
-          <div class="post-meta">
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-calendar"></i>
-      </span>
-      <span class="post-meta-item-text">Posted on</span>
-      
-
-      <time title="Created: 2020-09-12 14:47:40 / Modified: 23:14:50" itemprop="dateCreated datePublished" datetime="2020-09-12T14:47:40+08:00">2020-09-12</time>
-    </span>
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-folder"></i>
-      </span>
-      <span class="post-meta-item-text">In</span>
-        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-          <a href="/categories/shell%E8%84%9A%E6%9C%AC/" itemprop="url" rel="index"><span itemprop="name">shell脚本</span></a>
-        </span>
-    </span>
-
-  
-</div>
-
-        </div>
-      </header>
-
-    
-    
-    
-    <div class="post-body" itemprop="articleBody">
-          <p>总有那么几条经常使用，但有比较难记住的命令，做个记录。</p>
-<ol>
-<li>ln 创建软连接</li>
-</ol>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">ln -s   实际文件&#x2F;目录          软链接文件&#x2F;目录</span><br><span class="line">ln -s &#x2F;usr&#x2F;sbin&#x2F;trace-bpfcc &#x2F;usr&#x2F;bin&#x2F;trace</span><br><span class="line"></span><br><span class="line">ln -s   实际文件          硬链接文件 &#x2F;&#x2F;目录无法使用硬链接</span><br><span class="line">ln  &#x2F;usr&#x2F;sbin&#x2F;trace-bpfcc &#x2F;usr&#x2F;bin&#x2F;trace</span><br></pre></td></tr></table></figure>
-
-<ol start="2">
-<li>tar</li>
-</ol>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"></span><br></pre></td></tr></table></figure>
-
-<ol start="3">
-<li><p>zip</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">zip 解压 aaa.zip文件</span><br><span class="line"></span><br><span class="line">zip 将 aaa文件夹压缩成为 aaa.zip</span><br><span class="line"></span><br><span class="line">zip 将 aaa文件压缩为 aaa.zip</span><br><span class="line"></span><br><span class="line">zip 将 aaa bbb 文件压缩为 aaa.zip</span><br></pre></td></tr></table></figure>
-</li>
-<li><p>3</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">&#96;&#96;&#96;</span><br><span class="line"></span><br><span class="line">5. 3</span><br><span class="line"></span><br></pre></td></tr></table></figure>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line">6. 3</span><br><span class="line"></span><br></pre></td></tr></table></figure>
-<pre><code></code></pre>
-</li>
-<li><p>3</p>
-</li>
-<li><p>3</p>
-</li>
-<li><p>3</p>
-</li>
-<li><p>3</p>
-</li>
-<li><p>3</p>
-</li>
-<li><p>3</p>
-</li>
-<li><p>3</p>
-</li>
-<li><p>3</p>
-</li>
-</ol>
-
-      
-    </div>
-
-    
-    
-    
-
-    <footer class="post-footer">
-        <div class="post-eof"></div>
-      
-    </footer>
-  </article>
-  
-  
-  
-
-      
-  
-  
-  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
     <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/09/12/%E5%86%85%E6%A0%B8%E8%A7%82%E6%B5%8B/bpf%E7%9B%B8%E5%85%B3/bpftrace/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
@@ -1278,6 +1187,100 @@
 <figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line">sh@ubuntu[root]:&#x2F;sys&#x2F;kernel&#x2F;debug&#x2F;tracing&#x2F;events&#x2F;sched&#x2F;sched_switch# cat format </span><br><span class="line">name: sched_switch</span><br><span class="line">ID: 323</span><br><span class="line">format:</span><br><span class="line">        field:unsigned short common_type;       offset:0;       size:2; signed:0;</span><br><span class="line">        field:unsigned char common_flags;       offset:2;       size:1; signed:0;</span><br><span class="line">        field:unsigned char common_preempt_count;       offset:3;       size:1; signed:0;</span><br><span class="line">        field:int common_pid;   offset:4;       size:4; signed:1;</span><br><span class="line"></span><br><span class="line">        field:char prev_comm[16];       offset:8;       size:16;        signed:1;</span><br><span class="line">        field:pid_t prev_pid;   offset:24;      size:4; signed:1;</span><br><span class="line">        field:int prev_prio;    offset:28;      size:4; signed:1;</span><br><span class="line">        field:long prev_state;  offset:32;      size:8; signed:1;</span><br><span class="line">        field:char next_comm[16];       offset:40;      size:16;        signed:1;</span><br><span class="line">        field:pid_t next_pid;   offset:56;      size:4; signed:1;</span><br><span class="line">        field:int next_prio;    offset:60;      size:4; signed:1;</span><br><span class="line"></span><br><span class="line">print fmt: &quot;prev_comm&#x3D;%s prev_pid&#x3D;%d prev_prio&#x3D;%d prev_state&#x3D;%s%s &#x3D;&#x3D;&gt; next_comm&#x3D;%s next_pid&#x3D;%d next_prio&#x3D;%d&quot;, REC-&gt;prev_comm, REC-&gt;prev_pid, REC-&gt;prev_prio, (REC-&gt;prev_state &amp; ((((0x0000 | 0x0001 | 0x0002 | 0x0004 | 0x0008 | 0x0010 | 0x0020 | 0x0040) + 1) &lt;&lt; 1) - 1)) ? __print_flags(REC-&gt;prev_state &amp; ((((0x0000 | 0x0001 | 0x0002 | 0x0004 | 0x0008 | 0x0010 | 0x0020 | 0x0040) + 1) &lt;&lt; 1) - 1), &quot;|&quot;, &#123; 0x0001, &quot;S&quot; &#125;, &#123; 0x0002, &quot;D&quot; &#125;, &#123; 0x0004, &quot;T&quot; &#125;, &#123; 0x0008, &quot;t&quot; &#125;, &#123; 0x0010, &quot;X&quot; &#125;, &#123; 0x0020, &quot;Z&quot; &#125;, &#123; 0x0040, &quot;P&quot; &#125;, &#123; 0x0080, &quot;I&quot; &#125;) : &quot;R&quot;, REC-&gt;prev_state &amp; (((0x0000 | 0x0001 | 0x0002 | 0x0004 | 0x0008 | 0x0010 | 0x0020 | 0x0040) + 1) &lt;&lt; 1) ? &quot;+&quot; : &quot;&quot;, REC-&gt;next_comm, REC-&gt;next_pid, REC-&gt;next_prio</span><br><span class="line">sh@ubuntu[root]:&#x2F;sys&#x2F;kernel&#x2F;debug&#x2F;tracing&#x2F;events&#x2F;sched&#x2F;sched_switch# </span><br></pre></td></tr></table></figure>
 
 <p>更多的需要去动手实践，在项目中灵活运用 <code>bpftrace</code> 这样的神器<br>更多资料可以参考：<br><a target="_blank" rel="noopener" href="https://github.com/iovisor/bpftrace/blob/master/docs/tutorial_one_liners_chinese.md">bpftrace的一行代码中文指引</a><br><a target="_blank" rel="noopener" href="http://www.brendangregg.com/ebpf.html">brendan大神的博客</a><br><a target="_blank" rel="noopener" href="https://github.com/iovisor/bpftrace/blob/master/docs/reference_guide.md">bpftrace官方guide</a><br><a target="_blank" rel="noopener" href="https://blog.csdn.net/21cnbao/article/details/95585483">宋宝华大师的总结</a></p>
+
+      
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+        <div class="post-eof"></div>
+      
+    </footer>
+  </article>
+  
+  
+  
+
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
+    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/09/12/%E8%BF%9B%E7%A8%8B%E7%AE%A1%E7%90%86/lockup%E9%97%AE%E9%A2%98/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="Su Hui">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liulangren 读核之旅">
+    </span>
+
+    
+    
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/2020/09/12/%E8%BF%9B%E7%A8%8B%E7%AE%A1%E7%90%86/lockup%E9%97%AE%E9%A2%98/" class="post-title-link" itemprop="url">linux lockup问题</a>
+        </h2>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">Posted on</span>
+
+      <time title="Created: 2020-09-12 14:47:40" itemprop="dateCreated datePublished" datetime="2020-09-12T14:47:40+08:00">2020-09-12</time>
+    </span>
+      <span class="post-meta-item">
+        <span class="post-meta-item-icon">
+          <i class="far fa-calendar-check"></i>
+        </span>
+        <span class="post-meta-item-text">Edited on</span>
+        <time title="Modified: 2020-09-08 00:10:07" itemprop="dateModified" datetime="2020-09-08T00:10:07+08:00">2020-09-08</time>
+      </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">In</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/linux%E5%86%85%E6%A0%B8/" itemprop="url" rel="index"><span itemprop="name">linux内核</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+          <h2 id="lockup定义"><a href="#lockup定义" class="headerlink" title="lockup定义"></a>lockup定义</h2><p>lockup是指是指某段内核代码占着CPU不放。</p>
+<p>lockup分两种：hard lockup 与 soft lockup，区别是hard lockup是屏蔽系统中断情况下发生的。</p>
+<p>有几个概念需要澄清一下：</p>
+<ol>
+<li>发生lockup的一定是内核代码，因为用户态代码都是可以抢占的。</li>
+<li>在内核态代码中发生lockup时，一般伴随着 preempt_disable()或者local_irq_disable()，产生lockup 的基本条件是禁止抢占，当然禁止中断这种就更猛了</li>
+</ol>
+<h2 id="Soft-lockup"><a href="#Soft-lockup" class="headerlink" title="Soft lockup"></a>Soft lockup</h2><p>Soft lockup是指CPU被内核代码一直占用着，系统某个CPU上超过20s其他进程无法得到运行。<br>系统是如何检测 Soft lockup的呢？</p>
+<h3 id="实现机制"><a href="#实现机制" class="headerlink" title="实现机制"></a>实现机制</h3><p>设立涉及到几个概念：一般优先级的普通进程，最高优先级的watchdog/?内核线程，Hr-timer时钟中断，其中Hr-timer可以打断watchdog/?执行，watchdog/?可以打断普通优先级的进程执行。</p>
+<p>Soft lockup机制在初始化的时候会init一个 Hr-timer，定时执行<br>在执行过程中</p>
+<ol>
+<li>获取 percpu变量 watchdog_touch_ts 的值</li>
+<li>唤醒 watchdog/? 内核线程</li>
+<li>比较 当前timestamp 和 watchdog_touch_ts值</li>
+<li>内核线程会用当前的time_stamp 更新 watchdog_touch_ts</li>
+</ol>
 
       
     </div>

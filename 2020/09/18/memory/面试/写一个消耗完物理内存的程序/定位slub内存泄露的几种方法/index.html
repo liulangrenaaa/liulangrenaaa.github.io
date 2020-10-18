@@ -24,13 +24,13 @@
 
   <meta name="description" content="总结一下最近最近遇到的内存泄露的一个bug，其实内核态的内存泄露还是比较难搞的，严重情况下基本只能重启设备解决，对于互联网公司来说大规模重启服务器来说代价有点大，有了一些工具我们还是比较容易观测到的，我用写了一个内核模块来模拟内核态的内存泄露，代码如下： 123456789101112131415161718192021222324252627282930313233343536373839404">
 <meta property="og:type" content="article">
-<meta property="og:title" content="定位slub内存泄露的四种方法">
-<meta property="og:url" content="https://liulangrenaaa.github.io/2020/09/18/memory/%E9%9D%A2%E8%AF%95/%E5%86%99%E4%B8%80%E4%B8%AA%E6%B6%88%E8%80%97%E5%AE%8C%E7%89%A9%E7%90%86%E5%86%85%E5%AD%98%E7%9A%84%E7%A8%8B%E5%BA%8F/%E5%AE%9A%E4%BD%8Dslub%E5%86%85%E5%AD%98%E6%B3%84%E9%9C%B2%E7%9A%84%E5%9B%9B%E7%A7%8D%E6%96%B9%E6%B3%95/index.html">
+<meta property="og:title" content="定位slub内存泄露的几种方法">
+<meta property="og:url" content="https://liulangrenaaa.github.io/2020/09/18/memory/%E9%9D%A2%E8%AF%95/%E5%86%99%E4%B8%80%E4%B8%AA%E6%B6%88%E8%80%97%E5%AE%8C%E7%89%A9%E7%90%86%E5%86%85%E5%AD%98%E7%9A%84%E7%A8%8B%E5%BA%8F/%E5%AE%9A%E4%BD%8Dslub%E5%86%85%E5%AD%98%E6%B3%84%E9%9C%B2%E7%9A%84%E5%87%A0%E7%A7%8D%E6%96%B9%E6%B3%95/index.html">
 <meta property="og:site_name" content="liulangren 读核之旅">
 <meta property="og:description" content="总结一下最近最近遇到的内存泄露的一个bug，其实内核态的内存泄露还是比较难搞的，严重情况下基本只能重启设备解决，对于互联网公司来说大规模重启服务器来说代价有点大，有了一些工具我们还是比较容易观测到的，我用写了一个内核模块来模拟内核态的内存泄露，代码如下： 123456789101112131415161718192021222324252627282930313233343536373839404">
 <meta property="og:locale">
 <meta property="article:published_time" content="2020-09-18T06:47:40.000Z">
-<meta property="article:modified_time" content="2020-09-19T09:29:48.140Z">
+<meta property="article:modified_time" content="2020-09-22T19:24:14.784Z">
 <meta property="article:author" content="Su Hui">
 <meta property="article:tag" content="内管管理">
 <meta property="article:tag" content="bpftrace">
@@ -42,7 +42,7 @@
 <meta name="twitter:card" content="summary">
 
 
-<link rel="canonical" href="https://liulangrenaaa.github.io/2020/09/18/memory/%E9%9D%A2%E8%AF%95/%E5%86%99%E4%B8%80%E4%B8%AA%E6%B6%88%E8%80%97%E5%AE%8C%E7%89%A9%E7%90%86%E5%86%85%E5%AD%98%E7%9A%84%E7%A8%8B%E5%BA%8F/%E5%AE%9A%E4%BD%8Dslub%E5%86%85%E5%AD%98%E6%B3%84%E9%9C%B2%E7%9A%84%E5%9B%9B%E7%A7%8D%E6%96%B9%E6%B3%95/">
+<link rel="canonical" href="https://liulangrenaaa.github.io/2020/09/18/memory/%E9%9D%A2%E8%AF%95/%E5%86%99%E4%B8%80%E4%B8%AA%E6%B6%88%E8%80%97%E5%AE%8C%E7%89%A9%E7%90%86%E5%86%85%E5%AD%98%E7%9A%84%E7%A8%8B%E5%BA%8F/%E5%AE%9A%E4%BD%8Dslub%E5%86%85%E5%AD%98%E6%B3%84%E9%9C%B2%E7%9A%84%E5%87%A0%E7%A7%8D%E6%96%B9%E6%B3%95/">
 
 
 <script class="page-configurations">
@@ -55,7 +55,7 @@
   };
 </script>
 
-  <title>定位slub内存泄露的四种方法 | liulangren 读核之旅</title>
+  <title>定位slub内存泄露的几种方法 | liulangren 读核之旅</title>
   
 
 
@@ -201,7 +201,7 @@
       <div class="site-state-item site-state-posts">
           <a href="/archives/">
         
-          <span class="site-state-item-count">19</span>
+          <span class="site-state-item-count">20</span>
           <span class="site-state-item-name">posts</span>
         </a>
       </div>
@@ -214,7 +214,7 @@
       <div class="site-state-item site-state-tags">
             <a href="/tags/">
           
-        <span class="site-state-item-count">32</span>
+        <span class="site-state-item-count">33</span>
         <span class="site-state-item-name">tags</span></a>
       </div>
   </nav>
@@ -250,7 +250,7 @@
   
   
   <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
-    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/09/18/memory/%E9%9D%A2%E8%AF%95/%E5%86%99%E4%B8%80%E4%B8%AA%E6%B6%88%E8%80%97%E5%AE%8C%E7%89%A9%E7%90%86%E5%86%85%E5%AD%98%E7%9A%84%E7%A8%8B%E5%BA%8F/%E5%AE%9A%E4%BD%8Dslub%E5%86%85%E5%AD%98%E6%B3%84%E9%9C%B2%E7%9A%84%E5%9B%9B%E7%A7%8D%E6%96%B9%E6%B3%95/">
+    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/09/18/memory/%E9%9D%A2%E8%AF%95/%E5%86%99%E4%B8%80%E4%B8%AA%E6%B6%88%E8%80%97%E5%AE%8C%E7%89%A9%E7%90%86%E5%86%85%E5%AD%98%E7%9A%84%E7%A8%8B%E5%BA%8F/%E5%AE%9A%E4%BD%8Dslub%E5%86%85%E5%AD%98%E6%B3%84%E9%9C%B2%E7%9A%84%E5%87%A0%E7%A7%8D%E6%96%B9%E6%B3%95/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
       <meta itemprop="image" content="/images/avatar.gif">
@@ -266,7 +266,7 @@
     
       <header class="post-header">
         <h1 class="post-title" itemprop="name headline">
-          定位slub内存泄露的四种方法
+          定位slub内存泄露的几种方法
         </h1>
 
         <div class="post-meta-container">
@@ -284,7 +284,7 @@
           <i class="far fa-calendar-check"></i>
         </span>
         <span class="post-meta-item-text">Edited on</span>
-        <time title="Modified: 2020-09-19 17:29:48" itemprop="dateModified" datetime="2020-09-19T17:29:48+08:00">2020-09-19</time>
+        <time title="Modified: 2020-09-23 03:24:14" itemprop="dateModified" datetime="2020-09-23T03:24:14+08:00">2020-09-23</time>
       </span>
     <span class="post-meta-item">
       <span class="post-meta-item-icon">
