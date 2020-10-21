@@ -272,7 +272,7 @@
           <i class="far fa-calendar-check"></i>
         </span>
         <span class="post-meta-item-text">Edited on</span>
-        <time title="Modified: 2020-10-21 23:16:59" itemprop="dateModified" datetime="2020-10-21T23:16:59+08:00">2020-10-21</time>
+        <time title="Modified: 2020-10-21 23:43:50" itemprop="dateModified" datetime="2020-10-21T23:43:50+08:00">2020-10-21</time>
       </span>
     <span class="post-meta-item">
       <span class="post-meta-item-icon">
@@ -306,6 +306,7 @@
 <p>如果不是一个patch，而是一系列patch怎么办呢？</p>
 <figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">肯定是有办法的，目前我还没这个需求，留白，后续补充</span><br><span class="line">lkml中的邮件格式：</span><br><span class="line">[PATCH v6 00&#x2F;25] Add support for Clang LTO</span><br></pre></td></tr></table></figure>
 
+<p><a target="_blank" rel="noopener" href="https://cloud.tencent.com/developer/section/1138664">git format-patch</a></p>
 <h2 id="找到修改代码部分的maintainer"><a href="#找到修改代码部分的maintainer" class="headerlink" title="找到修改代码部分的maintainer"></a>找到修改代码部分的maintainer</h2><ol>
 <li>先用 <code>perl scripts/checkpatch.pl</code> 检查patch有无语法错误</li>
 <li>再用 <code>perl scripts/get_maintainer.pl</code> 获取patch修改的代码的 maintainer<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">sh@ubuntu:~&#x2F;workspace&#x2F;linux$ perl scripts&#x2F;checkpatch.pl  0001-FIX-the-comment-of-struct-jbd2_journal_handle.patch </span><br><span class="line">total: 0 errors, 0 warnings, 10 lines checked</span><br><span class="line"></span><br><span class="line">0001-FIX-the-comment-of-struct-jbd2_journal_handle.patch has no obvious style problems and is ready for submission.</span><br><span class="line">sh@ubuntu:~&#x2F;workspace&#x2F;linux$ </span><br><span class="line">sh@ubuntu:~&#x2F;workspace&#x2F;linux$ perl scripts&#x2F;get_maintainer.pl  0001-FIX-the-comment-of-struct-jbd2_journal_handle.patch </span><br><span class="line">&quot;Theodore Ts&#39;o&quot; &lt;tytso@mit.edu&gt; (maintainer:JOURNALLING LAYER FOR BLOCK DEVICES (JBD2))</span><br><span class="line">Jan Kara &lt;jack@suse.com&gt; (maintainer:JOURNALLING LAYER FOR BLOCK DEVICES (JBD2))</span><br><span class="line">linux-ext4@vger.kernel.org (open list:JOURNALLING LAYER FOR BLOCK DEVICES (JBD2))</span><br><span class="line">linux-kernel@vger.kernel.org (open list)</span><br><span class="line">sh@ubuntu:~&#x2F;workspace&#x2F;linux$</span><br></pre></td></tr></table></figure>
