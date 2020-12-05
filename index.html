@@ -189,20 +189,20 @@
       <div class="site-state-item site-state-posts">
           <a href="/archives/">
         
-          <span class="site-state-item-count">20</span>
+          <span class="site-state-item-count">22</span>
           <span class="site-state-item-name">posts</span>
         </a>
       </div>
       <div class="site-state-item site-state-categories">
             <a href="/categories/">
           
-        <span class="site-state-item-count">5</span>
+        <span class="site-state-item-count">6</span>
         <span class="site-state-item-name">categories</span></a>
       </div>
       <div class="site-state-item site-state-tags">
             <a href="/tags/">
           
-        <span class="site-state-item-count">33</span>
+        <span class="site-state-item-count">35</span>
         <span class="site-state-item-name">tags</span></a>
       </div>
   </nav>
@@ -233,6 +233,219 @@
       
 
       
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
+    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/12/12/Docker%E6%9C%BA%E5%88%B6%E5%88%86%E6%9E%90/docker%E4%B8%8Ecgroup%E5%A6%82%E4%BD%95%E8%81%94%E7%B3%BB%E8%B5%B7%E6%9D%A5%E7%9A%84/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="Su Hui">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liulangren 读核之旅">
+    </span>
+
+    
+    
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/2020/12/12/Docker%E6%9C%BA%E5%88%B6%E5%88%86%E6%9E%90/docker%E4%B8%8Ecgroup%E5%A6%82%E4%BD%95%E8%81%94%E7%B3%BB%E8%B5%B7%E6%9D%A5%E7%9A%84/" class="post-title-link" itemprop="url">docker与cgroup如何联系起来的</a>
+        </h2>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">Posted on</span>
+
+      <time title="Created: 2020-12-12 14:47:40" itemprop="dateCreated datePublished" datetime="2020-12-12T14:47:40+08:00">2020-12-12</time>
+    </span>
+      <span class="post-meta-item">
+        <span class="post-meta-item-icon">
+          <i class="far fa-calendar-check"></i>
+        </span>
+        <span class="post-meta-item-text">Edited on</span>
+        <time title="Modified: 2020-12-05 19:21:23" itemprop="dateModified" datetime="2020-12-05T19:21:23+08:00">2020-12-05</time>
+      </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">In</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/docker/" itemprop="url" rel="index"><span itemprop="name">docker</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+          <p>一直说Docker 是基于linux三大技术 Cgroups, Namespace, OverlayFs 技术。<br>Cgroups, Namespace 着重的是 docker 的运行时，OverlayFs 着重的是 docker Image.<br>但是Docker 与 Cgroups, Namespace, OverlayFs 是怎么联系起来的呢，却很少有人说的明白，<br>我是一个好奇心很重的人，我会用几篇文章来记录分析一下他们怎么练习起来的。</p>
+<p>这篇文章主要实操看一看 Docker 与 Cgroup 的联系。</p>
+<ol>
+<li><p>首先去 /sys/fs/cgroup/ 目录看一下当前支持的子系统controller，各个子系统controller下面一般情况下都是空的，表明系统中没有额外的cgroup，基本都只有root_cgroup.<br>虽然4.5版本之后 cgroup v2 就进入mainline了，但是 现在（2020.12.01）docker 基本还是在使用 cgroup v1, 应该也算是一个历史原因了吧，不知道何时 docker能迁移到 cgroup v2 上，期待ing</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup# ls</span><br><span class="line">blkio  cpuacct      cpuset   freezer  memory   net_cls,net_prio  perf_event  rdma     unified</span><br><span class="line">cpu    cpu,cpuacct  devices  hugetlb  net_cls  net_prio          pids        systemd</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup# mount | grep cgroup</span><br><span class="line">tmpfs on &#x2F;sys&#x2F;fs&#x2F;cgroup type tmpfs (ro,nosuid,nodev,noexec,mode&#x3D;755)</span><br><span class="line">cgroup2 on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;unified type cgroup2 (rw,nosuid,nodev,noexec,relatime)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;systemd type cgroup (rw,nosuid,nodev,noexec,relatime,xattr,name&#x3D;systemd)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpuset type cgroup (rw,nosuid,nodev,noexec,relatime,cpuset,clone_children)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;rdma type cgroup (rw,nosuid,nodev,noexec,relatime,rdma)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;hugetlb type cgroup (rw,nosuid,nodev,noexec,relatime,hugetlb)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory type cgroup (rw,nosuid,nodev,noexec,relatime,memory)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;net_cls,net_prio type cgroup (rw,nosuid,nodev,noexec,relatime,net_cls,net_prio)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;perf_event type cgroup (rw,nosuid,nodev,noexec,relatime,perf_event)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;devices type cgroup (rw,nosuid,nodev,noexec,relatime,devices)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpu,cpuacct type cgroup (rw,nosuid,nodev,noexec,relatime,cpu,cpuacct)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;pids type cgroup (rw,nosuid,nodev,noexec,relatime,pids)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;blkio type cgroup (rw,nosuid,nodev,noexec,relatime,blkio)</span><br><span class="line">freezer on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;freezer type cgroup (rw,relatime,freezer)</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup# ls memory</span><br><span class="line">cgroup.clone_children  memory.kmem.failcnt                 memory.limit_in_bytes            memory.usage_in_bytes</span><br><span class="line">cgroup.event_control   memory.kmem.limit_in_bytes          memory.max_usage_in_bytes        memory.use_hierarchy</span><br><span class="line">cgroup.procs           memory.kmem.max_usage_in_bytes      memory.move_charge_at_immigrate  notify_on_release</span><br><span class="line">cgroup.sane_behavior   memory.kmem.slabinfo                memory.numa_stat                 release_agent</span><br><span class="line">docker                 memory.kmem.tcp.failcnt             memory.oom_control               system.slice</span><br><span class="line">init.scope             memory.kmem.tcp.limit_in_bytes      memory.pressure_level            tasks</span><br><span class="line">machine.slice          memory.kmem.tcp.max_usage_in_bytes  memory.soft_limit_in_bytes       user</span><br><span class="line">memory.failcnt         memory.kmem.tcp.usage_in_bytes      memory.stat                      user.slice</span><br><span class="line">memory.force_empty     memory.kmem.usage_in_bytes          memory.swappiness</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup# cat memory&#x2F;tasks</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">....</span><br><span class="line">1728692</span><br><span class="line">1731590</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>基于 ubuntu image新建一个docker，限制memory 为 4MB</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup# sudo docker run -t -i -m 4MB ubuntu &#x2F;bin&#x2F;bash</span><br><span class="line">WARNING: Your kernel does not support swap limit capabilities or the cgroup is not mounted. Memory limited without swap.</span><br><span class="line">root@b3c618bb4df9:&#x2F;#</span><br></pre></td></tr></table></figure>
+<p>警告可以忽略，可以看到docker的 id是 b3c618bb4df9。</p>
+</li>
+<li><p>可以发现各个子系统目录都会新建一个docker目录，且docker目录下有一个目录就是上面的docker container 的id。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory# ls</span><br><span class="line">cgroup.clone_children           memory.kmem.slabinfo                memory.soft_limit_in_bytes</span><br><span class="line">cgroup.event_control            memory.kmem.tcp.failcnt             memory.stat</span><br><span class="line">cgroup.procs                    memory.kmem.tcp.limit_in_bytes      memory.swappiness</span><br><span class="line">cgroup.sane_behavior            memory.kmem.tcp.max_usage_in_bytes  memory.usage_in_bytes</span><br><span class="line">docker                          memory.kmem.tcp.usage_in_bytes      memory.use_hierarchy</span><br><span class="line">init.scope                      memory.kmem.usage_in_bytes          notify_on_release</span><br><span class="line">machine.slice                   memory.limit_in_bytes               release_agent</span><br><span class="line">memory.failcnt                  memory.max_usage_in_bytes           system.slice</span><br><span class="line">memory.force_empty              memory.move_charge_at_immigrate     tasks</span><br><span class="line">memory.kmem.failcnt             memory.numa_stat                    user</span><br><span class="line">memory.kmem.limit_in_bytes      memory.oom_control                  user.slice</span><br><span class="line">memory.kmem.max_usage_in_bytes  memory.pressure_level</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory# ls docker</span><br><span class="line">1f3a24f9105950f6f463da0effa2465a518039c3bec76de71c6e20626dcfb286  memory.kmem.usage_in_bytes</span><br><span class="line">b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df  memory.limit_in_bytes</span><br><span class="line">cgroup.clone_children                                             memory.max_usage_in_bytes</span><br><span class="line">cgroup.event_control                                              memory.move_charge_at_immigrate</span><br><span class="line">cgroup.procs                                                      memory.numa_stat</span><br><span class="line">memory.failcnt                                                    memory.oom_control</span><br><span class="line">memory.force_empty                                                memory.pressure_level</span><br><span class="line">memory.kmem.failcnt                                               memory.soft_limit_in_bytes</span><br><span class="line">memory.kmem.limit_in_bytes                                        memory.stat</span><br><span class="line">memory.kmem.max_usage_in_bytes                                    memory.swappiness</span><br><span class="line">memory.kmem.slabinfo                                              memory.usage_in_bytes</span><br><span class="line">memory.kmem.tcp.failcnt                                           memory.use_hierarchy</span><br><span class="line">memory.kmem.tcp.limit_in_bytes                                    notify_on_release</span><br><span class="line">memory.kmem.tcp.max_usage_in_bytes                                tasks</span><br><span class="line">memory.kmem.tcp.usage_in_bytes</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>其中 docker 目录下除了 container id的目录其他目录都是无效的，docker这个目录只是限制所有container id的一个顶层目录而已。通过 docker/tasks 为空就可以看出来。<br>可以看到 <code>memory/docker/b3c618bb4df9/</code> 目录下的最大内存限制，就是创建这个容器时设置的最大内存使用示4MB的限制。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory&#x2F;docker# cat tasks</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory&#x2F;docker#</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df# cat memory.limit_in_bytes</span><br><span class="line">4194304</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df# cat tasks</span><br><span class="line">1733194</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df# ps -aux | grep 17</span><br><span class="line">33194</span><br><span class="line">root     1733194  0.0  0.1   4108  3296 pts&#x2F;0    Ss+  19:03   0:00 &#x2F;bin&#x2F;bash</span><br><span class="line">ubuntu   1737657  0.0  0.0   6432   736 pts&#x2F;0    S+   19:11   0:00 grep --color&#x3D;auto --exclude-dir&#x3D;.bzr --exclude-dir&#x3D;CVS --exclude-dir&#x3D;.git --exclude-dir&#x3D;.hg --exclude-dir&#x3D;.svn --exclude-dir&#x3D;.idea --exclude-dir&#x3D;.tox tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df# ps -aux | grep 17</span><br><span class="line">33194</span><br><span class="line">root     1733194  0.0  0.1   4108  3296 pts&#x2F;0    Ss+  19:03   0:00 &#x2F;bin&#x2F;bash</span><br><span class="line">ubuntu   1737657  0.0  0.0   6432   736 pts&#x2F;0    S+   19:11   0:00 grep --color&#x3D;auto --exclude-dir&#x3D;.bzr --exclude-dir&#x3D;CVS --exclude-dir&#x3D;.git --exclude-dir&#x3D;.hg --exclude-dir&#x3D;.svn --exclude-dir&#x3D;.idea --exclude-dir&#x3D;.tox 1733194</span><br></pre></td></tr></table></figure>
+<p>可以看到这个 <code>1733194</code> 进程就是启动 容器时的 /bin/bash 进程</p>
+</li>
+<li><p>由于其他的 cgroup子系统我们没有对刚刚启动的 container 进行限制，所以也理论上从 cgroup上看到的也是没有限制的，可以看看 cpu controller.</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpu&#x2F;docker# cat tasks</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpu&#x2F;docker# cd -</span><br><span class="line">&#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpu&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpu&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df# cat tasks</span><br><span class="line">1733194</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpu&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df# cat cpu.cfs_period_us</span><br><span class="line">100000</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpu&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df# cat cpu.cfs_quota_us</span><br><span class="line">-1</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<p>这里就不具体介绍 各个子系统目录下文件含义了。</p>
+
+      
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+        <div class="post-eof"></div>
+      
+    </footer>
+  </article>
+  
+  
+  
+
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
+    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/12/01/Docker%E6%9C%BA%E5%88%B6%E5%88%86%E6%9E%90/docker%E5%A6%82%E4%BD%95%E4%BD%BF%E7%94%A8/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="Su Hui">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liulangren 读核之旅">
+    </span>
+
+    
+    
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/2020/12/01/Docker%E6%9C%BA%E5%88%B6%E5%88%86%E6%9E%90/docker%E5%A6%82%E4%BD%95%E4%BD%BF%E7%94%A8/" class="post-title-link" itemprop="url">docker如何使用</a>
+        </h2>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">Posted on</span>
+
+      <time title="Created: 2020-12-01 14:47:40" itemprop="dateCreated datePublished" datetime="2020-12-01T14:47:40+08:00">2020-12-01</time>
+    </span>
+      <span class="post-meta-item">
+        <span class="post-meta-item-icon">
+          <i class="far fa-calendar-check"></i>
+        </span>
+        <span class="post-meta-item-text">Edited on</span>
+        <time title="Modified: 2020-12-05 18:46:17" itemprop="dateModified" datetime="2020-12-05T18:46:17+08:00">2020-12-05</time>
+      </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">In</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/docker/" itemprop="url" rel="index"><span itemprop="name">docker</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+          <p>这是一个简单概括docker 安装，拉取image,docker 命令使用的 记录。</p>
+<ol>
+<li><p>在ubuntu平台上安装 docker</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo apt install docker</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>拉取ubuntu的 image</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo docker pull ubuntu</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>基于ubuntu的 image 创建并运行一个docker，限制4MB内存，开启 bash</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo docker run -t -i -m 4MB ubuntu &#x2F;bin&#x2F;bash</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>查看当前有哪些运行的docker</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: ~&#x2F;workspace# sudo docker ps</span><br><span class="line">CONTAINER ID        IMAGE               COMMAND             CREATED             STATUS              PORTS               NAMES</span><br><span class="line">1f3a24f91059        ubuntu              &quot;&#x2F;bin&#x2F;bash&quot;         47 hours ago        Up 47 hours                             hhhh</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>查看当前有哪些的docker(运行中 + 非运行中)</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: ~&#x2F;workspace# sudo docker ps -a</span><br><span class="line">CONTAINER ID        IMAGE               COMMAND             CREATED             STATUS              PORTS               NAMES</span><br><span class="line">1f3a24f91059        ubuntu              &quot;&#x2F;bin&#x2F;bash&quot;         47 hours ago        Up 47 hours                             hhhhh</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>给 hhh 的容器重命名为 my_ubuntu</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo docker rename  hhh my_ubuntu</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>停止 my_ubuntu 容器</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo docker stop my_ubuntu</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>重启开启 my_ubuntu 容器</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo docker start my_ubuntu</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>进入运行中的 my_ubuntu 容器的 bash</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo docker exec -ti my_ubuntu &#x2F;bin&#x2F;bash</span><br></pre></td></tr></table></figure>
+
+
+</li>
+</ol>
+<p>其他常用命令想起来再记录</p>
+<p>这些命令还是比较长的，可以缩写到 bashrc 的alias里面，比较方便</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: ~&#x2F;workspace# cat ~&#x2F;.zshrc | grep &quot;alias d&quot;</span><br><span class="line">alias dn&#x3D;&quot;sudo docker run -t -i -m 128MB ubuntu &#x2F;bin&#x2F;bash&quot;</span><br><span class="line">alias ds&#x3D;&quot;sudo docker start my_ubuntu&quot;</span><br><span class="line">alias dk&#x3D;&quot;sudo docker stop my_ubuntu&quot;</span><br><span class="line">alias di&#x3D;&quot;sudo docker exec -ti my_ubuntu &#x2F;bin&#x2F;bash&quot;</span><br><span class="line">alias dps&#x3D;&quot;sudo docker ps&quot;</span><br><span class="line">alias dpsa&#x3D;&quot;sudo docker ps -a&quot;</span><br><span class="line">alias drma&#x3D;&quot;sudo  docker container prune&quot;</span><br></pre></td></tr></table></figure>
+      
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+        <div class="post-eof"></div>
+      
+    </footer>
+  </article>
+  
+  
+  
+
       
   
   
@@ -1103,212 +1316,10 @@
   
   
 
-      
-  
-  
-  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
-    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/09/12/%E5%86%85%E6%A0%B8%E8%A7%82%E6%B5%8B/bpf%E7%9B%B8%E5%85%B3/bpftrace/">
-
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="image" content="/images/avatar.gif">
-      <meta itemprop="name" content="Su Hui">
-      <meta itemprop="description" content="">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="liulangren 读核之旅">
-    </span>
-
-    
-    
-      <header class="post-header">
-        <h2 class="post-title" itemprop="name headline">
-          
-            <a href="/2020/09/12/%E5%86%85%E6%A0%B8%E8%A7%82%E6%B5%8B/bpf%E7%9B%B8%E5%85%B3/bpftrace/" class="post-title-link" itemprop="url">bpftrace</a>
-        </h2>
-
-        <div class="post-meta-container">
-          <div class="post-meta">
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-calendar"></i>
-      </span>
-      <span class="post-meta-item-text">Posted on</span>
-
-      <time title="Created: 2020-09-12 14:47:40" itemprop="dateCreated datePublished" datetime="2020-09-12T14:47:40+08:00">2020-09-12</time>
-    </span>
-      <span class="post-meta-item">
-        <span class="post-meta-item-icon">
-          <i class="far fa-calendar-check"></i>
-        </span>
-        <span class="post-meta-item-text">Edited on</span>
-        <time title="Modified: 2020-09-13 02:26:54" itemprop="dateModified" datetime="2020-09-13T02:26:54+08:00">2020-09-13</time>
-      </span>
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-folder"></i>
-      </span>
-      <span class="post-meta-item-text">In</span>
-        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-          <a href="/categories/kernel-debug/" itemprop="url" rel="index"><span itemprop="name">kernel debug</span></a>
-        </span>
-    </span>
-
-  
-</div>
-
-        </div>
-      </header>
-
-    
-    
-    
-    <div class="post-body" itemprop="articleBody">
-          <h2 id="bpf-epbf-bcc-bpftrace-关系"><a href="#bpf-epbf-bcc-bpftrace-关系" class="headerlink" title="bpf epbf bcc bpftrace 关系"></a>bpf epbf bcc bpftrace 关系</h2><h3 id="bpf-与-ebpf关系"><a href="#bpf-与-ebpf关系" class="headerlink" title="bpf 与 ebpf关系"></a>bpf 与 ebpf关系</h3><p>BPF 是 Berkeley Packet Filter简称，现在也被称为cBPF(classic BPF)，要用于 tcpdump 和 seccomp，BPF早在1992 年就诞生了。</p>
-<p>eBPF 是Enahnced Berkeley Packet Filter简称，诞生于2011年。<br>其实 eBPF 本身其实远没有想象中的复杂，我们可以把内核想象成一个庞大而复杂的电路，如果电路出现了异常，我们可以通过使用万用表测量电路，如果当前电路不能满足需求，但又不能推倒重新设计，我们需要串入其他元件。eBPF 之于电路，既是万用表，也是各种功能元件。再回到内核中的 eBPF，内核预先在各个关键路径埋设了 eBPF 程序入口，用户可以编写不同类型的 eBPF 程序，将 eBPF 程序 attach 在内核中不同路径中执行。</p>
-<h3 id="bcc-与-ebpf"><a href="#bcc-与-ebpf" class="headerlink" title="bcc 与 ebpf"></a>bcc 与 ebpf</h3><p>bcc 是 ebpf compile collection简称，是一个包含丰富的内核跟踪分析的 eBPF 工具集，使得 “编 写 BPF 代码-编译成字节码-注入内核-获取结果-展示” 整个过程更加便捷。</p>
-<h3 id="bpftrace-与-ebpf"><a href="#bpftrace-与-ebpf" class="headerlink" title="bpftrace 与 ebpf"></a>bpftrace 与 ebpf</h3><p>bpftrace 可以动态跟踪分析内核，bpftrace 提供了一种类 awk 和 C 的语言，使用 bpftrace 语言编写各种跟踪和分析脚本，并编译成 eBPF 字节码与内核交互，从而实现动态跟踪 Linux 内核。</p>
-<p>总的来说bcc 和 bpftrace都是基于 ebpf特性实现的工具，实际使用中我发现bpftrace尤其好用相对于ftrace、perf等。后面会有相应的对比分析。</p>
-<h2 id="bpftrace一行代码告诉你性能问题在哪"><a href="#bpftrace一行代码告诉你性能问题在哪" class="headerlink" title="bpftrace一行代码告诉你性能问题在哪"></a>bpftrace一行代码告诉你性能问题在哪</h2><p>下面主要是 bpftrace 的一些使用方法</p>
-<ol>
-<li><p>列出所有探测点，并且可以添加搜索项，也可以管道传递给grep</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">&quot;bpftrace -l&quot;</span><br></pre></td></tr></table></figure>
-</li>
-<li><p>观察文件open事件</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">bpftrace -e &#39;tracepoint:syscalls:sys_enter_openat &#123; printf(&quot;%s %s\n&quot;, comm, str(args-&gt;filename)); &#125;&#39;</span><br></pre></td></tr></table></figure>
-</li>
-<li><p>进程系统调用数量统计</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">bpftrace -e &#39;tracepoint:raw_syscalls:sys_enter &#123; @[comm] &#x3D; count(); &#125;&#39;</span><br></pre></td></tr></table></figure>
-</li>
-<li><p>read系统调用的分布<br>/xxx/: 可以过滤{}中执行的条件，一般可以是进程名，pid等</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">bpftrace -e &#39;tracepoint:syscalls:sys_exit_read &#x2F;pid &#x3D;&#x3D; 18644&#x2F; &#123; @bytes &#x3D; hist(args-&gt;ret); &#125;&#39;</span><br></pre></td></tr></table></figure>
-</li>
-<li><p>分析内核实时函数栈<br>profile:是采样</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">bpftrace -e &#39;profile:hz:99 &#123; @[kstack] &#x3D; count(); &#125;&#39;</span><br></pre></td></tr></table></figure>
-</li>
-<li><p>调度器跟踪</p>
-</li>
-</ol>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">bpftrace -e &#39;tracepoint:sched:sched_switch &#123; @[kstack] &#x3D; count(); &#125;&#39;</span><br></pre></td></tr></table></figure>
-<p>具体有哪些参数变量可以使用，可以参考 <code>/sys/kernel/debug/tracing/events/</code> 里面具体某个跟踪项的 <code>format</code> 选项，里面列出了可以使用的变量，结构等</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line">sh@ubuntu[root]:&#x2F;sys&#x2F;kernel&#x2F;debug&#x2F;tracing&#x2F;events&#x2F;sched&#x2F;sched_switch# cat format </span><br><span class="line">name: sched_switch</span><br><span class="line">ID: 323</span><br><span class="line">format:</span><br><span class="line">        field:unsigned short common_type;       offset:0;       size:2; signed:0;</span><br><span class="line">        field:unsigned char common_flags;       offset:2;       size:1; signed:0;</span><br><span class="line">        field:unsigned char common_preempt_count;       offset:3;       size:1; signed:0;</span><br><span class="line">        field:int common_pid;   offset:4;       size:4; signed:1;</span><br><span class="line"></span><br><span class="line">        field:char prev_comm[16];       offset:8;       size:16;        signed:1;</span><br><span class="line">        field:pid_t prev_pid;   offset:24;      size:4; signed:1;</span><br><span class="line">        field:int prev_prio;    offset:28;      size:4; signed:1;</span><br><span class="line">        field:long prev_state;  offset:32;      size:8; signed:1;</span><br><span class="line">        field:char next_comm[16];       offset:40;      size:16;        signed:1;</span><br><span class="line">        field:pid_t next_pid;   offset:56;      size:4; signed:1;</span><br><span class="line">        field:int next_prio;    offset:60;      size:4; signed:1;</span><br><span class="line"></span><br><span class="line">print fmt: &quot;prev_comm&#x3D;%s prev_pid&#x3D;%d prev_prio&#x3D;%d prev_state&#x3D;%s%s &#x3D;&#x3D;&gt; next_comm&#x3D;%s next_pid&#x3D;%d next_prio&#x3D;%d&quot;, REC-&gt;prev_comm, REC-&gt;prev_pid, REC-&gt;prev_prio, (REC-&gt;prev_state &amp; ((((0x0000 | 0x0001 | 0x0002 | 0x0004 | 0x0008 | 0x0010 | 0x0020 | 0x0040) + 1) &lt;&lt; 1) - 1)) ? __print_flags(REC-&gt;prev_state &amp; ((((0x0000 | 0x0001 | 0x0002 | 0x0004 | 0x0008 | 0x0010 | 0x0020 | 0x0040) + 1) &lt;&lt; 1) - 1), &quot;|&quot;, &#123; 0x0001, &quot;S&quot; &#125;, &#123; 0x0002, &quot;D&quot; &#125;, &#123; 0x0004, &quot;T&quot; &#125;, &#123; 0x0008, &quot;t&quot; &#125;, &#123; 0x0010, &quot;X&quot; &#125;, &#123; 0x0020, &quot;Z&quot; &#125;, &#123; 0x0040, &quot;P&quot; &#125;, &#123; 0x0080, &quot;I&quot; &#125;) : &quot;R&quot;, REC-&gt;prev_state &amp; (((0x0000 | 0x0001 | 0x0002 | 0x0004 | 0x0008 | 0x0010 | 0x0020 | 0x0040) + 1) &lt;&lt; 1) ? &quot;+&quot; : &quot;&quot;, REC-&gt;next_comm, REC-&gt;next_pid, REC-&gt;next_prio</span><br><span class="line">sh@ubuntu[root]:&#x2F;sys&#x2F;kernel&#x2F;debug&#x2F;tracing&#x2F;events&#x2F;sched&#x2F;sched_switch# </span><br></pre></td></tr></table></figure>
-
-<p>更多的需要去动手实践，在项目中灵活运用 <code>bpftrace</code> 这样的神器<br>更多资料可以参考：<br><a target="_blank" rel="noopener" href="https://github.com/iovisor/bpftrace/blob/master/docs/tutorial_one_liners_chinese.md">bpftrace的一行代码中文指引</a><br><a target="_blank" rel="noopener" href="http://www.brendangregg.com/ebpf.html">brendan大神的博客</a><br><a target="_blank" rel="noopener" href="https://github.com/iovisor/bpftrace/blob/master/docs/reference_guide.md">bpftrace官方guide</a><br><a target="_blank" rel="noopener" href="https://blog.csdn.net/21cnbao/article/details/95585483">宋宝华大师的总结</a></p>
-
-      
-    </div>
-
-    
-    
-    
-
-    <footer class="post-footer">
-        <div class="post-eof"></div>
-      
-    </footer>
-  </article>
-  
-  
-  
-
-      
-  
-  
-  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
-    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/09/12/%E8%BF%9B%E7%A8%8B%E7%AE%A1%E7%90%86/lockup%E9%97%AE%E9%A2%98/">
-
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="image" content="/images/avatar.gif">
-      <meta itemprop="name" content="Su Hui">
-      <meta itemprop="description" content="">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="liulangren 读核之旅">
-    </span>
-
-    
-    
-      <header class="post-header">
-        <h2 class="post-title" itemprop="name headline">
-          
-            <a href="/2020/09/12/%E8%BF%9B%E7%A8%8B%E7%AE%A1%E7%90%86/lockup%E9%97%AE%E9%A2%98/" class="post-title-link" itemprop="url">linux lockup问题</a>
-        </h2>
-
-        <div class="post-meta-container">
-          <div class="post-meta">
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-calendar"></i>
-      </span>
-      <span class="post-meta-item-text">Posted on</span>
-
-      <time title="Created: 2020-09-12 14:47:40" itemprop="dateCreated datePublished" datetime="2020-09-12T14:47:40+08:00">2020-09-12</time>
-    </span>
-      <span class="post-meta-item">
-        <span class="post-meta-item-icon">
-          <i class="far fa-calendar-check"></i>
-        </span>
-        <span class="post-meta-item-text">Edited on</span>
-        <time title="Modified: 2020-09-08 00:10:07" itemprop="dateModified" datetime="2020-09-08T00:10:07+08:00">2020-09-08</time>
-      </span>
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-folder"></i>
-      </span>
-      <span class="post-meta-item-text">In</span>
-        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-          <a href="/categories/linux%E5%86%85%E6%A0%B8/" itemprop="url" rel="index"><span itemprop="name">linux内核</span></a>
-        </span>
-    </span>
-
-  
-</div>
-
-        </div>
-      </header>
-
-    
-    
-    
-    <div class="post-body" itemprop="articleBody">
-          <h2 id="lockup定义"><a href="#lockup定义" class="headerlink" title="lockup定义"></a>lockup定义</h2><p>lockup是指是指某段内核代码占着CPU不放。</p>
-<p>lockup分两种：hard lockup 与 soft lockup，区别是hard lockup是屏蔽系统中断情况下发生的。</p>
-<p>有几个概念需要澄清一下：</p>
-<ol>
-<li>发生lockup的一定是内核代码，因为用户态代码都是可以抢占的。</li>
-<li>在内核态代码中发生lockup时，一般伴随着 preempt_disable()或者local_irq_disable()，产生lockup 的基本条件是禁止抢占，当然禁止中断这种就更猛了</li>
-</ol>
-<h2 id="Soft-lockup"><a href="#Soft-lockup" class="headerlink" title="Soft lockup"></a>Soft lockup</h2><p>Soft lockup是指CPU被内核代码一直占用着，系统某个CPU上超过20s其他进程无法得到运行。<br>系统是如何检测 Soft lockup的呢？</p>
-<h3 id="实现机制"><a href="#实现机制" class="headerlink" title="实现机制"></a>实现机制</h3><p>设立涉及到几个概念：一般优先级的普通进程，最高优先级的watchdog/?内核线程，Hr-timer时钟中断，其中Hr-timer可以打断watchdog/?执行，watchdog/?可以打断普通优先级的进程执行。</p>
-<p>Soft lockup机制在初始化的时候会init一个 Hr-timer，定时执行<br>在执行过程中</p>
-<ol>
-<li>获取 percpu变量 watchdog_touch_ts 的值</li>
-<li>唤醒 watchdog/? 内核线程</li>
-<li>比较 当前timestamp 和 watchdog_touch_ts值</li>
-<li>内核线程会用当前的time_stamp 更新 watchdog_touch_ts</li>
-</ol>
-
-      
-    </div>
-
-    
-    
-    
-
-    <footer class="post-footer">
-        <div class="post-eof"></div>
-      
-    </footer>
-  </article>
-  
-  
-  
-
 
   
   <nav class="pagination">
-    <span class="page-number current">1</span><a class="page-number" href="/page/2/">2</a><a class="extend next" rel="next" href="/page/2/"><i class="fa fa-angle-right" aria-label="Next page"></i></a>
+    <span class="page-number current">1</span><a class="page-number" href="/page/2/">2</a><a class="page-number" href="/page/3/">3</a><a class="extend next" rel="next" href="/page/2/"><i class="fa fa-angle-right" aria-label="Next page"></i></a>
   </nav>
 
 
