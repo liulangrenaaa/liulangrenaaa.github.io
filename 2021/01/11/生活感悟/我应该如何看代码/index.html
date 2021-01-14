@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="cn">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.1.1">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@5.14.0/css/all.min.css">
+  <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/animate.css@3.1.1/animate.min.css">
+
+<script class="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"liulangrenaaa.github.io","root":"/","scheme":"Muse","version":"8.0.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12},"copycode":false,"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"Searching...","empty":"We didn't find any results for the search: ${query}","hits_time":"${hits} results found in ${time} ms","hits":"${hits} results found"}};
+  </script>
+
+  <meta name="description" content="每次看一个模块源码都比较痛苦，在 kernel 的代码海洋里面像一只无头苍蝇一样，看来半天却不知所云，记录一下之后在看某个模块源码时 应该注意什么，比较快的熟悉，警醒自己！ 庞大的linux内核现在是 2021-01-11号，上个月linus发布了 Linux-5.10 LTS版本，往往每年的最后一个 kernel 版本就是作为LTS的版本，今年是12月13号。 linus 会在每个大版本发布之后">
+<meta property="og:type" content="article">
+<meta property="og:title" content="我应该如何看代码">
+<meta property="og:url" content="https://liulangrenaaa.github.io/2021/01/11/%E7%94%9F%E6%B4%BB%E6%84%9F%E6%82%9F/%E6%88%91%E5%BA%94%E8%AF%A5%E5%A6%82%E4%BD%95%E7%9C%8B%E4%BB%A3%E7%A0%81/index.html">
+<meta property="og:site_name" content="liulangren Blog">
+<meta property="og:description" content="每次看一个模块源码都比较痛苦，在 kernel 的代码海洋里面像一只无头苍蝇一样，看来半天却不知所云，记录一下之后在看某个模块源码时 应该注意什么，比较快的熟悉，警醒自己！ 庞大的linux内核现在是 2021-01-11号，上个月linus发布了 Linux-5.10 LTS版本，往往每年的最后一个 kernel 版本就是作为LTS的版本，今年是12月13号。 linus 会在每个大版本发布之后">
+<meta property="og:locale">
+<meta property="article:published_time" content="2021-01-11T15:00:00.000Z">
+<meta property="article:modified_time" content="2021-01-11T15:33:54.770Z">
+<meta property="article:author" content="Su Hui">
+<meta property="article:tag" content="生活感悟">
+<meta property="article:tag" content="read code">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://liulangrenaaa.github.io/2021/01/11/%E7%94%9F%E6%B4%BB%E6%84%9F%E6%82%9F/%E6%88%91%E5%BA%94%E8%AF%A5%E5%A6%82%E4%BD%95%E7%9C%8B%E4%BB%A3%E7%A0%81/">
+
+
+<script class="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'cn'
+  };
+</script>
+
+  <title>我应该如何看代码 | liulangren Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  body { margin-top: 2rem; }
+
+  .use-motion .menu-item,
+  .use-motion .sidebar,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header {
+    visibility: visible;
+  }
+
+  .use-motion .header,
+  .use-motion .site-brand-container .toggle,
+  .use-motion .footer { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle,
+  .use-motion .custom-logo-image {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line {
+    transform: scaleX(1);
+  }
+
+  .search-pop-overlay, .sidebar-nav { display: none; }
+  .sidebar-panel { display: block; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <h1 class="site-title">liulangren Blog</h1>
+      <i class="logo-line"></i>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>Categories</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+        
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <section class="post-toc-wrap sidebar-panel">
+          <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%BA%9E%E5%A4%A7%E7%9A%84linux%E5%86%85%E6%A0%B8"><span class="nav-number">1.</span> <span class="nav-text">庞大的linux内核</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%96%B0%E7%9A%84%E6%A8%A1%E5%9D%97%E5%BA%94%E8%AF%A5%E5%A6%82%E4%BD%95%E6%B6%89%E5%8F%8A"><span class="nav-number">2.</span> <span class="nav-text">新的模块应该如何涉及</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%96%B0%E7%9A%84%E5%AD%90%E7%B3%BB%E7%BB%9F"><span class="nav-number">2.1.</span> <span class="nav-text">新的子系统</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%A6%82%E4%BD%95%E6%B7%B1%E5%85%A5"><span class="nav-number">3.</span> <span class="nav-text">如何深入</span></a></li></ol></div>
+      </section>
+      <!--/noindex-->
+
+      <section class="site-overview-wrap sidebar-panel">
+        <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+  <p class="site-author-name" itemprop="name">Su Hui</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">28</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">7</span>
+        <span class="site-state-item-name">categories</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">43</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+
+
+
+      </section>
+    </div>
+  </aside>
+  <div class="sidebar-dimmer"></div>
+
+
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+
+    <div class="main-inner post posts-expand">
+      
+
+      
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
+    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2021/01/11/%E7%94%9F%E6%B4%BB%E6%84%9F%E6%82%9F/%E6%88%91%E5%BA%94%E8%AF%A5%E5%A6%82%E4%BD%95%E7%9C%8B%E4%BB%A3%E7%A0%81/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="Su Hui">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liulangren Blog">
+    </span>
+
+    
+    
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          我应该如何看代码
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">Posted on</span>
+      
+
+      <time title="Created: 2021-01-11 23:00:00 / Modified: 23:33:54" itemprop="dateCreated datePublished" datetime="2021-01-11T23:00:00+08:00">2021-01-11</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">In</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/%E7%94%9F%E6%B4%BB%E6%84%9F%E6%82%9F/" itemprop="url" rel="index"><span itemprop="name">生活感悟</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+        <p>每次看一个模块源码都比较痛苦，在 <code>kernel</code> 的代码海洋里面像一只无头苍蝇一样，看来半天却<br>不知所云，记录一下之后在看某个模块源码时 应该注意什么，比较快的熟悉，警醒自己！</p>
+<h2 id="庞大的linux内核"><a href="#庞大的linux内核" class="headerlink" title="庞大的linux内核"></a>庞大的linux内核</h2><p>现在是 2021-01-11号，上个月linus发布了 Linux-5.10 LTS版本，往往每年的最后一个 kernel 版本就是作为LTS的版本，今年是12月13号。</p>
+<p>linus 会在每个大版本发布之后都会 开启 一个merge window的时间，这个时间大家都可以尽量<br>的合入之前早就开发好的已经在next tree的 patch，大概有一两周？今年这时候恰好是圣诞节，<br>老外是基本周末都不会工作的，更何况是 <code>圣诞+元旦</code> 这种节日了，看了基本 2020-12-23 – 2021-01-04 都是没有daily next tree 版本更新的。</p>
+<p>A total of 1,971 developers contributed to 5.10 — again, just short of the record set by 5.8. Of those developers, 252 (just under 13%) made their first contribution in 5.10; that is the lowest number seen since 5.6. The most active 5.10 developers were:</p>
+<p><a target="_blank" rel="noopener" href="https://lwn.net/Articles/839772/">Linux 5.10代码统计</a></p>
+<h2 id="新的模块应该如何涉及"><a href="#新的模块应该如何涉及" class="headerlink" title="新的模块应该如何涉及"></a>新的模块应该如何涉及</h2><p>首先要高明白他是干什么的</p>
+<ol>
+<li>结合注释去看，谷歌翻译，vscode在线、离线插件都很好用</li>
+<li>结合 git log 看：<br> git log -S’xxx’ file_name</li>
+<li>根据Makefile看：如果这个目录下Makefile 都没直接包含这个文件.o<br>需要使能之后才会编译到内核中的话，结合是否工作实际需要再看</li>
+<li>谷歌、百度：中文 英文都可以作为关键次搜索</li>
+<li>LWN 找到Archives，看看有没有介绍的文章</li>
+<li>看看 Documents 目录下有没有介绍的文档</li>
+<li>看这个模块 关键数据结构 和关键数据结构数据成员 如 struct_task struct_mm<br>address_space等</li>
+</ol>
+<h3 id="新的子系统"><a href="#新的子系统" class="headerlink" title="新的子系统"></a>新的子系统</h3><ol>
+<li>知道模块子系统作用</li>
+<li>找个方法实践一下，比如 docker 可以很好实践 cgroups</li>
+<li>关键数据结构</li>
+</ol>
+<h2 id="如何深入"><a href="#如何深入" class="headerlink" title="如何深入"></a>如何深入</h2><p>比如我知道 page_cache 的大概了，也知道他的作用，但是看代码的时候比较迷茫？</p>
+<ol>
+<li><p>看看 page_cache 的API</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">amd_server@ubuntu: ~&#x2F;workspace&#x2F;linux-stable&#x2F;mm# grep &quot;EXPORT_SYMBOL&quot; .&#x2F;filemap.c -nr</span><br><span class="line">279:EXPORT_SYMBOL(delete_from_page_cache);</span><br><span class="line">377:EXPORT_SYMBOL(filemap_check_errors);</span><br><span class="line">437:EXPORT_SYMBOL(filemap_fdatawrite);</span><br><span class="line">444:EXPORT_SYMBOL(filemap_fdatawrite_range);</span><br><span class="line">459:EXPORT_SYMBOL(filemap_flush);</span><br><span class="line">502:EXPORT_SYMBOL(filemap_range_has_page);</span><br><span class="line">557:EXPORT_SYMBOL(filemap_fdatawait_range);</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>在.c 文件中搜索trace_ 看看，找到他的静态追踪点 <code>tracepoints</code></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">amd_server@130ubuntu: ~&#x2F;workspace&#x2F;linux-stable&#x2F;mm# grep &quot;trace_&quot; .&#x2F;filemap.c -nr</span><br><span class="line">236:    trace_mm_filemap_delete_from_page_cache(page);</span><br><span class="line">354:            trace_mm_filemap_delete_from_page_cache(pvec-&gt;pages[i]);</span><br><span class="line">683:    trace_filemap_set_wb_err(mapping, eseq);</span><br><span class="line">724:            trace_file_check_and_advance_wb_err(file, old);</span><br><span class="line">902:    trace_mm_filemap_add_to_page_cache(page);</span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace&#x2F;linux-stable&#x2F;mm#</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>直接使用 bpftrace -l 这个根据搜索你的模块，看看有那些比较重要的函数，这些重要函数往<br>往是掌握这个模块的关键，也是经常出现问题需要debug 或者观测的地方，所以 kernel 才会为他<br>设置一个静态追踪点</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">amd_server@ubuntu: ~&#x2F;workspace&#x2F;linux-stable&#x2F;mm# sudo bpftrace -l | grep tracepoint: | grep page_cache</span><br><span class="line">tracepoint:filemap:mm_filemap_delete_from_page_cache</span><br><span class="line">tracepoint:filemap:mm_filemap_add_to_page_cache</span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace&#x2F;linux-stable&#x2F;mm#</span><br></pre></td></tr></table></figure>
+
+
+</li>
+</ol>
+<ol start="4">
+<li>stat 统计数据入手<br>类似于 <code>slub</code> 这种内存分配器，内核提供了很多统计数据，可以利用这些事件统计 来跟踪关键代<br>码路径</li>
+</ol>
+<p>如</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">enum stat_item &#123;</span><br><span class="line">	ALLOC_FASTPATH,		&#x2F;* Allocation from cpu slab *&#x2F;</span><br><span class="line">	ALLOC_SLOWPATH,		&#x2F;* Allocation by getting a new cpu slab *&#x2F;</span><br><span class="line">	FREE_FASTPATH,		&#x2F;* Free to cpu slab *&#x2F;</span><br><span class="line">	FREE_SLOWPATH,		&#x2F;* Freeing not to cpu slab *&#x2F;</span><br><span class="line"></span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace&#x2F;linux-stable&#x2F;mm# grep ALLOC_FASTPATH . -nr</span><br><span class="line">.&#x2F;slub.c:2883:          stat(s, ALLOC_FASTPATH);</span><br><span class="line">.&#x2F;slub.c:5390:STAT_ATTR(ALLOC_FASTPATH, alloc_fastpath);</span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace&#x2F;linux-stable&#x2F;mm# grep ALLOC_SLOWPATH . -nr</span><br><span class="line">.&#x2F;slub.c:2666:  stat(s, ALLOC_SLOWPATH);</span><br><span class="line">.&#x2F;slub.c:5391:STAT_ATTR(ALLOC_SLOWPATH, alloc_slowpath);</span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace&#x2F;linux-stable&#x2F;mm#</span><br></pre></td></tr></table></figure>
+
+<p>struct_task 的 context switch 事件计数</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">struct task_struct &#123;</span><br><span class="line">......</span><br><span class="line">	unsigned long			nvcsw;</span><br><span class="line">	unsigned long			nivcsw;</span><br><span class="line">......</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace&#x2F;linux-stable&#x2F;kernel&#x2F;sched# grep &quot;nivcsw&quot; . -nr</span><br><span class="line">.&#x2F;debug.c:497:          (long long)(p-&gt;nvcsw + p-&gt;nivcsw),</span><br><span class="line">.&#x2F;debug.c:934:  nr_switches &#x3D; p-&gt;nvcsw + p-&gt;nivcsw;</span><br><span class="line">.&#x2F;debug.c:989:  __PS(&quot;nr_involuntary_switches&quot;, p-&gt;nivcsw);</span><br><span class="line">.&#x2F;core.c:4988:  switch_count &#x3D; &amp;prev-&gt;nivcsw;</span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace&#x2F;linux-stable&#x2F;kernel&#x2F;sched#</span><br></pre></td></tr></table></figure>
+
+<ol start="5">
+<li>看到静态追踪点 或者stat统计数据 之后，看看附近的函数，更上层函数等</li>
+</ol>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E7%94%9F%E6%B4%BB%E6%84%9F%E6%82%9F/" rel="tag"># 生活感悟</a>
+              <a href="/tags/read-code/" rel="tag"># read code</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2021/01/09/%E5%86%85%E6%A0%B8%E8%A7%82%E6%B5%8B/systemTap/How%20to%20Use%20system%20Tap/" rel="prev" title="How to Use system Tap">
+                  <i class="fa fa-chevron-left"></i> How to Use system Tap
+                </a>
+            </div>
+            <div class="post-nav-item">
+            </div>
+          </div>
+    </footer>
+  </article>
+  
+  
+  
+
+
+
+      
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      const activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      const commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      
+
+      
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2021</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Su Hui</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/muse/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a>
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <script src="//cdn.jsdelivr.net/npm/animejs@3.2.0/lib/anime.min.js"></script>
+<script src="/js/utils.js"></script><script src="/js/motion.js"></script><script src="/js/schemes/muse.js"></script><script src="/js/next-boot.js"></script>
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

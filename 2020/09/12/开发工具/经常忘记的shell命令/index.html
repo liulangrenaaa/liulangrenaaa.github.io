@@ -22,15 +22,15 @@
     var CONFIG = {"hostname":"liulangrenaaa.github.io","root":"/","scheme":"Muse","version":"8.0.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12},"copycode":false,"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"Searching...","empty":"We didn't find any results for the search: ${query}","hits_time":"${hits} results found in ${time} ms","hits":"${hits} results found"}};
   </script>
 
-  <meta name="description" content="总有那么几条经常使用，但有比较难记住的命令，做个记录。  ln 创建软连接  12345ln -s   实际文件&#x2F;目录          软链接文件&#x2F;目录ln -s &#x2F;usr&#x2F;sbin&#x2F;trace-bpfcc &#x2F;usr&#x2F;bin&#x2F;traceln -s   实际文件          硬链接文件 &#x2F;&#x2F;目">
+  <meta name="description" content="总有那么几条经常使用，但有比较难记住的命令，做个记录。  ln 创建连接  ln 创建 软链接 12ln -s   实际文件&#x2F;目录          软链接文件&#x2F;目录ln -s &#x2F;usr&#x2F;sbin&#x2F;trace-bpfcc &#x2F;usr&#x2F;bin&#x2F;trace  ln 创建 硬链接 12ln   实际文件          硬链">
 <meta property="og:type" content="article">
 <meta property="og:title" content="那些经常忘记的shell命令">
 <meta property="og:url" content="https://liulangrenaaa.github.io/2020/09/12/%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7/%E7%BB%8F%E5%B8%B8%E5%BF%98%E8%AE%B0%E7%9A%84shell%E5%91%BD%E4%BB%A4/index.html">
-<meta property="og:site_name" content="liulangren 读核之旅">
-<meta property="og:description" content="总有那么几条经常使用，但有比较难记住的命令，做个记录。  ln 创建软连接  12345ln -s   实际文件&#x2F;目录          软链接文件&#x2F;目录ln -s &#x2F;usr&#x2F;sbin&#x2F;trace-bpfcc &#x2F;usr&#x2F;bin&#x2F;traceln -s   实际文件          硬链接文件 &#x2F;&#x2F;目">
+<meta property="og:site_name" content="liulangren Blog">
+<meta property="og:description" content="总有那么几条经常使用，但有比较难记住的命令，做个记录。  ln 创建连接  ln 创建 软链接 12ln -s   实际文件&#x2F;目录          软链接文件&#x2F;目录ln -s &#x2F;usr&#x2F;sbin&#x2F;trace-bpfcc &#x2F;usr&#x2F;bin&#x2F;trace  ln 创建 硬链接 12ln   实际文件          硬链">
 <meta property="og:locale">
 <meta property="article:published_time" content="2020-09-12T06:47:40.000Z">
-<meta property="article:modified_time" content="2020-09-21T15:21:44.365Z">
+<meta property="article:modified_time" content="2021-01-12T13:06:44.174Z">
 <meta property="article:author" content="Su Hui">
 <meta property="article:tag" content="shell">
 <meta name="twitter:card" content="summary">
@@ -49,7 +49,7 @@
   };
 </script>
 
-  <title>那些经常忘记的shell命令 | liulangren 读核之旅</title>
+  <title>那些经常忘记的shell命令 | liulangren Blog</title>
   
 
 
@@ -112,7 +112,7 @@
 
     <a href="/" class="brand" rel="start">
       <i class="logo-line"></i>
-      <h1 class="site-title">liulangren 读核之旅</h1>
+      <h1 class="site-title">liulangren Blog</h1>
       <i class="logo-line"></i>
     </a>
   </div>
@@ -194,20 +194,20 @@
       <div class="site-state-item site-state-posts">
           <a href="/archives/">
         
-          <span class="site-state-item-count">22</span>
+          <span class="site-state-item-count">28</span>
           <span class="site-state-item-name">posts</span>
         </a>
       </div>
       <div class="site-state-item site-state-categories">
             <a href="/categories/">
           
-        <span class="site-state-item-count">6</span>
+        <span class="site-state-item-count">7</span>
         <span class="site-state-item-name">categories</span></a>
       </div>
       <div class="site-state-item site-state-tags">
             <a href="/tags/">
           
-        <span class="site-state-item-count">35</span>
+        <span class="site-state-item-count">43</span>
         <span class="site-state-item-name">tags</span></a>
       </div>
   </nav>
@@ -252,7 +252,7 @@
     </span>
 
     <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="liulangren 读核之旅">
+      <meta itemprop="name" content="liulangren Blog">
     </span>
 
     
@@ -277,7 +277,7 @@
           <i class="far fa-calendar-check"></i>
         </span>
         <span class="post-meta-item-text">Edited on</span>
-        <time title="Modified: 2020-09-21 23:21:44" itemprop="dateModified" datetime="2020-09-21T23:21:44+08:00">2020-09-21</time>
+        <time title="Modified: 2021-01-12 21:06:44" itemprop="dateModified" datetime="2021-01-12T21:06:44+08:00">2021-01-12</time>
       </span>
     <span class="post-meta-item">
       <span class="post-meta-item-icon">
@@ -301,40 +301,127 @@
     <div class="post-body" itemprop="articleBody">
         <p>总有那么几条经常使用，但有比较难记住的命令，做个记录。</p>
 <ol>
-<li>ln 创建软连接</li>
+<li>ln 创建连接</li>
 </ol>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">ln -s   实际文件&#x2F;目录          软链接文件&#x2F;目录</span><br><span class="line">ln -s &#x2F;usr&#x2F;sbin&#x2F;trace-bpfcc &#x2F;usr&#x2F;bin&#x2F;trace</span><br><span class="line"></span><br><span class="line">ln -s   实际文件          硬链接文件 &#x2F;&#x2F;目录无法使用硬链接</span><br><span class="line">ln  &#x2F;usr&#x2F;sbin&#x2F;trace-bpfcc &#x2F;usr&#x2F;bin&#x2F;trace</span><br></pre></td></tr></table></figure>
+<p>ln 创建 软链接</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">ln -s   实际文件&#x2F;目录          软链接文件&#x2F;目录</span><br><span class="line">ln -s &#x2F;usr&#x2F;sbin&#x2F;trace-bpfcc &#x2F;usr&#x2F;bin&#x2F;trace</span><br></pre></td></tr></table></figure>
+
+<p>ln 创建 硬链接</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">ln   实际文件          硬链接文件 &#x2F;&#x2F;目录无法使用硬链接</span><br><span class="line">ln  &#x2F;usr&#x2F;sbin&#x2F;trace-bpfcc &#x2F;usr&#x2F;bin&#x2F;trace</span><br></pre></td></tr></table></figure>
+
+
 
 <ol start="2">
 <li>tar</li>
 </ol>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"></span><br></pre></td></tr></table></figure>
+<p>解压 tar.gz 文件      // extrat – 提取</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">tar -zxvf file.tar.gz</span><br></pre></td></tr></table></figure>
+
+<p>压缩 文件、文件夹      // create  – 创建</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">tar -zcvf file.tar.gz  .&#x2F;file</span><br></pre></td></tr></table></figure>
+
 
 <ol start="3">
-<li><p>zip</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">zip 解压 aaa.zip文件</span><br><span class="line">unzip aaa.zip</span><br><span class="line"></span><br><span class="line">zip 将 aaa文件压缩为 aaa.zip</span><br><span class="line">zip -r aaa.zip .&#x2F;aaa</span><br><span class="line"></span><br><span class="line">zip 将 aaa bbb 文件压缩为 aaa.zip</span><br><span class="line">zip -r aaa.zip .&#x2F;aaa .&#x2F;bbb</span><br></pre></td></tr></table></figure>
+<li>zip</li>
+</ol>
+<p>zip 解压 aaa.zip文件</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">unzip aaa.zip</span><br></pre></td></tr></table></figure>
+
+<p>zip 压缩文件夹</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">zip -r aaa.zip .&#x2F;aaa</span><br></pre></td></tr></table></figure>
+
+<p>zip 压缩多个文件</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">zip -r aaa.zip .&#x2F;aaa .&#x2F;bbb</span><br></pre></td></tr></table></figure>
+
+
+
+
+<ol start="4">
+<li>scp 本地 &lt;–&gt; 远程 互传文件</li>
+</ol>
+<p>从 ubuntu@xxx:222 获取 <code>/home/ubuntu/.vscode-server/data/Machine/settings.json</code> 文件，且保存为 <code>/tmp/settings.json</code></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">scp -P  222 ubuntu@xxx:&#x2F;home&#x2F;ubuntu&#x2F;.vscode-server&#x2F;data&#x2F;Machine&#x2F;settings.json &#x2F;tmp&#x2F;settings.json</span><br></pre></td></tr></table></figure>
+<p>可以参考<a target="_blank" rel="noopener" href="https://www.cnblogs.com/bignode/articles/9241333.html">scp 命令介绍</a></p>
+<ol start="5">
+<li>ubuntu 截图工具</li>
+</ol>
+<p>安装</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo apt-get install flameshot</span><br></pre></td></tr></table></figure>
+
+<p>使用</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">flameshot gui</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace&#x2F;linux-stable# cat ~&#x2F;.zshrc| tail -n 1</span><br><span class="line">alias shot&#x3D;&quot;flameshot gui&quot;</span><br><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace&#x2F;linux-stable# shot</span><br></pre></td></tr></table></figure>
+
+
+
+
+
+<ol start="6">
+<li>编译linux kernel 前准备工作</li>
+</ol>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo apt install git fakeroot build-essential ncurses-dev xz-utils libssl-dev bc flex libelf-dev bison clang</span><br></pre></td></tr></table></figure>
+
+
+
+
+
+<ol start="7">
+<li>dd 快速生成大文件<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">Inspiron-5548@130ubuntu: ~# dd if&#x3D;&#x2F;dev&#x2F;zero of&#x3D;haha bs&#x3D;1M count&#x3D;100</span><br><span class="line">记录了100+0 的读入</span><br><span class="line">记录了100+0 的写出</span><br><span class="line">104857600 bytes (105 MB, 100 MiB) copied, 0.294862 s, 356 MB&#x2F;s</span><br><span class="line">Inspiron-5548@ubuntu: ~#</span><br></pre></td></tr></table></figure>
+
+
 </li>
-<li><p>3</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">&#96;&#96;&#96;</span><br><span class="line"></span><br><span class="line">5. 3</span><br><span class="line"></span><br></pre></td></tr></table></figure>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line">6. 3</span><br><span class="line"></span><br></pre></td></tr></table></figure>
-<pre><code></code></pre>
-</li>
-<li><p>3</p>
-</li>
-<li><p>3</p>
-</li>
-<li><p>3</p>
-</li>
-<li><p>3</p>
-</li>
-<li><p>3</p>
-</li>
-<li><p>3</p>
-</li>
-<li><p>3</p>
-</li>
-<li><p>3</p>
-</li>
+</ol>
+<ol start="8">
+<li>rsync<br>为啥我需要 rsync来同步文件目录呢？</li>
+</ol>
+<p>我hexo_blog是部署在 tencent上的，其实本地公司、家里个人电脑也部署了一份，github gitee上也备份了。<br>但是如果依赖手动去同步：</p>
+<ol>
+<li>在哪个 linux机器上修改了之后及时发布到github,且及时备份到gitee</li>
+<li>到新的机器上修改之前，需要先 <code>git pull origin master</code> 将本地，或者服务器上 blog更新到最新</li>
+<li>开始修改，修改完成 –&gt; 1</li>
+</ol>
+<p>然后我发现我这个场景 rsync 并不能很好解决。。<br>如果是 一个服务器 和 备份服务器之间 数据同步 可以使用这样的方式。。<br>突然想到，在新安装一台 linux主机 虚拟机 的时候，可以使用 rsync 来同步，减少 home 目录下文件搞来稿去的 事情。。</p>
+<p><a target="_blank" rel="noopener" href="http://einverne.github.io/post/2017/07/rsync-introduction.html">rsync 命令</a></p>
+<ol start="9">
+<li>samba 相关</li>
+</ol>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">net Z: 192.168.1.103???</span><br></pre></td></tr></table></figure>
+
+
+
+<ol start="10">
+<li>wine 使用</li>
+</ol>
+<p>工作上可能需要使用通讯会议这样的软件，或者是临时使用source insight，但这些又都没有linux版<br>本，要么使用wine来模拟windows api实现，要么使用windows虚拟机。</p>
+<p>这里使用wine:<br>安装 <code>wine</code></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">sudo apt install wine</span><br><span class="line">sudo apt install winetricks</span><br></pre></td></tr></table></figure>
+
+<p>安装 <code>软件</code></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo apt install winetricks</span><br></pre></td></tr></table></figure>
+<p>进去选择资源管理器，初始化一下~/.wine 目录，然后直接安装</p>
+<p>使用 <code>软件</code></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace# tail ~&#x2F;.zshrc  -n 2</span><br><span class="line">alias shot&#x3D;&quot;flameshot gui&quot;</span><br><span class="line">alias wemeet&#x3D;&quot;wine &#x2F;home&#x2F;ubuntu&#x2F;.wine&#x2F;drive_c&#x2F;Program\ Files\ \(x86\)&#x2F;Tencent&#x2F;WeMeet&#x2F;wemeetapp.exe&quot;</span><br><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace# wemeet</span><br></pre></td></tr></table></figure>
+
+
+<ol start="11">
+<li>查询常见函数</li>
+</ol>
+<p>apropos</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace&#x2F;kernel_debug_tools# apropos pid</span><br><span class="line">acpid (8)            - Advanced Configuration and Power Interface event daemon</span><br><span class="line">biosnoop-bpfcc (8)   - Trace block device I&#x2F;O and print details incl. issuing PID.</span><br><span class="line">getpid (2)           - get process identification</span><br><span class="line">getppid (2)          - get process identification</span><br><span class="line">git (1)              - the stupid content tracker</span><br><span class="line">pid_namespaces (7)   - overview of Linux PID namespaces</span><br><span class="line">pidfd_open (2)       - obtain a file descriptor that refers to a process</span><br><span class="line">pidfd_send_signal (2) - send a signal to a process specified by a file descriptor</span><br><span class="line">pidof (8)            - find the process ID of a running program.</span><br><span class="line">pidpersec-bpfcc (8)  - Count new processes (via fork()). Uses Linux eBPF&#x2F;bcc.</span><br><span class="line">pidpersec.bt (8)     - Count new processes (via fork()). Uses bpftrace&#x2F;eBPF.</span><br><span class="line">waitpid (2)          - wait for process to change state</span><br><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace&#x2F;kernel_debug_tools#</span><br></pre></td></tr></table></figure>
+
+<ol start="12">
+<li>查找常见软件包<br><code>sudo apt-cache search </code></li>
+</ol>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace&#x2F;kernel_debug_tools# sudo apt-cache search qemu | grep arm</span><br><span class="line">qemu-efi-arm - UEFI firmware for 32-bit ARM virtual machines</span><br><span class="line">qemu-system-arm - QEMU full system emulation binaries (arm)</span><br><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace&#x2F;kernel_debug_tools# sudo apt-cache search qemu | grep aarch64</span><br><span class="line">qemu-efi-aarch64 - UEFI firmware for 64-bit ARM virtual machines</span><br><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace&#x2F;kernel_debug_tools#</span><br></pre></td></tr></table></figure>
+
+
+
+<ol start="13">
+<li>3</li>
+</ol>
+<ol start="14">
+<li>vmbox 虚拟机？</li>
 </ol>
 
     </div>
@@ -352,13 +439,13 @@
 
           <div class="post-nav">
             <div class="post-nav-item">
-                <a href="/2020/09/12/%E8%BF%9B%E7%A8%8B%E7%AE%A1%E7%90%86/lockup%E9%97%AE%E9%A2%98/" rel="prev" title="linux lockup问题">
-                  <i class="fa fa-chevron-left"></i> linux lockup问题
+                <a href="/2020/09/11/%E5%B9%B6%E5%8F%91%E9%97%AE%E9%A2%98/%E6%AD%BB%E9%94%81%E9%97%AE%E9%A2%98/" rel="prev" title="linux内核死锁检测">
+                  <i class="fa fa-chevron-left"></i> linux内核死锁检测
                 </a>
             </div>
             <div class="post-nav-item">
-                <a href="/2020/09/12/%E5%86%85%E6%A0%B8%E8%A7%82%E6%B5%8B/bpf%E7%9B%B8%E5%85%B3/bpftrace/" rel="next" title="bpftrace">
-                  bpftrace <i class="fa fa-chevron-right"></i>
+                <a href="/2020/09/12/%E8%BF%9B%E7%A8%8B%E7%AE%A1%E7%90%86/lockup%E9%97%AE%E9%A2%98/" rel="next" title="linux lockup问题">
+                  linux lockup问题 <i class="fa fa-chevron-right"></i>
                 </a>
             </div>
           </div>
@@ -406,7 +493,7 @@
 <div class="copyright">
   
   &copy; 
-  <span itemprop="copyrightYear">2020</span>
+  <span itemprop="copyrightYear">2021</span>
   <span class="with-love">
     <i class="fa fa-heart"></i>
   </span>

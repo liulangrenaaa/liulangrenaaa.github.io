@@ -26,7 +26,7 @@
 <meta property="og:type" content="article">
 <meta property="og:title" content="per-cpu变量引起的思考">
 <meta property="og:url" content="https://liulangrenaaa.github.io/2020/09/05/%E5%B9%B6%E5%8F%91%E9%97%AE%E9%A2%98/percpu%E5%8F%98%E9%87%8F%E5%BC%95%E8%B5%B7%E7%9A%84%E6%80%9D%E8%80%83/index.html">
-<meta property="og:site_name" content="liulangren 读核之旅">
+<meta property="og:site_name" content="liulangren Blog">
 <meta property="og:description" content="疑问 内核为什么要引入per-cpu变量？解决了什么问题？ per-cpu变量如何实现的？ 是否可以用数组实现per-cpu变量？ per-cpu变量访问有什么原则？ 如果一个per-cpu变量既可以在线程上下文中访问，又可以在中断上下文中访问，需要保护吗？  接下来我们就带着以上的疑问继续往下看 内核为什么要引入per-cpu变量？解决了什么问题？per-cpu变量是Linux内核中的一种同步机">
 <meta property="og:locale">
 <meta property="article:published_time" content="2020-09-05T06:47:40.000Z">
@@ -50,7 +50,7 @@
   };
 </script>
 
-  <title>per-cpu变量引起的思考 | liulangren 读核之旅</title>
+  <title>per-cpu变量引起的思考 | liulangren Blog</title>
   
 
 
@@ -113,7 +113,7 @@
 
     <a href="/" class="brand" rel="start">
       <i class="logo-line"></i>
-      <h1 class="site-title">liulangren 读核之旅</h1>
+      <h1 class="site-title">liulangren Blog</h1>
       <i class="logo-line"></i>
     </a>
   </div>
@@ -196,20 +196,20 @@
       <div class="site-state-item site-state-posts">
           <a href="/archives/">
         
-          <span class="site-state-item-count">22</span>
+          <span class="site-state-item-count">28</span>
           <span class="site-state-item-name">posts</span>
         </a>
       </div>
       <div class="site-state-item site-state-categories">
             <a href="/categories/">
           
-        <span class="site-state-item-count">6</span>
+        <span class="site-state-item-count">7</span>
         <span class="site-state-item-name">categories</span></a>
       </div>
       <div class="site-state-item site-state-tags">
             <a href="/tags/">
           
-        <span class="site-state-item-count">35</span>
+        <span class="site-state-item-count">43</span>
         <span class="site-state-item-name">tags</span></a>
       </div>
   </nav>
@@ -254,7 +254,7 @@
     </span>
 
     <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="liulangren 读核之旅">
+      <meta itemprop="name" content="liulangren Blog">
     </span>
 
     
@@ -381,7 +381,7 @@
 <div class="copyright">
   
   &copy; 
-  <span itemprop="copyrightYear">2020</span>
+  <span itemprop="copyrightYear">2021</span>
   <span class="with-love">
     <i class="fa fa-heart"></i>
   </span>
