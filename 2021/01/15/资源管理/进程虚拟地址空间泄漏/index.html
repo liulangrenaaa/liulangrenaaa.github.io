@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="cn">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.1.1">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@5.14.0/css/all.min.css">
+  <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/animate.css@3.1.1/animate.min.css">
+
+<script class="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"liulangrenaaa.github.io","root":"/","scheme":"Muse","version":"8.0.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12},"copycode":false,"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"Searching...","empty":"We didn't find any results for the search: ${query}","hits_time":"${hits} results found in ${time} ms","hits":"${hits} results found"}};
+  </script>
+
+  <meta name="description" content="虚拟内存泄漏一般情况我们说 内存泄漏，都是指的是物理内存泄漏，毕竟物理内存是实实在在的，一个进程泄漏了，那么整个系统中的可用内存就会变少。 但是linux的虚拟内存空间是各个进程之间相互隔离的，在arm64系统中 有 T,在 arm32系统中也有3G多。但是否意味着这种 虚拟内存我们就不需要关心呢？ 尝试复现代码： 12345678910111213141516171819#include &amp;lt">
+<meta property="og:type" content="article">
+<meta property="og:title" content="进程虚拟地址空间泄漏问题">
+<meta property="og:url" content="https://liulangrenaaa.github.io/2021/01/15/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/%E8%BF%9B%E7%A8%8B%E8%99%9A%E6%8B%9F%E5%9C%B0%E5%9D%80%E7%A9%BA%E9%97%B4%E6%B3%84%E6%BC%8F/index.html">
+<meta property="og:site_name" content="liulangren Blog">
+<meta property="og:description" content="虚拟内存泄漏一般情况我们说 内存泄漏，都是指的是物理内存泄漏，毕竟物理内存是实实在在的，一个进程泄漏了，那么整个系统中的可用内存就会变少。 但是linux的虚拟内存空间是各个进程之间相互隔离的，在arm64系统中 有 T,在 arm32系统中也有3G多。但是否意味着这种 虚拟内存我们就不需要关心呢？ 尝试复现代码： 12345678910111213141516171819#include &amp;lt">
+<meta property="og:locale">
+<meta property="article:published_time" content="2021-01-15T11:00:00.000Z">
+<meta property="article:modified_time" content="2021-01-18T08:30:12.636Z">
+<meta property="article:author" content="Su Hui">
+<meta property="article:tag" content="内存泄露">
+<meta property="article:tag" content="资源泄漏">
+<meta property="article:tag" content="虚拟地址空间泄漏">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://liulangrenaaa.github.io/2021/01/15/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/%E8%BF%9B%E7%A8%8B%E8%99%9A%E6%8B%9F%E5%9C%B0%E5%9D%80%E7%A9%BA%E9%97%B4%E6%B3%84%E6%BC%8F/">
+
+
+<script class="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'cn'
+  };
+</script>
+
+  <title>进程虚拟地址空间泄漏问题 | liulangren Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  body { margin-top: 2rem; }
+
+  .use-motion .menu-item,
+  .use-motion .sidebar,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header {
+    visibility: visible;
+  }
+
+  .use-motion .header,
+  .use-motion .site-brand-container .toggle,
+  .use-motion .footer { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle,
+  .use-motion .custom-logo-image {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line {
+    transform: scaleX(1);
+  }
+
+  .search-pop-overlay, .sidebar-nav { display: none; }
+  .sidebar-panel { display: block; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <h1 class="site-title">liulangren Blog</h1>
+      <i class="logo-line"></i>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>Categories</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+        
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <section class="post-toc-wrap sidebar-panel">
+          <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%99%9A%E6%8B%9F%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F"><span class="nav-number">1.</span> <span class="nav-text">虚拟内存泄漏</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%9D%E8%AF%95%E5%A4%8D%E7%8E%B0"><span class="nav-number">2.</span> <span class="nav-text">尝试复现</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#x86-64-%E5%B9%B3%E5%8F%B0"><span class="nav-number">3.</span> <span class="nav-text">x86_64 平台</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#arm32-%E5%B9%B3%E5%8F%B0"><span class="nav-number">4.</span> <span class="nav-text">arm32 平台</span></a></li></ol></div>
+      </section>
+      <!--/noindex-->
+
+      <section class="site-overview-wrap sidebar-panel">
+        <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+  <p class="site-author-name" itemprop="name">Su Hui</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">33</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">7</span>
+        <span class="site-state-item-name">categories</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">52</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+
+
+
+      </section>
+    </div>
+  </aside>
+  <div class="sidebar-dimmer"></div>
+
+
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+
+    <div class="main-inner post posts-expand">
+      
+
+      
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
+    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2021/01/15/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/%E8%BF%9B%E7%A8%8B%E8%99%9A%E6%8B%9F%E5%9C%B0%E5%9D%80%E7%A9%BA%E9%97%B4%E6%B3%84%E6%BC%8F/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="Su Hui">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liulangren Blog">
+    </span>
+
+    
+    
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          进程虚拟地址空间泄漏问题
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">Posted on</span>
+
+      <time title="Created: 2021-01-15 19:00:00" itemprop="dateCreated datePublished" datetime="2021-01-15T19:00:00+08:00">2021-01-15</time>
+    </span>
+      <span class="post-meta-item">
+        <span class="post-meta-item-icon">
+          <i class="far fa-calendar-check"></i>
+        </span>
+        <span class="post-meta-item-text">Edited on</span>
+        <time title="Modified: 2021-01-18 16:30:12" itemprop="dateModified" datetime="2021-01-18T16:30:12+08:00">2021-01-18</time>
+      </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">In</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/linux%E5%86%85%E6%A0%B8/" itemprop="url" rel="index"><span itemprop="name">linux内核</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+        <h2 id="虚拟内存泄漏"><a href="#虚拟内存泄漏" class="headerlink" title="虚拟内存泄漏"></a>虚拟内存泄漏</h2><p>一般情况我们说 内存泄漏，都是指的是物理内存泄漏，毕竟物理内存是实实在在的，一个进程泄漏了，那么整个系统中的可用内存就会变少。</p>
+<p>但是linux的虚拟内存空间是各个进程之间相互隔离的，在arm64系统中 有 T,在 arm32系统中也有3G<br>多。但是否意味着这种 虚拟内存我们就不需要关心呢？</p>
+<h2 id="尝试复现"><a href="#尝试复现" class="headerlink" title="尝试复现"></a>尝试复现</h2><p>代码：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line">#include &lt;stdio.h&gt;</span><br><span class="line">#include &lt;stdlib.h&gt;</span><br><span class="line"></span><br><span class="line">void main(void)</span><br><span class="line">&#123;</span><br><span class="line">        int i &#x3D; 0;</span><br><span class="line">        char *p &#x3D; NULL;</span><br><span class="line">        for (i &#x3D; 0; i &lt; 1024 * 1024 * 64; i++) &#123;</span><br><span class="line">                p &#x3D; malloc(1024 * 1024);</span><br><span class="line">                if (!p) &#123;printf(&quot;malloc failed,p &#x3D; %p, i &#x3D; %d\n&quot;, p, i); break;&#125;</span><br><span class="line">                else    &#123;printf(&quot;malloc sucess.p &#x3D; %p, i &#x3D; %d\n&quot;, p, i);&#125;</span><br><span class="line">                usleep(1000 * 10);</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        printf(&quot;malloc failed,just wait!!\n&quot;);</span><br><span class="line">        while(1) &#123;</span><br><span class="line">                usleep(1000 * 10);</span><br><span class="line">        &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>每次尝试需非陪 1G的虚拟内存，但是不会去使用，也就是不会去申请物理内存</p>
+<h2 id="x86-64-平台"><a href="#x86-64-平台" class="headerlink" title="x86_64 平台"></a>x86_64 平台</h2><p>我一开始尝试在腾讯云 服务器上复现：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@130ubuntu: ~&#x2F;workspace&#x2F;test_modules&#x2F;resource_leak&#x2F;process_virtual_address_memleak# .&#x2F;a.out</span><br><span class="line">malloc sucess. p &#x3D; 0x7f8e3f5c6010, i &#x3D; 0</span><br><span class="line">malloc sucess. p &#x3D; 0x7f8e3f4c5010, i &#x3D; 1</span><br><span class="line">......</span><br><span class="line">malloc sucess. p &#x3D; 0x56771e4ba6e0, i &#x3D; 461827</span><br><span class="line">malloc sucess. p &#x3D; 0x56771e5ba6f0, i &#x3D; 461828</span><br><span class="line">[1]    2721866 killed     .&#x2F;a.out</span><br></pre></td></tr></table></figure>
+
+<p>直到最后分配到 <code>461828 MB</code> 内存的时候，<code>a.out</code> 被OOM kill了。</p>
+<p>到底是为啥呢？？？毕竟我也没有去往 <code>malloc</code> 的虚拟地址中写数据，也不应该会分配物理页面。<br>从 <code>top</code> 命令看</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">top - 15:47:46 up 3 days, 15:06,  2 users,  load average: 0.24, 0.16, 0.10</span><br><span class="line">Tasks: 157 total,   1 running, 156 sleeping,   0 stopped,   0 zombie</span><br><span class="line">%Cpu(s):  3.3 us,  3.6 sy,  0.0 ni, 92.7 id,  0.3 wa,  0.0 hi,  0.0 si,  0.0 st</span><br><span class="line">MiB Mem :   1987.9 total,     70.5 free,   1660.6 used,    256.8 buff&#x2F;cache</span><br><span class="line">MiB Swap:   2048.0 total,   1499.9 free,    548.1 used.    162.0 avail Mem</span><br><span class="line"></span><br><span class="line">    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND</span><br><span class="line">2783846 ubuntu    20   0  173.4g 683692   1380 S   0.3  33.6   0:06.86 a.out</span><br><span class="line">   1378 jenkins   20   0 2510448 176168   2924 S   0.7   8.7   7:05.12 java</span><br><span class="line">2779920 ubuntu    20   0  925684 107776  15196 S   1.0   5.3   0:21.10 node</span><br><span class="line">2703822 ubuntu    20   0 1611828  41268  11624 S   0.3   2.0   0:24.40 node</span><br><span class="line">2773158 ubuntu    20   0  702408  39436  12496 S   0.7   1.9   0:15.87</span><br></pre></td></tr></table></figure>
+
+<p>已经分配了 <code>173G</code> 虚拟内存，但是同时可以发现 驻留在物理内存中的页面也达到了 <code>683692kb</code>.<br>这到底是什么？</p>
+<p>通过对比 运行 <code>mytest</code> 前后的 <code>/proc/meminfo</code> 文件，发现差异主要在</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">系统正常</span><br><span class="line">Active(anon):     243372 kB</span><br><span class="line">Inactive(anon):   267836 kB</span><br><span class="line"></span><br><span class="line">mytest运行之后</span><br><span class="line">Active(anon):     550888 kB</span><br><span class="line">Inactive(anon):   576840 kB</span><br></pre></td></tr></table></figure>
+<p>说明确实是 mytest 消耗了大量的内存 用作匿名页面<br>接下来就需要查看具体是哪种页面消耗了物理内存了</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;2798128# cat smaps | grep heap -A 40</span><br><span class="line">7fbca3ff9000-7fc69e600000 rw-p 00000000 00:00 0                          [heap]</span><br><span class="line">Size:           41850908 kB</span><br><span class="line">KernelPageSize:        4 kB</span><br><span class="line">MMUPageSize:           4 kB</span><br><span class="line">Rss:              162844 kB</span><br><span class="line">Pss:              162844 kB</span><br><span class="line">Shared_Clean:          0 kB</span><br><span class="line">Shared_Dirty:          0 kB</span><br><span class="line">Private_Clean:         0 kB</span><br><span class="line">Private_Dirty:    162844 kB</span><br><span class="line">Referenced:       162844 kB</span><br><span class="line">Anonymous:        162844 kB</span><br><span class="line">LazyFree:              0 kB</span><br><span class="line"></span><br><span class="line">此时top 输出</span><br><span class="line">top - 16:05:47 up 3 days, 15:24,  4 users,  load average: 0.14, 0.09, 0.10</span><br><span class="line">Tasks: 157 total,   1 running, 156 sleeping,   0 stopped,   0 zombie</span><br><span class="line">%Cpu(s):  3.0 us,  2.7 sy,  0.0 ni, 94.0 id,  0.0 wa,  0.0 hi,  0.3 si,  0.0 st</span><br><span class="line">MiB Mem :   1987.9 total,    786.6 free,    917.0 used,    284.2 buff&#x2F;cache</span><br><span class="line">MiB Swap:   2048.0 total,   1512.2 free,    535.8 used.    912.0 avail Mem</span><br><span class="line"></span><br><span class="line">    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND</span><br><span class="line">2798128 ubuntu    20   0   45.1g 185412   1408 S   0.7   9.1   0:01.66 a.out</span><br><span class="line">......</span><br><span class="line">等待3min</span><br><span class="line">......</span><br><span class="line"></span><br><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;2798128# cat smaps | grep heap -A 40</span><br><span class="line">7fb68e600000-7fc69e600000 rw-p 00000000 00:00 0                          [heap]</span><br><span class="line">Size:           67371008 kB</span><br><span class="line">KernelPageSize:        4 kB</span><br><span class="line">MMUPageSize:           4 kB</span><br><span class="line">Rss:              262144 kB</span><br><span class="line">Pss:              262144 kB</span><br><span class="line">Shared_Clean:          0 kB</span><br><span class="line">Shared_Dirty:          0 kB</span><br><span class="line">Private_Clean:         0 kB</span><br><span class="line">Private_Dirty:    262144 kB</span><br><span class="line">Referenced:       262144 kB</span><br><span class="line">Anonymous:        262144 kB</span><br><span class="line">LazyFree:              0 kB</span><br><span class="line">AnonHugePages:         0 kB</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">此时top 输出</span><br><span class="line">top - 16:09:43 up 3 days, 15:27,  4 users,  load average: 0.24, 0.12, 0.10</span><br><span class="line">Tasks: 159 total,   1 running, 158 sleeping,   0 stopped,   0 zombie</span><br><span class="line">%Cpu(s):  2.7 us,  3.4 sy,  0.0 ni, 90.3 id,  3.7 wa,  0.0 hi,  0.0 si,  0.0 st</span><br><span class="line">MiB Mem :   1987.9 total,    585.4 free,   1072.9 used,    329.5 buff&#x2F;cache</span><br><span class="line">MiB Swap:   2048.0 total,   1523.9 free,    524.1 used.    754.9 avail Mem</span><br><span class="line"></span><br><span class="line">    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND</span><br><span class="line">2798128 ubuntu    20   0   67.9g 278604   1408 S   0.3  13.7   0:02.55 a.out</span><br></pre></td></tr></table></figure>
+
+<p>可以看到虽然 没有往堆内存中写入数据，但是还是消耗了较多的物理内存？这是怎么回事？</p>
+<ol>
+<li><p>猜想一， 可能是一直连续分配虚拟内存，导致 <code>vma</code> 使用很多？<br>通过查看 /proc/slabinfo 和 /proc/pid/maps 看堆内存就一块，基本没有分块的，kernel中也有<br><code>vma_merge</code> 的操作，所以应该不是vma 占用的内存</p>
+</li>
+<li><p>??？<br>我还没有其他头绪，为什么会占用物理内存</p>
+</li>
+</ol>
+<h2 id="arm32-平台"><a href="#arm32-平台" class="headerlink" title="arm32 平台"></a>arm32 平台</h2><p>然后想了想，x86_64平台可能是虚拟内存太大，复现时间成本有点高<br>就使用了公司的板子，重新编译了一遍，在一个 <code>arm32</code> 板子上运行</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br></pre></td><td class="code"><pre><span class="line">root@device_gls:&#x2F; # mytest</span><br><span class="line">malloc sucess. p &#x3D; 0xb6b00000, i &#x3D; 0</span><br><span class="line">malloc sucess. p &#x3D; 0xb6a00000, i &#x3D; 1</span><br><span class="line">malloc sucess. p &#x3D; 0xb6900000, i &#x3D; 2</span><br><span class="line">malloc sucess. p &#x3D; 0xb6800000, i &#x3D; 3</span><br><span class="line">malloc sucess. p &#x3D; 0xb6700000, i &#x3D; 4</span><br><span class="line">malloc sucess. p &#x3D; 0xb6600000, i &#x3D; 5</span><br><span class="line">malloc sucess. p &#x3D; 0xb6500000, i &#x3D; 6</span><br><span class="line">......</span><br><span class="line">malloc sucess. p &#x3D; 0x10380000, i &#x3D; 2663</span><br><span class="line">malloc sucess. p &#x3D; 0x10280000, i &#x3D; 2664</span><br><span class="line">malloc sucess. p &#x3D; 0x10180000, i &#x3D; 2665</span><br><span class="line">malloc sucess. p &#x3D; 0x10080000, i &#x3D; 2666</span><br><span class="line">......</span><br><span class="line">malloc sucess. p &#x3D; 0xff80000, i &#x3D; 2667</span><br><span class="line">malloc sucess. p &#x3D; 0xfe80000, i &#x3D; 2668</span><br><span class="line">malloc sucess. p &#x3D; 0xfd80000, i &#x3D; 2669</span><br><span class="line">malloc sucess. p &#x3D; 0xfc80000, i &#x3D; 2670</span><br><span class="line">......</span><br><span class="line">malloc sucess. p &#x3D; 0x4180000, i &#x3D; 2857</span><br><span class="line">malloc sucess. p &#x3D; 0x4080000, i &#x3D; 2858</span><br><span class="line">malloc sucess. p &#x3D; 0x3f80000, i &#x3D; 2859</span><br><span class="line">......</span><br><span class="line">malloc sucess. p &#x3D; 0x1080000, i &#x3D; 2906</span><br><span class="line">malloc sucess. p &#x3D; 0xf80000, i &#x3D; 2907</span><br><span class="line">malloc sucess. p &#x3D; 0xe80000, i &#x3D; 2908</span><br><span class="line">......</span><br><span class="line">malloc sucess. p &#x3D; 0x80000, i &#x3D; 2922</span><br><span class="line">malloc sucess. p &#x3D; 0xb6f80000, i &#x3D; 2923</span><br><span class="line">malloc sucess. p &#x3D; 0xb7080000, i &#x3D; 2924</span><br><span class="line">......</span><br><span class="line">malloc sucess. p &#x3D; 0xbe880000, i &#x3D; 3044</span><br><span class="line">malloc sucess. p &#x3D; 0xbe980000, i &#x3D; 3045</span><br><span class="line">malloc sucess. p &#x3D; 0xbea80000, i &#x3D; 3046</span><br><span class="line">malloc sucess. p &#x3D; 0xbed80000, i &#x3D; 3047</span><br><span class="line">malloc failed, p &#x3D; 0x0, i &#x3D; 3048</span><br><span class="line">malloc failed,just wait!!</span><br></pre></td></tr></table></figure>
+
+
+<p>可以看到，<code>arm32</code> 平台在分配了 <code>3038MB</code> 虚拟内存之后，在分配第3039块1MB的内存时，由于虚拟地<br>址空间用完了，不能再继续分配虚拟内存？</p>
+<p>可以看到此时 <code>mytest</code> 进程的地址空间</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br></pre></td><td class="code"><pre><span class="line">root@device_gls:&#x2F;proc&#x2F;1293 # cat maps</span><br><span class="line">00080000-7f580000 rw-p 00000000 00:00 0          [anon:libc_malloc]</span><br><span class="line">7f5cd000-7f5d0000 r-xp 00000000 103:0f 1523      &#x2F;system&#x2F;bin&#x2F;mytest</span><br><span class="line">7f5d0000-7f5d1000 r--p 00002000 103:0f 1523      &#x2F;system&#x2F;bin&#x2F;mytest</span><br><span class="line">7f5d1000-7f5d2000 rw-p 00000000 00:00 0          [heap]</span><br><span class="line">7f600000-b6d00000 rw-p 00000000 00:00 0          [anon:libc_malloc]</span><br><span class="line">b6d64000-b6d68000 r-xp 00000000 103:0f 1428      &#x2F;system&#x2F;lib&#x2F;libnetd_client.so</span><br><span class="line">b6d68000-b6d69000 r--p 00003000 103:0f 1428      &#x2F;system&#x2F;lib&#x2F;libnetd_client.so</span><br><span class="line">b6d69000-b6d6a000 rw-p 00004000 103:0f 1428      &#x2F;system&#x2F;lib&#x2F;libnetd_client.so</span><br><span class="line">b6d6a000-b6d8a000 r--s 00000000 00:0f 11859      &#x2F;dev&#x2F;__properties__</span><br><span class="line">b6d8a000-b6d8b000 rw-p 00000000 00:00 0          [anon:linker_alloc_vector]</span><br><span class="line">b6d8c000-b6d8d000 rw-p 00000000 00:00 0          [anon:linker_alloc_vector]</span><br><span class="line">b6d8d000-b6dac000 r-xp 00000000 103:0f 1421      &#x2F;system&#x2F;lib&#x2F;libm.so</span><br><span class="line">b6dac000-b6dad000 ---p 00000000 00:00 0</span><br><span class="line">b6dad000-b6dae000 r--p 0001f000 103:0f 1421      &#x2F;system&#x2F;lib&#x2F;libm.so</span><br><span class="line">b6dae000-b6daf000 rw-p 00020000 103:0f 1421      &#x2F;system&#x2F;lib&#x2F;libm.so</span><br><span class="line">b6daf000-b6e23000 r-xp 00000000 103:0f 1355      &#x2F;system&#x2F;lib&#x2F;libc.so</span><br><span class="line">b6e23000-b6e27000 r--p 00073000 103:0f 1355      &#x2F;system&#x2F;lib&#x2F;libc.so</span><br><span class="line">b6e27000-b6e2a000 rw-p 00077000 103:0f 1355      &#x2F;system&#x2F;lib&#x2F;libc.so</span><br><span class="line">b6e2a000-b6e34000 rw-p 00000000 00:00 0</span><br><span class="line">b6e34000-b6ebc000 r-xp 00000000 103:0f 1354      &#x2F;system&#x2F;lib&#x2F;libc++.so</span><br><span class="line">b6ebc000-b6ebd000 ---p 00000000 00:00 0</span><br><span class="line">b6ebd000-b6ec1000 r--p 00088000 103:0f 1354      &#x2F;system&#x2F;lib&#x2F;libc++.so</span><br><span class="line">b6ec1000-b6ec2000 rw-p 0008c000 103:0f 1354      &#x2F;system&#x2F;lib&#x2F;libc++.so</span><br><span class="line">b6ec2000-b6ec3000 rw-p 00000000 00:00 0</span><br><span class="line">b6ec3000-b6ec4000 r--p 00000000 00:00 0</span><br><span class="line">b6ec4000-b6ec5000 r--p 00000000 00:00 0          [anon:linker_alloc]</span><br><span class="line">b6ec5000-b6ec6000 rw-p 00000000 00:00 0          [anon:linker_alloc]</span><br><span class="line">b6ec6000-b6ec7000 rw-p 00000000 00:00 0          [anon:linker_alloc_vector]</span><br><span class="line">b6ec7000-b6ec8000 rw-p 00000000 00:00 0          [anon:linker_alloc_32]</span><br><span class="line">b6ec8000-b6ec9000 r--p 00000000 00:00 0          [anon:linker_alloc]</span><br><span class="line">b6ec9000-b6ee9000 r--s 00000000 00:0f 11859      &#x2F;dev&#x2F;__properties__</span><br><span class="line">b6ee9000-b6eea000 r--p 00000000 00:00 0</span><br><span class="line">b6eea000-b6eeb000 ---p 00000000 00:00 0</span><br><span class="line">b6eeb000-b6eed000 rw-p 00000000 00:00 0          [anon:thread signal stack]</span><br><span class="line">b6eed000-b6f0a000 r-xp 00000000 103:0f 170       &#x2F;system&#x2F;bin&#x2F;linker</span><br><span class="line">b6f0a000-b6f0b000 r--p 0001c000 103:0f 170       &#x2F;system&#x2F;bin&#x2F;linker</span><br><span class="line">b6f0b000-b6f0d000 rw-p 0001d000 103:0f 170       &#x2F;system&#x2F;bin&#x2F;linker</span><br><span class="line">b6f0d000-b6f0f000 rw-p 00000000 00:00 0</span><br><span class="line">b6f80000-beb80000 rw-p 00000000 00:00 0          [anon:libc_malloc]</span><br><span class="line">bed01000-bed22000 rw-p 00000000 00:00 0          [stack]</span><br><span class="line">bed80000-bee80000 rw-p 00000000 00:00 0          [anon:libc_malloc]</span><br><span class="line">bef66000-bef67000 r-xp 00000000 00:00 0          [sigpage]</span><br><span class="line">bef67000-bef68000 r--p 00000000 00:00 0          [vvar]</span><br><span class="line">bef68000-bef69000 r-xp 00000000 00:00 0          [vdso]</span><br><span class="line">ffff0000-ffff1000 r-xp 00000000 00:00 0          [vectors]</span><br><span class="line">root@device_gls:&#x2F;proc&#x2F;1293 #</span><br></pre></td></tr></table></figure>
+
+
+<p>我们看 <code>libc_malloc</code> 区域的 的大小</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">00080000-7f580000 rw-p 00000000 00:00 0          [anon:libc_malloc]  &#x3D;&#x3D; 2037MB</span><br><span class="line">7f600000-b6d00000 rw-p 00000000 00:00 0          [anon:libc_malloc]  &#x3D;&#x3D; 887MB</span><br><span class="line">b6f80000-beb80000 rw-p 00000000 00:00 0          [anon:libc_malloc]  &#x3D;&#x3D; 124MB</span><br><span class="line">bed80000-bee80000 rw-p 00000000 00:00 0          [anon:libc_malloc]  &#x3D;&#x3D; 1MB</span><br></pre></td></tr></table></figure>
+<p>总和是 <code>2037 + 887 + 124 + 1 = 3049MB</code></p>
+<p>这是项目中一个实际的bug，场景是 直播盒子 做长跑测试的时候，每到7天左右，直播业务就会因为<br>malloc失败而导致失败，但是由于业务代码写的问题，没有检查 malloc返回值的原因，导致业务应用会<br>crash, 现象是空指针错误。。很难联想到是因为进程虚拟地址空间全部泄漏导致的问题。<br>业务的小伙伴差了一个多月都没有头绪。。</p>
+<p>在 <code>arm32</code> 设备上，<br>User 14 + Nice 0 + Sys 49 + Idle 246 + IOW 1 + IRQ 0 + SIRQ 0 = 310</p>
+<p>  PID PR CPU% S  #THR     VSS     RSS PCY UID      Name<br> 3592  0   0% S     1 3124044K   1688K  fg root     mytest</p>
+<p>RSS 也占用了一些，但是远没 X86设备上夸张</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br></pre></td><td class="code"><pre><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace# cat &#x2F;tmp&#x2F;123 | grep Rss</span><br><span class="line">Rss:                   0 kB</span><br><span class="line">Rss:                  12 kB</span><br><span class="line">Rss:                   4 kB</span><br><span class="line">Rss:                   0 kB</span><br><span class="line">Rss:                 256 kB</span><br><span class="line">Rss:                  16 kB</span><br><span class="line">Rss:                   4 kB</span><br><span class="line">Rss:                   4 kB</span><br><span class="line">Rss:                  28 kB</span><br><span class="line">Rss:                   4 kB</span><br><span class="line">Rss:                   4 kB</span><br><span class="line">Rss:                  64 kB</span><br><span class="line">Rss:                   0 kB</span><br><span class="line">Rss:                   4 kB</span><br><span class="line">Rss:                   4 kB</span><br><span class="line">Rss:                 460 kB</span><br><span class="line">Rss:                  16 kB</span><br><span class="line">Rss:                  12 kB</span><br><span class="line">Rss:                  28 kB</span><br><span class="line">Rss:                 536 kB</span><br><span class="line">Rss:                   0 kB</span><br><span class="line">Rss:                  16 kB</span><br><span class="line">Rss:                   4 kB</span><br><span class="line">Rss:                   4 kB</span><br><span class="line">Rss:                   4 kB</span><br><span class="line">Rss:                   4 kB</span><br><span class="line">Rss:                   4 kB</span><br><span class="line">Rss:                   4 kB</span><br><span class="line">Rss:                   4 kB</span><br><span class="line">Rss:                   4 kB</span><br><span class="line">Rss:                  28 kB</span><br><span class="line">Rss:                   4 kB</span><br><span class="line">Rss:                   0 kB</span><br><span class="line">Rss:                   0 kB</span><br><span class="line">Rss:                 116 kB</span><br><span class="line">Rss:                   4 kB</span><br><span class="line">Rss:                   8 kB</span><br><span class="line">Rss:                   8 kB</span><br><span class="line">Rss:                   0 kB</span><br><span class="line">Rss:                   8 kB</span><br><span class="line">Rss:                   0 kB</span><br><span class="line">Rss:                   4 kB</span><br><span class="line">Rss:                   4 kB</span><br><span class="line">Rss:                   0 kB</span><br></pre></td></tr></table></figure>
+<p>其中 malloc 的 rss 只占用 <code>256Kb</code>,大部分是 libc, libc++ libm的代码段占用</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">7f680000-b6d80000 rw-p 00000000 00:00 0          [anon:libc_malloc]</span><br><span class="line">Name:           [anon:libc_malloc]</span><br><span class="line">Size:             908288 kB</span><br><span class="line">Rss:                 256 kB</span><br><span class="line">Pss:                 256 kB</span><br><span class="line">Shared_Clean:          0 kB</span><br><span class="line">Shared_Dirty:          0 kB</span><br><span class="line">Private_Clean:         0 kB</span><br><span class="line">Private_Dirty:       256 kB</span><br><span class="line">Referenced:          256 kB</span><br><span class="line">Anonymous:           256 kB</span><br></pre></td></tr></table></figure>
+
+<p>由此可见</p>
+<ol>
+<li><p>进程虚拟地址空间泄漏还是有可能会存在的，尽管可能概率非常低，对系统危害也比物理内存泄漏小很<br>多。但是一旦发生，他的危害对于业务本身也是致命的，必须重启业务或者系统来恢复。</p>
+</li>
+<li><p>编程习惯养好，一定需要检查函数返回值。</p>
+</li>
+</ol>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E5%86%85%E5%AD%98%E6%B3%84%E9%9C%B2/" rel="tag"># 内存泄露</a>
+              <a href="/tags/%E8%B5%84%E6%BA%90%E6%B3%84%E6%BC%8F/" rel="tag"># 资源泄漏</a>
+              <a href="/tags/%E8%99%9A%E6%8B%9F%E5%9C%B0%E5%9D%80%E7%A9%BA%E9%97%B4%E6%B3%84%E6%BC%8F/" rel="tag"># 虚拟地址空间泄漏</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2021/01/15/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/%E6%96%87%E4%BB%B6%E8%B5%84%E6%BA%90%E6%B3%84%E6%BC%8F%E9%97%AE%E9%A2%98/" rel="prev" title="文件资源泄漏问题">
+                  <i class="fa fa-chevron-left"></i> 文件资源泄漏问题
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2021/01/16/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/kmemleak%20%E5%AE%9A%E4%BD%8D%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F/" rel="next" title="kmemleak 定位内存泄露">
+                  kmemleak 定位内存泄露 <i class="fa fa-chevron-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+  
+  
+  
+
+
+
+      
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      const activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      const commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      
+
+      
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2021</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Su Hui</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/muse/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a>
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <script src="//cdn.jsdelivr.net/npm/animejs@3.2.0/lib/anime.min.js"></script>
+<script src="/js/utils.js"></script><script src="/js/motion.js"></script><script src="/js/schemes/muse.js"></script><script src="/js/next-boot.js"></script>
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

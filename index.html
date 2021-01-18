@@ -189,7 +189,7 @@
       <div class="site-state-item site-state-posts">
           <a href="/archives/">
         
-          <span class="site-state-item-count">28</span>
+          <span class="site-state-item-count">33</span>
           <span class="site-state-item-name">posts</span>
         </a>
       </div>
@@ -202,7 +202,7 @@
       <div class="site-state-item site-state-tags">
             <a href="/tags/">
           
-        <span class="site-state-item-count">43</span>
+        <span class="site-state-item-count">52</span>
         <span class="site-state-item-name">tags</span></a>
       </div>
   </nav>
@@ -237,6 +237,551 @@
   
   
   <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
+    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2021/01/17/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/valgrind%20%E5%AE%9A%E4%BD%8D%E7%94%A8%E6%88%B7%E7%A9%BA%E9%97%B4%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="Su Hui">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liulangren Blog">
+    </span>
+
+    
+    
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/2021/01/17/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/valgrind%20%E5%AE%9A%E4%BD%8D%E7%94%A8%E6%88%B7%E7%A9%BA%E9%97%B4%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F/" class="post-title-link" itemprop="url">valgrind 定位用户空间内存泄漏</a>
+        </h2>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">Posted on</span>
+
+      <time title="Created: 2021-01-17 19:00:00" itemprop="dateCreated datePublished" datetime="2021-01-17T19:00:00+08:00">2021-01-17</time>
+    </span>
+      <span class="post-meta-item">
+        <span class="post-meta-item-icon">
+          <i class="far fa-calendar-check"></i>
+        </span>
+        <span class="post-meta-item-text">Edited on</span>
+        <time title="Modified: 2021-01-18 17:43:52" itemprop="dateModified" datetime="2021-01-18T17:43:52+08:00">2021-01-18</time>
+      </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">In</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/linux%E5%86%85%E6%A0%B8/" itemprop="url" rel="index"><span itemprop="name">linux内核</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+          <h2 id="WHY"><a href="#WHY" class="headerlink" title="WHY"></a>WHY</h2><p>在实际开发中，某个应用程序如果存在内存泄露，且是长时间运行的程序，就会导致比较严重的后果。<br>在一些业务场景的长跑测试中，这些问题往往会充分暴露出来。</p>
+<p>一般情况下这种内存泄漏都是以 OOM Kill 而结尾的。 kmsg log 往往只有 这个进程确实消耗了大量进<br>程的证据，但是无法确切知道是哪里的内存泄漏，这里就需要一个工具来帮助检测，如果是发生内存泄漏之后<br>仅仅通过人肉去分析代码，往往很困难。</p>
+<p>valgrind 就是这样一款 强大的工具：</p>
+<ol>
+<li>检查用户空间内存泄漏</li>
+<li>检查</li>
+</ol>
+<h2 id="valdrind-原理"><a href="#valdrind-原理" class="headerlink" title="valdrind 原理"></a>valdrind 原理</h2><h2 id="valdrind-安装，使用"><a href="#valdrind-安装，使用" class="headerlink" title="valdrind 安装，使用"></a>valdrind 安装，使用</h2><p>直接安装， ubuntu 官方软件源已经包含了，其他平台可以通过源码编译安装</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@100ubuntu: ~&#x2F;workspace&#x2F;test_modules&#x2F;resource_leak&#x2F;user_space_memleak# sudo apt install valgrind</span><br><span class="line">Reading package lists... Done</span><br><span class="line">Building dependency tree</span><br><span class="line">Reading state information... Done</span><br><span class="line">The following packages were automatically installed and are no longer required:</span><br><span class="line">  openbsd-inetd openjdk-11-jdk-headless tcpd update-inetd</span><br><span class="line">Use &#39;sudo apt autoremove&#39; to remove them.</span><br><span class="line">Suggested packages:</span><br><span class="line">  valgrind-dbg valgrind-mpi kcachegrind alleyoop valkyrie</span><br><span class="line">The following NEW packages will be installed:</span><br><span class="line">  valgrind</span><br><span class="line">0 upgraded, 1 newly installed, 0 to remove and 231 not upgraded.</span><br><span class="line">Need to get 20.3 MB of archives.</span><br><span class="line">After this operation, 90.0 MB of additional disk space will be used.</span><br><span class="line">Get:1 https:&#x2F;&#x2F;mirrors.tuna.tsinghua.edu.cn&#x2F;ubuntu focal-updates&#x2F;main amd64 valgrind amd64 1:3.15.0-1ubuntu9.1 [20.3 MB]</span><br><span class="line">48% [1 valgrind 12.2 MB&#x2F;20.3 MB 60%]</span><br><span class="line">tencent_clould@ubuntu: ~&#x2F;workspace&#x2F;test_modules&#x2F;resource_leak&#x2F;user_space_memleak# ls</span><br></pre></td></tr></table></figure>
+
+<p>使用如下代码检测</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">#include &lt;stdio.h&gt;</span><br><span class="line">#include &lt;stdlib.h&gt;</span><br><span class="line">#include &lt;unistd.h&gt;</span><br><span class="line"></span><br><span class="line">void main(void)</span><br><span class="line">&#123;</span><br><span class="line">        int i &#x3D; 3;</span><br><span class="line">        char *p &#x3D; NULL;</span><br><span class="line">        p &#x3D; malloc(1024 * 1024);</span><br><span class="line">        if (!p)</span><br><span class="line">                printf(&quot;malloc failed,just wait!!\n&quot;);</span><br><span class="line"></span><br><span class="line">        printf(&quot;malloc sucess,just wait!!\n&quot;);</span><br><span class="line"></span><br><span class="line">        while(i--) &#123;</span><br><span class="line">                usleep(1000 * 1000);</span><br><span class="line">        &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+<p>对于 valgrind 不好的地方在于：</p>
+<ol>
+<li><p>对于想使用 valgrind来检查内存泄漏的业务来说，必须从开始 用valgrind 启动，意味着对于业务<br>需要重启。还有比如很难复现的内存泄漏，等你重启业务用 valgrind来启动，说不定又不复现了。。</p>
+</li>
+<li><p>对于 valgrind 启动的业务来说，会比直接启动有一些性能损失。</p>
+</li>
+</ol>
+<h3 id="userspace-memleak-demo"><a href="#userspace-memleak-demo" class="headerlink" title="userspace memleak demo"></a>userspace memleak demo</h3><p>使用上面代码 直接用 <code>valgrind</code> 启动</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: ~&#x2F;workspace&#x2F;test_modules&#x2F;resource_leak&#x2F;user_space_memleak# valgrind .&#x2F;a.out</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D; Memcheck, a memory error detector</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D; Copyright (C) 2002-2017, and GNU GPL&#39;d, by Julian Seward et al.</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D; Using Valgrind-3.15.0 and LibVEX; rerun with -h for copyright info</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D; Command: .&#x2F;a.out</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D;</span><br><span class="line">malloc sucess,just wait!!</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D;</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D; HEAP SUMMARY:</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D;     in use at exit: 1,048,576 bytes in 1 blocks</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D;   total heap usage: 2 allocs, 1 frees, 1,049,600 bytes allocated</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D;</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D; LEAK SUMMARY:</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D;    definitely lost: 1,048,576 bytes in 1 blocks</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D;    indirectly lost: 0 bytes in 0 blocks</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D;      possibly lost: 0 bytes in 0 blocks</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D;    still reachable: 0 bytes in 0 blocks</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D;         suppressed: 0 bytes in 0 blocks</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D; Rerun with --leak-check&#x3D;full to see details of leaked memory</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D;</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D; For lists of detected and suppressed errors, rerun with: -s</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D; ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)</span><br></pre></td></tr></table></figure>
+
+<p>可以看到 <code>HEAP SUMMARY:</code> 中写了</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D;     in use at exit: 1,048,576 bytes in 1 blocks</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D;   total heap usage: 2 allocs, 1 frees, 1,049,600 bytes allocated</span><br></pre></td></tr></table></figure>
+<p>在进程退出时，仍然有 <code>1048576 bytes</code> 内存在使用中，这部分就是泄漏的内存。但是我们仍然不能确<br>定到底是哪里泄漏的内存，按照他的建议 加上 <code>-leak-check=full</code></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: ~&#x2F;workspace&#x2F;test_modules&#x2F;resource_leak&#x2F;user_space_memleak# valgrind  --leak-check&#x3D;full  .&#x2F;a.out</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D; Memcheck, a memory error detector</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D; Copyright (C) 2002-2017, and GNU GPL&#39;d, by Julian Seward et al.</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D; Using Valgrind-3.15.0 and LibVEX; rerun with -h for copyright info</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D; Command: .&#x2F;a.out</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D;</span><br><span class="line">malloc sucess,just wait!!</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D;</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D; HEAP SUMMARY:</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D;     in use at exit: 1,048,576 bytes in 1 blocks</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D;   total heap usage: 2 allocs, 1 frees, 1,049,600 bytes allocated</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D;</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D; 1,048,576 bytes in 1 blocks are definitely lost in loss record 1 of 1</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D;    at 0x483B7F3: malloc (in &#x2F;usr&#x2F;lib&#x2F;x86_64-linux-gnu&#x2F;valgrind&#x2F;vgpreload_memcheck-amd64-linux.so)</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D;    by 0x1091AD: main (in &#x2F;home&#x2F;ubuntu&#x2F;workspace&#x2F;test_modules&#x2F;resource_leak&#x2F;user_space_memleak&#x2F;a.out)</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D;</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D; LEAK SUMMARY:</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D;    definitely lost: 1,048,576 bytes in 1 blocks</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D;    indirectly lost: 0 bytes in 0 blocks</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D;      possibly lost: 0 bytes in 0 blocks</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D;    still reachable: 0 bytes in 0 blocks</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D;         suppressed: 0 bytes in 0 blocks</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D;</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D; For lists of detected and suppressed errors, rerun with: -s</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D; ERROR SUMMARY: 1 errors from 1 contexts (suppressed: 0 from 0)</span><br><span class="line">tencent_clould@ubuntu: ~&#x2F;workspace&#x2F;test_modules&#x2F;resource_leak&#x2F;user_space_memleak#</span><br></pre></td></tr></table></figure>
+
+<p>可以看到这次， <code>valgrind</code> 已经将泄漏的具体位置打印了出来</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">&#x3D;&#x3D;2813434&#x3D; 1,048,576 bytes in 1 blocks are definitely lost in loss record 1 of 1</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D;    at 0x483B7F3: malloc (in &#x2F;usr&#x2F;lib&#x2F;x86_64-linux-gnu&#x2F;valgrind&#x2F;vgpreload_memcheck-amd64-linux.so)</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D;    by 0x1091AD: main (in &#x2F;home&#x2F;ubuntu&#x2F;workspace&#x2F;test_modules&#x2F;resource_leak&#x2F;user_space_memleak&#x2F;a.out)</span><br></pre></td></tr></table></figure>
+
+<p>可以用 <code>gcc -g</code> 重新编译一下带上符号表信息，再次用 valgrind 定位，可以得到更详细信息。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">&#x3D;&#x3D;2822695&#x3D;&#x3D;    at 0x483B7F3: malloc (in &#x2F;usr&#x2F;lib&#x2F;x86_64-linux-gnu&#x2F;valgrind&#x2F;vgpreload_memcheck-amd64-linux.so)</span><br><span class="line">&#x3D;&#x3D;2822695&#x3D;&#x3D;    by 0x1091AD: main (user_space_memleak.c:9)</span><br></pre></td></tr></table></figure>
+<p>这次直接将 在 哪个文件 哪一行都直接打印出来了。</p>
+<h3 id="out-of-bounds-access-demo"><a href="#out-of-bounds-access-demo" class="headerlink" title="out of bounds access demo"></a>out of bounds access demo</h3><p>代码：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line">#include &lt;stdio.h&gt;</span><br><span class="line">#include &lt;stdlib.h&gt;</span><br><span class="line">#include &lt;unistd.h&gt;</span><br><span class="line"></span><br><span class="line">void main(void)</span><br><span class="line">&#123;</span><br><span class="line">        int i &#x3D; 3;</span><br><span class="line">        char *p &#x3D; NULL;</span><br><span class="line">        p &#x3D; malloc(1024);</span><br><span class="line">        if (!p)</span><br><span class="line">                printf(&quot;malloc failed,just wait!!\n&quot;);</span><br><span class="line"></span><br><span class="line">        printf(&quot;malloc sucess,just wait!!*(p + 10) &#x3D; %d\n&quot;, *(p + 10));</span><br><span class="line">        *(p + 1023) &#x3D; *(p + 1024);</span><br><span class="line">        *(p + 1024) &#x3D; 1;</span><br><span class="line">        while(i--) &#123;</span><br><span class="line">                usleep(1000 * 1000);</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        free(p);</span><br><span class="line">        free(p + 1);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>gcc -g</code> 编译之偶 用 <code>valgrind ./a.out</code> 跑一下</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: ~&#x2F;workspace&#x2F;test_modules&#x2F;resource_leak&#x2F;valgrind# valgrind .&#x2F;a.out</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D; Memcheck, a memory error detector</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D; Copyright (C) 2002-2017, and GNU GPL&#39;d, by Julian Seward et al.</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D; Using Valgrind-3.15.0 and LibVEX; rerun with -h for copyright info</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D; Command: .&#x2F;a.out</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;</span><br><span class="line">&#x3D;&#x3D;2833797&#x3D;&#x3D; Use of uninitialised value of size 8</span><br><span class="line">&#x3D;&#x3D;2833797&#x3D;&#x3D;    at 0x48B681B: _itoa_word (_itoa.c:179)</span><br><span class="line">&#x3D;&#x3D;2833797&#x3D;&#x3D;    by 0x48D26F4: __vfprintf_internal (vfprintf-internal.c:1687)</span><br><span class="line">&#x3D;&#x3D;2833797&#x3D;&#x3D;    by 0x48BCEBE: printf (printf.c:33)</span><br><span class="line">&#x3D;&#x3D;2833797&#x3D;&#x3D;    by 0x109225: main (out_of_bounds_access.c:13)</span><br><span class="line">malloc sucess,just wait!!</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D; Invalid read of size 1</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;    at 0x109200: main (out_of_bounds_access.c:14)</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;  Address 0x4a4d440 is 0 bytes after a block of size 1,024 alloc&#39;d</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;    at 0x483B7F3: malloc (in &#x2F;usr&#x2F;lib&#x2F;x86_64-linux-gnu&#x2F;valgrind&#x2F;vgpreload_memcheck-amd64-linux.so)</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;    by 0x1091CD: main (out_of_bounds_access.c:9)</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D; Invalid write of size 1</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;    at 0x109213: main (out_of_bounds_access.c:15)</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;  Address 0x4a4d440 is 0 bytes after a block of size 1,024 alloc&#39;d</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;    at 0x483B7F3: malloc (in &#x2F;usr&#x2F;lib&#x2F;x86_64-linux-gnu&#x2F;valgrind&#x2F;vgpreload_memcheck-amd64-linux.so)</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;    by 0x1091CD: main (out_of_bounds_access.c:9)</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;</span><br><span class="line">&#x3D;&#x3D;2845980&#x3D;&#x3D; Invalid free() &#x2F; delete &#x2F; delete[] &#x2F; realloc()</span><br><span class="line">&#x3D;&#x3D;2845980&#x3D;&#x3D;    at 0x483CA3F: free (in &#x2F;usr&#x2F;lib&#x2F;x86_64-linux-gnu&#x2F;valgrind&#x2F;vgpreload_memcheck-amd64-linux.so)</span><br><span class="line">&#x3D;&#x3D;2845980&#x3D;&#x3D;    by 0x10927F: main (out_of_bounds_access.c:21)</span><br><span class="line">&#x3D;&#x3D;2845980&#x3D;&#x3D;  Address 0x4a4d041 is 1 bytes inside a block of size 1,024 free&#39;d</span><br><span class="line">&#x3D;&#x3D;2845980&#x3D;&#x3D;    at 0x483CA3F: free (in &#x2F;usr&#x2F;lib&#x2F;x86_64-linux-gnu&#x2F;valgrind&#x2F;vgpreload_memcheck-amd64-linux.so)</span><br><span class="line">&#x3D;&#x3D;2845980&#x3D;&#x3D;    by 0x10926F: main (out_of_bounds_access.c:20)</span><br><span class="line">&#x3D;&#x3D;2845980&#x3D;&#x3D;  Block was alloc&#39;d at</span><br><span class="line">&#x3D;&#x3D;2845980&#x3D;&#x3D;    at 0x483B7F3: malloc (in &#x2F;usr&#x2F;lib&#x2F;x86_64-linux-gnu&#x2F;valgrind&#x2F;vgpreload_memcheck-amd64-linux.so)</span><br><span class="line">&#x3D;&#x3D;2845980&#x3D;&#x3D;    by 0x1091ED: main (out_of_bounds_access.c:9)</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D; HEAP SUMMARY:</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;     in use at exit: 0 bytes in 0 blocks</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;   total heap usage: 2 allocs, 3 frees, 2,048 bytes allocated</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D; All heap blocks were freed -- no leaks are possible</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D; For lists of detected and suppressed errors, rerun with: -s</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D; ERROR SUMMARY: 2 errors from 2 contexts (suppressed: 0 from 0)</span><br></pre></td></tr></table></figure>
+
+<p>也是直接指出了 一次引用未初始化的内存, 两次越界访问, 一次非法 free：</p>
+<ol>
+<li><p>一次引用为初始化的内存</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">&#x3D;&#x3D;2833797&#x3D;&#x3D; Use of uninitialised value of size 8</span><br><span class="line">&#x3D;&#x3D;2833797&#x3D;&#x3D;    at 0x48B681B: _itoa_word (_itoa.c:179)</span><br><span class="line">&#x3D;&#x3D;2833797&#x3D;&#x3D;    by 0x48D26F4: __vfprintf_internal (vfprintf-internal.c:1687)</span><br><span class="line">&#x3D;&#x3D;2833797&#x3D;&#x3D;    by 0x48BCEBE: printf (printf.c:33)</span><br><span class="line">&#x3D;&#x3D;2833797&#x3D;&#x3D;    by 0x109225: main (out_of_bounds_access.c:13)</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>一次越界读访问：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D; Invalid read of size 1</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;    at 0x109200: main (out_of_bounds_access.c:14)</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;  Address 0x4a4d440 is 0 bytes after a block of size 1,024 alloc&#39;d</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;    at 0x483B7F3: malloc (in &#x2F;usr&#x2F;lib&#x2F;x86_64-linux-gnu&#x2F;valgrind&#x2F;vgpreload_memcheck-amd64-linux.so)</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;    by 0x1091CD: main (out_of_bounds_access.c:9)</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>一次越界写访问</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D; Invalid write of size 1</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;    at 0x109213: main (out_of_bounds_access.c:15)</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;  Address 0x4a4d440 is 0 bytes after a block of size 1,024 alloc&#39;d</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;    at 0x483B7F3: malloc (in &#x2F;usr&#x2F;lib&#x2F;x86_64-linux-gnu&#x2F;valgrind&#x2F;vgpreload_memcheck-amd64-linux.so)</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;    by 0x1091CD: main (out_of_bounds_access.c:9)</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>一次 invaild free</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">&#x3D;&#x3D;2845980&#x3D;&#x3D; Invalid free() &#x2F; delete &#x2F; delete[] &#x2F; realloc()</span><br><span class="line">&#x3D;&#x3D;2845980&#x3D;&#x3D;    at 0x483CA3F: free (in &#x2F;usr&#x2F;lib&#x2F;x86_64-linux-gnu&#x2F;valgrind&#x2F;vgpreload_memcheck-amd64-linux.so)</span><br><span class="line">&#x3D;&#x3D;2845980&#x3D;&#x3D;    by 0x10927F: main (out_of_bounds_access.c:21)</span><br><span class="line">&#x3D;&#x3D;2845980&#x3D;&#x3D;  Address 0x4a4d041 is 1 bytes inside a block of size 1,024 free&#39;d</span><br><span class="line">&#x3D;&#x3D;2845980&#x3D;&#x3D;    at 0x483CA3F: free (in &#x2F;usr&#x2F;lib&#x2F;x86_64-linux-gnu&#x2F;valgrind&#x2F;vgpreload_memcheck-amd64-linux.so)</span><br><span class="line">&#x3D;&#x3D;2845980&#x3D;&#x3D;    by 0x10926F: main (out_of_bounds_access.c:20)</span><br><span class="line">&#x3D;&#x3D;2845980&#x3D;&#x3D;  Block was alloc&#39;d at</span><br><span class="line">&#x3D;&#x3D;2845980&#x3D;&#x3D;    at 0x483B7F3: malloc (in &#x2F;usr&#x2F;lib&#x2F;x86_64-linux-gnu&#x2F;valgrind&#x2F;vgpreload_memcheck-amd64-linux.so)</span><br><span class="line">&#x3D;&#x3D;2845980&#x3D;&#x3D;    by 0x1091ED: main (out_of_bounds_access.c:9)</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>实际项目中应用的内存泄漏往往比这要复杂很多，可能代码考虑了正常情况下的 free，异常情况下没有<br>free等， <code>valgrind</code> 是很强大，有很多参数，但也只能帮助我们在出现问题之后定位，还是需要养成良<br>好的编码习惯，减少杜绝这类问题</p>
+<p>参考<a target="_blank" rel="noopener" href="http://senlinzhan.github.io/2017/12/31/valgrind/">文章1</a><br>参考<a target="_blank" rel="noopener" href="https://www.cprogramming.com/debugging/valgrind.html">文章2</a></p>
+
+      
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+        <div class="post-eof"></div>
+      
+    </footer>
+  </article>
+  
+  
+  
+
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
+    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2021/01/16/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/page_owner%20%E5%AE%9A%E4%BD%8D%20buddy%20%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="Su Hui">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liulangren Blog">
+    </span>
+
+    
+    
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/2021/01/16/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/page_owner%20%E5%AE%9A%E4%BD%8D%20buddy%20%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F/" class="post-title-link" itemprop="url">page_owner 定位 buddy 内存泄漏</a>
+        </h2>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">Posted on</span>
+
+      <time title="Created: 2021-01-16 19:00:00" itemprop="dateCreated datePublished" datetime="2021-01-16T19:00:00+08:00">2021-01-16</time>
+    </span>
+      <span class="post-meta-item">
+        <span class="post-meta-item-icon">
+          <i class="far fa-calendar-check"></i>
+        </span>
+        <span class="post-meta-item-text">Edited on</span>
+        <time title="Modified: 2021-01-15 19:43:33" itemprop="dateModified" datetime="2021-01-15T19:43:33+08:00">2021-01-15</time>
+      </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">In</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/linux%E5%86%85%E6%A0%B8/" itemprop="url" rel="index"><span itemprop="name">linux内核</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+          <h2 id="WHY"><a href="#WHY" class="headerlink" title="WHY"></a>WHY</h2><h2 id="page-owner-原理"><a href="#page-owner-原理" class="headerlink" title="page_owner 原理"></a>page_owner 原理</h2><h2 id="page-owner-使用"><a href="#page-owner-使用" class="headerlink" title="page_owner 使用"></a>page_owner 使用</h2><h2 id="page-owner-代码"><a href="#page-owner-代码" class="headerlink" title="page_owner 代码"></a>page_owner 代码</h2>
+      
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+        <div class="post-eof"></div>
+      
+    </footer>
+  </article>
+  
+  
+  
+
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
+    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2021/01/16/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/kmemleak%20%E5%AE%9A%E4%BD%8D%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="Su Hui">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liulangren Blog">
+    </span>
+
+    
+    
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/2021/01/16/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/kmemleak%20%E5%AE%9A%E4%BD%8D%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F/" class="post-title-link" itemprop="url">kmemleak 定位内存泄露</a>
+        </h2>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">Posted on</span>
+
+      <time title="Created: 2021-01-16 19:00:00" itemprop="dateCreated datePublished" datetime="2021-01-16T19:00:00+08:00">2021-01-16</time>
+    </span>
+      <span class="post-meta-item">
+        <span class="post-meta-item-icon">
+          <i class="far fa-calendar-check"></i>
+        </span>
+        <span class="post-meta-item-text">Edited on</span>
+        <time title="Modified: 2021-01-15 19:21:02" itemprop="dateModified" datetime="2021-01-15T19:21:02+08:00">2021-01-15</time>
+      </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">In</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/linux%E5%86%85%E6%A0%B8/" itemprop="url" rel="index"><span itemprop="name">linux内核</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+          <h2 id="WHY"><a href="#WHY" class="headerlink" title="WHY"></a>WHY</h2><h2 id="kmemleak-原理"><a href="#kmemleak-原理" class="headerlink" title="kmemleak 原理"></a>kmemleak 原理</h2><h2 id="kmemleak-使用"><a href="#kmemleak-使用" class="headerlink" title="kmemleak 使用"></a>kmemleak 使用</h2><h2 id="kmemleak-代码"><a href="#kmemleak-代码" class="headerlink" title="kmemleak 代码"></a>kmemleak 代码</h2>
+      
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+        <div class="post-eof"></div>
+      
+    </footer>
+  </article>
+  
+  
+  
+
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
+    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2021/01/15/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/%E8%BF%9B%E7%A8%8B%E8%99%9A%E6%8B%9F%E5%9C%B0%E5%9D%80%E7%A9%BA%E9%97%B4%E6%B3%84%E6%BC%8F/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="Su Hui">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liulangren Blog">
+    </span>
+
+    
+    
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/2021/01/15/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/%E8%BF%9B%E7%A8%8B%E8%99%9A%E6%8B%9F%E5%9C%B0%E5%9D%80%E7%A9%BA%E9%97%B4%E6%B3%84%E6%BC%8F/" class="post-title-link" itemprop="url">进程虚拟地址空间泄漏问题</a>
+        </h2>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">Posted on</span>
+
+      <time title="Created: 2021-01-15 19:00:00" itemprop="dateCreated datePublished" datetime="2021-01-15T19:00:00+08:00">2021-01-15</time>
+    </span>
+      <span class="post-meta-item">
+        <span class="post-meta-item-icon">
+          <i class="far fa-calendar-check"></i>
+        </span>
+        <span class="post-meta-item-text">Edited on</span>
+        <time title="Modified: 2021-01-18 16:30:12" itemprop="dateModified" datetime="2021-01-18T16:30:12+08:00">2021-01-18</time>
+      </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">In</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/linux%E5%86%85%E6%A0%B8/" itemprop="url" rel="index"><span itemprop="name">linux内核</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+          <h2 id="虚拟内存泄漏"><a href="#虚拟内存泄漏" class="headerlink" title="虚拟内存泄漏"></a>虚拟内存泄漏</h2><p>一般情况我们说 内存泄漏，都是指的是物理内存泄漏，毕竟物理内存是实实在在的，一个进程泄漏了，那么整个系统中的可用内存就会变少。</p>
+<p>但是linux的虚拟内存空间是各个进程之间相互隔离的，在arm64系统中 有 T,在 arm32系统中也有3G<br>多。但是否意味着这种 虚拟内存我们就不需要关心呢？</p>
+<h2 id="尝试复现"><a href="#尝试复现" class="headerlink" title="尝试复现"></a>尝试复现</h2><p>代码：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line">#include &lt;stdio.h&gt;</span><br><span class="line">#include &lt;stdlib.h&gt;</span><br><span class="line"></span><br><span class="line">void main(void)</span><br><span class="line">&#123;</span><br><span class="line">        int i &#x3D; 0;</span><br><span class="line">        char *p &#x3D; NULL;</span><br><span class="line">        for (i &#x3D; 0; i &lt; 1024 * 1024 * 64; i++) &#123;</span><br><span class="line">                p &#x3D; malloc(1024 * 1024);</span><br><span class="line">                if (!p) &#123;printf(&quot;malloc failed,p &#x3D; %p, i &#x3D; %d\n&quot;, p, i); break;&#125;</span><br><span class="line">                else    &#123;printf(&quot;malloc sucess.p &#x3D; %p, i &#x3D; %d\n&quot;, p, i);&#125;</span><br><span class="line">                usleep(1000 * 10);</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        printf(&quot;malloc failed,just wait!!\n&quot;);</span><br><span class="line">        while(1) &#123;</span><br><span class="line">                usleep(1000 * 10);</span><br><span class="line">        &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>每次尝试需非陪 1G的虚拟内存，但是不会去使用，也就是不会去申请物理内存</p>
+<h2 id="x86-64-平台"><a href="#x86-64-平台" class="headerlink" title="x86_64 平台"></a>x86_64 平台</h2><p>我一开始尝试在腾讯云 服务器上复现：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@130ubuntu: ~&#x2F;workspace&#x2F;test_modules&#x2F;resource_leak&#x2F;process_virtual_address_memleak# .&#x2F;a.out</span><br><span class="line">malloc sucess. p &#x3D; 0x7f8e3f5c6010, i &#x3D; 0</span><br><span class="line">malloc sucess. p &#x3D; 0x7f8e3f4c5010, i &#x3D; 1</span><br><span class="line">......</span><br><span class="line">malloc sucess. p &#x3D; 0x56771e4ba6e0, i &#x3D; 461827</span><br><span class="line">malloc sucess. p &#x3D; 0x56771e5ba6f0, i &#x3D; 461828</span><br><span class="line">[1]    2721866 killed     .&#x2F;a.out</span><br></pre></td></tr></table></figure>
+
+<p>直到最后分配到 <code>461828 MB</code> 内存的时候，<code>a.out</code> 被OOM kill了。</p>
+<p>到底是为啥呢？？？毕竟我也没有去往 <code>malloc</code> 的虚拟地址中写数据，也不应该会分配物理页面。<br>从 <code>top</code> 命令看</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">top - 15:47:46 up 3 days, 15:06,  2 users,  load average: 0.24, 0.16, 0.10</span><br><span class="line">Tasks: 157 total,   1 running, 156 sleeping,   0 stopped,   0 zombie</span><br><span class="line">%Cpu(s):  3.3 us,  3.6 sy,  0.0 ni, 92.7 id,  0.3 wa,  0.0 hi,  0.0 si,  0.0 st</span><br><span class="line">MiB Mem :   1987.9 total,     70.5 free,   1660.6 used,    256.8 buff&#x2F;cache</span><br><span class="line">MiB Swap:   2048.0 total,   1499.9 free,    548.1 used.    162.0 avail Mem</span><br><span class="line"></span><br><span class="line">    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND</span><br><span class="line">2783846 ubuntu    20   0  173.4g 683692   1380 S   0.3  33.6   0:06.86 a.out</span><br><span class="line">   1378 jenkins   20   0 2510448 176168   2924 S   0.7   8.7   7:05.12 java</span><br><span class="line">2779920 ubuntu    20   0  925684 107776  15196 S   1.0   5.3   0:21.10 node</span><br><span class="line">2703822 ubuntu    20   0 1611828  41268  11624 S   0.3   2.0   0:24.40 node</span><br><span class="line">2773158 ubuntu    20   0  702408  39436  12496 S   0.7   1.9   0:15.87</span><br></pre></td></tr></table></figure>
+
+<p>已经分配了 <code>173G</code> 虚拟内存，但是同时可以发现 驻留在物理内存中的页面也达到了 <code>683692kb</code>.<br>这到底是什么？</p>
+<p>通过对比 运行 <code>mytest</code> 前后的 <code>/proc/meminfo</code> 文件，发现差异主要在</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">系统正常</span><br><span class="line">Active(anon):     243372 kB</span><br><span class="line">Inactive(anon):   267836 kB</span><br><span class="line"></span><br><span class="line">mytest运行之后</span><br><span class="line">Active(anon):     550888 kB</span><br><span class="line">Inactive(anon):   576840 kB</span><br></pre></td></tr></table></figure>
+<p>说明确实是 mytest 消耗了大量的内存 用作匿名页面<br>接下来就需要查看具体是哪种页面消耗了物理内存了</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;2798128# cat smaps | grep heap -A 40</span><br><span class="line">7fbca3ff9000-7fc69e600000 rw-p 00000000 00:00 0                          [heap]</span><br><span class="line">Size:           41850908 kB</span><br><span class="line">KernelPageSize:        4 kB</span><br><span class="line">MMUPageSize:           4 kB</span><br><span class="line">Rss:              162844 kB</span><br><span class="line">Pss:              162844 kB</span><br><span class="line">Shared_Clean:          0 kB</span><br><span class="line">Shared_Dirty:          0 kB</span><br><span class="line">Private_Clean:         0 kB</span><br><span class="line">Private_Dirty:    162844 kB</span><br><span class="line">Referenced:       162844 kB</span><br><span class="line">Anonymous:        162844 kB</span><br><span class="line">LazyFree:              0 kB</span><br><span class="line"></span><br><span class="line">此时top 输出</span><br><span class="line">top - 16:05:47 up 3 days, 15:24,  4 users,  load average: 0.14, 0.09, 0.10</span><br><span class="line">Tasks: 157 total,   1 running, 156 sleeping,   0 stopped,   0 zombie</span><br><span class="line">%Cpu(s):  3.0 us,  2.7 sy,  0.0 ni, 94.0 id,  0.0 wa,  0.0 hi,  0.3 si,  0.0 st</span><br><span class="line">MiB Mem :   1987.9 total,    786.6 free,    917.0 used,    284.2 buff&#x2F;cache</span><br><span class="line">MiB Swap:   2048.0 total,   1512.2 free,    535.8 used.    912.0 avail Mem</span><br><span class="line"></span><br><span class="line">    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND</span><br><span class="line">2798128 ubuntu    20   0   45.1g 185412   1408 S   0.7   9.1   0:01.66 a.out</span><br><span class="line">......</span><br><span class="line">等待3min</span><br><span class="line">......</span><br><span class="line"></span><br><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;2798128# cat smaps | grep heap -A 40</span><br><span class="line">7fb68e600000-7fc69e600000 rw-p 00000000 00:00 0                          [heap]</span><br><span class="line">Size:           67371008 kB</span><br><span class="line">KernelPageSize:        4 kB</span><br><span class="line">MMUPageSize:           4 kB</span><br><span class="line">Rss:              262144 kB</span><br><span class="line">Pss:              262144 kB</span><br><span class="line">Shared_Clean:          0 kB</span><br><span class="line">Shared_Dirty:          0 kB</span><br><span class="line">Private_Clean:         0 kB</span><br><span class="line">Private_Dirty:    262144 kB</span><br><span class="line">Referenced:       262144 kB</span><br><span class="line">Anonymous:        262144 kB</span><br><span class="line">LazyFree:              0 kB</span><br><span class="line">AnonHugePages:         0 kB</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">此时top 输出</span><br><span class="line">top - 16:09:43 up 3 days, 15:27,  4 users,  load average: 0.24, 0.12, 0.10</span><br><span class="line">Tasks: 159 total,   1 running, 158 sleeping,   0 stopped,   0 zombie</span><br><span class="line">%Cpu(s):  2.7 us,  3.4 sy,  0.0 ni, 90.3 id,  3.7 wa,  0.0 hi,  0.0 si,  0.0 st</span><br><span class="line">MiB Mem :   1987.9 total,    585.4 free,   1072.9 used,    329.5 buff&#x2F;cache</span><br><span class="line">MiB Swap:   2048.0 total,   1523.9 free,    524.1 used.    754.9 avail Mem</span><br><span class="line"></span><br><span class="line">    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND</span><br><span class="line">2798128 ubuntu    20   0   67.9g 278604   1408 S   0.3  13.7   0:02.55 a.out</span><br></pre></td></tr></table></figure>
+
+<p>可以看到虽然 没有往堆内存中写入数据，但是还是消耗了较多的物理内存？这是怎么回事？</p>
+<ol>
+<li><p>猜想一， 可能是一直连续分配虚拟内存，导致 <code>vma</code> 使用很多？<br>通过查看 /proc/slabinfo 和 /proc/pid/maps 看堆内存就一块，基本没有分块的，kernel中也有<br><code>vma_merge</code> 的操作，所以应该不是vma 占用的内存</p>
+</li>
+<li><p>??？<br>我还没有其他头绪，为什么会占用物理内存</p>
+</li>
+</ol>
+<h2 id="arm32-平台"><a href="#arm32-平台" class="headerlink" title="arm32 平台"></a>arm32 平台</h2><p>然后想了想，x86_64平台可能是虚拟内存太大，复现时间成本有点高<br>就使用了公司的板子，重新编译了一遍，在一个 <code>arm32</code> 板子上运行</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br></pre></td><td class="code"><pre><span class="line">root@device_gls:&#x2F; # mytest</span><br><span class="line">malloc sucess. p &#x3D; 0xb6b00000, i &#x3D; 0</span><br><span class="line">malloc sucess. p &#x3D; 0xb6a00000, i &#x3D; 1</span><br><span class="line">malloc sucess. p &#x3D; 0xb6900000, i &#x3D; 2</span><br><span class="line">malloc sucess. p &#x3D; 0xb6800000, i &#x3D; 3</span><br><span class="line">malloc sucess. p &#x3D; 0xb6700000, i &#x3D; 4</span><br><span class="line">malloc sucess. p &#x3D; 0xb6600000, i &#x3D; 5</span><br><span class="line">malloc sucess. p &#x3D; 0xb6500000, i &#x3D; 6</span><br><span class="line">......</span><br><span class="line">malloc sucess. p &#x3D; 0x10380000, i &#x3D; 2663</span><br><span class="line">malloc sucess. p &#x3D; 0x10280000, i &#x3D; 2664</span><br><span class="line">malloc sucess. p &#x3D; 0x10180000, i &#x3D; 2665</span><br><span class="line">malloc sucess. p &#x3D; 0x10080000, i &#x3D; 2666</span><br><span class="line">......</span><br><span class="line">malloc sucess. p &#x3D; 0xff80000, i &#x3D; 2667</span><br><span class="line">malloc sucess. p &#x3D; 0xfe80000, i &#x3D; 2668</span><br><span class="line">malloc sucess. p &#x3D; 0xfd80000, i &#x3D; 2669</span><br><span class="line">malloc sucess. p &#x3D; 0xfc80000, i &#x3D; 2670</span><br><span class="line">......</span><br><span class="line">malloc sucess. p &#x3D; 0x4180000, i &#x3D; 2857</span><br><span class="line">malloc sucess. p &#x3D; 0x4080000, i &#x3D; 2858</span><br><span class="line">malloc sucess. p &#x3D; 0x3f80000, i &#x3D; 2859</span><br><span class="line">......</span><br><span class="line">malloc sucess. p &#x3D; 0x1080000, i &#x3D; 2906</span><br><span class="line">malloc sucess. p &#x3D; 0xf80000, i &#x3D; 2907</span><br><span class="line">malloc sucess. p &#x3D; 0xe80000, i &#x3D; 2908</span><br><span class="line">......</span><br><span class="line">malloc sucess. p &#x3D; 0x80000, i &#x3D; 2922</span><br><span class="line">malloc sucess. p &#x3D; 0xb6f80000, i &#x3D; 2923</span><br><span class="line">malloc sucess. p &#x3D; 0xb7080000, i &#x3D; 2924</span><br><span class="line">......</span><br><span class="line">malloc sucess. p &#x3D; 0xbe880000, i &#x3D; 3044</span><br><span class="line">malloc sucess. p &#x3D; 0xbe980000, i &#x3D; 3045</span><br><span class="line">malloc sucess. p &#x3D; 0xbea80000, i &#x3D; 3046</span><br><span class="line">malloc sucess. p &#x3D; 0xbed80000, i &#x3D; 3047</span><br><span class="line">malloc failed, p &#x3D; 0x0, i &#x3D; 3048</span><br><span class="line">malloc failed,just wait!!</span><br></pre></td></tr></table></figure>
+
+
+<p>可以看到，<code>arm32</code> 平台在分配了 <code>3038MB</code> 虚拟内存之后，在分配第3039块1MB的内存时，由于虚拟地<br>址空间用完了，不能再继续分配虚拟内存？</p>
+<p>可以看到此时 <code>mytest</code> 进程的地址空间</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br></pre></td><td class="code"><pre><span class="line">root@device_gls:&#x2F;proc&#x2F;1293 # cat maps</span><br><span class="line">00080000-7f580000 rw-p 00000000 00:00 0          [anon:libc_malloc]</span><br><span class="line">7f5cd000-7f5d0000 r-xp 00000000 103:0f 1523      &#x2F;system&#x2F;bin&#x2F;mytest</span><br><span class="line">7f5d0000-7f5d1000 r--p 00002000 103:0f 1523      &#x2F;system&#x2F;bin&#x2F;mytest</span><br><span class="line">7f5d1000-7f5d2000 rw-p 00000000 00:00 0          [heap]</span><br><span class="line">7f600000-b6d00000 rw-p 00000000 00:00 0          [anon:libc_malloc]</span><br><span class="line">b6d64000-b6d68000 r-xp 00000000 103:0f 1428      &#x2F;system&#x2F;lib&#x2F;libnetd_client.so</span><br><span class="line">b6d68000-b6d69000 r--p 00003000 103:0f 1428      &#x2F;system&#x2F;lib&#x2F;libnetd_client.so</span><br><span class="line">b6d69000-b6d6a000 rw-p 00004000 103:0f 1428      &#x2F;system&#x2F;lib&#x2F;libnetd_client.so</span><br><span class="line">b6d6a000-b6d8a000 r--s 00000000 00:0f 11859      &#x2F;dev&#x2F;__properties__</span><br><span class="line">b6d8a000-b6d8b000 rw-p 00000000 00:00 0          [anon:linker_alloc_vector]</span><br><span class="line">b6d8c000-b6d8d000 rw-p 00000000 00:00 0          [anon:linker_alloc_vector]</span><br><span class="line">b6d8d000-b6dac000 r-xp 00000000 103:0f 1421      &#x2F;system&#x2F;lib&#x2F;libm.so</span><br><span class="line">b6dac000-b6dad000 ---p 00000000 00:00 0</span><br><span class="line">b6dad000-b6dae000 r--p 0001f000 103:0f 1421      &#x2F;system&#x2F;lib&#x2F;libm.so</span><br><span class="line">b6dae000-b6daf000 rw-p 00020000 103:0f 1421      &#x2F;system&#x2F;lib&#x2F;libm.so</span><br><span class="line">b6daf000-b6e23000 r-xp 00000000 103:0f 1355      &#x2F;system&#x2F;lib&#x2F;libc.so</span><br><span class="line">b6e23000-b6e27000 r--p 00073000 103:0f 1355      &#x2F;system&#x2F;lib&#x2F;libc.so</span><br><span class="line">b6e27000-b6e2a000 rw-p 00077000 103:0f 1355      &#x2F;system&#x2F;lib&#x2F;libc.so</span><br><span class="line">b6e2a000-b6e34000 rw-p 00000000 00:00 0</span><br><span class="line">b6e34000-b6ebc000 r-xp 00000000 103:0f 1354      &#x2F;system&#x2F;lib&#x2F;libc++.so</span><br><span class="line">b6ebc000-b6ebd000 ---p 00000000 00:00 0</span><br><span class="line">b6ebd000-b6ec1000 r--p 00088000 103:0f 1354      &#x2F;system&#x2F;lib&#x2F;libc++.so</span><br><span class="line">b6ec1000-b6ec2000 rw-p 0008c000 103:0f 1354      &#x2F;system&#x2F;lib&#x2F;libc++.so</span><br><span class="line">b6ec2000-b6ec3000 rw-p 00000000 00:00 0</span><br><span class="line">b6ec3000-b6ec4000 r--p 00000000 00:00 0</span><br><span class="line">b6ec4000-b6ec5000 r--p 00000000 00:00 0          [anon:linker_alloc]</span><br><span class="line">b6ec5000-b6ec6000 rw-p 00000000 00:00 0          [anon:linker_alloc]</span><br><span class="line">b6ec6000-b6ec7000 rw-p 00000000 00:00 0          [anon:linker_alloc_vector]</span><br><span class="line">b6ec7000-b6ec8000 rw-p 00000000 00:00 0          [anon:linker_alloc_32]</span><br><span class="line">b6ec8000-b6ec9000 r--p 00000000 00:00 0          [anon:linker_alloc]</span><br><span class="line">b6ec9000-b6ee9000 r--s 00000000 00:0f 11859      &#x2F;dev&#x2F;__properties__</span><br><span class="line">b6ee9000-b6eea000 r--p 00000000 00:00 0</span><br><span class="line">b6eea000-b6eeb000 ---p 00000000 00:00 0</span><br><span class="line">b6eeb000-b6eed000 rw-p 00000000 00:00 0          [anon:thread signal stack]</span><br><span class="line">b6eed000-b6f0a000 r-xp 00000000 103:0f 170       &#x2F;system&#x2F;bin&#x2F;linker</span><br><span class="line">b6f0a000-b6f0b000 r--p 0001c000 103:0f 170       &#x2F;system&#x2F;bin&#x2F;linker</span><br><span class="line">b6f0b000-b6f0d000 rw-p 0001d000 103:0f 170       &#x2F;system&#x2F;bin&#x2F;linker</span><br><span class="line">b6f0d000-b6f0f000 rw-p 00000000 00:00 0</span><br><span class="line">b6f80000-beb80000 rw-p 00000000 00:00 0          [anon:libc_malloc]</span><br><span class="line">bed01000-bed22000 rw-p 00000000 00:00 0          [stack]</span><br><span class="line">bed80000-bee80000 rw-p 00000000 00:00 0          [anon:libc_malloc]</span><br><span class="line">bef66000-bef67000 r-xp 00000000 00:00 0          [sigpage]</span><br><span class="line">bef67000-bef68000 r--p 00000000 00:00 0          [vvar]</span><br><span class="line">bef68000-bef69000 r-xp 00000000 00:00 0          [vdso]</span><br><span class="line">ffff0000-ffff1000 r-xp 00000000 00:00 0          [vectors]</span><br><span class="line">root@device_gls:&#x2F;proc&#x2F;1293 #</span><br></pre></td></tr></table></figure>
+
+
+<p>我们看 <code>libc_malloc</code> 区域的 的大小</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">00080000-7f580000 rw-p 00000000 00:00 0          [anon:libc_malloc]  &#x3D;&#x3D; 2037MB</span><br><span class="line">7f600000-b6d00000 rw-p 00000000 00:00 0          [anon:libc_malloc]  &#x3D;&#x3D; 887MB</span><br><span class="line">b6f80000-beb80000 rw-p 00000000 00:00 0          [anon:libc_malloc]  &#x3D;&#x3D; 124MB</span><br><span class="line">bed80000-bee80000 rw-p 00000000 00:00 0          [anon:libc_malloc]  &#x3D;&#x3D; 1MB</span><br></pre></td></tr></table></figure>
+<p>总和是 <code>2037 + 887 + 124 + 1 = 3049MB</code></p>
+<p>这是项目中一个实际的bug，场景是 直播盒子 做长跑测试的时候，每到7天左右，直播业务就会因为<br>malloc失败而导致失败，但是由于业务代码写的问题，没有检查 malloc返回值的原因，导致业务应用会<br>crash, 现象是空指针错误。。很难联想到是因为进程虚拟地址空间全部泄漏导致的问题。<br>业务的小伙伴差了一个多月都没有头绪。。</p>
+<p>在 <code>arm32</code> 设备上，<br>User 14 + Nice 0 + Sys 49 + Idle 246 + IOW 1 + IRQ 0 + SIRQ 0 = 310</p>
+<p>  PID PR CPU% S  #THR     VSS     RSS PCY UID      Name<br> 3592  0   0% S     1 3124044K   1688K  fg root     mytest</p>
+<p>RSS 也占用了一些，但是远没 X86设备上夸张</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br></pre></td><td class="code"><pre><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace# cat &#x2F;tmp&#x2F;123 | grep Rss</span><br><span class="line">Rss:                   0 kB</span><br><span class="line">Rss:                  12 kB</span><br><span class="line">Rss:                   4 kB</span><br><span class="line">Rss:                   0 kB</span><br><span class="line">Rss:                 256 kB</span><br><span class="line">Rss:                  16 kB</span><br><span class="line">Rss:                   4 kB</span><br><span class="line">Rss:                   4 kB</span><br><span class="line">Rss:                  28 kB</span><br><span class="line">Rss:                   4 kB</span><br><span class="line">Rss:                   4 kB</span><br><span class="line">Rss:                  64 kB</span><br><span class="line">Rss:                   0 kB</span><br><span class="line">Rss:                   4 kB</span><br><span class="line">Rss:                   4 kB</span><br><span class="line">Rss:                 460 kB</span><br><span class="line">Rss:                  16 kB</span><br><span class="line">Rss:                  12 kB</span><br><span class="line">Rss:                  28 kB</span><br><span class="line">Rss:                 536 kB</span><br><span class="line">Rss:                   0 kB</span><br><span class="line">Rss:                  16 kB</span><br><span class="line">Rss:                   4 kB</span><br><span class="line">Rss:                   4 kB</span><br><span class="line">Rss:                   4 kB</span><br><span class="line">Rss:                   4 kB</span><br><span class="line">Rss:                   4 kB</span><br><span class="line">Rss:                   4 kB</span><br><span class="line">Rss:                   4 kB</span><br><span class="line">Rss:                   4 kB</span><br><span class="line">Rss:                  28 kB</span><br><span class="line">Rss:                   4 kB</span><br><span class="line">Rss:                   0 kB</span><br><span class="line">Rss:                   0 kB</span><br><span class="line">Rss:                 116 kB</span><br><span class="line">Rss:                   4 kB</span><br><span class="line">Rss:                   8 kB</span><br><span class="line">Rss:                   8 kB</span><br><span class="line">Rss:                   0 kB</span><br><span class="line">Rss:                   8 kB</span><br><span class="line">Rss:                   0 kB</span><br><span class="line">Rss:                   4 kB</span><br><span class="line">Rss:                   4 kB</span><br><span class="line">Rss:                   0 kB</span><br></pre></td></tr></table></figure>
+<p>其中 malloc 的 rss 只占用 <code>256Kb</code>,大部分是 libc, libc++ libm的代码段占用</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">7f680000-b6d80000 rw-p 00000000 00:00 0          [anon:libc_malloc]</span><br><span class="line">Name:           [anon:libc_malloc]</span><br><span class="line">Size:             908288 kB</span><br><span class="line">Rss:                 256 kB</span><br><span class="line">Pss:                 256 kB</span><br><span class="line">Shared_Clean:          0 kB</span><br><span class="line">Shared_Dirty:          0 kB</span><br><span class="line">Private_Clean:         0 kB</span><br><span class="line">Private_Dirty:       256 kB</span><br><span class="line">Referenced:          256 kB</span><br><span class="line">Anonymous:           256 kB</span><br></pre></td></tr></table></figure>
+
+<p>由此可见</p>
+<ol>
+<li><p>进程虚拟地址空间泄漏还是有可能会存在的，尽管可能概率非常低，对系统危害也比物理内存泄漏小很<br>多。但是一旦发生，他的危害对于业务本身也是致命的，必须重启业务或者系统来恢复。</p>
+</li>
+<li><p>编程习惯养好，一定需要检查函数返回值。</p>
+</li>
+</ol>
+
+      
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+        <div class="post-eof"></div>
+      
+    </footer>
+  </article>
+  
+  
+  
+
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
+    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2021/01/15/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/%E6%96%87%E4%BB%B6%E8%B5%84%E6%BA%90%E6%B3%84%E6%BC%8F%E9%97%AE%E9%A2%98/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="Su Hui">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liulangren Blog">
+    </span>
+
+    
+    
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/2021/01/15/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/%E6%96%87%E4%BB%B6%E8%B5%84%E6%BA%90%E6%B3%84%E6%BC%8F%E9%97%AE%E9%A2%98/" class="post-title-link" itemprop="url">文件资源泄漏问题</a>
+        </h2>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">Posted on</span>
+
+      <time title="Created: 2021-01-15 19:00:00" itemprop="dateCreated datePublished" datetime="2021-01-15T19:00:00+08:00">2021-01-15</time>
+    </span>
+      <span class="post-meta-item">
+        <span class="post-meta-item-icon">
+          <i class="far fa-calendar-check"></i>
+        </span>
+        <span class="post-meta-item-text">Edited on</span>
+        <time title="Modified: 2021-01-18 14:07:42" itemprop="dateModified" datetime="2021-01-18T14:07:42+08:00">2021-01-18</time>
+      </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">In</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/linux%E5%86%85%E6%A0%B8/" itemprop="url" rel="index"><span itemprop="name">linux内核</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+          <h2 id="资源泄漏"><a href="#资源泄漏" class="headerlink" title="资源泄漏"></a>资源泄漏</h2><p>资源泄漏在实际编程中是一不小心就会遇到的一个问题，最常见的就是 <code>内存泄漏</code>。<br>内存泄漏：对于短时间存在的进程，线程即使存在内存泄漏，往往也不会变现出来，开发人员也很难感知到。<br>但是一旦是长时间运行的进程，线程存在内存泄漏的问题，那将是一个灾难，要么过一会被OOM KILL，要么<br>自己重启，更严重的就是重启机器。</p>
+<p>内存泄漏是指内存被分配出来，但是后续一直未使用，且失去了这个内存的引用，一直无法释放的问题。</p>
+<p>但是除了最常见内存泄漏之外，还有其他各种资源泄漏的问题，比如这次的 <code>进程文件资源泄漏</code>。</p>
+<h2 id="场景"><a href="#场景" class="headerlink" title="场景"></a>场景</h2><p>虽然是嵌入式平台，也有一些业务需要做压力测试连续几天到一个月不关机长时间跑测试。</p>
+<p>某个业务在运行两天之后就会出现进程挂掉的问题。</p>
+<h2 id="代码复现"><a href="#代码复现" class="headerlink" title="代码复现"></a>代码复现</h2><p>如果能用简单代码复现的问题，都不大</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/liulangrenaaa/test_modules/tree/main">代码</a></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br></pre></td><td class="code"><pre><span class="line">#include &lt;stdio.h&gt;</span><br><span class="line">#include &lt;stdlib.h&gt;</span><br><span class="line">#include &lt;string.h&gt;</span><br><span class="line">#include &lt;sys&#x2F;types.h&gt;</span><br><span class="line">#include &lt;dirent.h&gt;</span><br><span class="line">#include &lt;unistd.h&gt;</span><br><span class="line">#include &lt;sys&#x2F;types.h&gt;</span><br><span class="line">#include &lt;sys&#x2F;stat.h&gt;</span><br><span class="line">#include &lt;fcntl.h&gt;</span><br><span class="line">#define DIR_NAME        &quot;&#x2F;tmp&#x2F;asdf&quot;</span><br><span class="line"></span><br><span class="line">int sync_dir(char *dir)</span><br><span class="line">&#123;</span><br><span class="line">        if(!dir) return -1;</span><br><span class="line">        int fd &#x3D; open(dir, O_ASYNC);</span><br><span class="line">        if (-1 &#x3D;&#x3D; fd) return -1;</span><br><span class="line">        return 0;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">void main(void)</span><br><span class="line">&#123;</span><br><span class="line">        int i &#x3D; 0;</span><br><span class="line">        int ret &#x3D; -1;</span><br><span class="line">        for (i &#x3D; 0; i &lt; 1024 * 1024 * 64; i++) &#123;</span><br><span class="line">                ret &#x3D; sync_dir(DIR_NAME);</span><br><span class="line">                if (ret)        printf(&quot;sync_dir failed. i &#x3D; %d, ret &#x3D; %d\n&quot;, i, ret);</span><br><span class="line">                else            printf(&quot;sync_dir sucess. i &#x3D; %d\n&quot;, i);</span><br><span class="line">                usleep(1000 * 10);</span><br><span class="line">        &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+<p>嵌入式设备上的资源限制</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">root@device_gls:&#x2F;proc&#x2F;sys&#x2F;fs # cat file-nr</span><br><span class="line">800     0       21378</span><br><span class="line">root@device_gls:&#x2F;proc&#x2F;sys&#x2F;fs #</span><br></pre></td></tr></table></figure>
+<p>意思是当前系统允许打开 <code>21378</code> 个文件，已经打开了 <code>800</code>个文件了</p>
+<p>我选择用 <code>ubuntu</code> 系统去复现，先将 系统 fd上限制调制与设备一样的水平</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs# cat file-max</span><br><span class="line">9223372036854775807</span><br><span class="line">tencent_clould@1ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs# sudo su</span><br><span class="line">VM-0-11-ubuntu# echo 21378 &gt; file-max</span><br><span class="line">VM-0-11-ubuntu# exit</span><br><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs# cat file-max</span><br><span class="line">21378</span><br><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs#</span><br></pre></td></tr></table></figure>
+
+<p>尝试复现</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@130ubuntu: ~&#x2F;workspace&#x2F;hexo_blog&#x2F;source&#x2F;_posts&#x2F;资源管理# .&#x2F;a.out</span><br><span class="line">sync_dir sucess. i &#x3D; 0</span><br><span class="line">sync_dir sucess. i &#x3D; 1</span><br><span class="line">....</span><br><span class="line">sync_dir sucess. i &#x3D; 5</span><br><span class="line">sync_dir sucess. i &#x3D; 18194</span><br><span class="line">sync_dir sucess. i &#x3D; 18195</span><br><span class="line">...</span><br><span class="line">sync_dir failed. i &#x3D; 18196, ret &#x3D; -1</span><br></pre></td></tr></table></figure>
+
+
+<p>同时观察 <code> /proc/sys/fs/file-nr</code></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs# cat file-nr</span><br><span class="line">4704    0       21378</span><br><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs# cat file-nr</span><br><span class="line">9824    0       21378</span><br><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs# cat file-nr</span><br><span class="line">17760   0       21378</span><br><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs# cat file-nr</span><br><span class="line">20224   0       21378</span><br><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs# cat file-nr</span><br><span class="line">21024   0       21378</span><br><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs# cat file-nr</span><br><span class="line">21216   0       21378</span><br><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs# cat file-nr</span><br><span class="line">zsh: pipe failed: too many open files in system</span><br><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs# cat file-nr</span><br><span class="line">zsh: pipe failed: too many open files in system</span><br></pre></td></tr></table></figure>
+
+<p>可以看到 <code>a.out</code> 最后无法 通过 <code>open</code> 打开文件了，且同时 <code>zsh</code> shell 都无法打开<br><code>file-nr</code>了。</p>
+<p>与此同时，看到 <code>dmesg</code> 的信息</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">[57615.006011] VFS: file-max limit 21378 reached</span><br><span class="line">[57616.671617] VFS: file-max limit 21378 reached</span><br></pre></td></tr></table></figure>
+<p>也可以比较容易定位出来。</p>
+<p>这个问题困扰了当时开发同事很久，最后发现原来是 系统 <code>fd</code> 资源全部泄漏殆尽导致的。</p>
+<h2 id="其他限制资源使用的方式"><a href="#其他限制资源使用的方式" class="headerlink" title="其他限制资源使用的方式"></a>其他限制资源使用的方式</h2><ol>
+<li>其实还有其他方式限制资源 如 <code>ulimit</code></li>
+</ol>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs# ulimit -a</span><br><span class="line">-t: cpu time (seconds)              unlimited</span><br><span class="line">-f: file size (blocks)              unlimited</span><br><span class="line">-d: data seg size (kbytes)          unlimited</span><br><span class="line">-s: stack size (kbytes)             8192</span><br><span class="line">-c: core file size (blocks)         0</span><br><span class="line">-m: resident set size (kbytes)      unlimited</span><br><span class="line">-u: processes                       7582</span><br><span class="line">-n: file descriptors                1024</span><br><span class="line">-l: locked-in-memory size (kbytes)  65536</span><br><span class="line">-v: address space (kbytes)          unlimited</span><br><span class="line">-x: file locks                      unlimited</span><br><span class="line">-i: pending signals                 7582</span><br><span class="line">-q: bytes in POSIX msg queues       819200</span><br><span class="line">-e: max nice                        0</span><br><span class="line">-r: max rt priority                 0</span><br><span class="line">-N 15:                              unlimited</span><br><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs#</span><br></pre></td></tr></table></figure>
+
+<ol start="2">
+<li>/proc/pid/limits<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs# cat &#x2F;proc&#x2F;4833&#x2F;limits</span><br><span class="line">Limit                     Soft Limit           Hard Limit           Units</span><br><span class="line">Max cpu time              unlimited            unlimited            seconds</span><br><span class="line">Max file size             unlimited            unlimited            bytes</span><br><span class="line">Max data size             unlimited            unlimited            bytes</span><br><span class="line">Max stack size            8388608              unlimited            bytes</span><br><span class="line">Max core file size        0                    unlimited            bytes</span><br><span class="line">Max resident set          unlimited            unlimited            bytes</span><br><span class="line">Max processes             7582                 7582                 processes</span><br><span class="line">Max open files            1024                 1048576              files</span><br><span class="line">Max locked memory         67108864             67108864             bytes</span><br><span class="line">Max address space         unlimited            unlimited            bytes</span><br><span class="line">Max file locks            unlimited            unlimited            locks</span><br><span class="line">Max pending signals       7582                 7582                 signals</span><br><span class="line">Max msgqueue size         819200               819200               bytes</span><br><span class="line">Max nice priority         0                    0</span><br><span class="line">Max realtime priority     0                    0</span><br><span class="line">Max realtime timeout      unlimited            unlimited            us</span><br><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs#</span><br></pre></td></tr></table></figure>
+
+
+
+</li>
+</ol>
+<ol start="3">
+<li><code>/etc/security/limits.conf</code></li>
+</ol>
+<p>这里可以预先配置。</p>
+
+      
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+        <div class="post-eof"></div>
+      
+    </footer>
+  </article>
+  
+  
+  
+
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
     <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2021/01/11/%E7%94%9F%E6%B4%BB%E6%84%9F%E6%82%9F/%E6%88%91%E5%BA%94%E8%AF%A5%E5%A6%82%E4%BD%95%E7%9C%8B%E4%BB%A3%E7%A0%81/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
@@ -264,10 +809,16 @@
         <i class="far fa-calendar"></i>
       </span>
       <span class="post-meta-item-text">Posted on</span>
-      
 
-      <time title="Created: 2021-01-11 23:00:00 / Modified: 23:33:54" itemprop="dateCreated datePublished" datetime="2021-01-11T23:00:00+08:00">2021-01-11</time>
+      <time title="Created: 2021-01-11 23:00:00" itemprop="dateCreated datePublished" datetime="2021-01-11T23:00:00+08:00">2021-01-11</time>
     </span>
+      <span class="post-meta-item">
+        <span class="post-meta-item-icon">
+          <i class="far fa-calendar-check"></i>
+        </span>
+        <span class="post-meta-item-text">Edited on</span>
+        <time title="Modified: 2021-01-15 19:33:39" itemprop="dateModified" datetime="2021-01-15T19:33:39+08:00">2021-01-15</time>
+      </span>
     <span class="post-meta-item">
       <span class="post-meta-item-icon">
         <i class="far fa-folder"></i>
@@ -307,7 +858,12 @@
 <li>知道模块子系统作用</li>
 <li>找个方法实践一下，比如 docker 可以很好实践 cgroups</li>
 <li>关键数据结构</li>
+<li>导出到用户空间的接口，看他在 kernel中实现<br>比如<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@127ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs# ls</span><br><span class="line">aio-max-nr    dir-notify-enable  inode-nr          leases-enable  overflowgid           pipe-user-pages-soft  protected_symlinks</span><br><span class="line">aio-nr        epoll              inode-state       mount-max      overflowuid           protected_fifos       quota</span><br><span class="line">binfmt_misc   file-max           inotify           mqueue         pipe-max-size         protected_hardlinks   suid_dumpable</span><br><span class="line">dentry-state  file-nr            lease-break-time  nr_open        pipe-user-pages-hard  protected_regular     verity</span><br><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs#</span><br><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs#</span><br><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs# cat file-nr</span><br><span class="line">3200    0       9223372036854775807</span><br><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs# cat file-max</span><br><span class="line">9223372036854775807</span><br><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs#</span><br></pre></td></tr></table></figure>
+
+</li>
 </ol>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line">static struct ctl_table fs_table[] &#x3D; &#123;</span><br><span class="line">	&#123;</span><br><span class="line">		.procname	&#x3D; &quot;inode-nr&quot;,</span><br><span class="line">		.data		&#x3D; &amp;inodes_stat,</span><br><span class="line">		.maxlen		&#x3D; 2*sizeof(long),</span><br><span class="line">		.mode		&#x3D; 0444,</span><br><span class="line">		.proc_handler	&#x3D; proc_nr_inodes,</span><br><span class="line">	&#125;,</span><br><span class="line">	&#123;</span><br><span class="line">		.procname	&#x3D; &quot;inode-state&quot;,</span><br><span class="line">		.data		&#x3D; &amp;inodes_stat,</span><br><span class="line">		.maxlen		&#x3D; 7*sizeof(long),</span><br><span class="line">		.mode		&#x3D; 0444,</span><br><span class="line">		.proc_handler	&#x3D; proc_nr_inodes,</span><br><span class="line">	&#125;,</span><br><span class="line">	&#123;</span><br><span class="line">		.procname	&#x3D; &quot;file-nr&quot;,</span><br><span class="line">		.data		&#x3D; &amp;files_stat,</span><br><span class="line">		.maxlen		&#x3D; sizeof(files_stat),</span><br><span class="line">		.mode		&#x3D; 0444,</span><br><span class="line">		.proc_handler	&#x3D; proc_nr_files,</span><br><span class="line">	&#125;,</span><br></pre></td></tr></table></figure>
+
 <h2 id="如何深入"><a href="#如何深入" class="headerlink" title="如何深入"></a>如何深入</h2><p>比如我知道 page_cache 的大概了，也知道他的作用，但是看代码的时候比较迷茫？</p>
 <ol>
 <li><p>看看 page_cache 的API</p>
@@ -875,545 +1431,10 @@
   
   
 
-      
-  
-  
-  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
-    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/12/12/Docker%E6%9C%BA%E5%88%B6%E5%88%86%E6%9E%90/docker%E4%B8%8Enamespace%E5%A6%82%E4%BD%95%E8%81%94%E7%B3%BB%E8%B5%B7%E6%9D%A5%E7%9A%84/">
-
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="image" content="/images/avatar.gif">
-      <meta itemprop="name" content="Su Hui">
-      <meta itemprop="description" content="">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="liulangren Blog">
-    </span>
-
-    
-    
-      <header class="post-header">
-        <h2 class="post-title" itemprop="name headline">
-          
-            <a href="/2020/12/12/Docker%E6%9C%BA%E5%88%B6%E5%88%86%E6%9E%90/docker%E4%B8%8Enamespace%E5%A6%82%E4%BD%95%E8%81%94%E7%B3%BB%E8%B5%B7%E6%9D%A5%E7%9A%84/" class="post-title-link" itemprop="url">docker与cgroup如何联系起来的</a>
-        </h2>
-
-        <div class="post-meta-container">
-          <div class="post-meta">
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-calendar"></i>
-      </span>
-      <span class="post-meta-item-text">Posted on</span>
-
-      <time title="Created: 2020-12-12 14:47:40" itemprop="dateCreated datePublished" datetime="2020-12-12T14:47:40+08:00">2020-12-12</time>
-    </span>
-      <span class="post-meta-item">
-        <span class="post-meta-item-icon">
-          <i class="far fa-calendar-check"></i>
-        </span>
-        <span class="post-meta-item-text">Edited on</span>
-        <time title="Modified: 2020-12-05 19:31:20" itemprop="dateModified" datetime="2020-12-05T19:31:20+08:00">2020-12-05</time>
-      </span>
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-folder"></i>
-      </span>
-      <span class="post-meta-item-text">In</span>
-        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-          <a href="/categories/docker/" itemprop="url" rel="index"><span itemprop="name">docker</span></a>
-        </span>
-    </span>
-
-  
-</div>
-
-        </div>
-      </header>
-
-    
-    
-    
-    <div class="post-body" itemprop="articleBody">
-          <p>这篇文章主要实操看一看 Docker 与 Namespace 的联系。</p>
-<ol>
-<li><p>首先去 /sys/fs/cgroup/ 目录看一下当前支持的子系统controller，各个子系统controller下面一般情况下都是空的，表明系统中没有额外的cgroup，基本都只有root_cgroup.<br>虽然4.5版本之后 cgroup v2 就进入mainline了，但是 现在（2020.12.01）docker 基本还是在使用 cgroup v1, 应该也算是一个历史原因了吧，不知道何时 docker能迁移到 cgroup v2 上，期待ing</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup# ls</span><br><span class="line">blkio  cpuacct      cpuset   freezer  memory   net_cls,net_prio  perf_event  rdma     unified</span><br><span class="line">cpu    cpu,cpuacct  devices  hugetlb  net_cls  net_prio          pids        systemd</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup# mount | grep cgroup</span><br><span class="line">tmpfs on &#x2F;sys&#x2F;fs&#x2F;cgroup type tmpfs (ro,nosuid,nodev,noexec,mode&#x3D;755)</span><br><span class="line">cgroup2 on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;unified type cgroup2 (rw,nosuid,nodev,noexec,relatime)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;systemd type cgroup (rw,nosuid,nodev,noexec,relatime,xattr,name&#x3D;systemd)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpuset type cgroup (rw,nosuid,nodev,noexec,relatime,cpuset,clone_children)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;rdma type cgroup (rw,nosuid,nodev,noexec,relatime,rdma)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;hugetlb type cgroup (rw,nosuid,nodev,noexec,relatime,hugetlb)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory type cgroup (rw,nosuid,nodev,noexec,relatime,memory)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;net_cls,net_prio type cgroup (rw,nosuid,nodev,noexec,relatime,net_cls,net_prio)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;perf_event type cgroup (rw,nosuid,nodev,noexec,relatime,perf_event)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;devices type cgroup (rw,nosuid,nodev,noexec,relatime,devices)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpu,cpuacct type cgroup (rw,nosuid,nodev,noexec,relatime,cpu,cpuacct)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;pids type cgroup (rw,nosuid,nodev,noexec,relatime,pids)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;blkio type cgroup (rw,nosuid,nodev,noexec,relatime,blkio)</span><br><span class="line">freezer on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;freezer type cgroup (rw,relatime,freezer)</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup# ls memory</span><br><span class="line">cgroup.clone_children  memory.kmem.failcnt                 memory.limit_in_bytes            memory.usage_in_bytes</span><br><span class="line">cgroup.event_control   memory.kmem.limit_in_bytes          memory.max_usage_in_bytes        memory.use_hierarchy</span><br><span class="line">cgroup.procs           memory.kmem.max_usage_in_bytes      memory.move_charge_at_immigrate  notify_on_release</span><br><span class="line">cgroup.sane_behavior   memory.kmem.slabinfo                memory.numa_stat                 release_agent</span><br><span class="line">docker                 memory.kmem.tcp.failcnt             memory.oom_control               system.slice</span><br><span class="line">init.scope             memory.kmem.tcp.limit_in_bytes      memory.pressure_level            tasks</span><br><span class="line">machine.slice          memory.kmem.tcp.max_usage_in_bytes  memory.soft_limit_in_bytes       user</span><br><span class="line">memory.failcnt         memory.kmem.tcp.usage_in_bytes      memory.stat                      user.slice</span><br><span class="line">memory.force_empty     memory.kmem.usage_in_bytes          memory.swappiness</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup# cat memory&#x2F;tasks</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">....</span><br><span class="line">1728692</span><br><span class="line">1731590</span><br></pre></td></tr></table></figure>
-</li>
-<li><p>基于 ubuntu image新建一个docker，限制memory 为 4MB</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup# sudo docker run -t -i -m 4MB ubuntu &#x2F;bin&#x2F;bash</span><br><span class="line">WARNING: Your kernel does not support swap limit capabilities or the cgroup is not mounted. Memory limited without swap.</span><br><span class="line">root@b3c618bb4df9:&#x2F;#</span><br></pre></td></tr></table></figure>
-<p>警告可以忽略，可以看到docker的 id是 b3c618bb4df9。</p>
-</li>
-<li><p>可以发现各个子系统目录都会新建一个docker目录，且docker目录下有一个目录就是上面的docker container 的id。</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory# ls</span><br><span class="line">cgroup.clone_children           memory.kmem.slabinfo                memory.soft_limit_in_bytes</span><br><span class="line">cgroup.event_control            memory.kmem.tcp.failcnt             memory.stat</span><br><span class="line">cgroup.procs                    memory.kmem.tcp.limit_in_bytes      memory.swappiness</span><br><span class="line">cgroup.sane_behavior            memory.kmem.tcp.max_usage_in_bytes  memory.usage_in_bytes</span><br><span class="line">docker                          memory.kmem.tcp.usage_in_bytes      memory.use_hierarchy</span><br><span class="line">init.scope                      memory.kmem.usage_in_bytes          notify_on_release</span><br><span class="line">machine.slice                   memory.limit_in_bytes               release_agent</span><br><span class="line">memory.failcnt                  memory.max_usage_in_bytes           system.slice</span><br><span class="line">memory.force_empty              memory.move_charge_at_immigrate     tasks</span><br><span class="line">memory.kmem.failcnt             memory.numa_stat                    user</span><br><span class="line">memory.kmem.limit_in_bytes      memory.oom_control                  user.slice</span><br><span class="line">memory.kmem.max_usage_in_bytes  memory.pressure_level</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory# ls docker</span><br><span class="line">1f3a24f9105950f6f463da0effa2465a518039c3bec76de71c6e20626dcfb286  memory.kmem.usage_in_bytes</span><br><span class="line">b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df  memory.limit_in_bytes</span><br><span class="line">cgroup.clone_children                                             memory.max_usage_in_bytes</span><br><span class="line">cgroup.event_control                                              memory.move_charge_at_immigrate</span><br><span class="line">cgroup.procs                                                      memory.numa_stat</span><br><span class="line">memory.failcnt                                                    memory.oom_control</span><br><span class="line">memory.force_empty                                                memory.pressure_level</span><br><span class="line">memory.kmem.failcnt                                               memory.soft_limit_in_bytes</span><br><span class="line">memory.kmem.limit_in_bytes                                        memory.stat</span><br><span class="line">memory.kmem.max_usage_in_bytes                                    memory.swappiness</span><br><span class="line">memory.kmem.slabinfo                                              memory.usage_in_bytes</span><br><span class="line">memory.kmem.tcp.failcnt                                           memory.use_hierarchy</span><br><span class="line">memory.kmem.tcp.limit_in_bytes                                    notify_on_release</span><br><span class="line">memory.kmem.tcp.max_usage_in_bytes                                tasks</span><br><span class="line">memory.kmem.tcp.usage_in_bytes</span><br></pre></td></tr></table></figure>
-</li>
-<li><p>其中 docker 目录下除了 container id的目录其他目录都是无效的，docker这个目录只是限制所有container id的一个顶层目录而已。通过 docker/tasks 为空就可以看出来。<br>可以看到 <code>memory/docker/b3c618bb4df9/</code> 目录下的最大内存限制，就是创建这个容器时设置的最大内存使用示4MB的限制。</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory&#x2F;docker# cat tasks</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory&#x2F;docker#</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df# cat memory.limit_in_bytes</span><br><span class="line">4194304</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df# cat tasks</span><br><span class="line">1733194</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df# ps -aux | grep 17</span><br><span class="line">33194</span><br><span class="line">root     1733194  0.0  0.1   4108  3296 pts&#x2F;0    Ss+  19:03   0:00 &#x2F;bin&#x2F;bash</span><br><span class="line">ubuntu   1737657  0.0  0.0   6432   736 pts&#x2F;0    S+   19:11   0:00 grep --color&#x3D;auto --exclude-dir&#x3D;.bzr --exclude-dir&#x3D;CVS --exclude-dir&#x3D;.git --exclude-dir&#x3D;.hg --exclude-dir&#x3D;.svn --exclude-dir&#x3D;.idea --exclude-dir&#x3D;.tox tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df# ps -aux | grep 17</span><br><span class="line">33194</span><br><span class="line">root     1733194  0.0  0.1   4108  3296 pts&#x2F;0    Ss+  19:03   0:00 &#x2F;bin&#x2F;bash</span><br><span class="line">ubuntu   1737657  0.0  0.0   6432   736 pts&#x2F;0    S+   19:11   0:00 grep --color&#x3D;auto --exclude-dir&#x3D;.bzr --exclude-dir&#x3D;CVS --exclude-dir&#x3D;.git --exclude-dir&#x3D;.hg --exclude-dir&#x3D;.svn --exclude-dir&#x3D;.idea --exclude-dir&#x3D;.tox 1733194</span><br></pre></td></tr></table></figure>
-<p>可以看到这个 <code>1733194</code> 进程就是启动 容器时的 /bin/bash 进程</p>
-</li>
-<li><p>由于其他的 cgroup子系统我们没有对刚刚启动的 container 进行限制，所以也理论上从 cgroup上看到的也是没有限制的，可以看看 cpu controller.</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpu&#x2F;docker# cat tasks</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpu&#x2F;docker# cd -</span><br><span class="line">&#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpu&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpu&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df# cat tasks</span><br><span class="line">1733194</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpu&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df# cat cpu.cfs_period_us</span><br><span class="line">100000</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpu&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df# cat cpu.cfs_quota_us</span><br><span class="line">-1</span><br></pre></td></tr></table></figure>
-
-</li>
-</ol>
-<p>这里就不具体介绍 各个子系统目录下文件含义了。</p>
-
-      
-    </div>
-
-    
-    
-    
-
-    <footer class="post-footer">
-        <div class="post-eof"></div>
-      
-    </footer>
-  </article>
-  
-  
-  
-
-      
-  
-  
-  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
-    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/12/12/Docker%E6%9C%BA%E5%88%B6%E5%88%86%E6%9E%90/docker%E4%B8%8Ecgroup%E5%A6%82%E4%BD%95%E8%81%94%E7%B3%BB%E8%B5%B7%E6%9D%A5%E7%9A%84/">
-
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="image" content="/images/avatar.gif">
-      <meta itemprop="name" content="Su Hui">
-      <meta itemprop="description" content="">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="liulangren Blog">
-    </span>
-
-    
-    
-      <header class="post-header">
-        <h2 class="post-title" itemprop="name headline">
-          
-            <a href="/2020/12/12/Docker%E6%9C%BA%E5%88%B6%E5%88%86%E6%9E%90/docker%E4%B8%8Ecgroup%E5%A6%82%E4%BD%95%E8%81%94%E7%B3%BB%E8%B5%B7%E6%9D%A5%E7%9A%84/" class="post-title-link" itemprop="url">docker与cgroup如何联系起来的</a>
-        </h2>
-
-        <div class="post-meta-container">
-          <div class="post-meta">
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-calendar"></i>
-      </span>
-      <span class="post-meta-item-text">Posted on</span>
-
-      <time title="Created: 2020-12-12 14:47:40" itemprop="dateCreated datePublished" datetime="2020-12-12T14:47:40+08:00">2020-12-12</time>
-    </span>
-      <span class="post-meta-item">
-        <span class="post-meta-item-icon">
-          <i class="far fa-calendar-check"></i>
-        </span>
-        <span class="post-meta-item-text">Edited on</span>
-        <time title="Modified: 2020-12-05 19:21:23" itemprop="dateModified" datetime="2020-12-05T19:21:23+08:00">2020-12-05</time>
-      </span>
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-folder"></i>
-      </span>
-      <span class="post-meta-item-text">In</span>
-        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-          <a href="/categories/docker/" itemprop="url" rel="index"><span itemprop="name">docker</span></a>
-        </span>
-    </span>
-
-  
-</div>
-
-        </div>
-      </header>
-
-    
-    
-    
-    <div class="post-body" itemprop="articleBody">
-          <p>一直说Docker 是基于linux三大技术 Cgroups, Namespace, OverlayFs 技术。<br>Cgroups, Namespace 着重的是 docker 的运行时，OverlayFs 着重的是 docker Image.<br>但是Docker 与 Cgroups, Namespace, OverlayFs 是怎么联系起来的呢，却很少有人说的明白，<br>我是一个好奇心很重的人，我会用几篇文章来记录分析一下他们怎么练习起来的。</p>
-<p>这篇文章主要实操看一看 Docker 与 Cgroup 的联系。</p>
-<ol>
-<li><p>首先去 /sys/fs/cgroup/ 目录看一下当前支持的子系统controller，各个子系统controller下面一般情况下都是空的，表明系统中没有额外的cgroup，基本都只有root_cgroup.<br>虽然4.5版本之后 cgroup v2 就进入mainline了，但是 现在（2020.12.01）docker 基本还是在使用 cgroup v1, 应该也算是一个历史原因了吧，不知道何时 docker能迁移到 cgroup v2 上，期待ing</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup# ls</span><br><span class="line">blkio  cpuacct      cpuset   freezer  memory   net_cls,net_prio  perf_event  rdma     unified</span><br><span class="line">cpu    cpu,cpuacct  devices  hugetlb  net_cls  net_prio          pids        systemd</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup# mount | grep cgroup</span><br><span class="line">tmpfs on &#x2F;sys&#x2F;fs&#x2F;cgroup type tmpfs (ro,nosuid,nodev,noexec,mode&#x3D;755)</span><br><span class="line">cgroup2 on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;unified type cgroup2 (rw,nosuid,nodev,noexec,relatime)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;systemd type cgroup (rw,nosuid,nodev,noexec,relatime,xattr,name&#x3D;systemd)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpuset type cgroup (rw,nosuid,nodev,noexec,relatime,cpuset,clone_children)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;rdma type cgroup (rw,nosuid,nodev,noexec,relatime,rdma)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;hugetlb type cgroup (rw,nosuid,nodev,noexec,relatime,hugetlb)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory type cgroup (rw,nosuid,nodev,noexec,relatime,memory)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;net_cls,net_prio type cgroup (rw,nosuid,nodev,noexec,relatime,net_cls,net_prio)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;perf_event type cgroup (rw,nosuid,nodev,noexec,relatime,perf_event)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;devices type cgroup (rw,nosuid,nodev,noexec,relatime,devices)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpu,cpuacct type cgroup (rw,nosuid,nodev,noexec,relatime,cpu,cpuacct)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;pids type cgroup (rw,nosuid,nodev,noexec,relatime,pids)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;blkio type cgroup (rw,nosuid,nodev,noexec,relatime,blkio)</span><br><span class="line">freezer on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;freezer type cgroup (rw,relatime,freezer)</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup# ls memory</span><br><span class="line">cgroup.clone_children  memory.kmem.failcnt                 memory.limit_in_bytes            memory.usage_in_bytes</span><br><span class="line">cgroup.event_control   memory.kmem.limit_in_bytes          memory.max_usage_in_bytes        memory.use_hierarchy</span><br><span class="line">cgroup.procs           memory.kmem.max_usage_in_bytes      memory.move_charge_at_immigrate  notify_on_release</span><br><span class="line">cgroup.sane_behavior   memory.kmem.slabinfo                memory.numa_stat                 release_agent</span><br><span class="line">docker                 memory.kmem.tcp.failcnt             memory.oom_control               system.slice</span><br><span class="line">init.scope             memory.kmem.tcp.limit_in_bytes      memory.pressure_level            tasks</span><br><span class="line">machine.slice          memory.kmem.tcp.max_usage_in_bytes  memory.soft_limit_in_bytes       user</span><br><span class="line">memory.failcnt         memory.kmem.tcp.usage_in_bytes      memory.stat                      user.slice</span><br><span class="line">memory.force_empty     memory.kmem.usage_in_bytes          memory.swappiness</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup# cat memory&#x2F;tasks</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">....</span><br><span class="line">1728692</span><br><span class="line">1731590</span><br></pre></td></tr></table></figure>
-</li>
-<li><p>基于 ubuntu image新建一个docker，限制memory 为 4MB</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup# sudo docker run -t -i -m 4MB ubuntu &#x2F;bin&#x2F;bash</span><br><span class="line">WARNING: Your kernel does not support swap limit capabilities or the cgroup is not mounted. Memory limited without swap.</span><br><span class="line">root@b3c618bb4df9:&#x2F;#</span><br></pre></td></tr></table></figure>
-<p>警告可以忽略，可以看到docker的 id是 b3c618bb4df9。</p>
-</li>
-<li><p>可以发现各个子系统目录都会新建一个docker目录，且docker目录下有一个目录就是上面的docker container 的id。</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory# ls</span><br><span class="line">cgroup.clone_children           memory.kmem.slabinfo                memory.soft_limit_in_bytes</span><br><span class="line">cgroup.event_control            memory.kmem.tcp.failcnt             memory.stat</span><br><span class="line">cgroup.procs                    memory.kmem.tcp.limit_in_bytes      memory.swappiness</span><br><span class="line">cgroup.sane_behavior            memory.kmem.tcp.max_usage_in_bytes  memory.usage_in_bytes</span><br><span class="line">docker                          memory.kmem.tcp.usage_in_bytes      memory.use_hierarchy</span><br><span class="line">init.scope                      memory.kmem.usage_in_bytes          notify_on_release</span><br><span class="line">machine.slice                   memory.limit_in_bytes               release_agent</span><br><span class="line">memory.failcnt                  memory.max_usage_in_bytes           system.slice</span><br><span class="line">memory.force_empty              memory.move_charge_at_immigrate     tasks</span><br><span class="line">memory.kmem.failcnt             memory.numa_stat                    user</span><br><span class="line">memory.kmem.limit_in_bytes      memory.oom_control                  user.slice</span><br><span class="line">memory.kmem.max_usage_in_bytes  memory.pressure_level</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory# ls docker</span><br><span class="line">1f3a24f9105950f6f463da0effa2465a518039c3bec76de71c6e20626dcfb286  memory.kmem.usage_in_bytes</span><br><span class="line">b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df  memory.limit_in_bytes</span><br><span class="line">cgroup.clone_children                                             memory.max_usage_in_bytes</span><br><span class="line">cgroup.event_control                                              memory.move_charge_at_immigrate</span><br><span class="line">cgroup.procs                                                      memory.numa_stat</span><br><span class="line">memory.failcnt                                                    memory.oom_control</span><br><span class="line">memory.force_empty                                                memory.pressure_level</span><br><span class="line">memory.kmem.failcnt                                               memory.soft_limit_in_bytes</span><br><span class="line">memory.kmem.limit_in_bytes                                        memory.stat</span><br><span class="line">memory.kmem.max_usage_in_bytes                                    memory.swappiness</span><br><span class="line">memory.kmem.slabinfo                                              memory.usage_in_bytes</span><br><span class="line">memory.kmem.tcp.failcnt                                           memory.use_hierarchy</span><br><span class="line">memory.kmem.tcp.limit_in_bytes                                    notify_on_release</span><br><span class="line">memory.kmem.tcp.max_usage_in_bytes                                tasks</span><br><span class="line">memory.kmem.tcp.usage_in_bytes</span><br></pre></td></tr></table></figure>
-</li>
-<li><p>其中 docker 目录下除了 container id的目录其他目录都是无效的，docker这个目录只是限制所有container id的一个顶层目录而已。通过 docker/tasks 为空就可以看出来。<br>可以看到 <code>memory/docker/b3c618bb4df9/</code> 目录下的最大内存限制，就是创建这个容器时设置的最大内存使用示4MB的限制。</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory&#x2F;docker# cat tasks</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory&#x2F;docker#</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df# cat memory.limit_in_bytes</span><br><span class="line">4194304</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df# cat tasks</span><br><span class="line">1733194</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df# ps -aux | grep 17</span><br><span class="line">33194</span><br><span class="line">root     1733194  0.0  0.1   4108  3296 pts&#x2F;0    Ss+  19:03   0:00 &#x2F;bin&#x2F;bash</span><br><span class="line">ubuntu   1737657  0.0  0.0   6432   736 pts&#x2F;0    S+   19:11   0:00 grep --color&#x3D;auto --exclude-dir&#x3D;.bzr --exclude-dir&#x3D;CVS --exclude-dir&#x3D;.git --exclude-dir&#x3D;.hg --exclude-dir&#x3D;.svn --exclude-dir&#x3D;.idea --exclude-dir&#x3D;.tox tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df# ps -aux | grep 17</span><br><span class="line">33194</span><br><span class="line">root     1733194  0.0  0.1   4108  3296 pts&#x2F;0    Ss+  19:03   0:00 &#x2F;bin&#x2F;bash</span><br><span class="line">ubuntu   1737657  0.0  0.0   6432   736 pts&#x2F;0    S+   19:11   0:00 grep --color&#x3D;auto --exclude-dir&#x3D;.bzr --exclude-dir&#x3D;CVS --exclude-dir&#x3D;.git --exclude-dir&#x3D;.hg --exclude-dir&#x3D;.svn --exclude-dir&#x3D;.idea --exclude-dir&#x3D;.tox 1733194</span><br></pre></td></tr></table></figure>
-<p>可以看到这个 <code>1733194</code> 进程就是启动 容器时的 /bin/bash 进程</p>
-</li>
-<li><p>由于其他的 cgroup子系统我们没有对刚刚启动的 container 进行限制，所以也理论上从 cgroup上看到的也是没有限制的，可以看看 cpu controller.</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpu&#x2F;docker# cat tasks</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpu&#x2F;docker# cd -</span><br><span class="line">&#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpu&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpu&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df# cat tasks</span><br><span class="line">1733194</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpu&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df# cat cpu.cfs_period_us</span><br><span class="line">100000</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpu&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df# cat cpu.cfs_quota_us</span><br><span class="line">-1</span><br></pre></td></tr></table></figure>
-
-</li>
-</ol>
-<p>这里就不具体介绍 各个子系统目录下文件含义了。</p>
-
-      
-    </div>
-
-    
-    
-    
-
-    <footer class="post-footer">
-        <div class="post-eof"></div>
-      
-    </footer>
-  </article>
-  
-  
-  
-
-      
-  
-  
-  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
-    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/12/01/Docker%E6%9C%BA%E5%88%B6%E5%88%86%E6%9E%90/docker%E5%A6%82%E4%BD%95%E4%BD%BF%E7%94%A8/">
-
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="image" content="/images/avatar.gif">
-      <meta itemprop="name" content="Su Hui">
-      <meta itemprop="description" content="">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="liulangren Blog">
-    </span>
-
-    
-    
-      <header class="post-header">
-        <h2 class="post-title" itemprop="name headline">
-          
-            <a href="/2020/12/01/Docker%E6%9C%BA%E5%88%B6%E5%88%86%E6%9E%90/docker%E5%A6%82%E4%BD%95%E4%BD%BF%E7%94%A8/" class="post-title-link" itemprop="url">docker如何使用</a>
-        </h2>
-
-        <div class="post-meta-container">
-          <div class="post-meta">
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-calendar"></i>
-      </span>
-      <span class="post-meta-item-text">Posted on</span>
-
-      <time title="Created: 2020-12-01 14:47:40" itemprop="dateCreated datePublished" datetime="2020-12-01T14:47:40+08:00">2020-12-01</time>
-    </span>
-      <span class="post-meta-item">
-        <span class="post-meta-item-icon">
-          <i class="far fa-calendar-check"></i>
-        </span>
-        <span class="post-meta-item-text">Edited on</span>
-        <time title="Modified: 2020-12-05 18:46:17" itemprop="dateModified" datetime="2020-12-05T18:46:17+08:00">2020-12-05</time>
-      </span>
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-folder"></i>
-      </span>
-      <span class="post-meta-item-text">In</span>
-        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-          <a href="/categories/docker/" itemprop="url" rel="index"><span itemprop="name">docker</span></a>
-        </span>
-    </span>
-
-  
-</div>
-
-        </div>
-      </header>
-
-    
-    
-    
-    <div class="post-body" itemprop="articleBody">
-          <p>这是一个简单概括docker 安装，拉取image,docker 命令使用的 记录。</p>
-<ol>
-<li><p>在ubuntu平台上安装 docker</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo apt install docker</span><br></pre></td></tr></table></figure>
-</li>
-<li><p>拉取ubuntu的 image</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo docker pull ubuntu</span><br></pre></td></tr></table></figure>
-</li>
-<li><p>基于ubuntu的 image 创建并运行一个docker，限制4MB内存，开启 bash</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo docker run -t -i -m 4MB ubuntu &#x2F;bin&#x2F;bash</span><br></pre></td></tr></table></figure>
-</li>
-<li><p>查看当前有哪些运行的docker</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: ~&#x2F;workspace# sudo docker ps</span><br><span class="line">CONTAINER ID        IMAGE               COMMAND             CREATED             STATUS              PORTS               NAMES</span><br><span class="line">1f3a24f91059        ubuntu              &quot;&#x2F;bin&#x2F;bash&quot;         47 hours ago        Up 47 hours                             hhhh</span><br></pre></td></tr></table></figure>
-</li>
-<li><p>查看当前有哪些的docker(运行中 + 非运行中)</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: ~&#x2F;workspace# sudo docker ps -a</span><br><span class="line">CONTAINER ID        IMAGE               COMMAND             CREATED             STATUS              PORTS               NAMES</span><br><span class="line">1f3a24f91059        ubuntu              &quot;&#x2F;bin&#x2F;bash&quot;         47 hours ago        Up 47 hours                             hhhhh</span><br></pre></td></tr></table></figure>
-</li>
-<li><p>给 hhh 的容器重命名为 my_ubuntu</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo docker rename  hhh my_ubuntu</span><br></pre></td></tr></table></figure>
-</li>
-<li><p>停止 my_ubuntu 容器</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo docker stop my_ubuntu</span><br></pre></td></tr></table></figure>
-</li>
-<li><p>重启开启 my_ubuntu 容器</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo docker start my_ubuntu</span><br></pre></td></tr></table></figure>
-</li>
-<li><p>进入运行中的 my_ubuntu 容器的 bash</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo docker exec -ti my_ubuntu &#x2F;bin&#x2F;bash</span><br></pre></td></tr></table></figure>
-
-
-</li>
-</ol>
-<p>其他常用命令想起来再记录</p>
-<p>这些命令还是比较长的，可以缩写到 bashrc 的alias里面，比较方便</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: ~&#x2F;workspace# cat ~&#x2F;.zshrc | grep &quot;alias d&quot;</span><br><span class="line">alias dn&#x3D;&quot;sudo docker run -t -i -m 128MB ubuntu &#x2F;bin&#x2F;bash&quot;</span><br><span class="line">alias ds&#x3D;&quot;sudo docker start my_ubuntu&quot;</span><br><span class="line">alias dk&#x3D;&quot;sudo docker stop my_ubuntu&quot;</span><br><span class="line">alias di&#x3D;&quot;sudo docker exec -ti my_ubuntu &#x2F;bin&#x2F;bash&quot;</span><br><span class="line">alias dps&#x3D;&quot;sudo docker ps&quot;</span><br><span class="line">alias dpsa&#x3D;&quot;sudo docker ps -a&quot;</span><br><span class="line">alias drma&#x3D;&quot;sudo  docker container prune&quot;</span><br></pre></td></tr></table></figure>
-      
-    </div>
-
-    
-    
-    
-
-    <footer class="post-footer">
-        <div class="post-eof"></div>
-      
-    </footer>
-  </article>
-  
-  
-  
-
-      
-  
-  
-  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
-    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/09/22/%E7%94%9F%E6%B4%BB%E6%84%9F%E6%82%9F/%E8%AE%B0%E5%BD%95%E7%AC%AC%E4%B8%80%E4%B8%AAkernel%20patch/">
-
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="image" content="/images/avatar.gif">
-      <meta itemprop="name" content="Su Hui">
-      <meta itemprop="description" content="">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="liulangren Blog">
-    </span>
-
-    
-    
-      <header class="post-header">
-        <h2 class="post-title" itemprop="name headline">
-          
-            <a href="/2020/09/22/%E7%94%9F%E6%B4%BB%E6%84%9F%E6%82%9F/%E8%AE%B0%E5%BD%95%E7%AC%AC%E4%B8%80%E4%B8%AAkernel%20patch/" class="post-title-link" itemprop="url">记录第一个kernel patch</a>
-        </h2>
-
-        <div class="post-meta-container">
-          <div class="post-meta">
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-calendar"></i>
-      </span>
-      <span class="post-meta-item-text">Posted on</span>
-
-      <time title="Created: 2020-09-22 23:00:00" itemprop="dateCreated datePublished" datetime="2020-09-22T23:00:00+08:00">2020-09-22</time>
-    </span>
-      <span class="post-meta-item">
-        <span class="post-meta-item-icon">
-          <i class="far fa-calendar-check"></i>
-        </span>
-        <span class="post-meta-item-text">Edited on</span>
-        <time title="Modified: 2020-10-21 23:43:50" itemprop="dateModified" datetime="2020-10-21T23:43:50+08:00">2020-10-21</time>
-      </span>
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-folder"></i>
-      </span>
-      <span class="post-meta-item-text">In</span>
-        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-          <a href="/categories/%E7%94%9F%E6%B4%BB%E6%84%9F%E6%82%9F/" itemprop="url" rel="index"><span itemprop="name">生活感悟</span></a>
-        </span>
-    </span>
-
-  
-</div>
-
-        </div>
-      </header>
-
-    
-    
-    
-    <div class="post-body" itemprop="articleBody">
-          <p>之前也提过两个patch给社区不过都被否了，很多大佬第一次提patch也是从改改标点开始的。<br>最近在看文件系统相关的代码，看到有个地方定义和注释不一致，可以给社区贡献一下，也顺便记录一下，搭建环境的过程（之前用的ubuntu18虚拟机被我删了…现在用ubuntu20重新搞一下）</p>
-<h2 id="修改代码，形成patch"><a href="#修改代码，形成patch" class="headerlink" title="修改代码，形成patch"></a>修改代码，形成patch</h2><p>其实我这个patch很简单，只是修改一个注释而已：</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">sh@ubuntu:~&#x2F;workspace&#x2F;linux$ git diff</span><br><span class="line">diff --git a&#x2F;include&#x2F;linux&#x2F;jbd2.h b&#x2F;include&#x2F;linux&#x2F;jbd2.h</span><br><span class="line">index 08f904943ab2..a1ef05412acf 100644</span><br><span class="line">--- a&#x2F;include&#x2F;linux&#x2F;jbd2.h</span><br><span class="line">+++ b&#x2F;include&#x2F;linux&#x2F;jbd2.h</span><br><span class="line">@@ -452,8 +452,8 @@ struct jbd2_inode &#123;</span><br><span class="line"> struct jbd2_revoke_table_s;</span><br><span class="line"> </span><br><span class="line"> &#x2F;**</span><br><span class="line">- * struct handle_s - The handle_s type is the concrete type associated with</span><br><span class="line">- *     handle_t.</span><br><span class="line">+ * struct jbd2_journal_handle - The jbd2_journal_handle type is the concrete</span><br><span class="line">+ *     type associated with handle_t.</span><br><span class="line">  * @h_transaction: Which compound transaction is this update a part of?</span><br><span class="line">  * @h_journal: Which journal handle belongs to - used iff h_reserved set.</span><br><span class="line">  * @h_rsv_handle: Handle reserved for finishing the logical operation.</span><br><span class="line">sh@ubuntu:~&#x2F;workspace&#x2F;linux$ </span><br></pre></td></tr></table></figure>
-
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">sh@ubuntu:~&#x2F;workspace&#x2F;linux$ git log -1</span><br><span class="line">commit f8db1794205285c44d4b0b7d83f0fda1b9adec00 (HEAD -&gt; master)</span><br><span class="line">Author: Hui Su &lt;sh_def@163.com&gt;</span><br><span class="line">Date:   Tue Sep 22 23:28:05 2020 +0800</span><br><span class="line"></span><br><span class="line">    FIX the comment of struct jbd2_journal_handle</span><br><span class="line">    </span><br><span class="line">    the struct name was modified long ago, but the comment still</span><br><span class="line">    use struct handle_s.</span><br><span class="line">    </span><br><span class="line">    Signed-off-by: Hui Su &lt;sh_def@163.com&gt;</span><br><span class="line">sh@ubuntu:~&#x2F;workspace&#x2F;linux$</span><br><span class="line">sh@ubuntu:~&#x2F;workspace&#x2F;linux$</span><br><span class="line">sh@ubuntu:~&#x2F;workspace&#x2F;linux$ git format-patch HEAD^</span><br><span class="line">0001-FIX-the-comment-of-struct-jbd2_journal_handle.patch</span><br><span class="line">sh@ubuntu:~&#x2F;workspace&#x2F;linux$</span><br></pre></td></tr></table></figure>
-
-<p>如果第一个版本有问题则需要重新提第二个版本patch，与第一个版本差别就是加上 ‘ -v2’<br> ‘ -v3’ 等，</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">sh@ubuntu:~&#x2F;workspace&#x2F;linux-stable$ git format-patch HEAD^ -v2</span><br><span class="line">v2-0001-tools-time-access-sys-kernel-debug-udelay_test-be.patch</span><br></pre></td></tr></table></figure>
-<p>在邮件发出之后会自动变成<br>[PATCH v2] tools/time: access /sys/kernel/debug/udelay_test before test</p>
-<p>如果不是一个patch，而是一系列patch怎么办呢？</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">肯定是有办法的，目前我还没这个需求，留白，后续补充</span><br><span class="line">lkml中的邮件格式：</span><br><span class="line">[PATCH v6 00&#x2F;25] Add support for Clang LTO</span><br></pre></td></tr></table></figure>
-
-<p><a target="_blank" rel="noopener" href="https://cloud.tencent.com/developer/section/1138664">git format-patch</a></p>
-<h2 id="找到修改代码部分的maintainer"><a href="#找到修改代码部分的maintainer" class="headerlink" title="找到修改代码部分的maintainer"></a>找到修改代码部分的maintainer</h2><ol>
-<li>先用 <code>perl scripts/checkpatch.pl</code> 检查patch有无语法错误</li>
-<li>再用 <code>perl scripts/get_maintainer.pl</code> 获取patch修改的代码的 maintainer<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">sh@ubuntu:~&#x2F;workspace&#x2F;linux$ perl scripts&#x2F;checkpatch.pl  0001-FIX-the-comment-of-struct-jbd2_journal_handle.patch </span><br><span class="line">total: 0 errors, 0 warnings, 10 lines checked</span><br><span class="line"></span><br><span class="line">0001-FIX-the-comment-of-struct-jbd2_journal_handle.patch has no obvious style problems and is ready for submission.</span><br><span class="line">sh@ubuntu:~&#x2F;workspace&#x2F;linux$ </span><br><span class="line">sh@ubuntu:~&#x2F;workspace&#x2F;linux$ perl scripts&#x2F;get_maintainer.pl  0001-FIX-the-comment-of-struct-jbd2_journal_handle.patch </span><br><span class="line">&quot;Theodore Ts&#39;o&quot; &lt;tytso@mit.edu&gt; (maintainer:JOURNALLING LAYER FOR BLOCK DEVICES (JBD2))</span><br><span class="line">Jan Kara &lt;jack@suse.com&gt; (maintainer:JOURNALLING LAYER FOR BLOCK DEVICES (JBD2))</span><br><span class="line">linux-ext4@vger.kernel.org (open list:JOURNALLING LAYER FOR BLOCK DEVICES (JBD2))</span><br><span class="line">linux-kernel@vger.kernel.org (open list)</span><br><span class="line">sh@ubuntu:~&#x2F;workspace&#x2F;linux$</span><br></pre></td></tr></table></figure>
-
-</li>
-</ol>
-<h2 id="安装配置邮件客户端"><a href="#安装配置邮件客户端" class="headerlink" title="安装配置邮件客户端"></a>安装配置邮件客户端</h2><p>安装下面工具</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">sudo apt-get install sendmail</span><br><span class="line">sudo apt  install mutt</span><br><span class="line">sudo apt install smtp</span><br></pre></td></tr></table></figure>
-
-<p>配置一下</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line">sh@ubuntu:~$ cat .muttrc </span><br><span class="line">set sendmail&#x3D;&quot;&#x2F;usr&#x2F;bin&#x2F;msmtp&quot;</span><br><span class="line">set envelope_from&#x3D;yes</span><br><span class="line">set realname&#x3D;&quot;Hui Su&quot;</span><br><span class="line">set from&#x3D;sh_def@163.com</span><br><span class="line">set use_from&#x3D;yes</span><br><span class="line">set envelope_from&#x3D;yes</span><br><span class="line">sh@ubuntu:~$ </span><br><span class="line">sh@ubuntu:~$ </span><br><span class="line">sh@ubuntu:~$ </span><br><span class="line">sh@ubuntu:~$ cat .msmtprc </span><br><span class="line">account default</span><br><span class="line">host smtp.163.com</span><br><span class="line">port 25</span><br><span class="line">from sh_def@163.com</span><br><span class="line">auth plain</span><br><span class="line">tls off</span><br><span class="line">user sh_def@163.com</span><br><span class="line">password #这里填授权码</span><br><span class="line">sh@ubuntu:~$ </span><br></pre></td></tr></table></figure>
-
-<p>测试一下</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">sh@ubuntu:~$ echo &quot;test&quot; |mutt -s &quot;my_first_test&quot; xxx@163.com</span><br><span class="line">sh@ubuntu:~$ echo &quot;test&quot; |mutt -s &quot;my_first_test&quot; xxxx@qq.com</span><br></pre></td></tr></table></figure>
-<p>吐槽一下，如果是第一次配置还是比较难搞的<br>参考<a target="_blank" rel="noopener" href="https://learnku.com/articles/13307/mutt-mail-sending">参考</a></p>
-<h2 id="git-配置"><a href="#git-配置" class="headerlink" title="git 配置"></a>git 配置</h2><p>这个应该在 git commit 阶段就已经配置好了，不赘述</p>
-<h2 id="推送patch"><a href="#推送patch" class="headerlink" title="推送patch"></a>推送patch</h2><p>只需要在各个邮箱之间加上,即可，不赘述</p>
-<h2 id="回复邮件"><a href="#回复邮件" class="headerlink" title="回复邮件"></a>回复邮件</h2><p>一般情况下社区大佬都会在几天到一周内回复你的patch邮件，如果你的patch需要修改，<br>然后你需要重新回复他们的邮件，这应该如何做呢</p>
-<ol>
-<li><p>第一步配置好fetchmail</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line">sh@ubuntu:~$ sudo apt install fetchmail </span><br><span class="line">[sudo] password for rlk: </span><br><span class="line">Reading package lists... Done</span><br><span class="line">Building dependency tree       </span><br><span class="line">Reading state information... Done</span><br><span class="line">fetchmail is already the newest version (6.4.2-2).</span><br><span class="line">0 upgraded, 0 newly installed, 0 to remove and 369 not upgraded.</span><br><span class="line">sh@ubuntu:~$ cat ~&#x2F;.fetchmailrc </span><br><span class="line">poll pop3.163.com</span><br><span class="line">protocol POP3</span><br><span class="line">user &quot;xxx@163.com&quot; </span><br><span class="line">password &quot;客户端授权码&quot;</span><br><span class="line">sh@ubuntu:~$ ll | grep rc | grep fetch</span><br><span class="line">-rwx------  1 rlk  rlk       83 10月  8 01:38 .fetchmailrc*</span><br><span class="line"></span><br><span class="line"># 接收邮件</span><br><span class="line">sh@ubuntu:~$ fetchmail  -v</span><br><span class="line">fetchmail: 6.4.2 querying pop3.163.com (protocol POP3) at 2020年10月08日 星期四 01时38分51秒: poll started</span><br><span class="line">Trying to connect to 220.181.12.110&#x2F;110...connected.</span><br><span class="line">fetchmail: POP3&lt; +OK Welcome to coremail Mail Pop3 Server (163coms[10774b260cc7a37d26d71b52404dcf5cs])</span><br><span class="line">fetchmail: POP3&gt; CAPA</span><br><span class="line">fetchmail: POP3&lt; +OK Capability list follows</span><br><span class="line">...............</span><br></pre></td></tr></table></figure>
-</li>
-<li><p>查看接收的邮件<br>然后直接 mutt 就可以看到接收到的邮件了</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br></pre></td><td class="code"><pre><span class="line">q:Quit  d:Del  u:Undel  s:Save  m:Mail  r:Reply  g:Group  ?:Help</span><br><span class="line">   1 O + 9月 09 iovisor-dev@lis ( 378) [iovisor-dev] iovisor-dev@lists.iovisor.org Daily Summary</span><br><span class="line">   2   + 9月 22 Mail Delivery S (  50) Returned mail: see transcript for details</span><br><span class="line">   3   + 9月 22 Mail Delivery S (  50) Returned mail: see transcript for details</span><br><span class="line">   4 O F 9月 23 To sh_def@163.c (  75) [PATCH] mm,page_alloc: fix the count of free pages</span><br><span class="line">   5 O T 9月 23 Jan Kara        (  38) ┬─&gt;Re: [PATCH] FIX the comment of struct jbd2_journal_handle</span><br><span class="line">   6 O T 10月 03 Theodore Y. Ts&#39; (  11) └─&gt;Re: [PATCH] FIX the comment of struct jbd2_journal_handle</span><br><span class="line">   7 O + 9月 25 Josh Poimboeuf  (   3) ┬─&gt;Re: [PATCH] mm,kmemleak-test.c: move kmemleak-test.c to samples dir</span><br><span class="line">   8 O T 10月 05 Catalin Marinas (  12) └─&gt;Re: [PATCH] mm,kmemleak-test.c: move kmemleak-test.c to samples dir</span><br><span class="line">   9 O T 9月 25 akpm@linux-foun ( 313) + mmkmemleak-testc-move-kmemleak-testc-to-samples-dir.patch added to -mm tree</span><br><span class="line">  10 O T 9月 25 akpm@linux-foun (  92) + mm-fix-some-comments-in-page_allocc-and-mempolicyc.patch added to -mm tree</span><br><span class="line">  11 O T 9月 28 Ira Weiny       (  57) Re: [PATCH] mm&#x2F;vmalloc.c: check the addr first</span><br><span class="line">  12 O T 9月 28 akpm@linux-foun (  56) + mm-vmscan-fix-comments-for-isolate_lru_page.patch added to -mm tree</span><br><span class="line">  13 O T 9月 28 akpm@linux-foun (  59) + mm-vmallocc-update-the-comment-in-__vmalloc_area_node.patch added to -mm tree</span><br><span class="line">  14 O T 9月 28 akpm@linux-foun (  66) + mm-vmallocc-fix-the-comment-of-find_vm_area.patch added to -mm tree</span><br><span class="line">  15 O T 9月 28 akpm@linux-foun (  65) + mmz3fold-use-xx_zalloc-instead-xx_alloc-and-memset.patch added to -mm tree</span><br><span class="line">  16 O + 9月 29 haifei.wang@car ( 312) 阿里云&#x2F;今日头条Linux内核研发专家职位推荐</span><br><span class="line">  17 O T 9月 29 Dietmar Eggeman (  59) Re: [PATCH] sched,fair: use list_for_each_entry() in print_cfs_stats()</span><br><span class="line">  18 O + 9月 29 iovisor-dev@lis ( 378) [iovisor-dev] iovisor-dev@lists.iovisor.org Daily Summary</span><br><span class="line">  19 O T 9月 29 Steven Rostedt  (  61) Re: [PATCH] sched&#x2F;rt.c remove unnecessary parameter in pick_next_rt_entity</span><br><span class="line">  20 O T 9月 30 boris.ostrovsky (  13) Re: [PATCH] arch&#x2F;x86: fix some typos in xen_pagetable_p2m_free()</span><br><span class="line">  21 O T 10月 01 David Hildenbra (  57) Re: [PATCH] mm: fix some comments in page_alloc.c and mempolicy.c</span><br><span class="line">  22 O T 10月 01 Joe Perches     (  14) └─&gt;</span><br><span class="line">  23 O + 10月 01 iovisor-dev@lis ( 378) [iovisor-dev] iovisor-dev@lists.iovisor.org Daily Summary</span><br><span class="line">  24 O   10月 02 George Worden   (   1)</span><br><span class="line">  25 O T 10月 02 akpm@linux-foun (  81) [to-be-updated] mm-fix-some-comments-in-page_allocc-and-mempolicyc.patch removed from -mm tree</span><br><span class="line">  26 O + 10月 08 流浪人          (  75) Re:[PATCH] mm&#x2F;hugetlb.c: just use put_page_testzero() instead of page_count()</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">---Mutt: &#x2F;var&#x2F;mail&#x2F;rlk [Msgs:26 Old:24 Post:8 174K]---(threads&#x2F;date)---------------------------------------------------------------------------------------------------------------------------------(all)--</span><br></pre></td></tr></table></figure>
-</li>
-<li><p>回复邮件<br><a target="_blank" rel="noopener" href="https://lkml.org/lkml/2020/9/22/824">我的第一个patch</a></p>
-</li>
-</ol>
-
-      
-    </div>
-
-    
-    
-    
-
-    <footer class="post-footer">
-        <div class="post-eof"></div>
-      
-    </footer>
-  </article>
-  
-  
-  
-
-      
-  
-  
-  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
-    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/09/21/%E8%BF%9B%E7%A8%8B%E7%AE%A1%E7%90%86/%E5%85%B3%E4%BA%8Epreempt_count%E7%9A%84%E6%80%9D%E8%80%83/">
-
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="image" content="/images/avatar.gif">
-      <meta itemprop="name" content="Su Hui">
-      <meta itemprop="description" content="">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="liulangren Blog">
-    </span>
-
-    
-    
-      <header class="post-header">
-        <h2 class="post-title" itemprop="name headline">
-          
-            <a href="/2020/09/21/%E8%BF%9B%E7%A8%8B%E7%AE%A1%E7%90%86/%E5%85%B3%E4%BA%8Epreempt_count%E7%9A%84%E6%80%9D%E8%80%83/" class="post-title-link" itemprop="url">关于preempt_count的思考</a>
-        </h2>
-
-        <div class="post-meta-container">
-          <div class="post-meta">
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-calendar"></i>
-      </span>
-      <span class="post-meta-item-text">Posted on</span>
-      
-
-      <time title="Created: 2020-09-21 14:47:40 / Modified: 02:36:50" itemprop="dateCreated datePublished" datetime="2020-09-21T14:47:40+08:00">2020-09-21</time>
-    </span>
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-folder"></i>
-      </span>
-      <span class="post-meta-item-text">In</span>
-        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-          <a href="/categories/linux%E5%86%85%E6%A0%B8/" itemprop="url" rel="index"><span itemprop="name">linux内核</span></a>
-        </span>
-    </span>
-
-  
-</div>
-
-        </div>
-      </header>
-
-    
-    
-    
-    <div class="post-body" itemprop="articleBody">
-          <p>preempt_conut 本质就是一个int型的数，是每个 <code>task_struct</code> 的 <code>thread_info</code> 的一个成员变量，但是他和系统的调度密切相关，当然也十分重要。</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">struct thread_info &#123;</span><br><span class="line">	unsigned long		flags;		&#x2F;* low level flags *&#x2F;</span><br><span class="line">	int			preempt_count;	&#x2F;* 0 &#x3D;&gt; preemptable, &lt;0 &#x3D;&gt; bug *&#x2F;</span><br><span class="line">    .......</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
-
-<p>在 <code>inlcude/linux/preempt.h</code> 文件看相关定义</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br></pre></td><td class="code"><pre><span class="line">static __always_inline int preempt_count(void)</span><br><span class="line">&#123;</span><br><span class="line">	return READ_ONCE(current_thread_info()-&gt;preempt_count);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">&#x2F;*</span><br><span class="line"> *         PREEMPT_MASK:	0x000000ff</span><br><span class="line"> *         SOFTIRQ_MASK:	0x0000ff00</span><br><span class="line"> *         HARDIRQ_MASK:	0x000f0000</span><br><span class="line"> *             NMI_MASK:	0x00100000</span><br><span class="line"> * PREEMPT_NEED_RESCHED:	0x80000000</span><br><span class="line"> *&#x2F;</span><br><span class="line">#define PREEMPT_BITS	8</span><br><span class="line">#define SOFTIRQ_BITS	8</span><br><span class="line">#define HARDIRQ_BITS	4</span><br><span class="line">#define NMI_BITS	1</span><br><span class="line"></span><br><span class="line">#define PREEMPT_SHIFT	0</span><br><span class="line">#define SOFTIRQ_SHIFT	(PREEMPT_SHIFT + PREEMPT_BITS)</span><br><span class="line">#define HARDIRQ_SHIFT	(SOFTIRQ_SHIFT + SOFTIRQ_BITS)</span><br><span class="line">#define NMI_SHIFT	(HARDIRQ_SHIFT + HARDIRQ_BITS)</span><br><span class="line"></span><br><span class="line">#define hardirq_count()	(preempt_count() &amp; HARDIRQ_MASK)</span><br><span class="line">#define softirq_count()	(preempt_count() &amp; SOFTIRQ_MASK)</span><br><span class="line">#define irq_count()	(preempt_count() &amp; (HARDIRQ_MASK | SOFTIRQ_MASK \</span><br><span class="line">				 | NMI_MASK))</span><br><span class="line"></span><br><span class="line">#define in_irq()		(hardirq_count())</span><br><span class="line">#define in_softirq()		(softirq_count())</span><br><span class="line">#define in_interrupt()		(irq _count())</span><br><span class="line">#define in_serving_softirq()	(softirq_count() &amp; SOFTIRQ_OFFSET)</span><br><span class="line">#define in_nmi()		(preempt_count() &amp; NMI_MASK)</span><br><span class="line">#define in_task()		(!(preempt_count() &amp; \</span><br><span class="line">				   (NMI_MASK | HARDIRQ_MASK | SOFTIRQ_OFFSET)))</span><br></pre></td></tr></table></figure>
-
-<p>可以看出 <code>preempt_count</code> 0-7 bit被用来抢占计数，8-15 bit被用来软中断计数，16-19 bit被用来硬件中断计数，20bit 被用来 NMI中断计数，31 bit被用来记录是否需要立即sched.</p>
-<p>in_interrupt() 这些宏本质也是根据 preempt_count()来判断的。</p>
-<h2 id="hard-irq"><a href="#hard-irq" class="headerlink" title="hard irq"></a>hard irq</h2><p>在进入irq的时候通过 <code>irq_enter</code> 将preempt_count 的 16-19bit ++，在退出irq的时候通过 <code>irq_exit</code> 将preempt_count 的 16-19bit –，但是由于目前linux中的中断往往是不可嵌套的，所以一般 hardirq 只会用到 16 bit，为什么linux给 hardirq 保留了4bit呢，這是歷史原因造成的，早期hardirq还是可以嵌套的。</p>
-<p>irq_enter()</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line">#define preempt_count_add(val)	__preempt_count_add(val)</span><br><span class="line"></span><br><span class="line">#define __irq_enter()					\</span><br><span class="line">	do &#123;						\</span><br><span class="line">		account_irq_enter_time(current);	\</span><br><span class="line">		preempt_count_add(HARDIRQ_OFFSET);	\  &#x2F;&#x2F; preempt_count 和 hardirq相关++</span><br><span class="line">		trace_hardirq_enter();			\</span><br><span class="line">	&#125; while (0)</span><br><span class="line"></span><br><span class="line">void irq_enter(void) &#x2F;&#x2F;进入中断上下文</span><br><span class="line">&#123;</span><br><span class="line">	rcu_irq_enter();</span><br><span class="line">	if (is_idle_task(current) &amp;&amp; !in_interrupt()) &#123;</span><br><span class="line">		&#x2F;*</span><br><span class="line">		 * Prevent raise_softirq from needlessly waking up ksoftirqd</span><br><span class="line">		 * here, as softirq will be serviced on return from interrupt.</span><br><span class="line">		 *&#x2F;</span><br><span class="line">		local_bh_disable();</span><br><span class="line">		tick_irq_enter();</span><br><span class="line">		_local_bh_enable();</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	__irq_enter();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>irq_exit()</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">#define preempt_count_sub(val)	__preempt_count_sub(val)</span><br><span class="line"></span><br><span class="line">void irq_exit(void) &#x2F;&#x2F;退出中断上下文</span><br><span class="line">&#123;</span><br><span class="line">#ifndef __ARCH_IRQ_EXIT_IRQS_DISABLED</span><br><span class="line">	local_irq_disable();</span><br><span class="line">#else</span><br><span class="line">	lockdep_assert_irqs_disabled();</span><br><span class="line">#endif</span><br><span class="line">	account_irq_exit_time(current);</span><br><span class="line">	preempt_count_sub(HARDIRQ_OFFSET); &#x2F;&#x2F; preempt_count 和 hardirq相关--</span><br><span class="line">	if (!in_interrupt() &amp;&amp; local_softirq_pending())</span><br><span class="line">		invoke_softirq();</span><br><span class="line"></span><br><span class="line">	tick_irq_exit();</span><br><span class="line">	rcu_irq_exit();</span><br><span class="line">	trace_hardirq_exit(); &#x2F;* must be last! *&#x2F;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-
-<h2 id="soft-irq"><a href="#soft-irq" class="headerlink" title="soft irq"></a>soft irq</h2><p>preempt_count中的第8到15个bit表示softirq count，它记录了进入softirq的嵌套次数，如果softirq count的值为正数，说明现在正处于softirq上下文中。<br>由于softirq在单个CPU上是不会嵌套执行的，因此和hardirq count一样，实际只需要一个bit(bit 8)就可以了。<br>还有一种情况，softirq count 会用到不止 bit8，在禁用中断下半部的情况下，每禁用一次softirq count 就会增加1，理论上最多可以嵌套16次。</p>
-<p>进入退出软中断的case</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">asmlinkage __visible void __softirq_entry __do_softirq(void)</span><br><span class="line">&#123;</span><br><span class="line">    ......</span><br><span class="line">	__local_bh_disable_ip(_RET_IP_, SOFTIRQ_OFFSET);</span><br><span class="line">    ......</span><br><span class="line">	while ((softirq_bit &#x3D; ffs(pending))) &#123;</span><br><span class="line">        ......</span><br><span class="line">		h-&gt;action(h);</span><br><span class="line">        ......</span><br><span class="line">	&#125;</span><br><span class="line">    ......</span><br><span class="line">	__local_bh_enable(SOFTIRQ_OFFSET);</span><br><span class="line">    ......</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>禁止、开启中断下半部的case</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br></pre></td><td class="code"><pre><span class="line">void __local_bh_enable_ip(unsigned long ip, unsigned int cnt)</span><br><span class="line">&#123;</span><br><span class="line">    ...xxx</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">static inline void local_bh_enable_ip(unsigned long ip)</span><br><span class="line">&#123;</span><br><span class="line">	__local_bh_enable_ip(ip, SOFTIRQ_DISABLE_OFFSET);&#x2F;&#x2F; 开启中断下半部的preempt_count 和 softirq相关++</span><br><span class="line">&#125;</span><br><span class="line">&#x2F;&#x2F;开启下半部</span><br><span class="line">---------------</span><br><span class="line">&#x2F;&#x2F;禁止下半部</span><br><span class="line">static __always_inline void __local_bh_disable_ip(unsigned long ip, unsigned int cnt)</span><br><span class="line">&#123;</span><br><span class="line">	preempt_count_add(cnt);</span><br><span class="line">	barrier();</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">static inline void __raw_spin_lock_bh(raw_spinlock_t *lock)</span><br><span class="line">&#123;</span><br><span class="line">	__local_bh_disable_ip(_RET_IP_, SOFTIRQ_LOCK_OFFSET); &#x2F;&#x2F; 禁止中断下半部的preempt_count 和 softirq相关++</span><br><span class="line">	spin_acquire(&amp;lock-&gt;dep_map, 0, 0, _RET_IP_);</span><br><span class="line">	LOCK_CONTENDED(lock, do_raw_spin_trylock, do_raw_spin_lock);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">void __lockfunc _raw_spin_lock_bh(raw_spinlock_t *lock)</span><br><span class="line">&#123;</span><br><span class="line">	__raw_spin_lock_bh(lock);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">#define raw_spin_lock_bh(lock)		_raw_spin_lock_bh(lock)</span><br><span class="line"></span><br><span class="line">static __always_inline void spin_lock_bh(spinlock_t *lock)</span><br><span class="line">&#123;</span><br><span class="line">	raw_spin_lock_bh(&amp;lock-&gt;rlock);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-<p>可以看出来执行软中断 和 禁止中断下半部都属于软中断上下文。<br>（我有个疑问，禁止hard irq 属于硬件中断上下文吗？从 in_irq的定义上看不是，但是和软中断不太一样）</p>
-<h2 id="process-context"><a href="#process-context" class="headerlink" title="process context"></a>process context</h2><p>进程上下文，当然不仅仅是进程，只要不是出于NMI、HARD IRQ、SOFT IRQ上下文的都算进程上下文，包括内核线程（包括ksoftirqd、kworker内核线程等）</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">#define in_task()		(!(preempt_count() &amp; \</span><br><span class="line">				   (NMI_MASK | HARDIRQ_MASK | SOFTIRQ_OFFSET)))</span><br></pre></td></tr></table></figure>
-
-<p>中断上下文不会发生进程切换，是一种隐式的进制调度方法。通常也可以使用 <code>preempt_disable</code> 来显式关闭调度，对 preempt_count ++。</p>
-<h2 id="atomic-context"><a href="#atomic-context" class="headerlink" title="atomic context"></a>atomic context</h2><p>处于中断上下文中(NMI、hard、soft) 或者 禁止抢占的情况下，都属于原子上下文</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">static __always_inline int preempt_count(void)</span><br><span class="line">&#123;</span><br><span class="line">	return READ_ONCE(current_thread_info()-&gt;preempt_count);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">#define in_atomic()	(preempt_count() !&#x3D; 0)</span><br></pre></td></tr></table></figure>
-
-<p>参考：<br><a target="_blank" rel="noopener" href="https://zhuanlan.zhihu.com/p/88883239">Linux中的preempt_count</a></p>
-
-      
-    </div>
-
-    
-    
-    
-
-    <footer class="post-footer">
-        <div class="post-eof"></div>
-      
-    </footer>
-  </article>
-  
-  
-  
-
 
   
   <nav class="pagination">
-    <span class="page-number current">1</span><a class="page-number" href="/page/2/">2</a><a class="page-number" href="/page/3/">3</a><a class="extend next" rel="next" href="/page/2/"><i class="fa fa-angle-right" aria-label="Next page"></i></a>
+    <span class="page-number current">1</span><a class="page-number" href="/page/2/">2</a><span class="space">&hellip;</span><a class="page-number" href="/page/4/">4</a><a class="extend next" rel="next" href="/page/2/"><i class="fa fa-angle-right" aria-label="Next page"></i></a>
   </nav>
 
 
