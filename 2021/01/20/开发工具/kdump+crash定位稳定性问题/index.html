@@ -25,12 +25,12 @@
   <meta name="description" content="kudmp 原理kdump实际上有两个内核，一个是正常运行的内核，一个我们称为捕获内核&#x2F;第二内核。  首先需要通过crashkernel&#x3D;xxx@xxxx来专门为kdump功能专门预留一部分内存，用来放置第二个内核和其他数据信息的，这一部分是给捕获内核使用的。 可以通过kexec系统调用，将第二个内核和initrd，vmcore信息，启动参数等传递给第一个内核。 当系统崩溃时，保存当前寄存器信息，">
 <meta property="og:type" content="article">
 <meta property="og:title" content="kdump+crash定位稳定性问题">
-<meta property="og:url" content="https://liulangrenaaa.github.io/2020/09/12/%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7/kdump+crash%E5%AE%9A%E4%BD%8D%E7%A8%B3%E5%AE%9A%E6%80%A7%E9%97%AE%E9%A2%98/index.html">
+<meta property="og:url" content="https://liulangrenaaa.github.io/2021/01/20/%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7/kdump+crash%E5%AE%9A%E4%BD%8D%E7%A8%B3%E5%AE%9A%E6%80%A7%E9%97%AE%E9%A2%98/index.html">
 <meta property="og:site_name" content="liulangren Blog">
 <meta property="og:description" content="kudmp 原理kdump实际上有两个内核，一个是正常运行的内核，一个我们称为捕获内核&#x2F;第二内核。  首先需要通过crashkernel&#x3D;xxx@xxxx来专门为kdump功能专门预留一部分内存，用来放置第二个内核和其他数据信息的，这一部分是给捕获内核使用的。 可以通过kexec系统调用，将第二个内核和initrd，vmcore信息，启动参数等传递给第一个内核。 当系统崩溃时，保存当前寄存器信息，">
 <meta property="og:locale">
-<meta property="article:published_time" content="2020-09-12T06:47:40.000Z">
-<meta property="article:modified_time" content="2021-01-20T03:36:10.249Z">
+<meta property="article:published_time" content="2021-01-20T02:49:13.873Z">
+<meta property="article:modified_time" content="2021-01-20T17:34:34.589Z">
 <meta property="article:author" content="Su Hui">
 <meta property="article:tag" content="kdump">
 <meta property="article:tag" content="crash">
@@ -38,7 +38,7 @@
 <meta name="twitter:card" content="summary">
 
 
-<link rel="canonical" href="https://liulangrenaaa.github.io/2020/09/12/%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7/kdump+crash%E5%AE%9A%E4%BD%8D%E7%A8%B3%E5%AE%9A%E6%80%A7%E9%97%AE%E9%A2%98/">
+<link rel="canonical" href="https://liulangrenaaa.github.io/2021/01/20/%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7/kdump+crash%E5%AE%9A%E4%BD%8D%E7%A8%B3%E5%AE%9A%E6%80%A7%E9%97%AE%E9%A2%98/">
 
 
 <script class="page-configurations">
@@ -246,7 +246,7 @@
   
   
   <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
-    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/09/12/%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7/kdump+crash%E5%AE%9A%E4%BD%8D%E7%A8%B3%E5%AE%9A%E6%80%A7%E9%97%AE%E9%A2%98/">
+    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2021/01/20/%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7/kdump+crash%E5%AE%9A%E4%BD%8D%E7%A8%B3%E5%AE%9A%E6%80%A7%E9%97%AE%E9%A2%98/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
       <meta itemprop="image" content="/images/avatar.gif">
@@ -273,14 +273,14 @@
       </span>
       <span class="post-meta-item-text">Posted on</span>
 
-      <time title="Created: 2020-09-12 14:47:40" itemprop="dateCreated datePublished" datetime="2020-09-12T14:47:40+08:00">2020-09-12</time>
+      <time title="Created: 2021-01-20 10:49:13" itemprop="dateCreated datePublished" datetime="2021-01-20T10:49:13+08:00">2021-01-20</time>
     </span>
       <span class="post-meta-item">
         <span class="post-meta-item-icon">
           <i class="far fa-calendar-check"></i>
         </span>
         <span class="post-meta-item-text">Edited on</span>
-        <time title="Modified: 2021-01-20 11:36:10" itemprop="dateModified" datetime="2021-01-20T11:36:10+08:00">2021-01-20</time>
+        <time title="Modified: 2021-01-21 01:34:34" itemprop="dateModified" datetime="2021-01-21T01:34:34+08:00">2021-01-21</time>
       </span>
     <span class="post-meta-item">
       <span class="post-meta-item-icon">
@@ -385,14 +385,11 @@
 
           <div class="post-nav">
             <div class="post-nav-item">
-                <a href="/2020/09/11/%E5%B9%B6%E5%8F%91%E9%97%AE%E9%A2%98/%E6%AD%BB%E9%94%81%E9%97%AE%E9%A2%98/" rel="prev" title="linux内核死锁检测">
-                  <i class="fa fa-chevron-left"></i> linux内核死锁检测
+                <a href="/2021/01/17/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/valgrind%20%E5%AE%9A%E4%BD%8D%E7%94%A8%E6%88%B7%E7%A9%BA%E9%97%B4%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F/" rel="prev" title="valgrind 定位用户空间内存泄漏">
+                  <i class="fa fa-chevron-left"></i> valgrind 定位用户空间内存泄漏
                 </a>
             </div>
             <div class="post-nav-item">
-                <a href="/2020/09/12/%E5%86%85%E6%A0%B8%E8%A7%82%E6%B5%8B/bpf%E7%9B%B8%E5%85%B3/bpftrace/" rel="next" title="bpftrace">
-                  bpftrace <i class="fa fa-chevron-right"></i>
-                </a>
             </div>
           </div>
     </footer>

@@ -237,6 +237,149 @@
   
   
   <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
+    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2021/01/20/%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7/kdump+crash%E5%AE%9A%E4%BD%8D%E7%A8%B3%E5%AE%9A%E6%80%A7%E9%97%AE%E9%A2%98/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="Su Hui">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liulangren Blog">
+    </span>
+
+    
+    
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/2021/01/20/%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7/kdump+crash%E5%AE%9A%E4%BD%8D%E7%A8%B3%E5%AE%9A%E6%80%A7%E9%97%AE%E9%A2%98/" class="post-title-link" itemprop="url">kdump+crash定位稳定性问题</a>
+        </h2>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">Posted on</span>
+
+      <time title="Created: 2021-01-20 10:49:13" itemprop="dateCreated datePublished" datetime="2021-01-20T10:49:13+08:00">2021-01-20</time>
+    </span>
+      <span class="post-meta-item">
+        <span class="post-meta-item-icon">
+          <i class="far fa-calendar-check"></i>
+        </span>
+        <span class="post-meta-item-text">Edited on</span>
+        <time title="Modified: 2021-01-21 01:34:34" itemprop="dateModified" datetime="2021-01-21T01:34:34+08:00">2021-01-21</time>
+      </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">In</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/linux%E5%86%85%E6%A0%B8/" itemprop="url" rel="index"><span itemprop="name">linux内核</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+          <h2 id="kudmp-原理"><a href="#kudmp-原理" class="headerlink" title="kudmp 原理"></a>kudmp 原理</h2><p>kdump实际上有两个内核，一个是正常运行的内核，一个我们称为捕获内核/第二内核。</p>
+<ol>
+<li>首先需要通过crashkernel=xxx@xxxx来专门为kdump功能专门预留一部分内存，<br>用来放置第二个内核和其他数据信息的，这一部分是给捕获内核使用的。</li>
+<li>可以通过kexec系统调用，将第二个内核和initrd，vmcore信息，启动参数等传递给第一个内核。</li>
+<li>当系统崩溃时，保存当前寄存器信息，检查是否加载了捕获内核，如果存在则跳转到捕获内核，<br>捕获内核和正常内核一样启动，但是会提供/proc/vmcore接口能够导出内存镜像信息，<br>可以使用dd工具，高级的makedumpfile提供压缩选项。</li>
+<li>系统重启，之后就可以使用crash/gdb分析dump文件了</li>
+</ol>
+<p>所以可以配置的就本就是 crashkernel的大小，makedumpfile 工具</p>
+<h2 id="kudmp-安装使用"><a href="#kudmp-安装使用" class="headerlink" title="kudmp 安装使用"></a>kudmp 安装使用</h2><p>首先是编译 kernel 配置</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">CONFIG_KEXEC&#x3D;y</span><br><span class="line">CONFIG_SYSFS&#x3D;y</span><br><span class="line">CONFIG_DEBUG_INFO&#x3D;Y</span><br><span class="line">vCONFIG_CRASH_DUMP&#x3D;y</span><br><span class="line">CONFIG_PROC_VMCORE&#x3D;y</span><br></pre></td></tr></table></figure>
+
+
+<p>安装</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">sudo apt install kdump-tools</span><br><span class="line">sudo apt install crash</span><br></pre></td></tr></table></figure>
+
+<p>如何使用？可以直接主动触发一个崩溃来看看效果</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">sudo su</span><br><span class="line">echo c   &gt;  &#x2F;proc&#x2F;sysrq-trigger</span><br></pre></td></tr></table></figure>
+
+<p>然后就进入转存储过程，一般会转存储到 <code>/var/crash/$date</code> 目录下，<br>此时应该包含 <code>dump.$date</code> 文件，但是还需要 <code>vmlinux</code> 文件才可以使用 <code>crash</code> 工具分析。<br><code>vmlinux</code> 是 编译生成的带符号表的可执行文件，只要将它copy到当前目录就可以一起分析了。</p>
+<p>一般系统这样就可以搞起来了。</p>
+<h2 id="kdump-遇到的问题"><a href="#kdump-遇到的问题" class="headerlink" title="kdump 遇到的问题"></a>kdump 遇到的问题</h2><p>但是我这边是一直跟踪 <code>mainline kernel</code>, 上述过程都不是很顺利。<br>遇到的问题：</p>
+<ol>
+<li><code>makefiledump</code> 转存储不成功<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">[    4.030842] kdump-tools[301]: Starting kdump-tools:</span><br><span class="line">[    4.032464] kdump-tools[308]:  * running makedumpfile -c -d 31 &#x2F;proc&#x2F;vmcore &#x2F;var&#x2F;crash&#x2F;202101192137&#x2F;dump-incomplete</span><br><span class="line">[   24.045632] kdump-tools[380]: check_release: Can&#39;t get the kernel version.</span><br><span class="line">[   24.069205] kdump-tools[380]: The kernel version is not supported.</span><br><span class="line">[   24.071343] kdump-tools[380]: The makedumpfile operation may be incomplete.</span><br><span class="line">[   24.077177] kdump-tools[380]: makedumpfile Failed.</span><br><span class="line">[   24.079278] kdump-tools[308]:  * kdump-tools: makedumpfile failed, falling back to &#39;cp&#39;</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<p>我们发现是 运行 <code>makedumpfile</code> 过程中，由于 无法 <code>get kernel version</code> 导致无法压缩转存储<br>成功。<br>找到 <code>makedumpfile</code> <a href="">源码</a></p>
+<p>添加log 复现。(重新编译 makedumpfile 花费了不少时间)</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">[    4.030842] kdump-tools[301]: Starting kdump-tools:</span><br><span class="line">[    4.032464] kdump-tools[308]:  * running makedumpfile -c -d 31 &#x2F;proc&#x2F;vmcore &#x2F;var&#x2F;crash&#x2F;202101192137&#x2F;dump-incomplete</span><br><span class="line">[    4.041333] kdump-tools[380]: create_dumpfile: create_dumpfile!</span><br><span class="line">[   24.045632] kdump-tools[380]: check_release: Can&#39;t get the kernel version.</span><br><span class="line">[   24.056179] kdump-tools[380]: The kernel version 0:0:0.</span><br><span class="line">[   24.063203] kdump-tools[380]: The kernel version:[0] old_version:[33947663] new_version:[85196807].</span><br><span class="line">[   24.069205] kdump-tools[380]: The kernel version is not supported.</span><br><span class="line">[   24.071343] kdump-tools[380]: The makedumpfile operation may be incomplete.</span><br><span class="line">[   24.077177] kdump-tools[380]: makedumpfile Failed.</span><br><span class="line">[   24.079278] kdump-tools[308]:  * kdump-tools: makedumpfile failed, falling back to &#39;cp&#39;</span><br></pre></td></tr></table></figure>
+
+<p>是这段代码原因</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line">#define OLDEST_VERSION		KERNEL_VERSION(2, 6, 15) &#x2F;* linux-2.6.15 *&#x2F;</span><br><span class="line">#define LATEST_VERSION		KERNEL_VERSION(5, 9, 4) &#x2F;* linux-5.9.4 *&#x2F;</span><br><span class="line"></span><br><span class="line">int32_t get_kernel_version(char *release)</span><br><span class="line">&#123;</span><br><span class="line">	version &#x3D; KERNEL_VERSION(maj, min, rel);</span><br><span class="line">	if ((version &lt; OLDEST_VERSION) || (LATEST_VERSION &lt; version)) &#123;</span><br><span class="line">		MSG(&quot;The kernel version is not supported.\n&quot;);</span><br><span class="line">		MSG(&quot;The makedumpfile operation may be incomplete.\n&quot;);</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">int check_release(void)</span><br><span class="line">&#123;</span><br><span class="line">	info-&gt;kernel_version &#x3D; get_kernel_version(info-&gt;system_utsname.release);</span><br><span class="line">	if (info-&gt;kernel_version &#x3D;&#x3D; FALSE) &#123;</span><br><span class="line">		ERRMSG(&quot;Can&#39;t get the kernel version.\n&quot;);</span><br><span class="line">		return FALSE;</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>第一步先将 <code>LATEST_VERSION</code> 宏定义改掉</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">#define LATEST_VERSION		KERNEL_VERSION(5, 20, 7) &#x2F;* linux-5.20.7 *&#x2F;</span><br></pre></td></tr></table></figure>
+
+<p>还有一个是要看 为什么获得kernel version不对</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">[    3.917016] kdump-tools[301]: Starting kdump-tools:</span><br><span class="line">[    3.919053] kdump-tools[308]:  * running makedumpfile -c -d 31 &#x2F;proc&#x2F;vmcore &#x2F;var&#x2F;crash&#x2F;202101192153&#x2F;dump-incomplete</span><br><span class="line">[    3.930292] kdump-tools[392]: create_dumpfile: create_dumpfile!</span><br><span class="line">[    3.943676] kdump-tools[392]: check_release: info-&gt;system_utsname.release: 5.11.0-rc4+.</span><br><span class="line">[    3.955855] kdump-tools[392]: check_release: info-&gt;release: .rc4+.</span><br><span class="line">Copying data                                      : [100.0 %] \           eta:</span><br></pre></td></tr></table></figure>
+
+<p>看代码应该是这段的问题</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">check_release(void)</span><br><span class="line">&#123;</span><br><span class="line">	unsigned long utsname;</span><br><span class="line"></span><br><span class="line">	&#x2F;*</span><br><span class="line">	 * Get the kernel version.</span><br><span class="line">	 *&#x2F;</span><br><span class="line">	if (SYMBOL(system_utsname) !&#x3D; NOT_FOUND_SYMBOL) &#123;</span><br><span class="line">		utsname &#x3D; SYMBOL(system_utsname);</span><br><span class="line">	&#125; else if (SYMBOL(init_uts_ns) !&#x3D; NOT_FOUND_SYMBOL) &#123;</span><br><span class="line">                utsname &#x3D; SYMBOL(init_uts_ns) + sizeof(int); &#x2F;&#x2F;??????</span><br><span class="line">	&#125; else &#123;</span><br><span class="line">		ERRMSG(&quot;Can&#39;t get the symbol of system_utsname.\n&quot;);</span><br><span class="line">		return FALSE;</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>去掉 <code> + sizeof(int)</code> 即可正常工作</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">[    3.917016] kdump-tools[3https:&#x2F;&#x2F;github.com&#x2F;crash-utility&#x2F;crash01]: Starting kdump-tools:</span><br><span class="line">[    3.919053] kdump-tools[308]:  * running makedumpfile -c -d 31 &#x2F;proc&#x2F;vmcore &#x2F;var&#x2F;crash&#x2F;202101192153&#x2F;dump-incomplete</span><br><span class="line">[    3.943676] kdump-tools[392]: check_release: info-&gt;system_utsname.release: 5.11.0-rc4+.</span><br><span class="line">[    3.955855] kdump-tools[392]: check_release: info-&gt;release: 5.11.0-rc4+.</span><br><span class="line">Copying data                                      : [100.0 %] \           eta: 0s</span><br></pre></td></tr></table></figure>
+
+
+<ol start="2">
+<li>crash 版本较低不合适<br>拿到转存储的dump文件之后，就可以用crash 来分析了</li>
+</ol>
+<p><code>ubuntu 20.04</code> 自带的 crash版本是 <code>7.2.8</code></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><span class="line">stable_kernel@kernel: &#x2F;var&#x2F;crash&#x2F;202101192317# sudo crash dump.202101192317 vmlinux</span><br><span class="line"></span><br><span class="line">crash 7.2.8</span><br><span class="line">Copyright (C) 2002-2020  Red Hat, Inc.</span><br><span class="line">Copyright (C) 2004, 2005, 2006, 2010  IBM Corporation</span><br><span class="line">Copyright (C) 1999-2006  Hewlett-Packard Co</span><br><span class="line">Copyright (C) 2005, 2006, 2011, 2012  Fujitsu Limited</span><br><span class="line">Copyright (C) 2006, 2007  VA Linux Systems Japan K.K.</span><br><span class="line">Copyright (C) 2005, 2011  NEC Corporation</span><br><span class="line">Copyright (C) 1999, 2002, 2007  Silicon Graphics, Inc.</span><br><span class="line">Copyright (C) 1999, 2000, 2001, 2002  Mission Critical Linux, Inc.</span><br><span class="line">This program is free software, covered by the GNU General Public License,</span><br><span class="line">and you are welcome to change it and&#x2F;or distribute copies of it under</span><br><span class="line">certain conditions.  Enter &quot;help copying&quot; to see the conditions.</span><br><span class="line">This program has absolutely no warranty.  Enter &quot;help warranty&quot; for details.</span><br><span class="line"></span><br><span class="line">GNU gdb (GDB) 7.6</span><br><span class="line">Copyright (C) 2013 Free Software Foundation, Inc.</span><br><span class="line">License GPLv3+: GNU GPL version 3 or later &lt;http:&#x2F;&#x2F;gnu.org&#x2F;licenses&#x2F;gpl.html&gt;</span><br><span class="line">This is free software: you are free to change and redistribute it.</span><br><span class="line">There is NO WARRANTY, to the extent permitted by law.  Type &quot;show copying&quot;</span><br><span class="line">and &quot;show warranty&quot; for details.</span><br><span class="line">This GDB was configured as &quot;x86_64-unknown-linux-gnu&quot;...</span><br><span class="line"></span><br><span class="line">WARNING: kernel relocated [702MB]: patching 130299 gdb minimal_symbol values</span><br><span class="line"></span><br><span class="line">please wait... (patching 130299 gdb minimal_symbol values) [1]    4172 segmentation fault  sudo crash dump.202101192317 vmlinux</span><br></pre></td></tr></table></figure>
+
+<p>发现一直是有 segmentfault..<br>怎么也没法解决，才想到可能是 <code>crash</code> 根据版本较低导致的。</p>
+<p>找到 crash <a target="_blank" rel="noopener" href="https://github.com/crash-utility/crash">源码</a></p>
+<p>找到 <code>7.2.8</code> 的release版本， 发现最新的版本是 <code>7.2.9</code><br>就下载了7.2.9版本编译安装，其中还需要下载 <code>gdb-7.6</code>,建议直接国内源下载</p>
+<p>但是还会出现如下错误</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line">stable_kernel@kernel: &#x2F;var&#x2F;crash&#x2F;202101192317# sudo crash dump.202101192317 vmlinux</span><br><span class="line">This GDB was configured as &quot;x86_64-unknown-linux-gnu&quot;...</span><br><span class="line"></span><br><span class="line">WARNING: kernel relocated [702MB]: patching 130299 gdb minimal_symbol values</span><br><span class="line"></span><br><span class="line">      KERNEL: vmlinux</span><br><span class="line">    DUMPFILE: dump.202101192317  [PARTIAL DUMP]</span><br><span class="line">        CPUS: 4</span><br><span class="line">        DATE: Tue Jan 19 23:17:07 CST 2021</span><br><span class="line">      UPTIME: 00:03:31</span><br><span class="line">LOAD AVERAGE: 0.06, 0.06, 0.01</span><br><span class="line">       TASKS: 476</span><br><span class="line">    NODENAME: rlk-Standard-PC-i440FX-PIIX-1996</span><br><span class="line">     RELEASE: 5.11.0-rc4+</span><br><span class="line">     VERSION: #27 SMP Tue Jan 19 13:36:03 CST 2021</span><br><span class="line">     MACHINE: x86_64  (3692 Mhz)</span><br><span class="line">      MEMORY: 2 GB</span><br><span class="line">       PANIC: &quot;Kernel panic - not syncing: sysrq triggered crash&quot;</span><br><span class="line">         PID: 3655</span><br><span class="line">crash: cannot determine length of symbol: log_end</span><br></pre></td></tr></table></figure>
+
+<p>最后看了看 crash github 的 issue,地一个 open 的问题就是这个…<br><a target="_blank" rel="noopener" href="https://github.com/crash-utility/crash/issues/74">issuse-74</a></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">The crash-7.2.9 doesn&#39;t support the 5.10 kernel. It needs these two patches</span><br><span class="line">a5531b2 and 71e159c, so please use the latest master if possible.</span><br></pre></td></tr></table></figure>
+
+<p>果然用最新 master 分支编译安装就 轻松秒杀。。（crash 工具编译安装很省心，没有过多依赖）</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line">stable_kernel@kernel: &#x2F;var&#x2F;crash&#x2F;202101192317# sudo crash dump.202101192317 vmlinux</span><br><span class="line">This GDB was configured as &quot;x86_64-unknown-linux-gnu&quot;...</span><br><span class="line"></span><br><span class="line">WARNING: kernel relocated [702MB]: patching 130299 gdb minimal_symbol values</span><br><span class="line"></span><br><span class="line">      KERNEL: vmlinux</span><br><span class="line">    DUMPFILE: dump.202101192317  [PARTIAL DUMP]</span><br><span class="line">        CPUS: 4</span><br><span class="line">        DATE: Tue Jan 19 23:17:07 CST 2021</span><br><span class="line">      UPTIME: 00:03:31</span><br><span class="line">LOAD AVERAGE: 0.06, 0.06, 0.01</span><br><span class="line">       TASKS: 476</span><br><span class="line">    NODENAME: rlk-Standard-PC-i440FX-PIIX-1996</span><br><span class="line">     RELEASE: 5.11.0-rc4+</span><br><span class="line">     VERSION: #27 SMP Tue Jan 19 13:36:03 CST 2021</span><br><span class="line">     MACHINE: x86_64  (3692 Mhz)</span><br><span class="line">      MEMORY: 2 GB</span><br><span class="line">       PANIC: &quot;Kernel panic - not syncing: sysrq triggered crash&quot;</span><br><span class="line">         PID: 3655</span><br><span class="line">     COMMAND: &quot;bash&quot;</span><br><span class="line">        TASK: ffff9aa984598d80  [THREAD_INFO: ffff9aa984598d80]</span><br><span class="line">         CPU: 1</span><br><span class="line">       STATE: TASK_RUNNING (PANIC)</span><br><span class="line"></span><br><span class="line">crash&gt; exit</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+
+<p>这里就不记录具体使用了，在后面具体案例再记录</p>
+
+      
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+        <div class="post-eof"></div>
+      
+    </footer>
+  </article>
+  
+  
+  
+
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
     <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2021/01/17/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/valgrind%20%E5%AE%9A%E4%BD%8D%E7%94%A8%E6%88%B7%E7%A9%BA%E9%97%B4%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
@@ -1275,100 +1418,6 @@
 <p>参考<a target="_blank" rel="noopener" href="https://spacewander.gitbooks.io/systemtapbeginnersguide_zh/content/2_3_RunningSystemTapScripts.html">SystemTap 内核文档</a></p>
 <p>参考 <a target="_blank" rel="noopener" href="https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/6/html-single/systemtap_beginners_guide/index">RedHat systemTap 文档</a></p>
 <p>参考 <a target="_blank" rel="noopener" href="https://sourceware.org/systemtap/SystemTap_Beginners_Guide/index.html">文档</a></p>
-
-      
-    </div>
-
-    
-    
-    
-
-    <footer class="post-footer">
-        <div class="post-eof"></div>
-      
-    </footer>
-  </article>
-  
-  
-  
-
-      
-  
-  
-  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
-    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2021/01/07/%E5%86%85%E6%A0%B8%E8%A7%82%E6%B5%8B/tools/vmtouch%20%E8%A7%82%E6%B5%8B%E6%96%87%E4%BB%B6page%20cache/">
-
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="image" content="/images/avatar.gif">
-      <meta itemprop="name" content="Su Hui">
-      <meta itemprop="description" content="">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="liulangren Blog">
-    </span>
-
-    
-    
-      <header class="post-header">
-        <h2 class="post-title" itemprop="name headline">
-          
-            <a href="/2021/01/07/%E5%86%85%E6%A0%B8%E8%A7%82%E6%B5%8B/tools/vmtouch%20%E8%A7%82%E6%B5%8B%E6%96%87%E4%BB%B6page%20cache/" class="post-title-link" itemprop="url">vmtouch 观测文件page cache</a>
-        </h2>
-
-        <div class="post-meta-container">
-          <div class="post-meta">
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-calendar"></i>
-      </span>
-      <span class="post-meta-item-text">Posted on</span>
-      
-
-      <time title="Created: 2021-01-07 20:00:40 / Modified: 20:16:27" itemprop="dateCreated datePublished" datetime="2021-01-07T20:00:40+08:00">2021-01-07</time>
-    </span>
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-folder"></i>
-      </span>
-      <span class="post-meta-item-text">In</span>
-        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-          <a href="/categories/linux%E5%86%85%E6%A0%B8/" itemprop="url" rel="index"><span itemprop="name">linux内核</span></a>
-        </span>
-    </span>
-
-  
-</div>
-
-        </div>
-      </header>
-
-    
-    
-    
-    <div class="post-body" itemprop="articleBody">
-          <h2 id="vmtouch-介绍"><a href="#vmtouch-介绍" class="headerlink" title="vmtouch 介绍"></a>vmtouch 介绍</h2><p><code>便携式文件系统缓存诊断和控制</code> 是 <code>vmtouch</code> 作者对于vmtouch的的定义。<br>首先他可以很方便的知道某一个文件当前有多少在 kernel memory 里面作为<br><code>pagecache</code> 存在。</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">ubuntu@ubuntu-Inspiron-5548:~$ vmtouch haha</span><br><span class="line">           Files: 1</span><br><span class="line">     Directories: 0</span><br><span class="line">  Resident Pages: 11584&#x2F;1024000  45M&#x2F;3G  1.13%</span><br><span class="line">         Elapsed: 0.031335 seconds</span><br><span class="line">ubuntu@ubuntu-Inspiron-5548:~$</span><br><span class="line">ubuntu@ubuntu-Inspiron-5548:~$</span><br><span class="line">ubuntu@ubuntu-Inspiron-5548:~$ cat haha</span><br><span class="line">^C</span><br><span class="line">ubuntu@ubuntu-Inspiron-5548:~$ vmtouch haha</span><br><span class="line">           Files: 1</span><br><span class="line">     Directories: 0</span><br><span class="line">  Resident Pages: 36800&#x2F;1024000  143M&#x2F;3G  3.59%</span><br><span class="line">         Elapsed: 0.033472 seconds</span><br><span class="line">ubuntu@ubuntu-Inspiron-5548:~$</span><br></pre></td></tr></table></figure>
-
-<p>明显可以看到在经过 <code>cat</code> 访问之后 文件更多部分被读入 memory，作为 pagecache。</p>
-<p>作者对于他的功能介绍：</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">1. 发现你的操作系统正在缓存哪些文件</span><br><span class="line">2. 告诉操作系统缓存或清除某些文件或文件区域</span><br><span class="line">3. 将文件锁定在内存中，这样操作系统就不会删除它们</span><br><span class="line">4. 在服务器故障转移时保留虚拟内存配置文件</span><br><span class="line">5. 保持“热备”文件服务器</span><br><span class="line">6. 绘制文件系统缓存随时间的使用情况</span><br><span class="line">7. 维护缓存使用的“软配额”</span><br></pre></td></tr></table></figure>
-
-
-
-<h2 id="vmtouch-使用"><a href="#vmtouch-使用" class="headerlink" title="vmtouch 使用"></a>vmtouch 使用</h2><h3 id="控制增加-pagecache"><a href="#控制增加-pagecache" class="headerlink" title="控制增加 pagecache"></a>控制增加 pagecache</h3><p>可以将整个文件读入内存，其实我们通过访问这个文件（从头到尾）也可以做到</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line">ubuntu@ubuntu-Inspiron-5548:~$ vmtouch -vt haha</span><br><span class="line">haha</span><br><span class="line">[OOo                                                         ] 44737&#x2F;1024000</span><br><span class="line">[OOOOOo                                                      ] 90849&#x2F;1024000</span><br><span class="line">[OOOOOOOOo                                                   ] 150209&#x2F;1024000</span><br><span class="line">[OOOOOOOOOOOOo                                               ] 215937&#x2F;1024000</span><br><span class="line">[OOOOOOOOOOOOOOOo                                            ] 271489&#x2F;1024000</span><br><span class="line">[OOOOOOOOOOOOOOOOOOOo                                        ] 326305&#x2F;1024000</span><br><span class="line">[OOOOOOOOOOOOOOOOOOOOOo                                      ] 370721&#x2F;1024000</span><br><span class="line">[OOOOOOOOOOOOOOOOOOOOOOOOo                                   ] 414305&#x2F;1024000</span><br><span class="line">[OOOOOOOOOOOOOOOOOOOOOOOOOOOo                                ] 469697&#x2F;1024000</span><br><span class="line">[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo                             ] 524289&#x2F;1024000</span><br><span class="line">[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo                          ] 577153&#x2F;1024000</span><br><span class="line">[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo                     ] 652481&#x2F;1024000</span><br><span class="line">[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo                  ] 705953&#x2F;1024000</span><br><span class="line">[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo               ] 757281&#x2F;1024000</span><br><span class="line">[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo            ] 810593&#x2F;1024000</span><br><span class="line">[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo        ] 876769&#x2F;1024000</span><br><span class="line">[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo      ] 920545&#x2F;1024000</span><br><span class="line">[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo  ] 973473&#x2F;1024000</span><br><span class="line">[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO] 1024000&#x2F;1024000</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">           Files: 1</span><br><span class="line">     Directories: 0</span><br><span class="line">   Touched Pages: 1024000 (3G)</span><br><span class="line">         Elapsed: 9.4376 seconds</span><br><span class="line">ubuntu@ubuntu-Inspiron-5548:~$</span><br></pre></td></tr></table></figure>
-
-
-<h3 id="控制减少-pagecache"><a href="#控制减少-pagecache" class="headerlink" title="控制减少 pagecache"></a>控制减少 pagecache</h3><p>evict a file from memory<br>将一个文件的pagecache 从内存中移除</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">ubuntu@ubuntu-Inspiron-5548:~$ vmtouch -ve haha</span><br><span class="line">Evicting haha</span><br><span class="line"></span><br><span class="line">           Files: 1</span><br><span class="line">     Directories: 0</span><br><span class="line">   Evicted Pages: 1024000 (3G)</span><br><span class="line">         Elapsed: 0.085208 seconds</span><br></pre></td></tr></table></figure>
-
-<p>与<code>drop cache</code>不同，<code>vmtouch</code>做到了精准控制单个文件page_cache的效果，而 drop cache不行</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">root@ubuntu-Inspiron-5548:&#x2F;home&#x2F;ubuntu# echo 1 &gt;  &#x2F;proc&#x2F;sys&#x2F;vm&#x2F;drop_caches</span><br><span class="line">root@ubuntu-Inspiron-5548:&#x2F;home&#x2F;ubuntu# echo 3 &gt;  &#x2F;proc&#x2F;sys&#x2F;vm&#x2F;drop_caches</span><br></pre></td></tr></table></figure>
-
-<h3 id="保持文件在pagecache中"><a href="#保持文件在pagecache中" class="headerlink" title="保持文件在pagecache中"></a>保持文件在pagecache中</h3><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">ubuntu@ubuntu-Inspiron-5548:~$ vmtouch -dl haha</span><br><span class="line">ubuntu@ubuntu-Inspiron-5548:~$ vmtouch: FATAL: mlock: haha (Cannot allocate memory)</span><br><span class="line"></span><br><span class="line">ubuntu@ubuntu-Inspiron-5548:~$</span><br></pre></td></tr></table></figure>
-<p>(内存4G，文件4G 是没办法将文件常驻在 内存中的)<br>从此报错信息可以看出 <code>vmtouch</code> 也是通过 <code>mlock</code> 系统调用来实现 文件内容 或者 文件目录内容锁定在 内存中的</p>
-<p><a target="_blank" rel="noopener" href="https://hoytech.com/vmtouch/">vmtouch 作者的文章</a></p>
 
       
     </div>
