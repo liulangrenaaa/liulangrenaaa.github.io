@@ -670,7 +670,7 @@
           <i class="far fa-calendar-check"></i>
         </span>
         <span class="post-meta-item-text">Edited on</span>
-        <time title="Modified: 2021-01-20 20:05:06" itemprop="dateModified" datetime="2021-01-20T20:05:06+08:00">2021-01-20</time>
+        <time title="Modified: 2021-01-20 20:06:54" itemprop="dateModified" datetime="2021-01-20T20:06:54+08:00">2021-01-20</time>
       </span>
     <span class="post-meta-item">
       <span class="post-meta-item-icon">
@@ -817,7 +817,7 @@
 <li><p>make 相关<br>指定 <code>gcc</code> version，和 忽略 <code>warning</code>.</p>
 <figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">make CC&#x3D;gcc-7 CFLAGS&#x3D;&quot;-Wno-error&quot;</span><br></pre></td></tr></table></figure>
 </li>
-<li><p>sed 命令<br><code>sed</code> <code>grep</code> <code>awk</code> 被称为linux三剑客，足以说明其强大的字符文本处理能力。<br>a. 删除 ‘str1 str2’ 的特定行</p>
+<li><p>sed 命令<br><code>sed</code> <code>grep</code> <code>awk</code> 被称为linux三剑客，足以说明其强大的字符文本处理能力。<br>a. 删除 ‘str1 str2’ 的特定行(这个在处理 kernel config文件时候很有用)</p>
 <figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">ubuntu@~: $ cat .config | grep &quot;CONFIG_INLINE_SPIN_UNLOCK_IRQ&#x3D;y&quot;</span><br><span class="line">CONFIG_INLINE_SPIN_UNLOCK_IRQ&#x3D;y</span><br><span class="line">ubuntu@~: $</span><br><span class="line">ubuntu@~: $ sed -i &#39;&#x2F;CONFIG_INLINE_SPIN_UNLOCK_IRQ&#x3D;y&#x2F;d&#39; .config</span><br><span class="line">ubuntu@~: $ cat .config | grep &quot;CONFIG_INLINE_SPIN_UNLOCK_IRQ&#x3D;y&quot;</span><br></pre></td></tr></table></figure>
 
 </li>
