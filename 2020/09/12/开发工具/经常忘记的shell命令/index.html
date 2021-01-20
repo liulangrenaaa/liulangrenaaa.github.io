@@ -30,7 +30,7 @@
 <meta property="og:description" content="总有那么几条经常使用，但有比较难记住的命令，做个记录。  ln 创建连接  ln 创建 软链接 12ln -s   实际文件&#x2F;目录          软链接文件&#x2F;目录ln -s &#x2F;usr&#x2F;sbin&#x2F;trace-bpfcc &#x2F;usr&#x2F;bin&#x2F;trace  ln 创建 硬链接 12ln   实际文件          硬链">
 <meta property="og:locale">
 <meta property="article:published_time" content="2020-09-12T06:47:40.000Z">
-<meta property="article:modified_time" content="2021-01-12T13:06:44.174Z">
+<meta property="article:modified_time" content="2021-01-20T12:05:06.213Z">
 <meta property="article:author" content="Su Hui">
 <meta property="article:tag" content="shell">
 <meta name="twitter:card" content="summary">
@@ -194,7 +194,7 @@
       <div class="site-state-item site-state-posts">
           <a href="/archives/">
         
-          <span class="site-state-item-count">33</span>
+          <span class="site-state-item-count">36</span>
           <span class="site-state-item-name">posts</span>
         </a>
       </div>
@@ -207,7 +207,7 @@
       <div class="site-state-item site-state-tags">
             <a href="/tags/">
           
-        <span class="site-state-item-count">52</span>
+        <span class="site-state-item-count">59</span>
         <span class="site-state-item-name">tags</span></a>
       </div>
   </nav>
@@ -277,7 +277,7 @@
           <i class="far fa-calendar-check"></i>
         </span>
         <span class="post-meta-item-text">Edited on</span>
-        <time title="Modified: 2021-01-12 21:06:44" itemprop="dateModified" datetime="2021-01-12T21:06:44+08:00">2021-01-12</time>
+        <time title="Modified: 2021-01-20 20:05:06" itemprop="dateModified" datetime="2021-01-20T20:05:06+08:00">2021-01-20</time>
       </span>
     <span class="post-meta-item">
       <span class="post-meta-item-icon">
@@ -341,6 +341,9 @@
 </ol>
 <p>从 ubuntu@xxx:222 获取 <code>/home/ubuntu/.vscode-server/data/Machine/settings.json</code> 文件，且保存为 <code>/tmp/settings.json</code></p>
 <figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">scp -P  222 ubuntu@xxx:&#x2F;home&#x2F;ubuntu&#x2F;.vscode-server&#x2F;data&#x2F;Machine&#x2F;settings.json &#x2F;tmp&#x2F;settings.json</span><br></pre></td></tr></table></figure>
+
+<p>将本地的 elfutils-0.144.tar.bz2 文件传输到 <code>ubuntu@xxxx:/home/ubuntu/</code> 目录下</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">scp -P  222  .&#x2F;elfutils-0.144.tar.bz2 ubuntu@xxxx:&#x2F;home&#x2F;ubuntu&#x2F;</span><br></pre></td></tr></table></figure>
 <p>可以参考<a target="_blank" rel="noopener" href="https://www.cnblogs.com/bignode/articles/9241333.html">scp 命令介绍</a></p>
 <ol start="5">
 <li>ubuntu 截图工具</li>
@@ -418,9 +421,32 @@
 
 
 <ol start="13">
-<li>3</li>
+<li><p>make 相关<br>指定 <code>gcc</code> version，和 忽略 <code>warning</code>.</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">make CC&#x3D;gcc-7 CFLAGS&#x3D;&quot;-Wno-error&quot;</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>sed 命令<br><code>sed</code> <code>grep</code> <code>awk</code> 被称为linux三剑客，足以说明其强大的字符文本处理能力。<br>a. 删除 ‘str1 str2’ 的特定行</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">ubuntu@~: $ cat .config | grep &quot;CONFIG_INLINE_SPIN_UNLOCK_IRQ&#x3D;y&quot;</span><br><span class="line">CONFIG_INLINE_SPIN_UNLOCK_IRQ&#x3D;y</span><br><span class="line">ubuntu@~: $</span><br><span class="line">ubuntu@~: $ sed -i &#39;&#x2F;CONFIG_INLINE_SPIN_UNLOCK_IRQ&#x3D;y&#x2F;d&#39; .config</span><br><span class="line">ubuntu@~: $ cat .config | grep &quot;CONFIG_INLINE_SPIN_UNLOCK_IRQ&#x3D;y&quot;</span><br></pre></td></tr></table></figure>
+
+</li>
 </ol>
-<ol start="14">
+<p>b. l</p>
+<ol start="15">
+<li>grep 命令<br>a. 最常见的<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@1ubuntu: ~&#x2F;workspace&#x2F;hexo_blog# grep &quot;asdfasdf&quot; . -nr</span><br><span class="line">.&#x2F;source&#x2F;file.md:224:asdfasdf_</span><br><span class="line">.&#x2F;source&#x2F;file.md:239:asdfasdf</span><br><span class="line">tencent_clould@ubuntu: ~&#x2F;workspace&#x2F;hexo_blog#</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<p>b. <code>-w</code> 全词匹配</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: ~&#x2F;workspace&#x2F;hexo_blog# grep &quot;asdfasdf&quot; . -nr -w</span><br><span class="line">.&#x2F;source&#x2F;file.md:239:asdfasdf</span><br><span class="line">tencent_clould@ubuntu: ~&#x2F;workspace&#x2F;hexo_blog#</span><br></pre></td></tr></table></figure>
+
+<p>c. <code>-A 3</code> <code>-B 3</code>  <code>-C 3</code><br>显示前后几行：<br>加上查找到的后三行  加上查找前三行   加上查找的前后三行</p>
+<ol start="16">
+<li>awk 命令<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"></span><br></pre></td></tr></table></figure>
+
+
+
+</li>
+</ol>
+<ol start="20">
 <li>vmbox 虚拟机？</li>
 </ol>
 
@@ -444,8 +470,8 @@
                 </a>
             </div>
             <div class="post-nav-item">
-                <a href="/2020/09/13/%E5%86%85%E6%A0%B8%E8%A7%82%E6%B5%8B/%E6%80%A7%E8%83%BD%E7%A8%B3%E5%AE%9A%E6%80%A7/60s%E5%AE%9A%E4%BD%8D%E5%86%85%E6%A0%B8%E6%80%A7%E8%83%BD%E7%93%B6%E9%A2%88/" rel="next" title="60s定位内核性能瓶颈">
-                  60s定位内核性能瓶颈 <i class="fa fa-chevron-right"></i>
+                <a href="/2020/09/12/%E8%BF%9B%E7%A8%8B%E7%AE%A1%E7%90%86/lockup%E9%97%AE%E9%A2%98/" rel="next" title="linux lockup问题">
+                  linux lockup问题 <i class="fa fa-chevron-right"></i>
                 </a>
             </div>
           </div>

@@ -189,7 +189,7 @@
       <div class="site-state-item site-state-posts">
           <a href="/archives/">
         
-          <span class="site-state-item-count">33</span>
+          <span class="site-state-item-count">36</span>
           <span class="site-state-item-name">posts</span>
         </a>
       </div>
@@ -202,7 +202,7 @@
       <div class="site-state-item site-state-tags">
             <a href="/tags/">
           
-        <span class="site-state-item-count">52</span>
+        <span class="site-state-item-count">59</span>
         <span class="site-state-item-name">tags</span></a>
       </div>
   </nav>
@@ -374,6 +374,89 @@
   
   
   <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
+    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2021/01/16/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/slub%20debug%20%E5%AE%9A%E4%BD%8D%E5%86%85%E5%AD%98%E8%B6%8A%E7%95%8C/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="Su Hui">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liulangren Blog">
+    </span>
+
+    
+    
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/2021/01/16/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/slub%20debug%20%E5%AE%9A%E4%BD%8D%E5%86%85%E5%AD%98%E8%B6%8A%E7%95%8C/" class="post-title-link" itemprop="url">slub_debug 定位内存越界</a>
+        </h2>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">Posted on</span>
+
+      <time title="Created: 2021-01-16 19:00:00" itemprop="dateCreated datePublished" datetime="2021-01-16T19:00:00+08:00">2021-01-16</time>
+    </span>
+      <span class="post-meta-item">
+        <span class="post-meta-item-icon">
+          <i class="far fa-calendar-check"></i>
+        </span>
+        <span class="post-meta-item-text">Edited on</span>
+        <time title="Modified: 2021-01-18 19:59:19" itemprop="dateModified" datetime="2021-01-18T19:59:19+08:00">2021-01-18</time>
+      </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">In</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/linux%E5%86%85%E6%A0%B8/" itemprop="url" rel="index"><span itemprop="name">linux内核</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+          <h2 id="WHY"><a href="#WHY" class="headerlink" title="WHY"></a>WHY</h2><h2 id="slub-debug-原理"><a href="#slub-debug-原理" class="headerlink" title="slub_debug 原理"></a>slub_debug 原理</h2><h2 id="slub-debug-使用"><a href="#slub-debug-使用" class="headerlink" title="slub_debug 使用"></a>slub_debug 使用</h2><h2 id="slub-debug-代码"><a href="#slub-debug-代码" class="headerlink" title="slub_debug 代码"></a>slub_debug 代码</h2><h2 id="slub-debug-overhead"><a href="#slub-debug-overhead" class="headerlink" title="slub_debug overhead"></a>slub_debug overhead</h2><p>当然假设我们场景允许 使能slub_debug之后，重新编译 kernel，也要关系 slub_debug 所带来的<br>overhead是否允许，如果你的场景本来就是一个高负载的已经80%多的CPU使用率了，然后开启<br>slub_debug,是很可能出问题的。</p>
+<p>在 公司 一款三核心的 Cortex-A7 的产品中测试结果：<br>        disabled        enabled     Per Core增加%       换算成单核CPU%<br>User:     3.54%          7.63%          4.09%            12.27%<br>Sys:      10.68%         23.76%         13.08%           38.7%<br>Idle:     84.6%          67.68%         17.02%           -50.76%</p>
+<p>在我自己 qemu 虚拟机中测试结果是：</p>
+<pre><code>    disabled        enabled     Per Core增加%       换算成单核CPU%</code></pre>
+<p>User:     3.54%          7.63%                           12.27%<br>Sys:      10.68%         23.76%                          38.7%<br>Idle:     84.6%          67.68%                          -50.76%</p>
+
+      
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+        <div class="post-eof"></div>
+      
+    </footer>
+  </article>
+  
+  
+  
+
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
     <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2021/01/16/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/page_owner%20%E5%AE%9A%E4%BD%8D%20buddy%20%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
@@ -409,7 +492,7 @@
           <i class="far fa-calendar-check"></i>
         </span>
         <span class="post-meta-item-text">Edited on</span>
-        <time title="Modified: 2021-01-15 19:43:33" itemprop="dateModified" datetime="2021-01-15T19:43:33+08:00">2021-01-15</time>
+        <time title="Modified: 2021-01-18 20:01:27" itemprop="dateModified" datetime="2021-01-18T20:01:27+08:00">2021-01-18</time>
       </span>
     <span class="post-meta-item">
       <span class="post-meta-item-icon">
@@ -431,7 +514,14 @@
     
     
     <div class="post-body" itemprop="articleBody">
-          <h2 id="WHY"><a href="#WHY" class="headerlink" title="WHY"></a>WHY</h2><h2 id="page-owner-原理"><a href="#page-owner-原理" class="headerlink" title="page_owner 原理"></a>page_owner 原理</h2><h2 id="page-owner-使用"><a href="#page-owner-使用" class="headerlink" title="page_owner 使用"></a>page_owner 使用</h2><h2 id="page-owner-代码"><a href="#page-owner-代码" class="headerlink" title="page_owner 代码"></a>page_owner 代码</h2>
+          <h2 id="WHY"><a href="#WHY" class="headerlink" title="WHY"></a>WHY</h2><h2 id="page-owner-原理"><a href="#page-owner-原理" class="headerlink" title="page_owner 原理"></a>page_owner 原理</h2><h2 id="page-owner-使用"><a href="#page-owner-使用" class="headerlink" title="page_owner 使用"></a>page_owner 使用</h2><p>从mm/makefile 看，需要配置 <code>CONFIG_PAGE_OWNER=y</code></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">obj-$(CONFIG_PAGE_OWNER) +&#x3D; page_owner.o</span><br></pre></td></tr></table></figure>
+
+<p>重新编译之后，启动qemu, 需要加上 <code>page_owner=on</code>:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">sudo qemu-system-x86_64 \</span><br><span class="line">	-kernel &#x2F;tmp&#x2F;bzImage \</span><br><span class="line">	-hda &#x2F;home&#x2F;ubuntu&#x2F;myspace&#x2F;qemu_build&#x2F;stable_ubuntu.img \</span><br><span class="line">	-append &quot;root&#x3D;&#x2F;dev&#x2F;sda5 console&#x3D;ttyS0 crashkernel&#x3D;256M page_owner&#x3D;on&quot; \</span><br><span class="line">	-smp 4 \</span><br><span class="line">	-m 2048 \</span><br><span class="line">	--enable-kvm \</span><br><span class="line">	-net nic \</span><br><span class="line">	-net user,hostfwd&#x3D;tcp::2222-:22 \</span><br><span class="line">	--nographic \</span><br><span class="line">	-fsdev local,id&#x3D;fs1,path&#x3D;&#x2F;home&#x2F;ubuntu&#x2F;workspace&#x2F;share,security_model&#x3D;none \</span><br><span class="line">	-device virtio-9p-pci,fsdev&#x3D;fs1,mount_tag&#x3D;host_share</span><br></pre></td></tr></table></figure>
+
+
+<h2 id="page-owner-代码"><a href="#page-owner-代码" class="headerlink" title="page_owner 代码"></a>page_owner 代码</h2>
       
     </div>
 
@@ -487,7 +577,7 @@
           <i class="far fa-calendar-check"></i>
         </span>
         <span class="post-meta-item-text">Edited on</span>
-        <time title="Modified: 2021-01-15 19:21:02" itemprop="dateModified" datetime="2021-01-15T19:21:02+08:00">2021-01-15</time>
+        <time title="Modified: 2021-01-18 19:54:30" itemprop="dateModified" datetime="2021-01-18T19:54:30+08:00">2021-01-18</time>
       </span>
     <span class="post-meta-item">
       <span class="post-meta-item-icon">
@@ -509,7 +599,91 @@
     
     
     <div class="post-body" itemprop="articleBody">
-          <h2 id="WHY"><a href="#WHY" class="headerlink" title="WHY"></a>WHY</h2><h2 id="kmemleak-原理"><a href="#kmemleak-原理" class="headerlink" title="kmemleak 原理"></a>kmemleak 原理</h2><h2 id="kmemleak-使用"><a href="#kmemleak-使用" class="headerlink" title="kmemleak 使用"></a>kmemleak 使用</h2><h2 id="kmemleak-代码"><a href="#kmemleak-代码" class="headerlink" title="kmemleak 代码"></a>kmemleak 代码</h2>
+          <h2 id="WHY"><a href="#WHY" class="headerlink" title="WHY"></a>WHY</h2><h2 id="kmemleak-原理"><a href="#kmemleak-原理" class="headerlink" title="kmemleak 原理"></a>kmemleak 原理</h2><h2 id="kmemleak-使用"><a href="#kmemleak-使用" class="headerlink" title="kmemleak 使用"></a>kmemleak 使用</h2><h2 id="kmemleak-代码"><a href="#kmemleak-代码" class="headerlink" title="kmemleak 代码"></a>kmemleak 代码</h2><h2 id="kmemleak-overhead"><a href="#kmemleak-overhead" class="headerlink" title="kmemleak overhead"></a>kmemleak overhead</h2><p>当然假设我们场景允许 使能kmemleak之后，重新编译 kernel，也要关系 kmemleak 所带来的<br>overhead是否允许，如果你的场景本来就是一个高负载的已经80%多的CPU使用率了，然后开启<br>kmemleak,是很可能出问题的。</p>
+<p>在 公司 一款三核心的 Cortex-A7 的产品中测试结果：<br>        disabled        enabled     Per Core增加%       换算成单核CPU%<br>User:     3.54%          7.63%          4.09%            12.27%<br>Sys:      10.68%         23.76%         13.08%           38.7%<br>Idle:     84.6%          67.68%         17.02%           -50.76%</p>
+<p>在我自己 qemu 虚拟机中测试结果是：</p>
+<pre><code>    disabled        enabled     Per Core增加%       换算成单核CPU%</code></pre>
+<p>User:     3.54%          7.63%                           12.27%<br>Sys:      10.68%         23.76%                          38.7%<br>Idle:     84.6%          67.68%                          -50.76%</p>
+
+      
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+        <div class="post-eof"></div>
+      
+    </footer>
+  </article>
+  
+  
+  
+
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
+    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2021/01/16/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/KASAN%20%E4%BD%BF%E7%94%A8/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="Su Hui">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liulangren Blog">
+    </span>
+
+    
+    
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/2021/01/16/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/KASAN%20%E4%BD%BF%E7%94%A8/" class="post-title-link" itemprop="url">KASAN 定位越界访问</a>
+        </h2>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">Posted on</span>
+
+      <time title="Created: 2021-01-16 19:00:00" itemprop="dateCreated datePublished" datetime="2021-01-16T19:00:00+08:00">2021-01-16</time>
+    </span>
+      <span class="post-meta-item">
+        <span class="post-meta-item-icon">
+          <i class="far fa-calendar-check"></i>
+        </span>
+        <span class="post-meta-item-text">Edited on</span>
+        <time title="Modified: 2021-01-18 19:58:58" itemprop="dateModified" datetime="2021-01-18T19:58:58+08:00">2021-01-18</time>
+      </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">In</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/linux%E5%86%85%E6%A0%B8/" itemprop="url" rel="index"><span itemprop="name">linux内核</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+          <h2 id="WHY"><a href="#WHY" class="headerlink" title="WHY"></a>WHY</h2><h2 id="KASAN-原理"><a href="#KASAN-原理" class="headerlink" title="KASAN 原理"></a>KASAN 原理</h2><h2 id="KASAN-使用"><a href="#KASAN-使用" class="headerlink" title="KASAN 使用"></a>KASAN 使用</h2><h2 id="KASAN-代码"><a href="#KASAN-代码" class="headerlink" title="KASAN 代码"></a>KASAN 代码</h2><h2 id="KASAN-overhead"><a href="#KASAN-overhead" class="headerlink" title="KASAN overhead"></a>KASAN overhead</h2><p>当然假设我们场景允许 使能KASAN之后，重新编译 kernel，也要关系 KASAN 所带来的<br>overhead是否允许，如果你的场景本来就是一个高负载的已经80%多的CPU使用率了，然后开启<br>KASAN,是很可能出问题的。</p>
+
       
     </div>
 
@@ -1195,225 +1369,6 @@
 <h3 id="保持文件在pagecache中"><a href="#保持文件在pagecache中" class="headerlink" title="保持文件在pagecache中"></a>保持文件在pagecache中</h3><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">ubuntu@ubuntu-Inspiron-5548:~$ vmtouch -dl haha</span><br><span class="line">ubuntu@ubuntu-Inspiron-5548:~$ vmtouch: FATAL: mlock: haha (Cannot allocate memory)</span><br><span class="line"></span><br><span class="line">ubuntu@ubuntu-Inspiron-5548:~$</span><br></pre></td></tr></table></figure>
 <p>(内存4G，文件4G 是没办法将文件常驻在 内存中的)<br>从此报错信息可以看出 <code>vmtouch</code> 也是通过 <code>mlock</code> 系统调用来实现 文件内容 或者 文件目录内容锁定在 内存中的</p>
 <p><a target="_blank" rel="noopener" href="https://hoytech.com/vmtouch/">vmtouch 作者的文章</a></p>
-
-      
-    </div>
-
-    
-    
-    
-
-    <footer class="post-footer">
-        <div class="post-eof"></div>
-      
-    </footer>
-  </article>
-  
-  
-  
-
-      
-  
-  
-  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
-    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2021/01/07/%E5%86%85%E6%A0%B8%E8%A7%82%E6%B5%8B/systemTap/examples/SystemTap%20examples/">
-
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="image" content="/images/avatar.gif">
-      <meta itemprop="name" content="Su Hui">
-      <meta itemprop="description" content="">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="liulangren Blog">
-    </span>
-
-    
-    
-      <header class="post-header">
-        <h2 class="post-title" itemprop="name headline">
-          
-            <a href="/2021/01/07/%E5%86%85%E6%A0%B8%E8%A7%82%E6%B5%8B/systemTap/examples/SystemTap%20examples/" class="post-title-link" itemprop="url">SystemTap examples</a>
-        </h2>
-
-        <div class="post-meta-container">
-          <div class="post-meta">
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-calendar"></i>
-      </span>
-      <span class="post-meta-item-text">Posted on</span>
-      
-
-      <time title="Created: 2021-01-07 10:00:40 / Modified: 20:16:27" itemprop="dateCreated datePublished" datetime="2021-01-07T10:00:40+08:00">2021-01-07</time>
-    </span>
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-folder"></i>
-      </span>
-      <span class="post-meta-item-text">In</span>
-        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-          <a href="/categories/linux%E5%86%85%E6%A0%B8/" itemprop="url" rel="index"><span itemprop="name">linux内核</span></a>
-        </span>
-    </span>
-
-  
-</div>
-
-        </div>
-      </header>
-
-    
-    
-    
-    <div class="post-body" itemprop="articleBody">
-          <p>SystemTap脚本集锦<br>本章列举了若干可用于监控和调查内核子系统的SystemTap脚本。所有这些示例都能在 <code>centos</code>的<br> <code>/usr/share/systemtap/testsuite/systemtap.examples/</code>下找到。</p>
-<h2 id="SystemTap脚本集锦"><a href="#SystemTap脚本集锦" class="headerlink" title="SystemTap脚本集锦"></a>SystemTap脚本集锦</h2><p><a target="_blank" rel="noopener" href="https://spacewander.gitbooks.io/systemtapbeginnersguide_zh/content/5_UsefulSystemTapScripts.html">SystemTap脚本集锦</a></p>
-<h2 id="解读错误信息"><a href="#解读错误信息" class="headerlink" title="解读错误信息"></a>解读错误信息</h2><p><a target="_blank" rel="noopener" href="https://spacewander.gitbooks.io/systemtapbeginnersguide_zh/content/6_UnderstandingSystemTapErrors.html">解读错误信息</a></p>
-<p> 参考<a target="_blank" rel="noopener" href="https://spacewander.gitbooks.io/systemtapbeginnersguide_zh/content/2_3_RunningSystemTapScripts.html">SystemTap 内核文档</a></p>
-<p>参考 <a target="_blank" rel="noopener" href="https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/6/html-single/systemtap_beginners_guide/index">RedHat systemTap 文档</a></p>
-<p>参考 <a target="_blank" rel="noopener" href="https://sourceware.org/systemtap/SystemTap_Beginners_Guide/index.html">文档</a></p>
-
-      
-    </div>
-
-    
-    
-    
-
-    <footer class="post-footer">
-        <div class="post-eof"></div>
-      
-    </footer>
-  </article>
-  
-  
-  
-
-      
-  
-  
-  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
-    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/12/19/qemu/%E6%88%91%E7%9A%84%E6%9C%8D%E5%8A%A1%E5%99%A8%E9%85%8D%E7%BD%AEqemu/">
-
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="image" content="/images/avatar.gif">
-      <meta itemprop="name" content="Su Hui">
-      <meta itemprop="description" content="">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="liulangren Blog">
-    </span>
-
-    
-    
-      <header class="post-header">
-        <h2 class="post-title" itemprop="name headline">
-          
-            <a href="/2020/12/19/qemu/%E6%88%91%E7%9A%84%E6%9C%8D%E5%8A%A1%E5%99%A8%E9%85%8D%E7%BD%AEqemu/" class="post-title-link" itemprop="url">我的服务器配置</a>
-        </h2>
-
-        <div class="post-meta-container">
-          <div class="post-meta">
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-calendar"></i>
-      </span>
-      <span class="post-meta-item-text">Posted on</span>
-
-      <time title="Created: 2020-12-19 14:47:40" itemprop="dateCreated datePublished" datetime="2020-12-19T14:47:40+08:00">2020-12-19</time>
-    </span>
-      <span class="post-meta-item">
-        <span class="post-meta-item-icon">
-          <i class="far fa-calendar-check"></i>
-        </span>
-        <span class="post-meta-item-text">Edited on</span>
-        <time title="Modified: 2021-01-11 16:51:13" itemprop="dateModified" datetime="2021-01-11T16:51:13+08:00">2021-01-11</time>
-      </span>
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-folder"></i>
-      </span>
-      <span class="post-meta-item-text">In</span>
-        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-          <a href="/categories/server/" itemprop="url" rel="index"><span itemprop="name">server</span></a>
-        </span>
-    </span>
-
-  
-</div>
-
-        </div>
-      </header>
-
-    
-    
-    
-    <div class="post-body" itemprop="articleBody">
-          <h2 id="服务器配置"><a href="#服务器配置" class="headerlink" title="服务器配置"></a>服务器配置</h2><p>我之前一直是使用 <code>笔记本windows+ubuntu虚拟机</code> 的开发配置，但是这样有几个限制：</p>
-<ol>
-<li>ubuntu 虚拟机比较耗费资源，一到夏天笔记本风扇狂转，影响体验</li>
-<li>只在本地使用没有问题，但是有时候还想在公司或者出差的时候使用</li>
-</ol>
-<p>基于以上种种限制，我就搞了腾讯云的服务器，<code>1H2G1M3Y</code> 价格好像是 300￥，还是比较便宜的。</p>
-<p>但是直到前些天才真正用起来，主要用于编译和测试，但是一直有几个缺点：</p>
-<ol>
-<li>云服务器基本都是基于 KVM的，然后他还禁止了租户继续使用KVM进行虚拟化</li>
-<li>云服务器禁止了 邮件服务的端口，导致无法收发邮件</li>
-<li>云服务器在低配置（1核心2G）下，费用较低，一旦配置升高，价格急剧上升，性价比不高</li>
-<li>1核2G用来编译效率太低</li>
-<li>云服务器带宽资源比较昂贵，在本地连接云服务器的时候经常会需要连接好久才能连接上</li>
-</ol>
-<p>考虑最近AMD cpu很强势，便配置了一个AMD 4650G的ITX机器，用作我自己的服务器。</p>
-<h2 id="物理服务器安装"><a href="#物理服务器安装" class="headerlink" title="物理服务器安装"></a>物理服务器安装</h2><p>我直接选择了 ubuntu20.04.1 版本，通过UltraISO 工具将iso写入SD卡中，然后开启U盘启动，安装ubuntu。<br>还需要通过 主板 BIOS开启 KVM，通过CPU设置开启 SVM:<br>如果不开启KVM直接用qemu开启 ubuntu虚拟机，效率比开启KVM虚拟机要慢 50倍左右，这也是我不想用 云服务器的原因。<br>换用<a target="_blank" rel="noopener" href="https://mirrors.tuna.tsinghua.edu.cn/help/ubuntu/">清华源</a></p>
-<h2 id="物理服务器安装qemu-ubuntu虚拟机"><a href="#物理服务器安装qemu-ubuntu虚拟机" class="headerlink" title="物理服务器安装qemu-ubuntu虚拟机"></a>物理服务器安装qemu-ubuntu虚拟机</h2><p>可以参考文章:<a target="_blank" rel="noopener" href="https://spyff.github.io/linux/2018/07/20/qemu-vm/">qemu起ubuntu server</a></p>
-<p>在云服务器上按着文章成功配置了qemu虚拟机，但是在服务器上一直是失败的，原因就是起了服务器之后一直无法登陆。所以最后我用了桌面版本ubuntu 20.04.1，而不是 ubuntu server。</p>
-<ol>
-<li><p>下载 ubuntu iso</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">wget https:&#x2F;&#x2F;mirrors.tuna.tsinghua.edu.cn&#x2F;ubuntu-releases&#x2F;20.04.1&#x2F;ubuntu-20.04.1-desktop-amd64.iso</span><br><span class="line">mv ubuntu-20.04.1-desktop-amd64.iso ubuntu.iso</span><br></pre></td></tr></table></figure>
-</li>
-<li><p>创建磁盘</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">qemu-img create -q -f qcow2 stable_ubuntu.img 32G</span><br></pre></td></tr></table></figure>
-</li>
-<li><p>安装虚拟机<br>这一步尽量不要用 ssh做，直接在物理机器上搞比较快，第一次安装需要 -cdrom指定iso文件位置，后面就不需要了。在安装的之后需要指定 用户名密码。</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">安装</span><br><span class="line">sudo qemu-system-x86_64 ubuntu.img -m 1024 -cdrom ubuntu.iso --enable-kvm</span><br></pre></td></tr></table></figure>
-</li>
-<li><p>启动虚拟机<br>启动虚拟机分为两种:<br>a. 直接启动原来内核的虚拟机(可以直接联网，下载软件)<br>也可以ssh链接： ssh -v <a href="mailto:&#x72;&#x6c;&#x6b;&#x40;&#49;&#50;&#x37;&#46;&#48;&#x2e;&#x30;&#46;&#49;">&#x72;&#x6c;&#x6b;&#x40;&#49;&#50;&#x37;&#46;&#48;&#x2e;&#x30;&#46;&#49;</a> -p 2222</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">sudo qemu-system-x86_64 \</span><br><span class="line">    -hda &#x2F;home&#x2F;ubuntu&#x2F;myspace&#x2F;qemu_build&#x2F;stable_ubuntu.img \</span><br><span class="line">    -smp 4 \</span><br><span class="line">    -m 4096 \</span><br><span class="line">    --enable-kvm \</span><br><span class="line">    -net nic \</span><br><span class="line">    -net user,hostfwd&#x3D;tcp::2222-:22 \</span><br><span class="line">    --nographic \</span><br><span class="line">    -fsdev local,id&#x3D;fs1,path&#x3D;&#x2F;home&#x2F;ubuntu&#x2F;workspace&#x2F;share,security_model&#x3D;none \</span><br><span class="line">    -device virtio-9p-pci,fsdev&#x3D;fs1,mount_tag&#x3D;host_share</span><br></pre></td></tr></table></figure>
-
-</li>
-</ol>
-<p>b. 用新kernel代替 stable_ubuntu.img中 的 kernel(替代内核)</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">sudo qemu-system-x86_64 \</span><br><span class="line">    -kernel &#x2F;home&#x2F;ubuntu&#x2F;workspace&#x2F;share&#x2F;stable&#x2F;bzImage \</span><br><span class="line">    -hda &#x2F;home&#x2F;ubuntu&#x2F;myspace&#x2F;qemu_build&#x2F;stable_ubuntu.img \</span><br><span class="line">    -append &quot;root&#x3D;&#x2F;dev&#x2F;sda5 console&#x3D;ttyS0&quot; \</span><br><span class="line">    -smp 4 \</span><br><span class="line">    -m 4096 \</span><br><span class="line">    --enable-kvm \</span><br><span class="line">    -net nic \</span><br><span class="line">    -net user,hostfwd&#x3D;tcp::2222-:22 \</span><br><span class="line">    --nographic \</span><br><span class="line">    -fsdev local,id&#x3D;fs1,path&#x3D;&#x2F;home&#x2F;ubuntu&#x2F;workspace&#x2F;share,security_model&#x3D;none \</span><br><span class="line">    -device virtio-9p-pci,fsdev&#x3D;fs1,mount_tag&#x3D;host_share</span><br></pre></td></tr></table></figure>
-
-<ol start="5">
-<li><p>至于开机启动都是 /etc/rc.local 里面配置<br><a target="_blank" rel="noopener" href="https://gitee.com/shshshsh/cloud_server_shell">https://gitee.com/shshshsh/cloud_server_shell</a></p>
-</li>
-<li><p>test 相关<br>a. ltp（linux kernel test project）：linux内核测试 project 编译安装，运行<br><a target="_blank" rel="noopener" href="https://github.com/linux-test-project/ltp">https://github.com/linux-test-project/ltp</a></p>
-</li>
-</ol>
-<p>b. mmetst 可以测试 linux kernel 不同版本之间性能差异<br><a target="_blank" rel="noopener" href="https://github.com/gormanm/mmtests">https://github.com/gormanm/mmtests</a><br><a target="_blank" rel="noopener" href="https://lwn.net/Articles/820823/">https://lwn.net/Articles/820823/</a><br><a target="_blank" rel="noopener" href="https://lwn.net/Articles/463339/">https://lwn.net/Articles/463339/</a><br><a target="_blank" rel="noopener" href="https://blog.csdn.net/Linux_Everything/article/details/106485101">https://blog.csdn.net/Linux_Everything/article/details/106485101</a></p>
-<p>c. lkp （linux kernel performance）:是 intel发起的一个kernel performance test项目<br><a target="_blank" rel="noopener" href="https://github.com/fengguang/lkp-">https://github.com/fengguang/lkp-</a><br><a target="_blank" rel="noopener" href="https://01.org/lkp">https://01.org/lkp</a><br><a target="_blank" rel="noopener" href="https://01.org/blogs/jdu1/2017/lkp-tests-linux-kernel-performance-test-and-analysis-tool">https://01.org/blogs/jdu1/2017/lkp-tests-linux-kernel-performance-test-and-analysis-tool</a><br><a target="_blank" rel="noopener" href="https://github.com/sammcj/kernel-ci">https://github.com/sammcj/kernel-ci</a><br><a target="_blank" rel="noopener" href="http://hejq.me/2014/10/30/lkp-tests-notes/">http://hejq.me/2014/10/30/lkp-tests-notes/</a><br><a target="_blank" rel="noopener" href="https://libraries.io/github/openthos/lkp-analysis">https://libraries.io/github/openthos/lkp-analysis</a></p>
-<ol start="7">
-<li>学习kvm<br><a target="_blank" rel="noopener" href="https://www.linux-kvm.org/page/Kvmtools">https://www.linux-kvm.org/page/Kvmtools</a><br><a target="_blank" rel="noopener" href="https://blog.csdn.net/leoufung/article/details/48781119">https://blog.csdn.net/leoufung/article/details/48781119</a><br>git://git.kernel.org/pub/scm/linux/kernel/git/will/kvmtool.git</li>
-</ol>
-<h2 id="远程访问本地服务器"><a href="#远程访问本地服务器" class="headerlink" title="远程访问本地服务器"></a>远程访问本地服务器</h2><p>由于本地服务器其实是没有固定ip的，所以需要一台固定ip的服务器做中转，<br>这样才能从任何地方远程访问到我的物理服务器，正好有一个腾讯云服务器，就充当了这个角色。</p>
-<p>我使用的是 nps 这个开源代理工具，相比于其他工具来说，配置简单，直接在网页上就可以配置<br>参考<a target="_blank" rel="noopener" href="https://zhuanlan.zhihu.com/p/102138783">超好用轻量级NPS内网穿透</a></p>
-<h3 id="NPS问题"><a href="#NPS问题" class="headerlink" title="NPS问题"></a>NPS问题</h3><ol>
-<li><p>稳定性：<br>这个我其实已经使用了超过1个月了，机器都没重启过，服务都还正常，对于个人使用来说完全足够了</p>
-</li>
-<li><p>带宽<br>由于我的腾讯云服务器带宽了 <code>1Mbps</code>,其实峰值带宽也就 <code>128Kb/s</code>。</p>
-</li>
-</ol>
-<p>我使用服务器主要场景是</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">1. 有编译任务</span><br><span class="line">2. ssh 到服务器</span><br><span class="line">3. vscode ssh 到服务器看代码，写代码</span><br></pre></td></tr></table></figure>
-
-<p>其实 1 和 2对 带宽要求都很低，但是 vscode ssh 对于带宽要求还是比较高的，<br>从腾讯云后台监控数据上看，我的服务器 每次都是 vscode ssh 到腾讯云的时候<br>或者服务器的时候带宽都用满了，导致有时候ssh需要连 几min 才能连接上。</p>
-<p>vscode ssh 在连接上之后对于带宽使用率其实很低，在连接瞬间有较高要求。</p>
-<p>我无奈之下就想给 腾讯云的服务搞成按流量计费的，一通操作下来没想到腾讯云居然不支持<br>活动时候买的服务器改网络配置。。</p>
-<p>那就只能升级到2M带宽 或者更高了，升级了一下到 2Mbps,然后再用 vscode shh连接 就很丝滑了，然后我就想能不能通过调整vscode ssh配置来达到这样目的的，发现好像还真有个 timeout 时间，默认 <code>15s</code>，我改到了30s，也可能如果不升级带宽,仅仅将配置改到<code>30s</code> vscode经常超时的问题就好了呢？</p>
-<p>等到5月份之后不续费再继续看看情况。。。</p>
 
       
     </div>
