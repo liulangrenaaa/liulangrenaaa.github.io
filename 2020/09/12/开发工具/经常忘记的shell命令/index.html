@@ -30,7 +30,7 @@
 <meta property="og:description" content="总有那么几条经常使用，但有比较难记住的命令，做个记录。  ln 创建连接  ln 创建 软链接 12ln -s   实际文件&#x2F;目录          软链接文件&#x2F;目录ln -s &#x2F;usr&#x2F;sbin&#x2F;trace-bpfcc &#x2F;usr&#x2F;bin&#x2F;trace  ln 创建 硬链接 12ln   实际文件          硬链">
 <meta property="og:locale">
 <meta property="article:published_time" content="2020-09-12T06:47:40.000Z">
-<meta property="article:modified_time" content="2021-01-20T12:06:54.041Z">
+<meta property="article:modified_time" content="2021-01-21T06:24:43.841Z">
 <meta property="article:author" content="Su Hui">
 <meta property="article:tag" content="shell">
 <meta name="twitter:card" content="summary">
@@ -194,7 +194,7 @@
       <div class="site-state-item site-state-posts">
           <a href="/archives/">
         
-          <span class="site-state-item-count">36</span>
+          <span class="site-state-item-count">37</span>
           <span class="site-state-item-name">posts</span>
         </a>
       </div>
@@ -207,7 +207,7 @@
       <div class="site-state-item site-state-tags">
             <a href="/tags/">
           
-        <span class="site-state-item-count">59</span>
+        <span class="site-state-item-count">62</span>
         <span class="site-state-item-name">tags</span></a>
       </div>
   </nav>
@@ -277,7 +277,7 @@
           <i class="far fa-calendar-check"></i>
         </span>
         <span class="post-meta-item-text">Edited on</span>
-        <time title="Modified: 2021-01-20 20:06:54" itemprop="dateModified" datetime="2021-01-20T20:06:54+08:00">2021-01-20</time>
+        <time title="Modified: 2021-01-21 14:24:43" itemprop="dateModified" datetime="2021-01-21T14:24:43+08:00">2021-01-21</time>
       </span>
     <span class="post-meta-item">
       <span class="post-meta-item-icon">
@@ -443,9 +443,19 @@
 <li>awk 命令<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"></span><br></pre></td></tr></table></figure>
 
 
-
 </li>
 </ol>
+<ol start="17">
+<li>inline<br>linux 代码中会经常使用到 <code>inline</code>的技巧，使得少一次函数调用，代码原地展开，<br>但是有时候 <code>gcc</code> 编译器会 ‘智能’的给我们 inline一些我们不想 inline的函数，所以<br>有什么部分可以让编译器知道我们不想 inline 某些函数呢？</li>
+</ol>
+<p>添加 <code>noinline</code> 关键字</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">static void noinline create_oops(void)</span><br><span class="line">&#123;</span><br><span class="line">	*(int *)0 &#x3D; 0;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ol start="18">
+<li>mount<br>重新挂载某一个目录，并改变大小</li>
+</ol>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">mount -o 128M -o remount &#x2F;tmp</span><br></pre></td></tr></table></figure>
+
 <ol start="20">
 <li>vmbox 虚拟机？</li>
 </ol>
@@ -465,13 +475,13 @@
 
           <div class="post-nav">
             <div class="post-nav-item">
-                <a href="/2020/09/12/%E8%BF%9B%E7%A8%8B%E7%AE%A1%E7%90%86/lockup%E9%97%AE%E9%A2%98/" rel="prev" title="linux lockup问题">
-                  <i class="fa fa-chevron-left"></i> linux lockup问题
+                <a href="/2020/09/12/%E5%86%85%E6%A0%B8%E8%A7%82%E6%B5%8B/bpf%E7%9B%B8%E5%85%B3/bpftrace/" rel="prev" title="bpftrace">
+                  <i class="fa fa-chevron-left"></i> bpftrace
                 </a>
             </div>
             <div class="post-nav-item">
-                <a href="/2020/09/12/%E5%86%85%E6%A0%B8%E8%A7%82%E6%B5%8B/bpf%E7%9B%B8%E5%85%B3/bpftrace/" rel="next" title="bpftrace">
-                  bpftrace <i class="fa fa-chevron-right"></i>
+                <a href="/2020/09/13/%E5%86%85%E6%A0%B8%E8%A7%82%E6%B5%8B/%E6%80%A7%E8%83%BD%E7%A8%B3%E5%AE%9A%E6%80%A7/60s%E5%AE%9A%E4%BD%8D%E5%86%85%E6%A0%B8%E6%80%A7%E8%83%BD%E7%93%B6%E9%A2%88/" rel="next" title="60s定位内核性能瓶颈">
+                  60s定位内核性能瓶颈 <i class="fa fa-chevron-right"></i>
                 </a>
             </div>
           </div>

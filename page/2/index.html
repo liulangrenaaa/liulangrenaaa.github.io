@@ -189,7 +189,7 @@
       <div class="site-state-item site-state-posts">
           <a href="/archives/">
         
-          <span class="site-state-item-count">36</span>
+          <span class="site-state-item-count">37</span>
           <span class="site-state-item-name">posts</span>
         </a>
       </div>
@@ -202,7 +202,7 @@
       <div class="site-state-item site-state-tags">
             <a href="/tags/">
           
-        <span class="site-state-item-count">59</span>
+        <span class="site-state-item-count">62</span>
         <span class="site-state-item-name">tags</span></a>
       </div>
   </nav>
@@ -233,6 +233,217 @@
       
 
       
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
+    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2021/01/09/%E5%86%85%E6%A0%B8%E8%A7%82%E6%B5%8B/systemTap/How%20to%20Use%20system%20Tap/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="Su Hui">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liulangren Blog">
+    </span>
+
+    
+    
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/2021/01/09/%E5%86%85%E6%A0%B8%E8%A7%82%E6%B5%8B/systemTap/How%20to%20Use%20system%20Tap/" class="post-title-link" itemprop="url">How to Use system Tap</a>
+        </h2>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">Posted on</span>
+
+      <time title="Created: 2021-01-09 10:00:40" itemprop="dateCreated datePublished" datetime="2021-01-09T10:00:40+08:00">2021-01-09</time>
+    </span>
+      <span class="post-meta-item">
+        <span class="post-meta-item-icon">
+          <i class="far fa-calendar-check"></i>
+        </span>
+        <span class="post-meta-item-text">Edited on</span>
+        <time title="Modified: 2021-01-11 23:27:24" itemprop="dateModified" datetime="2021-01-11T23:27:24+08:00">2021-01-11</time>
+      </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">In</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/linux%E5%86%85%E6%A0%B8/" itemprop="url" rel="index"><span itemprop="name">linux内核</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+          <p>SystemTap允许使用者监控Linux系统当前的运行情况，以便进一步分析。这将有助于运维或开发人员缉查bug或性能问题的罪魁祸首。<br>SystemTap提供了一门领域特定语言，使得用户可以编写自定义脚本，调查和监控各种内核函数、系统调用，<br>和其它发生在内核空间的事件。</p>
+<p>就此而言，SystemTap不仅仅是个工具，它是一个让你能够自定义内核取证和监控工具的生态系统。</p>
+<p>当前版本的SystemTap提供的探测内核空间事件的众多选项，可以在不同版本的内核下使用。<br>然而，SystemTap对探测用户空间事件的支持依赖于内核的支持（需要uprobe机制），而多数内核缺乏这一支持。<br>结果是，仅有部分内核上的SystemTap版本支持用户空间探测。</p>
+<h2 id="安装SystemTap"><a href="#安装SystemTap" class="headerlink" title="安装SystemTap"></a>安装SystemTap</h2><p>安装 systemtap 软件</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">Inspiron-5548@ubuntu: &#x2F;var&#x2F;crash# sudo apt install systemtap</span><br><span class="line">Inspiron-5548@ubuntu: &#x2F;var&#x2F;crash# sudo apt install systemtap-runtime</span><br></pre></td></tr></table></figure>
+
+<p>安装 kernel debug info</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">Inspiron-5548@ubuntu: &#x2F;var&#x2F;crash# sudo apt install systemtap</span><br><span class="line">Inspiron-5548@ubuntu: &#x2F;var&#x2F;crash# sudo apt install systemtap-runtime</span><br></pre></td></tr></table></figure>
+<h2 id="SystemTap-可以用来干什么"><a href="#SystemTap-可以用来干什么" class="headerlink" title="SystemTap 可以用来干什么"></a>SystemTap 可以用来干什么</h2><p>SystemTap允许用户仅需编写和重用简单的脚本即可获取Linux繁多的运行数据。通过SystemTap脚本，<br>你可以又好又快地提取数据、过滤数据、汇总数据。诊断复杂的性能问题（或功能问题）再也不是难事。<br>整个SystemTap脚本所做的，无非就是声明感兴趣的事件，然后添加对应的处理程序。当SystemTap脚本运行时，SystemTap会监控声明的事件；<br>一旦事件发生，Linux内核会临时切换到对应的处理程序，完成后再重拾原先的工作。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">可供监控的事件种类繁多：进入&#x2F;退出某个函数，定时器到期，会话终止，等等。处理程序由一组SystemTap语句构成，指明事件发生后要做的工作。</span><br><span class="line">其中包括从事件上下文中提取数据，存储到内部变量中，输出结果。</span><br></pre></td></tr></table></figure>
+
+<h2 id="SystemTap-使用"><a href="#SystemTap-使用" class="headerlink" title="SystemTap 使用"></a>SystemTap 使用</h2><h3 id="最简单的一行代码"><a href="#最简单的一行代码" class="headerlink" title="最简单的一行代码"></a>最简单的一行代码</h3><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">Inspiron-5548@127ubuntu: ~&#x2F;workspace# echo &quot;probe timer.s(1) &#123;exit()&#125;&quot; | sudo stap -v -</span><br><span class="line"></span><br><span class="line">Pass 1: parsed user script and 476 library scripts using 108312virt&#x2F;90968res&#x2F;7440shr&#x2F;83392data kb, in 260usr&#x2F;30sys&#x2F;315real ms.</span><br><span class="line">Pass 2: analyzed script: 1 probe, 1 function, 0 embeds, 0 globals using 109896virt&#x2F;92776res&#x2F;7688shr&#x2F;84976data kb, in 10usr&#x2F;0sys&#x2F;9real ms.</span><br><span class="line">Pass 3: translated to C into &quot;&#x2F;tmp&#x2F;stappbkhvF&#x2F;stap_629b1ee8abda600005ad17f270124c66_947_src.c&quot; using 110032virt&#x2F;92776res&#x2F;7688shr&#x2F;85112data kb, in 0usr&#x2F;0sys&#x2F;1real ms.</span><br><span class="line">Pass 4: compiled C into &quot;stap_629b1ee8abda600005ad17f270124c66_947.ko&quot; in 15530usr&#x2F;2160sys&#x2F;17963real ms.</span><br><span class="line">Pass 5: starting run.</span><br><span class="line">Pass 5: run completed in 20usr&#x2F;30sys&#x2F;1459real ms.</span><br><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace#</span><br></pre></td></tr></table></figure>
+<p>可以看出 SystemTap 脚本运行需要结果5个步骤，在加载 SystemTap脚本过程(生成ko)的时候，SystemTap 耗时较多，尤其是CPU资源。</p>
+<p>SystemTap脚本运行时，会启动一个对应的SystemTap会话。整个会话大致流程如下：</p>
+<p>首先，SystemTap会检查脚本中用到的tapset，确保它们都存在于tapset库中（通常是/usr/share/systemtap/tapset/）。然后SystemTap会把找到的tapset替换成在tapset库中对应的定义。<br>tapset是tap（听诊器）的集合，指一些预定义的SystemTap事件或函数。<a target="_blank" rel="noopener" href="https://sourceware.org/systemtap/tapsets/">完整的tapset列表</a></p>
+<p>SystemTap接着会把脚本转化成C代码，运行系统的C编译器编译出一个内核模块。完成这一步的工具包含在systemtap包中<br>SystemTap随即加载该模块，并启用脚本中所有的探针（包括事件和对应的处理程序）。这一步由system-runtime包的staprun完成。<br>每当被监控的事件发生，对应的处理程序就会被执行。<br>一旦SystemTap会话终止，探针会被禁用，内核模块也会被卸载。<br>这一串流程皆始于一个简单的命令行程序：stap。这个程序包揽了SystemTap主要的功能。</p>
+<h3 id="脚本如何编写"><a href="#脚本如何编写" class="headerlink" title="脚本如何编写"></a>脚本如何编写</h3><p>在大多数情况下，SystemTap脚本是每个SystemTap会话的基石。SystemTap脚本决定了需要收集的信息类型，也决定了对收集到的信息的处理方式。<br>SystemTap脚本由两部分组成：事件和处理程序。<br>一旦SystemTap会话准备就绪，SystemTap会监控操作系统中特定的事件，并在事件发生的时候触发对应的处理程序。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">一个事件和它对应的处理程序合称探针。一个SystemTap脚本可以有多个探针。 一个探针的处理程序部分通常称之为探针主体（probe body）</span><br></pre></td></tr></table></figure>
+
+<p>与应用开发的方式类比，使用事件和处理程序就像在程序的特定位置插入打日志的语句。每当程序运行时，这些日志会帮助你查看程序执行的流程。<br>但是SystemTasp脚本允许你在无需重新编译代码，即可插入检测指令，而且处理程序也不限于单纯地打印数据。<br>事件会触发对应的处理程序；对应的处理程序记录下感兴趣的数据，并以你指定的格式输出。</p>
+<p>SystemTap脚本的后缀是.stp，并以这样的语句表示一个探针：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">probe   event &#123;statements&#125;</span><br></pre></td></tr></table></figure>
+
+<p>SystemTap支持给一个探针指定多个事件；每个事件以逗号隔开。<br>如果给某一个探针指定了多个事件，只要其中一个事件发生，SystemTap就会执行对应的处理程序。<br>每个探针有自己对应的语句块。语句块由花括号 {} 括住，包含事件发生时需要执行的所有语句。<br>SystemTap会顺序执行这些语句；语句间通常不需要特殊的分隔符或终止符。</p>
+<p>SystemTap还允许你编写函数来提取探针间公共的逻辑。<br>所以，与其在多个探针间复制粘贴重复的语句，你不如把它们放入函数中，就像函数调用一样：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">function function_name(arguments) &#123;statements&#125;</span><br><span class="line"></span><br><span class="line">probe event &#123;function_name(arguments)&#125;</span><br></pre></td></tr></table></figure>
+<p>当探针被触发时，function_name中的语句会被执行。arguments是传递给函数的可选的入参。</p>
+<h3 id="SystemTap-事件"><a href="#SystemTap-事件" class="headerlink" title="SystemTap 事件"></a>SystemTap 事件</h3><p>我们还需要了解SystemTap 事件，这里主要分为 <code>同步事件</code> 和 <code>异步事件</code>。</p>
+<h4 id="同步事件"><a href="#同步事件" class="headerlink" title="同步事件"></a>同步事件</h4><p>同步事件会在任意进程执行到内核特定位置时触发。你可以用它来作为其它事件的参照点，毕竟同步事件有着清晰的上下文信息。<br>包括：</p>
+<p><code>syscall.system_call</code></p>
+<p>进入名为system_call的系统调用。如果想要监控的是退出某个系统调用的事件，在后面添加.return。举个例子，要想监控进入和退出系统调用close的事件，应该使用syscall.close和syscall.close.return。</p>
+<p><code>vfs.file_operation</code></p>
+<p>进入虚拟文件系统（VFS）名为file_operation的文件操作。跟系统调用事件一样，在后面添加.return可以监控对应的退出事件。 译注：file_operation取值的范畴，取决于当前内核中struct file_operations的定义的操作.</p>
+<p><code>kernel.function(&quot;function&quot;)</code></p>
+<p>进入名为function的内核函数。举个例子，kernel.function(“sys_open”)即内核函数sys_open被调用时所触发的事件。同样，kernel.function(“sys_open”).return会在sys_open函数调用返回时被触发。</p>
+<p>在定义探测事件时，可以使用像*这样的通配符。你也可以用内核源码文件名限定要跟踪的函数。看下面的例子：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">probe kernel.function(&quot;*@net&#x2F;socket.c&quot;) &#123; &#125;</span><br><span class="line">probe kernel.function(&quot;*@net&#x2F;socket.c&quot;).return &#123; &#125;</span><br></pre></td></tr></table></figure>
+
+
+<p><code>kernel.trace(&quot;tracepoint&quot;)</code><br>到达名为tracepoint的静态内核探测点（tracepoint）。较新的内核（&gt;= 2.6.30）包含了特定事件的检测代码。这些事件一般会被标记成静态内核探测点。一个例子是，kernel.trace(“kfree_skb”)表示内核释放了一个网络缓冲区的事件。（译注：想知道当前内核设置了哪些静态内核探测点吗？你需要运行sudo perf list。）</p>
+<p><code>module(&quot;module&quot;).function(&quot;function&quot;)</code></p>
+<p>进入指定模块module的函数function。举个例子：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">probe module(&quot;ext3&quot;).function(&quot;*&quot;) &#123; &#125;</span><br><span class="line">probe module(&quot;ext3&quot;).function(&quot;*&quot;).return &#123; &#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="异步事件"><a href="#异步事件" class="headerlink" title="异步事件"></a>异步事件</h4><p>异步事件跟特定的指令或代码的位置无关。 这部分事件主要包含计数器、定时器和其它类似的东西。</p>
+<p><code>begin</code></p>
+<p>SystemTap会话的启动事件，会在脚本开始时触发。</p>
+<p><code>end</code></p>
+<p>SystemTap会话的结束事件，会在脚本结束时触发。</p>
+<p><code>timer events</code></p>
+<p>用于周期性执行某段处理程序。举个例子：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">probe timer.s(4) &#123; printf(&quot;hello world\n&quot;) &#125;</span><br></pre></td></tr></table></figure>
+
+<p>上面的例子中，每隔4秒就会输出hello world。还可以使用其它规格的定时器：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">timer.ms(milliseconds)</span><br><span class="line">timer.us(microseconds)</span><br><span class="line">timer.ns(nanoseconds)</span><br><span class="line">timer.hz(hertz)</span><br><span class="line">timer.jiffies(jiffies)</span><br></pre></td></tr></table></figure>
+
+<p>定时事件总是跟其它事件搭配使用。其它事件负责收集信息，而定时事件定期输出当前状况，让你看到数据随时间的变化情况。</p>
+<h3 id="SystemTap-处理程序"><a href="#SystemTap-处理程序" class="headerlink" title="SystemTap 处理程序"></a>SystemTap 处理程序</h3><p>有了事件之后，我们还需要在事件发生之后进行处理。</p>
+<p>example1:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">probe begin</span><br><span class="line">&#123;</span><br><span class="line">  printf (&quot;hello world\n&quot;)</span><br><span class="line">  exit ()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>SystemTap脚本会一直运行，直到执行了exit()函数。如果你想中途退出一个脚本，可以用Ctrl+c中断。<br>这是一个异步事件 <code>begin</code> 之后开始打印 一个字符串.</p>
+<p><code>printf</code> 是一个标准输出函数</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">printf (&quot;format string\n&quot;, arguments)</span><br></pre></td></tr></table></figure>
+
+
+<p>example2:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">probe syscall.open</span><br><span class="line">&#123;</span><br><span class="line">  printf (&quot;%s(%d) open\n&quot;, execname(), pid())</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">echo &#39; probe syscall.open &#123;  printf (&quot;%s(%d) open\n&quot;, execname(), pid()) &#125;&#39; | sudo stap -v -</span><br></pre></td></tr></table></figure>
+<p>example2中 SystemTap会在每次open被调用时，输出调用程序的名字和PID。</p>
+<p>该探针输出的结果看上去会是这样(not in zsh, in bash)：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">ubuntu@ubuntu-Inspiron-5548:~&#x2F;workspace$ echo &#39; probe syscall.open &#123;  printf (&quot;%s(%d) open\n&quot;, execname(), pid()) &#125;&#39; | sudo stap -v -</span><br><span class="line">Pass 1: parsed user script and 476 library scripts using 108308virt&#x2F;90696res&#x2F;7172shr&#x2F;83388data kb, in 290usr&#x2F;40sys&#x2F;364real ms.</span><br><span class="line">Pass 2: analyzed script: 4 probes, 5 functions, 97 embeds, 4 globals using 110292virt&#x2F;93060res&#x2F;7724shr&#x2F;85372data kb, in 230usr&#x2F;330sys&#x2F;575real</span><br><span class="line"> ms.</span><br><span class="line">Pass 3: using cached &#x2F;root&#x2F;.systemtap&#x2F;cache&#x2F;4c&#x2F;stap_4cd2c557b5457e5f955c640275432033_64778.c</span><br><span class="line">Pass 4: using cached &#x2F;root&#x2F;.systemtap&#x2F;cache&#x2F;4c&#x2F;stap_4cd2c557b5457e5f955c640275432033_64778.ko</span><br><span class="line">Pass 5: starting run.</span><br><span class="line">rg(25671) open</span><br><span class="line">rg(25671) open</span><br><span class="line">rg(25671) open</span><br><span class="line">rg(25671) open</span><br><span class="line">rg(25671) open</span><br></pre></td></tr></table></figure>
+
+<p>下面是常用的 SystemTap 内建函数：</p>
+<p><code>tid()</code></p>
+<p>当前的tid（thread id）。</p>
+<p><code>uid()</code></p>
+<p>当前的uid。</p>
+<p><code>cpu()</code></p>
+<p>当前的CPU号</p>
+<p><code>gettimeofday_s()</code></p>
+<p>自epoch以来的秒数</p>
+<p><code>ctime()</code></p>
+<p>将上一个函数返回的秒数转化成时间字符串</p>
+<p><code>pp()</code></p>
+<p>返回描述当前处理的探测点的字符串</p>
+<p><code>thread_indent()</code></p>
+<p><code>name</code></p>
+<p>返回系统调用的名字。这个变量只能在syscall.system_call触发的处理程序中使用。</p>
+<p><code>target()</code></p>
+<p>当你通过stap script -x PID或stap script -c command来执行某个脚本script时，target()会返回你指定的PID或命令名。举个例子：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">probe syscall.* &#123;</span><br><span class="line">  if (pid() &#x3D;&#x3D; target())</span><br><span class="line">    printf(&quot;%s\n&quot;, name)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">echo &#39; probe syscall.* &#123; if (pid() &#x3D;&#x3D; target()) printf(&quot;%s\n&quot;, name) &#125;&#39; | sudo stap -v -</span><br></pre></td></tr></table></figure>
+<p>这个 SystemTap 脚本使用了通配符 probe了所以系统调用，在对脚本解析，编译成为 kernel module ko的时候尤其耗时，<br>在我 I5 5200U的机器上居然准备工作做了进1min…</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">top - 12:38:07 up 12:53,  2 users,  load average: 2.56, 1.77, 1.14</span><br><span class="line">任务: 277 total,   5 running, 271 sleeping,   0 stopped,   1 zombie</span><br><span class="line">%Cpu(s): 10.0 us, 17.6 sy,  0.0 ni, 66.9 id,  0.0 wa,  0.0 hi,  5.5 si,  0.0 st</span><br><span class="line">MiB Mem :   3658.2 total,    196.4 free,   2043.1 used,   1418.8 buff&#x2F;cache</span><br><span class="line">MiB Swap:   2048.0 total,   1572.1 free,    475.9 used.    986.8 avail Mem</span><br><span class="line"></span><br><span class="line"> 进程号 USER      PR  NI    VIRT    RES    SHR    %CPU  %MEM     TIME+ COMMAND</span><br><span class="line">  54775 root      20   0  171592 154320  18248 R  99.7   4.1   1:05.72 stap</span><br><span class="line">    932 ubuntu    20   0 1750472  40364  14900 S   3.7   1.1  11:16.15 Xorg</span><br><span class="line">   1279 ubuntu    20   0 4777288 218332  57988 S   3.0   5.8  12:57.76 gnome-shell</span><br><span class="line">   2458 ubuntu    20   0 4633228 103048  65556 R   3.0   2.8   0:10.23 chrome</span><br><span class="line">   1747 ubuntu    20   0  987308  43280  31604 S   1.7   1.2   0:46.33 gnome-terminal-</span><br><span class="line">   2371 ubuntu    20   0 1342876 232676  99800 S   0.7   6.2   8:23.72 chrome</span><br><span class="line">     18 root      20   0       0      0      0 S   0.3   0.0   0:01.14 ksoftirqd&#x2F;1</span><br><span class="line">     30 root      20   0       0      0      0 S   0.3   0.0   0:00.87 ksoftirqd&#x2F;3</span><br><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace&#x2F;linux-stable&#x2F;drivers#</span><br></pre></td></tr></table></figure>
+<p>输出是</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br></pre></td><td class="code"><pre><span class="line">ubuntu@ubuntu-Inspiron-5548:~&#x2F;workspace$ echo &#39; probe syscall.* &#123; if (pid() &#x3D;&#x3D; target()) printf(&quot;%s\n&quot;, name) &#125;&#39; | sudo stap -v -x 2371 -</span><br><span class="line">Pass 1: parsed user script and 476 library scripts using 108312virt&#x2F;90872res&#x2F;7344shr&#x2F;83392data kb, in 510usr&#x2F;40sys&#x2F;559real ms.</span><br><span class="line">qWARNING: cross-file global variable reference to identifier &#39;syscall_string_trunc&#39; at &#x2F;usr&#x2F;share&#x2F;systemtap&#x2F;tapset&#x2F;linux&#x2F;syscalls_cfg_trunc.s</span><br><span class="line">tp:3:8 from: identifier &#39;syscall_string_trunc&#39; at &#x2F;usr&#x2F;share&#x2F;systemtap&#x2F;tapset&#x2F;linux&#x2F;sysc_add_key.stp:19:59</span><br><span class="line"> source:                         user_buffer_quoted(payload_uaddr, plen, syscall_string_trunc),</span><br><span class="line">                                                                         ^</span><br><span class="line">        in expansion of macro: operator &#39;@_SYSCALL_ADD_KEY_ARGSTR&#39; at &#x2F;usr&#x2F;share&#x2F;systemtap&#x2F;tapset&#x2F;linux&#x2F;sysc_add_key.stp:72:2</span><br><span class="line"> source:        @_SYSCALL_ADD_KEY_ARGSTR</span><br><span class="line">                ^</span><br><span class="line">WARNING: cross-file global variable reference to identifier &#39;syscall_string_trunc&#39; at &#x2F;usr&#x2F;share&#x2F;systemtap&#x2F;tapset&#x2F;linux&#x2F;syscalls_cfg_trunc.st</span><br><span class="line">p:3:8 from: identifier &#39;syscall_string_trunc&#39; at &#x2F;usr&#x2F;share&#x2F;systemtap&#x2F;tapset&#x2F;linux&#x2F;sysc_mount.stp:31:46</span><br><span class="line"> source:        data &#x3D; user_string_n_quoted(pointer_arg(5), syscall_string_trunc)</span><br><span class="line">                                                            ^</span><br><span class="line">WARNING: cross-file global variable reference to identifier &#39;syscall_string_trunc&#39; at &#x2F;usr&#x2F;share&#x2F;systemtap&#x2F;tapset&#x2F;linux&#x2F;syscalls_cfg_trunc.st</span><br><span class="line">p:3:8 from: identifier &#39;syscall_string_trunc&#39; at :23:49</span><br><span class="line"> source:        buf_str &#x3D; user_buffer_quoted(buf_uaddr, count, syscall_string_trunc)</span><br><span class="line">                                                               ^</span><br><span class="line">        in expansion of macro: operator &#39;@_SYSCALL_WRITE_REGARGS&#39; at &#x2F;usr&#x2F;share&#x2F;systemtap&#x2F;tapset&#x2F;linux&#x2F;sysc_write.stp:100:2</span><br><span class="line"> source:        @_SYSCALL_WRITE_REGARGS</span><br><span class="line">                ^</span><br><span class="line">Pass 2: analyzed script: 853 probes, 29 functions, 100 embeds, 5 globals using 129252virt&#x2F;113636res&#x2F;9172shr&#x2F;104332data kb, in 35560usr&#x2F;79740s</span><br><span class="line">ys&#x2F;116322real ms.</span><br><span class="line">Pass 3: using cached &#x2F;root&#x2F;.systemtap&#x2F;cache&#x2F;e2&#x2F;stap_e2b35608bd8c0499c68f451dc8b09a85_432536.c</span><br><span class="line">Pass 4: using cached &#x2F;root&#x2F;.systemtap&#x2F;cache&#x2F;e2&#x2F;stap_e2b35608bd8c0499c68f451dc8b09a85_432536.ko</span><br><span class="line">Pass 5: starting run.</span><br><span class="line">recvmsg</span><br><span class="line">write</span><br><span class="line">write</span><br><span class="line">epoll_wait</span><br><span class="line">epoll_wait</span><br><span class="line">epoll_wait</span><br><span class="line">recvmsg</span><br><span class="line">read</span><br><span class="line">sendto</span><br><span class="line">futex</span><br><span class="line">recvmsg</span><br><span class="line">recvmsg</span><br><span class="line">recvmsg</span><br><span class="line">poll</span><br><span class="line">recvmsg</span><br><span class="line">recvmsg</span><br></pre></td></tr></table></figure>
+
+
+
+<h3 id="SystemTap-处理程序的基本结构"><a href="#SystemTap-处理程序的基本结构" class="headerlink" title="SystemTap 处理程序的基本结构"></a>SystemTap 处理程序的基本结构</h3><p>SystemTap 在处理程序中 它们的语法基本上类似于C或awk。</p>
+<h4 id="变量"><a href="#变量" class="headerlink" title="变量"></a>变量</h4><p>处理程序里面当然可以使用变量，你所需的不过是给它取个好名字，把函数或表达式的值赋给它，然后就可以使用它了。<br>SystemTap可以自动判定变量的类型。举个例子，如果你用gettimeofday_s()给变量foo赋值，那么foo就是数值类型的，<br>可以在printf()中通过%d输出。</p>
+<p>变量默认只能在其所定义的探针内可用。这意味着变量的生命周期仅仅是处理程序的某次运行。<br>不过你也可以在探针外定义变量，并使用global修饰它们，这样就能在探针间共享变量了。 ⁠</p>
+<p>example1:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">global count_jiffies, count_ms</span><br><span class="line">probe timer.jiffies(100) &#123; count_jiffies ++ &#125;</span><br><span class="line">probe timer.ms(100) &#123; count_ms ++ &#125;</span><br><span class="line">probe timer.ms(12345)</span><br><span class="line">&#123;</span><br><span class="line">  hz&#x3D;(1000*count_jiffies) &#x2F; count_ms</span><br><span class="line">  printf (&quot;jiffies:ms ratio %d:%d &#x3D;&gt; CONFIG_HZ&#x3D;%d\n&quot;,</span><br><span class="line">    count_jiffies, count_ms, hz)</span><br><span class="line">  exit ()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+<p>example1 中 timer-jiffies.stp 通过累加jiffies和milliseconds，来求出内核的CONFIG_HZ配置。<br>global语句使得count_jiffies和count_ms在每个探针中可用。</p>
+<h4 id="目标变量-Target-Variables"><a href="#目标变量-Target-Variables" class="headerlink" title="目标变量(Target Variables)"></a>目标变量(Target Variables)</h4><p>跟内核代码相关的事件，如kernel.function(“function”)和kernel.statement(“statement”)，<br>允许使用目标变量获取这部分代码中可访问到的变量的值。<br>你可以使用-L选项来列出特定探测点下可用的目标变量。<br>如果已经安装了内核调试信息，你可以通过这个命令获取vfs_read中可用的目标变量</p>
+<p>由于 我当前笔记本环境问题，暂时没法使用这个，会报错，后续补充</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">ubuntu@ubuntu-Inspiron-5548:&#x2F;etc&#x2F;apt$ sudo stap -L &#39;kernel.function(&quot;vfs_read&quot;)&#39;</span><br><span class="line">Tip: &#x2F;usr&#x2F;share&#x2F;doc&#x2F;systemtap&#x2F;README.Debian should help you get started.</span><br><span class="line">ubuntu@ubuntu-Inspiron-5548:&#x2F;etc&#x2F;apt$ sudo stap -e &#39;probe kernel.function(&quot;vfs_read&quot;) &#123;</span><br><span class="line">&gt;            printf (&quot;current files_stat max_files: %d\n&quot;,</span><br><span class="line">&gt;                    @var(&quot;[email protected]&#x2F;file_table.c&quot;)-&gt;max_files);</span><br><span class="line">&gt;            exit(); &#125;&#39;</span><br><span class="line">semantic error: while resolving probe point: identifier &#39;kernel&#39; at &lt;input&gt;:1:7</span><br><span class="line">        source: probe kernel.function(&quot;vfs_read&quot;) &#123;</span><br><span class="line">                      ^</span><br><span class="line"></span><br><span class="line">semantic error: missing x86_64 kernel&#x2F;module debuginfo [man warning::debuginfo] under &#39;&#x2F;lib&#x2F;modules&#x2F;5.4.0-58-generic&#x2F;build&#39;</span><br><span class="line"></span><br><span class="line">Pass 2: analysis failed.  [man error::pass2]</span><br><span class="line">Tip: &#x2F;usr&#x2F;share&#x2F;doc&#x2F;systemtap&#x2F;README.Debian should help you get started.</span><br><span class="line">ubuntu@ubuntu-Inspiron-5548:&#x2F;etc&#x2F;apt$</span><br></pre></td></tr></table></figure>
+
+
+
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace&#x2F;linux-stable&#x2F;drivers# stap -l &#39;syscall.*&#39;</span><br><span class="line">syscall.accept</span><br><span class="line">syscall.accept4</span><br><span class="line">syscall.accesso</span><br><span class="line">syscall.acct</span><br><span class="line">syscall.add_key</span><br><span class="line">syscall.adjtimex</span><br><span class="line">syscall.alarm</span><br><span class="line">syscall.arch_prctl</span><br></pre></td></tr></table></figure>
+
+
+<h4 id="整齐打印目标变量（Pretty-Printing-Target-Variables）"><a href="#整齐打印目标变量（Pretty-Printing-Target-Variables）" class="headerlink" title="整齐打印目标变量（Pretty Printing Target Variables）"></a>整齐打印目标变量（Pretty Printing Target Variables）</h4><p>某些场景中，我们可能需要输出当前可访问的各种变量，以便于记录底层的变化。SystemTap提供了一些操作，可以生成描述特定目标变量的字符串：</p>
+<p><code>$$vars</code></p>
+<p>输出作用域内每个变量的值。等价于sprintf(“parm1=%x … parmN=%x var1=%x … varN=%x”, parm1, …, parmN, var1, …, varN)。如果变量的值在运行时找不到，输出=?。</p>
+<p><code>$$locals</code></p>
+<p>同<code>$$vars</code>，只输出本地变量。</p>
+<p><code>$$parms</code></p>
+<p>同<code>$$vars</code>，只输出函数入参。</p>
+<p><code>$$return</code></p>
+<p>仅在带return的探针中可用。如果被监控的函数有返回值，它等价于sprintf(“return=%x”, $return)，否则为空字符串。</p>
+<h4 id="条件语句"><a href="#条件语句" class="headerlink" title="条件语句"></a>条件语句</h4><p>有些时候，你写的SystemTap脚本较为复杂，可能需要用上条件语句。SystemTap支持C风格的条件语句，另外还支持foreach (VAR in ARRAY) {}形式的遍历。</p>
+<h4 id="命令行参数"><a href="#命令行参数" class="headerlink" title="命令行参数"></a>命令行参数</h4><p>通过$或@加个数字的形式可以访问对应位置的命令行参数。用$会把用户输入当作整数，用@会把用户输入当作字符串。</p>
+<p>probe kernel.function(@1) { }<br>probe kernel.function(@1).return { }<br>上面的脚本期望用户把要监控的函数作为命令行参数传递进来。你可以让脚本接受多个命令行参数，分别命名为@1，@2等等，按用户输入的次序逐个对应。</p>
+<h2 id="Tapsets"><a href="#Tapsets" class="headerlink" title="Tapsets"></a>Tapsets</h2><p>tapsets是一些包含常用的探针和函数的内置脚本，你可以在SystemTap脚本中复用它们。</p>
+<p>当用户运行一个SystemTap脚本时，SystemTap会检测脚本中的事件和处理程序，并在翻译脚本成C代码之前，加载用到的tapset。<br>就像SystemTap脚本一样，tapset的拓展名也是.stp。<br>默认情况下tapset位于/usr/share/systemtap/tapset/。</p>
+<p>跟SystemTap脚本不同的是，tapset不能被直接运行；它只能作为库使用。<br>tapset库让用户能够在更高的抽象层次上定义事件和函数。<br>tapset提供了一些常用的内核函数的别名，这样用户就不需要记住完整的内核函数名了（尤其是有些函数名可能会因内核版本的不同而不同）。<br>另外tapset也提供了常用的辅助函数，比如之前我们见过的thread_indent()。</p>
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>SystemTap 使用过程中发现 他解析编译极其慢，很耗费 CPU资源，最好做到一次解析编译模块，可以到处<br>部署，实际SystemTap 也已经支持了这样的做法。</p>
+<p>参考<a target="_blank" rel="noopener" href="https://spacewander.gitbooks.io/systemtapbeginnersguide_zh/content/2_3_RunningSystemTapScripts.html">SystemTap 内核文档</a></p>
+<p>参考 <a target="_blank" rel="noopener" href="https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/6/html-single/systemtap_beginners_guide/index">RedHat systemTap 文档</a></p>
+<p>参考 <a target="_blank" rel="noopener" href="https://sourceware.org/systemtap/SystemTap_Beginners_Guide/index.html">文档</a></p>
+
+      
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+        <div class="post-eof"></div>
+      
+    </footer>
+  </article>
+  
+  
+  
+
       
   
   
@@ -1185,102 +1396,6 @@
 <li>通过 <code>/proc/softirqs</code> ，配合 <code>watch</code> 命令来观察</li>
 <li>通过一些tracepoint来观察</li>
 </ol>
-
-      
-    </div>
-
-    
-    
-    
-
-    <footer class="post-footer">
-        <div class="post-eof"></div>
-      
-    </footer>
-  </article>
-  
-  
-  
-
-      
-  
-  
-  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
-    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/09/19/%E5%86%85%E6%A0%B8%E8%A7%82%E6%B5%8B/ftrace/ftrace%E5%8F%AF%E4%BB%A5%E7%9C%8B%E7%9A%84%E5%87%A0%E4%B8%AA%E5%8F%82%E6%95%B0/">
-
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="image" content="/images/avatar.gif">
-      <meta itemprop="name" content="Su Hui">
-      <meta itemprop="description" content="">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="liulangren Blog">
-    </span>
-
-    
-    
-      <header class="post-header">
-        <h2 class="post-title" itemprop="name headline">
-          
-            <a href="/2020/09/19/%E5%86%85%E6%A0%B8%E8%A7%82%E6%B5%8B/ftrace/ftrace%E5%8F%AF%E4%BB%A5%E7%9C%8B%E7%9A%84%E5%87%A0%E4%B8%AA%E5%8F%82%E6%95%B0/" class="post-title-link" itemprop="url">ftrace可以看的几个参数</a>
-        </h2>
-
-        <div class="post-meta-container">
-          <div class="post-meta">
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-calendar"></i>
-      </span>
-      <span class="post-meta-item-text">Posted on</span>
-
-      <time title="Created: 2020-09-19 10:00:40" itemprop="dateCreated datePublished" datetime="2020-09-19T10:00:40+08:00">2020-09-19</time>
-    </span>
-      <span class="post-meta-item">
-        <span class="post-meta-item-icon">
-          <i class="far fa-calendar-check"></i>
-        </span>
-        <span class="post-meta-item-text">Edited on</span>
-        <time title="Modified: 2020-09-20 19:46:45" itemprop="dateModified" datetime="2020-09-20T19:46:45+08:00">2020-09-20</time>
-      </span>
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-folder"></i>
-      </span>
-      <span class="post-meta-item-text">In</span>
-        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-          <a href="/categories/linux%E5%86%85%E6%A0%B8/" itemprop="url" rel="index"><span itemprop="name">linux内核</span></a>
-        </span>
-    </span>
-
-  
-</div>
-
-        </div>
-      </header>
-
-    
-    
-    
-    <div class="post-body" itemprop="articleBody">
-          <p>Ftrace是一个内部跟踪器，旨在帮助系统的开发人员和设计人员查找内核内部发生的情况。 它可以用于调试或分析在用户空间之外发生的延迟和性能问题。</p>
-<p>尽管通常将ftrace视为函数跟踪器，但实际上它是多个分类跟踪实用程序的框架。 可以进行延迟跟踪，以检查禁用和启用中断之间的情况以及抢占以及从唤醒任务到计划任务的时间。</p>
-<p>ftrace的最常见用途之一是事件跟踪。 整个内核中有数百个静态事件点，可以通过tracefs文件系统启用这些事件点，以查看内核某些部分的情况。</p>
-<h2 id="irqsoff"><a href="#irqsoff" class="headerlink" title="irqsoff"></a>irqsoff</h2><p>我们都知道linux执行中断的时候都是关中断的，也不存在什么中断嵌套，中断被禁时CPU无法响应任何其他外部事件（除了NMI和SMI）。<br>万一某个驱动开发者代码没有注意将临界区设置的比较大，或者中断处理函数中执行了较多内容，就会直接导致调度延迟增大，直接表现为业务抖动较大，我们有没有什么手段观测这个关中断的时间长短呢?答案是肯定的：</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">sh@ubuntu[root]:&#x2F;sys&#x2F;kernel&#x2F;debug&#x2F;tracing# cat &#x2F;sys&#x2F;kernel&#x2F;debug&#x2F;tracing&#x2F;available_tracers </span><br><span class="line">hwlat blk mmiotrace function_graph wakeup_dl wakeup_rt wakeup irqsoff function nop</span><br></pre></td></tr></table></figure>
-<p>irqsoff 这个 tracer 就是来完成这个使命的</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br></pre></td><td class="code"><pre><span class="line">sh@ubuntu[root]:~# echo 0 &gt; &#x2F;sys&#x2F;kernel&#x2F;debug&#x2F;tracing&#x2F;tracing_on </span><br><span class="line">sh@ubuntu[root]:~# echo irqsoff &gt; &#x2F;sys&#x2F;kernel&#x2F;debug&#x2F;tracing&#x2F;current_tracer</span><br><span class="line">sh@ubuntu[root]:~# echo 0 &gt; &#x2F;sys&#x2F;kernel&#x2F;debug&#x2F;tracing&#x2F;tracing_max_latency </span><br><span class="line">sh@ubuntu[root]:~# echo 1 &gt; &#x2F;sys&#x2F;kernel&#x2F;debug&#x2F;tracing&#x2F;tracing_on </span><br><span class="line">sh@ubuntu[root]:~# sleep 5</span><br><span class="line">sh@ubuntu[root]:~# echo 0 &gt; &#x2F;sys&#x2F;kernel&#x2F;debug&#x2F;tracing&#x2F;tracing_on </span><br><span class="line">sh@ubuntu[root]:~# cat &#x2F;sys&#x2F;kernel&#x2F;debug&#x2F;tracing&#x2F;trace | head -n 30</span><br><span class="line"># tracer: irqsoff</span><br><span class="line">#</span><br><span class="line"># irqsoff latency trace v1.1.5 on 5.4.44</span><br><span class="line"># --------------------------------------------------------------------</span><br><span class="line"># latency: 769 us, #15&#x2F;15, CPU#2 | (M:desktop VP:0, KP:0, SP:0 HP:0 #P:4)</span><br><span class="line">#    -----------------</span><br><span class="line">#    | task: kworker&#x2F;2:0-5528 (uid:0 nice:0 policy:0 rt_prio:0)</span><br><span class="line">#    -----------------</span><br><span class="line">#  &#x3D;&gt; started at: e1000_update_stats</span><br><span class="line">#  &#x3D;&gt; ended at:   e1000_update_stats</span><br><span class="line">#</span><br><span class="line">#</span><br><span class="line">#                  _------&#x3D;&gt; CPU#            </span><br><span class="line">#                 &#x2F; _-----&#x3D;&gt; irqs-off        </span><br><span class="line">#                | &#x2F; _----&#x3D;&gt; need-resched    </span><br><span class="line">#                || &#x2F; _---&#x3D;&gt; hardirq&#x2F;softirq </span><br><span class="line">#                ||| &#x2F; _--&#x3D;&gt; preempt-depth   </span><br><span class="line">#                |||| &#x2F;     delay            </span><br><span class="line">#  cmd     pid   ||||| time  |   caller      </span><br><span class="line">#     \   &#x2F;      |||||  \    |   &#x2F;         </span><br><span class="line">kworker&#x2F;-5528    2d...    0us!: _raw_spin_lock_irqsave &lt;-e1000_update_stats</span><br><span class="line">kworker&#x2F;-5528    2d...  609us : e1000_read_phy_reg &lt;-e1000_update_stats</span><br><span class="line">kworker&#x2F;-5528    2d...  610us : _raw_spin_lock_irqsave &lt;-e1000_read_phy_reg</span><br><span class="line">kworker&#x2F;-5528    2d...  620us : __const_udelay &lt;-e1000_read_phy_reg</span><br><span class="line">kworker&#x2F;-5528    2d...  620us+: delay_tsc &lt;-__const_udelay</span><br><span class="line">kworker&#x2F;-5528    2d...  678us : _raw_spin_unlock_irqrestore &lt;-e1000_read_phy_reg</span><br><span class="line">kworker&#x2F;-5528    2d...  679us : e1000_read_phy_reg &lt;-e1000_update_stats</span><br><span class="line">kworker&#x2F;-5528    2d...  679us : _raw_spin_lock_irqsave &lt;-e1000_read_phy_reg</span><br><span class="line">kworker&#x2F;-5528    2d...  687us : __const_udelay &lt;-e1000_read_phy_reg</span><br><span class="line">kworker&#x2F;-5528    2d...  688us+: delay_tsc &lt;-__const_udelay</span><br><span class="line">kworker&#x2F;-5528    2d...  770us : tracer_hardirqs_on &lt;-e1000_update_stats</span><br><span class="line">kworker&#x2F;-5528    2d...  774us : &lt;stack trace&gt;</span><br><span class="line"> &#x3D;&gt; e1000_update_stats</span><br><span class="line"> &#x3D;&gt; e1000_watchdog</span><br><span class="line"> &#x3D;&gt; process_one_work</span><br><span class="line"> &#x3D;&gt; worker_thread</span><br><span class="line"> &#x3D;&gt; kthread</span><br><span class="line"> &#x3D;&gt; ret_from_fork</span><br><span class="line">sh@ubuntu[root]:~# cat &#x2F;sys&#x2F;kernel&#x2F;debug&#x2F;tracing&#x2F;tracing_max_latency </span><br><span class="line">769</span><br></pre></td></tr></table></figure>
-<p>可以看到 <code>tracing_max_latency</code> 是 769，意味着系统最长关中断时间就是 769us.<br>(要重置最大值，需要将0回显到tracing_max_latency中)</p>
-<p>这是未设置函数跟踪的结果 可以 <code>echo 1 &gt; /sys/kernel/debug/tracing/options/function-trace</code> 获取更详细输出</p>
-<h2 id="preemptoff"><a href="#preemptoff" class="headerlink" title="preemptoff"></a>preemptoff</h2><p>禁用抢占功能后，我们可能会收到中断，但无法抢占该任务，优先级较高的任务必须等待再次启用抢占功能，才能抢占优先级较低的任务。</p>
-<p>preemptoff跟踪程序将跟踪禁用抢占的位置。 与irqsoff跟踪器一样，它记录禁用了抢占的最大延迟。 preemptoff跟踪器的控制与irqsoff跟踪器非常相似。</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br></pre></td><td class="code"><pre><span class="line"># echo preemptoff &gt; current_tracer</span><br><span class="line"># echo 1 &gt; tracing_on</span><br><span class="line"># echo 0 &gt; tracing_max_latency</span><br><span class="line"># ls -ltr</span><br><span class="line">[...]</span><br><span class="line"># echo 0 &gt; tracing_on</span><br><span class="line"># cat trace</span><br><span class="line"># tracer: preemptoff</span><br><span class="line">#</span><br><span class="line"># preemptoff latency trace v1.1.5 on 3.8.0-test+</span><br><span class="line"># --------------------------------------------------------------------</span><br><span class="line"># latency: 46 us, #4&#x2F;4, CPU#1 | (M:preempt VP:0, KP:0, SP:0 HP:0 #P:4)</span><br><span class="line">#    -----------------</span><br><span class="line">#    | task: sshd-1991 (uid:0 nice:0 policy:0 rt_prio:0)</span><br><span class="line">#    -----------------</span><br><span class="line">#  &#x3D;&gt; started at: do_IRQ</span><br><span class="line">#  &#x3D;&gt; ended at:   do_IRQ</span><br><span class="line">#</span><br><span class="line">#</span><br><span class="line">#                  _------&#x3D;&gt; CPU#</span><br><span class="line">#                 &#x2F; _-----&#x3D;&gt; irqs-off</span><br><span class="line">#                | &#x2F; _----&#x3D;&gt; need-resched</span><br><span class="line">#                || &#x2F; _---&#x3D;&gt; hardirq&#x2F;softirq</span><br><span class="line">#                ||| &#x2F; _--&#x3D;&gt; preempt-depth</span><br><span class="line">#                |||| &#x2F;     delay</span><br><span class="line">#  cmd     pid   ||||| time  |   caller</span><br><span class="line">#     \   &#x2F;      |||||  \    |   &#x2F;</span><br><span class="line">    sshd-1991    1d.h.    0us+: irq_enter &lt;-do_IRQ</span><br><span class="line">    sshd-1991    1d..1   46us : irq_exit &lt;-do_IRQ</span><br><span class="line">    sshd-1991    1d..1   47us+: trace_preempt_on &lt;-do_IRQ</span><br><span class="line">    sshd-1991    1d..1   52us : &lt;stack trace&gt;</span><br><span class="line"> &#x3D;&gt; sub_preempt_count</span><br><span class="line"> &#x3D;&gt; irq_exit</span><br><span class="line"> &#x3D;&gt; do_IRQ</span><br><span class="line"> &#x3D;&gt; ret_from_intr</span><br></pre></td></tr></table></figure>
-
-<h2 id="preemptirqsoff"><a href="#preemptirqsoff" class="headerlink" title="preemptirqsoff"></a>preemptirqsoff</h2><p>preemptirqsoff 是以上两者的和，会显示禁止 抢占或者中断的最长时间<br>比如</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">local_irq_disable();</span><br><span class="line">call_function_with_irqs_off();</span><br><span class="line">preempt_disable();</span><br><span class="line">call_function_with_irqs_and_preemption_off();</span><br><span class="line">local_irq_enable();</span><br><span class="line">call_function_with_preemption_off();</span><br><span class="line">preempt_enable();</span><br></pre></td></tr></table></figure>
-
-<h2 id="wakeup、wakeup-rt"><a href="#wakeup、wakeup-rt" class="headerlink" title="wakeup、wakeup_rt"></a>wakeup、wakeup_rt</h2><p>wakeup、wakeup_rt 是 trace一个进程从进入CPU的就绪队列到真正被执行的时间的一个tracer，即跟踪调度器的延迟。</p>
-<p>参考<a target="_blank" rel="noopener" href="https://www.kernel.org/doc/html/v4.18/trace/ftrace.html#irqsoff">ftrace 内核文档</a></p>
 
       
     </div>
