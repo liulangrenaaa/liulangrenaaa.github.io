@@ -189,7 +189,7 @@
       <div class="site-state-item site-state-posts">
           <a href="/archives/">
         
-          <span class="site-state-item-count">37</span>
+          <span class="site-state-item-count">39</span>
           <span class="site-state-item-name">posts</span>
         </a>
       </div>
@@ -202,7 +202,7 @@
       <div class="site-state-item site-state-tags">
             <a href="/tags/">
           
-        <span class="site-state-item-count">62</span>
+        <span class="site-state-item-count">68</span>
         <span class="site-state-item-name">tags</span></a>
       </div>
   </nav>
@@ -233,6 +233,257 @@
       
 
       
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
+    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2021/01/15/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/%E6%96%87%E4%BB%B6%E8%B5%84%E6%BA%90%E6%B3%84%E6%BC%8F%E9%97%AE%E9%A2%98/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="Su Hui">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liulangren Blog">
+    </span>
+
+    
+    
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/2021/01/15/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/%E6%96%87%E4%BB%B6%E8%B5%84%E6%BA%90%E6%B3%84%E6%BC%8F%E9%97%AE%E9%A2%98/" class="post-title-link" itemprop="url">文件资源泄漏问题</a>
+        </h2>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">Posted on</span>
+
+      <time title="Created: 2021-01-15 19:00:00" itemprop="dateCreated datePublished" datetime="2021-01-15T19:00:00+08:00">2021-01-15</time>
+    </span>
+      <span class="post-meta-item">
+        <span class="post-meta-item-icon">
+          <i class="far fa-calendar-check"></i>
+        </span>
+        <span class="post-meta-item-text">Edited on</span>
+        <time title="Modified: 2021-01-18 14:07:42" itemprop="dateModified" datetime="2021-01-18T14:07:42+08:00">2021-01-18</time>
+      </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">In</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/linux%E5%86%85%E6%A0%B8/" itemprop="url" rel="index"><span itemprop="name">linux内核</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+          <h2 id="资源泄漏"><a href="#资源泄漏" class="headerlink" title="资源泄漏"></a>资源泄漏</h2><p>资源泄漏在实际编程中是一不小心就会遇到的一个问题，最常见的就是 <code>内存泄漏</code>。<br>内存泄漏：对于短时间存在的进程，线程即使存在内存泄漏，往往也不会变现出来，开发人员也很难感知到。<br>但是一旦是长时间运行的进程，线程存在内存泄漏的问题，那将是一个灾难，要么过一会被OOM KILL，要么<br>自己重启，更严重的就是重启机器。</p>
+<p>内存泄漏是指内存被分配出来，但是后续一直未使用，且失去了这个内存的引用，一直无法释放的问题。</p>
+<p>但是除了最常见内存泄漏之外，还有其他各种资源泄漏的问题，比如这次的 <code>进程文件资源泄漏</code>。</p>
+<h2 id="场景"><a href="#场景" class="headerlink" title="场景"></a>场景</h2><p>虽然是嵌入式平台，也有一些业务需要做压力测试连续几天到一个月不关机长时间跑测试。</p>
+<p>某个业务在运行两天之后就会出现进程挂掉的问题。</p>
+<h2 id="代码复现"><a href="#代码复现" class="headerlink" title="代码复现"></a>代码复现</h2><p>如果能用简单代码复现的问题，都不大</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/liulangrenaaa/test_modules/tree/main">代码</a></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br></pre></td><td class="code"><pre><span class="line">#include &lt;stdio.h&gt;</span><br><span class="line">#include &lt;stdlib.h&gt;</span><br><span class="line">#include &lt;string.h&gt;</span><br><span class="line">#include &lt;sys&#x2F;types.h&gt;</span><br><span class="line">#include &lt;dirent.h&gt;</span><br><span class="line">#include &lt;unistd.h&gt;</span><br><span class="line">#include &lt;sys&#x2F;types.h&gt;</span><br><span class="line">#include &lt;sys&#x2F;stat.h&gt;</span><br><span class="line">#include &lt;fcntl.h&gt;</span><br><span class="line">#define DIR_NAME        &quot;&#x2F;tmp&#x2F;asdf&quot;</span><br><span class="line"></span><br><span class="line">int sync_dir(char *dir)</span><br><span class="line">&#123;</span><br><span class="line">        if(!dir) return -1;</span><br><span class="line">        int fd &#x3D; open(dir, O_ASYNC);</span><br><span class="line">        if (-1 &#x3D;&#x3D; fd) return -1;</span><br><span class="line">        return 0;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">void main(void)</span><br><span class="line">&#123;</span><br><span class="line">        int i &#x3D; 0;</span><br><span class="line">        int ret &#x3D; -1;</span><br><span class="line">        for (i &#x3D; 0; i &lt; 1024 * 1024 * 64; i++) &#123;</span><br><span class="line">                ret &#x3D; sync_dir(DIR_NAME);</span><br><span class="line">                if (ret)        printf(&quot;sync_dir failed. i &#x3D; %d, ret &#x3D; %d\n&quot;, i, ret);</span><br><span class="line">                else            printf(&quot;sync_dir sucess. i &#x3D; %d\n&quot;, i);</span><br><span class="line">                usleep(1000 * 10);</span><br><span class="line">        &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+<p>嵌入式设备上的资源限制</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">root@device_gls:&#x2F;proc&#x2F;sys&#x2F;fs # cat file-nr</span><br><span class="line">800     0       21378</span><br><span class="line">root@device_gls:&#x2F;proc&#x2F;sys&#x2F;fs #</span><br></pre></td></tr></table></figure>
+<p>意思是当前系统允许打开 <code>21378</code> 个文件，已经打开了 <code>800</code>个文件了</p>
+<p>我选择用 <code>ubuntu</code> 系统去复现，先将 系统 fd上限制调制与设备一样的水平</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs# cat file-max</span><br><span class="line">9223372036854775807</span><br><span class="line">tencent_clould@1ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs# sudo su</span><br><span class="line">VM-0-11-ubuntu# echo 21378 &gt; file-max</span><br><span class="line">VM-0-11-ubuntu# exit</span><br><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs# cat file-max</span><br><span class="line">21378</span><br><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs#</span><br></pre></td></tr></table></figure>
+
+<p>尝试复现</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@130ubuntu: ~&#x2F;workspace&#x2F;hexo_blog&#x2F;source&#x2F;_posts&#x2F;资源管理# .&#x2F;a.out</span><br><span class="line">sync_dir sucess. i &#x3D; 0</span><br><span class="line">sync_dir sucess. i &#x3D; 1</span><br><span class="line">....</span><br><span class="line">sync_dir sucess. i &#x3D; 5</span><br><span class="line">sync_dir sucess. i &#x3D; 18194</span><br><span class="line">sync_dir sucess. i &#x3D; 18195</span><br><span class="line">...</span><br><span class="line">sync_dir failed. i &#x3D; 18196, ret &#x3D; -1</span><br></pre></td></tr></table></figure>
+
+
+<p>同时观察 <code> /proc/sys/fs/file-nr</code></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs# cat file-nr</span><br><span class="line">4704    0       21378</span><br><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs# cat file-nr</span><br><span class="line">9824    0       21378</span><br><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs# cat file-nr</span><br><span class="line">17760   0       21378</span><br><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs# cat file-nr</span><br><span class="line">20224   0       21378</span><br><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs# cat file-nr</span><br><span class="line">21024   0       21378</span><br><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs# cat file-nr</span><br><span class="line">21216   0       21378</span><br><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs# cat file-nr</span><br><span class="line">zsh: pipe failed: too many open files in system</span><br><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs# cat file-nr</span><br><span class="line">zsh: pipe failed: too many open files in system</span><br></pre></td></tr></table></figure>
+
+<p>可以看到 <code>a.out</code> 最后无法 通过 <code>open</code> 打开文件了，且同时 <code>zsh</code> shell 都无法打开<br><code>file-nr</code>了。</p>
+<p>与此同时，看到 <code>dmesg</code> 的信息</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">[57615.006011] VFS: file-max limit 21378 reached</span><br><span class="line">[57616.671617] VFS: file-max limit 21378 reached</span><br></pre></td></tr></table></figure>
+<p>也可以比较容易定位出来。</p>
+<p>这个问题困扰了当时开发同事很久，最后发现原来是 系统 <code>fd</code> 资源全部泄漏殆尽导致的。</p>
+<h2 id="其他限制资源使用的方式"><a href="#其他限制资源使用的方式" class="headerlink" title="其他限制资源使用的方式"></a>其他限制资源使用的方式</h2><ol>
+<li>其实还有其他方式限制资源 如 <code>ulimit</code></li>
+</ol>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs# ulimit -a</span><br><span class="line">-t: cpu time (seconds)              unlimited</span><br><span class="line">-f: file size (blocks)              unlimited</span><br><span class="line">-d: data seg size (kbytes)          unlimited</span><br><span class="line">-s: stack size (kbytes)             8192</span><br><span class="line">-c: core file size (blocks)         0</span><br><span class="line">-m: resident set size (kbytes)      unlimited</span><br><span class="line">-u: processes                       7582</span><br><span class="line">-n: file descriptors                1024</span><br><span class="line">-l: locked-in-memory size (kbytes)  65536</span><br><span class="line">-v: address space (kbytes)          unlimited</span><br><span class="line">-x: file locks                      unlimited</span><br><span class="line">-i: pending signals                 7582</span><br><span class="line">-q: bytes in POSIX msg queues       819200</span><br><span class="line">-e: max nice                        0</span><br><span class="line">-r: max rt priority                 0</span><br><span class="line">-N 15:                              unlimited</span><br><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs#</span><br></pre></td></tr></table></figure>
+
+<ol start="2">
+<li>/proc/pid/limits<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs# cat &#x2F;proc&#x2F;4833&#x2F;limits</span><br><span class="line">Limit                     Soft Limit           Hard Limit           Units</span><br><span class="line">Max cpu time              unlimited            unlimited            seconds</span><br><span class="line">Max file size             unlimited            unlimited            bytes</span><br><span class="line">Max data size             unlimited            unlimited            bytes</span><br><span class="line">Max stack size            8388608              unlimited            bytes</span><br><span class="line">Max core file size        0                    unlimited            bytes</span><br><span class="line">Max resident set          unlimited            unlimited            bytes</span><br><span class="line">Max processes             7582                 7582                 processes</span><br><span class="line">Max open files            1024                 1048576              files</span><br><span class="line">Max locked memory         67108864             67108864             bytes</span><br><span class="line">Max address space         unlimited            unlimited            bytes</span><br><span class="line">Max file locks            unlimited            unlimited            locks</span><br><span class="line">Max pending signals       7582                 7582                 signals</span><br><span class="line">Max msgqueue size         819200               819200               bytes</span><br><span class="line">Max nice priority         0                    0</span><br><span class="line">Max realtime priority     0                    0</span><br><span class="line">Max realtime timeout      unlimited            unlimited            us</span><br><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs#</span><br></pre></td></tr></table></figure>
+
+
+
+</li>
+</ol>
+<ol start="3">
+<li><code>/etc/security/limits.conf</code></li>
+</ol>
+<p>这里可以预先配置。</p>
+
+      
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+        <div class="post-eof"></div>
+      
+    </footer>
+  </article>
+  
+  
+  
+
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
+    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2021/01/11/%E7%94%9F%E6%B4%BB%E6%84%9F%E6%82%9F/%E6%88%91%E5%BA%94%E8%AF%A5%E5%A6%82%E4%BD%95%E7%9C%8B%E4%BB%A3%E7%A0%81/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="Su Hui">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liulangren Blog">
+    </span>
+
+    
+    
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/2021/01/11/%E7%94%9F%E6%B4%BB%E6%84%9F%E6%82%9F/%E6%88%91%E5%BA%94%E8%AF%A5%E5%A6%82%E4%BD%95%E7%9C%8B%E4%BB%A3%E7%A0%81/" class="post-title-link" itemprop="url">我应该如何看代码</a>
+        </h2>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">Posted on</span>
+
+      <time title="Created: 2021-01-11 23:00:00" itemprop="dateCreated datePublished" datetime="2021-01-11T23:00:00+08:00">2021-01-11</time>
+    </span>
+      <span class="post-meta-item">
+        <span class="post-meta-item-icon">
+          <i class="far fa-calendar-check"></i>
+        </span>
+        <span class="post-meta-item-text">Edited on</span>
+        <time title="Modified: 2021-01-15 19:33:39" itemprop="dateModified" datetime="2021-01-15T19:33:39+08:00">2021-01-15</time>
+      </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">In</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/%E7%94%9F%E6%B4%BB%E6%84%9F%E6%82%9F/" itemprop="url" rel="index"><span itemprop="name">生活感悟</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+          <p>每次看一个模块源码都比较痛苦，在 <code>kernel</code> 的代码海洋里面像一只无头苍蝇一样，看来半天却<br>不知所云，记录一下之后在看某个模块源码时 应该注意什么，比较快的熟悉，警醒自己！</p>
+<h2 id="庞大的linux内核"><a href="#庞大的linux内核" class="headerlink" title="庞大的linux内核"></a>庞大的linux内核</h2><p>现在是 2021-01-11号，上个月linus发布了 Linux-5.10 LTS版本，往往每年的最后一个 kernel 版本就是作为LTS的版本，今年是12月13号。</p>
+<p>linus 会在每个大版本发布之后都会 开启 一个merge window的时间，这个时间大家都可以尽量<br>的合入之前早就开发好的已经在next tree的 patch，大概有一两周？今年这时候恰好是圣诞节，<br>老外是基本周末都不会工作的，更何况是 <code>圣诞+元旦</code> 这种节日了，看了基本 2020-12-23 – 2021-01-04 都是没有daily next tree 版本更新的。</p>
+<p>A total of 1,971 developers contributed to 5.10 — again, just short of the record set by 5.8. Of those developers, 252 (just under 13%) made their first contribution in 5.10; that is the lowest number seen since 5.6. The most active 5.10 developers were:</p>
+<p><a target="_blank" rel="noopener" href="https://lwn.net/Articles/839772/">Linux 5.10代码统计</a></p>
+<h2 id="新的模块应该如何涉及"><a href="#新的模块应该如何涉及" class="headerlink" title="新的模块应该如何涉及"></a>新的模块应该如何涉及</h2><p>首先要高明白他是干什么的</p>
+<ol>
+<li>结合注释去看，谷歌翻译，vscode在线、离线插件都很好用</li>
+<li>结合 git log 看：<br> git log -S’xxx’ file_name</li>
+<li>根据Makefile看：如果这个目录下Makefile 都没直接包含这个文件.o<br>需要使能之后才会编译到内核中的话，结合是否工作实际需要再看</li>
+<li>谷歌、百度：中文 英文都可以作为关键次搜索</li>
+<li>LWN 找到Archives，看看有没有介绍的文章</li>
+<li>看看 Documents 目录下有没有介绍的文档</li>
+<li>看这个模块 关键数据结构 和关键数据结构数据成员 如 struct_task struct_mm<br>address_space等</li>
+</ol>
+<h3 id="新的子系统"><a href="#新的子系统" class="headerlink" title="新的子系统"></a>新的子系统</h3><ol>
+<li>知道模块子系统作用</li>
+<li>找个方法实践一下，比如 docker 可以很好实践 cgroups</li>
+<li>关键数据结构</li>
+<li>导出到用户空间的接口，看他在 kernel中实现<br>比如<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@127ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs# ls</span><br><span class="line">aio-max-nr    dir-notify-enable  inode-nr          leases-enable  overflowgid           pipe-user-pages-soft  protected_symlinks</span><br><span class="line">aio-nr        epoll              inode-state       mount-max      overflowuid           protected_fifos       quota</span><br><span class="line">binfmt_misc   file-max           inotify           mqueue         pipe-max-size         protected_hardlinks   suid_dumpable</span><br><span class="line">dentry-state  file-nr            lease-break-time  nr_open        pipe-user-pages-hard  protected_regular     verity</span><br><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs#</span><br><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs#</span><br><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs# cat file-nr</span><br><span class="line">3200    0       9223372036854775807</span><br><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs# cat file-max</span><br><span class="line">9223372036854775807</span><br><span class="line">tencent_clould@ubuntu: &#x2F;proc&#x2F;sys&#x2F;fs#</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line">static struct ctl_table fs_table[] &#x3D; &#123;</span><br><span class="line">	&#123;</span><br><span class="line">		.procname	&#x3D; &quot;inode-nr&quot;,</span><br><span class="line">		.data		&#x3D; &amp;inodes_stat,</span><br><span class="line">		.maxlen		&#x3D; 2*sizeof(long),</span><br><span class="line">		.mode		&#x3D; 0444,</span><br><span class="line">		.proc_handler	&#x3D; proc_nr_inodes,</span><br><span class="line">	&#125;,</span><br><span class="line">	&#123;</span><br><span class="line">		.procname	&#x3D; &quot;inode-state&quot;,</span><br><span class="line">		.data		&#x3D; &amp;inodes_stat,</span><br><span class="line">		.maxlen		&#x3D; 7*sizeof(long),</span><br><span class="line">		.mode		&#x3D; 0444,</span><br><span class="line">		.proc_handler	&#x3D; proc_nr_inodes,</span><br><span class="line">	&#125;,</span><br><span class="line">	&#123;</span><br><span class="line">		.procname	&#x3D; &quot;file-nr&quot;,</span><br><span class="line">		.data		&#x3D; &amp;files_stat,</span><br><span class="line">		.maxlen		&#x3D; sizeof(files_stat),</span><br><span class="line">		.mode		&#x3D; 0444,</span><br><span class="line">		.proc_handler	&#x3D; proc_nr_files,</span><br><span class="line">	&#125;,</span><br></pre></td></tr></table></figure>
+
+<h2 id="如何深入"><a href="#如何深入" class="headerlink" title="如何深入"></a>如何深入</h2><p>比如我知道 page_cache 的大概了，也知道他的作用，但是看代码的时候比较迷茫？</p>
+<ol>
+<li><p>看看 page_cache 的API</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">amd_server@ubuntu: ~&#x2F;workspace&#x2F;linux-stable&#x2F;mm# grep &quot;EXPORT_SYMBOL&quot; .&#x2F;filemap.c -nr</span><br><span class="line">279:EXPORT_SYMBOL(delete_from_page_cache);</span><br><span class="line">377:EXPORT_SYMBOL(filemap_check_errors);</span><br><span class="line">437:EXPORT_SYMBOL(filemap_fdatawrite);</span><br><span class="line">444:EXPORT_SYMBOL(filemap_fdatawrite_range);</span><br><span class="line">459:EXPORT_SYMBOL(filemap_flush);</span><br><span class="line">502:EXPORT_SYMBOL(filemap_range_has_page);</span><br><span class="line">557:EXPORT_SYMBOL(filemap_fdatawait_range);</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>在.c 文件中搜索trace_ 看看，找到他的静态追踪点 <code>tracepoints</code></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">amd_server@130ubuntu: ~&#x2F;workspace&#x2F;linux-stable&#x2F;mm# grep &quot;trace_&quot; .&#x2F;filemap.c -nr</span><br><span class="line">236:    trace_mm_filemap_delete_from_page_cache(page);</span><br><span class="line">354:            trace_mm_filemap_delete_from_page_cache(pvec-&gt;pages[i]);</span><br><span class="line">683:    trace_filemap_set_wb_err(mapping, eseq);</span><br><span class="line">724:            trace_file_check_and_advance_wb_err(file, old);</span><br><span class="line">902:    trace_mm_filemap_add_to_page_cache(page);</span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace&#x2F;linux-stable&#x2F;mm#</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>直接使用 bpftrace -l 这个根据搜索你的模块，看看有那些比较重要的函数，这些重要函数往<br>往是掌握这个模块的关键，也是经常出现问题需要debug 或者观测的地方，所以 kernel 才会为他<br>设置一个静态追踪点</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">amd_server@ubuntu: ~&#x2F;workspace&#x2F;linux-stable&#x2F;mm# sudo bpftrace -l | grep tracepoint: | grep page_cache</span><br><span class="line">tracepoint:filemap:mm_filemap_delete_from_page_cache</span><br><span class="line">tracepoint:filemap:mm_filemap_add_to_page_cache</span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace&#x2F;linux-stable&#x2F;mm#</span><br></pre></td></tr></table></figure>
+
+
+</li>
+</ol>
+<ol start="4">
+<li>stat 统计数据入手<br>类似于 <code>slub</code> 这种内存分配器，内核提供了很多统计数据，可以利用这些事件统计 来跟踪关键代<br>码路径</li>
+</ol>
+<p>如</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">enum stat_item &#123;</span><br><span class="line">	ALLOC_FASTPATH,		&#x2F;* Allocation from cpu slab *&#x2F;</span><br><span class="line">	ALLOC_SLOWPATH,		&#x2F;* Allocation by getting a new cpu slab *&#x2F;</span><br><span class="line">	FREE_FASTPATH,		&#x2F;* Free to cpu slab *&#x2F;</span><br><span class="line">	FREE_SLOWPATH,		&#x2F;* Freeing not to cpu slab *&#x2F;</span><br><span class="line"></span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace&#x2F;linux-stable&#x2F;mm# grep ALLOC_FASTPATH . -nr</span><br><span class="line">.&#x2F;slub.c:2883:          stat(s, ALLOC_FASTPATH);</span><br><span class="line">.&#x2F;slub.c:5390:STAT_ATTR(ALLOC_FASTPATH, alloc_fastpath);</span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace&#x2F;linux-stable&#x2F;mm# grep ALLOC_SLOWPATH . -nr</span><br><span class="line">.&#x2F;slub.c:2666:  stat(s, ALLOC_SLOWPATH);</span><br><span class="line">.&#x2F;slub.c:5391:STAT_ATTR(ALLOC_SLOWPATH, alloc_slowpath);</span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace&#x2F;linux-stable&#x2F;mm#</span><br></pre></td></tr></table></figure>
+
+<p>struct_task 的 context switch 事件计数</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">struct task_struct &#123;</span><br><span class="line">......</span><br><span class="line">	unsigned long			nvcsw;</span><br><span class="line">	unsigned long			nivcsw;</span><br><span class="line">......</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace&#x2F;linux-stable&#x2F;kernel&#x2F;sched# grep &quot;nivcsw&quot; . -nr</span><br><span class="line">.&#x2F;debug.c:497:          (long long)(p-&gt;nvcsw + p-&gt;nivcsw),</span><br><span class="line">.&#x2F;debug.c:934:  nr_switches &#x3D; p-&gt;nvcsw + p-&gt;nivcsw;</span><br><span class="line">.&#x2F;debug.c:989:  __PS(&quot;nr_involuntary_switches&quot;, p-&gt;nivcsw);</span><br><span class="line">.&#x2F;core.c:4988:  switch_count &#x3D; &amp;prev-&gt;nivcsw;</span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace&#x2F;linux-stable&#x2F;kernel&#x2F;sched#</span><br></pre></td></tr></table></figure>
+
+<ol start="5">
+<li>看到静态追踪点 或者stat统计数据 之后，看看附近的函数，更上层函数等</li>
+</ol>
+
+      
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+        <div class="post-eof"></div>
+      
+    </footer>
+  </article>
+  
+  
+  
+
       
   
   
@@ -761,106 +1012,6 @@
   
   
   <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
-    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/12/12/Docker%E6%9C%BA%E5%88%B6%E5%88%86%E6%9E%90/docker%E4%B8%8Enamespace%E5%A6%82%E4%BD%95%E8%81%94%E7%B3%BB%E8%B5%B7%E6%9D%A5%E7%9A%84/">
-
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="image" content="/images/avatar.gif">
-      <meta itemprop="name" content="Su Hui">
-      <meta itemprop="description" content="">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="liulangren Blog">
-    </span>
-
-    
-    
-      <header class="post-header">
-        <h2 class="post-title" itemprop="name headline">
-          
-            <a href="/2020/12/12/Docker%E6%9C%BA%E5%88%B6%E5%88%86%E6%9E%90/docker%E4%B8%8Enamespace%E5%A6%82%E4%BD%95%E8%81%94%E7%B3%BB%E8%B5%B7%E6%9D%A5%E7%9A%84/" class="post-title-link" itemprop="url">docker与cgroup如何联系起来的</a>
-        </h2>
-
-        <div class="post-meta-container">
-          <div class="post-meta">
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-calendar"></i>
-      </span>
-      <span class="post-meta-item-text">Posted on</span>
-
-      <time title="Created: 2020-12-12 14:47:40" itemprop="dateCreated datePublished" datetime="2020-12-12T14:47:40+08:00">2020-12-12</time>
-    </span>
-      <span class="post-meta-item">
-        <span class="post-meta-item-icon">
-          <i class="far fa-calendar-check"></i>
-        </span>
-        <span class="post-meta-item-text">Edited on</span>
-        <time title="Modified: 2020-12-05 19:31:20" itemprop="dateModified" datetime="2020-12-05T19:31:20+08:00">2020-12-05</time>
-      </span>
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-folder"></i>
-      </span>
-      <span class="post-meta-item-text">In</span>
-        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-          <a href="/categories/docker/" itemprop="url" rel="index"><span itemprop="name">docker</span></a>
-        </span>
-    </span>
-
-  
-</div>
-
-        </div>
-      </header>
-
-    
-    
-    
-    <div class="post-body" itemprop="articleBody">
-          <p>这篇文章主要实操看一看 Docker 与 Namespace 的联系。</p>
-<ol>
-<li><p>首先去 /sys/fs/cgroup/ 目录看一下当前支持的子系统controller，各个子系统controller下面一般情况下都是空的，表明系统中没有额外的cgroup，基本都只有root_cgroup.<br>虽然4.5版本之后 cgroup v2 就进入mainline了，但是 现在（2020.12.01）docker 基本还是在使用 cgroup v1, 应该也算是一个历史原因了吧，不知道何时 docker能迁移到 cgroup v2 上，期待ing</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup# ls</span><br><span class="line">blkio  cpuacct      cpuset   freezer  memory   net_cls,net_prio  perf_event  rdma     unified</span><br><span class="line">cpu    cpu,cpuacct  devices  hugetlb  net_cls  net_prio          pids        systemd</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup# mount | grep cgroup</span><br><span class="line">tmpfs on &#x2F;sys&#x2F;fs&#x2F;cgroup type tmpfs (ro,nosuid,nodev,noexec,mode&#x3D;755)</span><br><span class="line">cgroup2 on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;unified type cgroup2 (rw,nosuid,nodev,noexec,relatime)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;systemd type cgroup (rw,nosuid,nodev,noexec,relatime,xattr,name&#x3D;systemd)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpuset type cgroup (rw,nosuid,nodev,noexec,relatime,cpuset,clone_children)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;rdma type cgroup (rw,nosuid,nodev,noexec,relatime,rdma)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;hugetlb type cgroup (rw,nosuid,nodev,noexec,relatime,hugetlb)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory type cgroup (rw,nosuid,nodev,noexec,relatime,memory)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;net_cls,net_prio type cgroup (rw,nosuid,nodev,noexec,relatime,net_cls,net_prio)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;perf_event type cgroup (rw,nosuid,nodev,noexec,relatime,perf_event)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;devices type cgroup (rw,nosuid,nodev,noexec,relatime,devices)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpu,cpuacct type cgroup (rw,nosuid,nodev,noexec,relatime,cpu,cpuacct)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;pids type cgroup (rw,nosuid,nodev,noexec,relatime,pids)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;blkio type cgroup (rw,nosuid,nodev,noexec,relatime,blkio)</span><br><span class="line">freezer on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;freezer type cgroup (rw,relatime,freezer)</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup# ls memory</span><br><span class="line">cgroup.clone_children  memory.kmem.failcnt                 memory.limit_in_bytes            memory.usage_in_bytes</span><br><span class="line">cgroup.event_control   memory.kmem.limit_in_bytes          memory.max_usage_in_bytes        memory.use_hierarchy</span><br><span class="line">cgroup.procs           memory.kmem.max_usage_in_bytes      memory.move_charge_at_immigrate  notify_on_release</span><br><span class="line">cgroup.sane_behavior   memory.kmem.slabinfo                memory.numa_stat                 release_agent</span><br><span class="line">docker                 memory.kmem.tcp.failcnt             memory.oom_control               system.slice</span><br><span class="line">init.scope             memory.kmem.tcp.limit_in_bytes      memory.pressure_level            tasks</span><br><span class="line">machine.slice          memory.kmem.tcp.max_usage_in_bytes  memory.soft_limit_in_bytes       user</span><br><span class="line">memory.failcnt         memory.kmem.tcp.usage_in_bytes      memory.stat                      user.slice</span><br><span class="line">memory.force_empty     memory.kmem.usage_in_bytes          memory.swappiness</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup# cat memory&#x2F;tasks</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">....</span><br><span class="line">1728692</span><br><span class="line">1731590</span><br></pre></td></tr></table></figure>
-</li>
-<li><p>基于 ubuntu image新建一个docker，限制memory 为 4MB</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup# sudo docker run -t -i -m 4MB ubuntu &#x2F;bin&#x2F;bash</span><br><span class="line">WARNING: Your kernel does not support swap limit capabilities or the cgroup is not mounted. Memory limited without swap.</span><br><span class="line">root@b3c618bb4df9:&#x2F;#</span><br></pre></td></tr></table></figure>
-<p>警告可以忽略，可以看到docker的 id是 b3c618bb4df9。</p>
-</li>
-<li><p>可以发现各个子系统目录都会新建一个docker目录，且docker目录下有一个目录就是上面的docker container 的id。</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory# ls</span><br><span class="line">cgroup.clone_children           memory.kmem.slabinfo                memory.soft_limit_in_bytes</span><br><span class="line">cgroup.event_control            memory.kmem.tcp.failcnt             memory.stat</span><br><span class="line">cgroup.procs                    memory.kmem.tcp.limit_in_bytes      memory.swappiness</span><br><span class="line">cgroup.sane_behavior            memory.kmem.tcp.max_usage_in_bytes  memory.usage_in_bytes</span><br><span class="line">docker                          memory.kmem.tcp.usage_in_bytes      memory.use_hierarchy</span><br><span class="line">init.scope                      memory.kmem.usage_in_bytes          notify_on_release</span><br><span class="line">machine.slice                   memory.limit_in_bytes               release_agent</span><br><span class="line">memory.failcnt                  memory.max_usage_in_bytes           system.slice</span><br><span class="line">memory.force_empty              memory.move_charge_at_immigrate     tasks</span><br><span class="line">memory.kmem.failcnt             memory.numa_stat                    user</span><br><span class="line">memory.kmem.limit_in_bytes      memory.oom_control                  user.slice</span><br><span class="line">memory.kmem.max_usage_in_bytes  memory.pressure_level</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory# ls docker</span><br><span class="line">1f3a24f9105950f6f463da0effa2465a518039c3bec76de71c6e20626dcfb286  memory.kmem.usage_in_bytes</span><br><span class="line">b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df  memory.limit_in_bytes</span><br><span class="line">cgroup.clone_children                                             memory.max_usage_in_bytes</span><br><span class="line">cgroup.event_control                                              memory.move_charge_at_immigrate</span><br><span class="line">cgroup.procs                                                      memory.numa_stat</span><br><span class="line">memory.failcnt                                                    memory.oom_control</span><br><span class="line">memory.force_empty                                                memory.pressure_level</span><br><span class="line">memory.kmem.failcnt                                               memory.soft_limit_in_bytes</span><br><span class="line">memory.kmem.limit_in_bytes                                        memory.stat</span><br><span class="line">memory.kmem.max_usage_in_bytes                                    memory.swappiness</span><br><span class="line">memory.kmem.slabinfo                                              memory.usage_in_bytes</span><br><span class="line">memory.kmem.tcp.failcnt                                           memory.use_hierarchy</span><br><span class="line">memory.kmem.tcp.limit_in_bytes                                    notify_on_release</span><br><span class="line">memory.kmem.tcp.max_usage_in_bytes                                tasks</span><br><span class="line">memory.kmem.tcp.usage_in_bytes</span><br></pre></td></tr></table></figure>
-</li>
-<li><p>其中 docker 目录下除了 container id的目录其他目录都是无效的，docker这个目录只是限制所有container id的一个顶层目录而已。通过 docker/tasks 为空就可以看出来。<br>可以看到 <code>memory/docker/b3c618bb4df9/</code> 目录下的最大内存限制，就是创建这个容器时设置的最大内存使用示4MB的限制。</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory&#x2F;docker# cat tasks</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory&#x2F;docker#</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df# cat memory.limit_in_bytes</span><br><span class="line">4194304</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df# cat tasks</span><br><span class="line">1733194</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df# ps -aux | grep 17</span><br><span class="line">33194</span><br><span class="line">root     1733194  0.0  0.1   4108  3296 pts&#x2F;0    Ss+  19:03   0:00 &#x2F;bin&#x2F;bash</span><br><span class="line">ubuntu   1737657  0.0  0.0   6432   736 pts&#x2F;0    S+   19:11   0:00 grep --color&#x3D;auto --exclude-dir&#x3D;.bzr --exclude-dir&#x3D;CVS --exclude-dir&#x3D;.git --exclude-dir&#x3D;.hg --exclude-dir&#x3D;.svn --exclude-dir&#x3D;.idea --exclude-dir&#x3D;.tox tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df# ps -aux | grep 17</span><br><span class="line">33194</span><br><span class="line">root     1733194  0.0  0.1   4108  3296 pts&#x2F;0    Ss+  19:03   0:00 &#x2F;bin&#x2F;bash</span><br><span class="line">ubuntu   1737657  0.0  0.0   6432   736 pts&#x2F;0    S+   19:11   0:00 grep --color&#x3D;auto --exclude-dir&#x3D;.bzr --exclude-dir&#x3D;CVS --exclude-dir&#x3D;.git --exclude-dir&#x3D;.hg --exclude-dir&#x3D;.svn --exclude-dir&#x3D;.idea --exclude-dir&#x3D;.tox 1733194</span><br></pre></td></tr></table></figure>
-<p>可以看到这个 <code>1733194</code> 进程就是启动 容器时的 /bin/bash 进程</p>
-</li>
-<li><p>由于其他的 cgroup子系统我们没有对刚刚启动的 container 进行限制，所以也理论上从 cgroup上看到的也是没有限制的，可以看看 cpu controller.</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpu&#x2F;docker# cat tasks</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpu&#x2F;docker# cd -</span><br><span class="line">&#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpu&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpu&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df# cat tasks</span><br><span class="line">1733194</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpu&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df# cat cpu.cfs_period_us</span><br><span class="line">100000</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpu&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df# cat cpu.cfs_quota_us</span><br><span class="line">-1</span><br></pre></td></tr></table></figure>
-
-</li>
-</ol>
-<p>这里就不具体介绍 各个子系统目录下文件含义了。</p>
-
-      
-    </div>
-
-    
-    
-    
-
-    <footer class="post-footer">
-        <div class="post-eof"></div>
-      
-    </footer>
-  </article>
-  
-  
-  
-
-      
-  
-  
-  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
     <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/12/12/Docker%E6%9C%BA%E5%88%B6%E5%88%86%E6%9E%90/docker%E4%B8%8Ecgroup%E5%A6%82%E4%BD%95%E8%81%94%E7%B3%BB%E8%B5%B7%E6%9D%A5%E7%9A%84/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
@@ -920,6 +1071,106 @@
     <div class="post-body" itemprop="articleBody">
           <p>一直说Docker 是基于linux三大技术 Cgroups, Namespace, OverlayFs 技术。<br>Cgroups, Namespace 着重的是 docker 的运行时，OverlayFs 着重的是 docker Image.<br>但是Docker 与 Cgroups, Namespace, OverlayFs 是怎么联系起来的呢，却很少有人说的明白，<br>我是一个好奇心很重的人，我会用几篇文章来记录分析一下他们怎么练习起来的。</p>
 <p>这篇文章主要实操看一看 Docker 与 Cgroup 的联系。</p>
+<ol>
+<li><p>首先去 /sys/fs/cgroup/ 目录看一下当前支持的子系统controller，各个子系统controller下面一般情况下都是空的，表明系统中没有额外的cgroup，基本都只有root_cgroup.<br>虽然4.5版本之后 cgroup v2 就进入mainline了，但是 现在（2020.12.01）docker 基本还是在使用 cgroup v1, 应该也算是一个历史原因了吧，不知道何时 docker能迁移到 cgroup v2 上，期待ing</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup# ls</span><br><span class="line">blkio  cpuacct      cpuset   freezer  memory   net_cls,net_prio  perf_event  rdma     unified</span><br><span class="line">cpu    cpu,cpuacct  devices  hugetlb  net_cls  net_prio          pids        systemd</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup# mount | grep cgroup</span><br><span class="line">tmpfs on &#x2F;sys&#x2F;fs&#x2F;cgroup type tmpfs (ro,nosuid,nodev,noexec,mode&#x3D;755)</span><br><span class="line">cgroup2 on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;unified type cgroup2 (rw,nosuid,nodev,noexec,relatime)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;systemd type cgroup (rw,nosuid,nodev,noexec,relatime,xattr,name&#x3D;systemd)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpuset type cgroup (rw,nosuid,nodev,noexec,relatime,cpuset,clone_children)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;rdma type cgroup (rw,nosuid,nodev,noexec,relatime,rdma)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;hugetlb type cgroup (rw,nosuid,nodev,noexec,relatime,hugetlb)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory type cgroup (rw,nosuid,nodev,noexec,relatime,memory)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;net_cls,net_prio type cgroup (rw,nosuid,nodev,noexec,relatime,net_cls,net_prio)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;perf_event type cgroup (rw,nosuid,nodev,noexec,relatime,perf_event)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;devices type cgroup (rw,nosuid,nodev,noexec,relatime,devices)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpu,cpuacct type cgroup (rw,nosuid,nodev,noexec,relatime,cpu,cpuacct)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;pids type cgroup (rw,nosuid,nodev,noexec,relatime,pids)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;blkio type cgroup (rw,nosuid,nodev,noexec,relatime,blkio)</span><br><span class="line">freezer on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;freezer type cgroup (rw,relatime,freezer)</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup# ls memory</span><br><span class="line">cgroup.clone_children  memory.kmem.failcnt                 memory.limit_in_bytes            memory.usage_in_bytes</span><br><span class="line">cgroup.event_control   memory.kmem.limit_in_bytes          memory.max_usage_in_bytes        memory.use_hierarchy</span><br><span class="line">cgroup.procs           memory.kmem.max_usage_in_bytes      memory.move_charge_at_immigrate  notify_on_release</span><br><span class="line">cgroup.sane_behavior   memory.kmem.slabinfo                memory.numa_stat                 release_agent</span><br><span class="line">docker                 memory.kmem.tcp.failcnt             memory.oom_control               system.slice</span><br><span class="line">init.scope             memory.kmem.tcp.limit_in_bytes      memory.pressure_level            tasks</span><br><span class="line">machine.slice          memory.kmem.tcp.max_usage_in_bytes  memory.soft_limit_in_bytes       user</span><br><span class="line">memory.failcnt         memory.kmem.tcp.usage_in_bytes      memory.stat                      user.slice</span><br><span class="line">memory.force_empty     memory.kmem.usage_in_bytes          memory.swappiness</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup# cat memory&#x2F;tasks</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">....</span><br><span class="line">1728692</span><br><span class="line">1731590</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>基于 ubuntu image新建一个docker，限制memory 为 4MB</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup# sudo docker run -t -i -m 4MB ubuntu &#x2F;bin&#x2F;bash</span><br><span class="line">WARNING: Your kernel does not support swap limit capabilities or the cgroup is not mounted. Memory limited without swap.</span><br><span class="line">root@b3c618bb4df9:&#x2F;#</span><br></pre></td></tr></table></figure>
+<p>警告可以忽略，可以看到docker的 id是 b3c618bb4df9。</p>
+</li>
+<li><p>可以发现各个子系统目录都会新建一个docker目录，且docker目录下有一个目录就是上面的docker container 的id。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory# ls</span><br><span class="line">cgroup.clone_children           memory.kmem.slabinfo                memory.soft_limit_in_bytes</span><br><span class="line">cgroup.event_control            memory.kmem.tcp.failcnt             memory.stat</span><br><span class="line">cgroup.procs                    memory.kmem.tcp.limit_in_bytes      memory.swappiness</span><br><span class="line">cgroup.sane_behavior            memory.kmem.tcp.max_usage_in_bytes  memory.usage_in_bytes</span><br><span class="line">docker                          memory.kmem.tcp.usage_in_bytes      memory.use_hierarchy</span><br><span class="line">init.scope                      memory.kmem.usage_in_bytes          notify_on_release</span><br><span class="line">machine.slice                   memory.limit_in_bytes               release_agent</span><br><span class="line">memory.failcnt                  memory.max_usage_in_bytes           system.slice</span><br><span class="line">memory.force_empty              memory.move_charge_at_immigrate     tasks</span><br><span class="line">memory.kmem.failcnt             memory.numa_stat                    user</span><br><span class="line">memory.kmem.limit_in_bytes      memory.oom_control                  user.slice</span><br><span class="line">memory.kmem.max_usage_in_bytes  memory.pressure_level</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory# ls docker</span><br><span class="line">1f3a24f9105950f6f463da0effa2465a518039c3bec76de71c6e20626dcfb286  memory.kmem.usage_in_bytes</span><br><span class="line">b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df  memory.limit_in_bytes</span><br><span class="line">cgroup.clone_children                                             memory.max_usage_in_bytes</span><br><span class="line">cgroup.event_control                                              memory.move_charge_at_immigrate</span><br><span class="line">cgroup.procs                                                      memory.numa_stat</span><br><span class="line">memory.failcnt                                                    memory.oom_control</span><br><span class="line">memory.force_empty                                                memory.pressure_level</span><br><span class="line">memory.kmem.failcnt                                               memory.soft_limit_in_bytes</span><br><span class="line">memory.kmem.limit_in_bytes                                        memory.stat</span><br><span class="line">memory.kmem.max_usage_in_bytes                                    memory.swappiness</span><br><span class="line">memory.kmem.slabinfo                                              memory.usage_in_bytes</span><br><span class="line">memory.kmem.tcp.failcnt                                           memory.use_hierarchy</span><br><span class="line">memory.kmem.tcp.limit_in_bytes                                    notify_on_release</span><br><span class="line">memory.kmem.tcp.max_usage_in_bytes                                tasks</span><br><span class="line">memory.kmem.tcp.usage_in_bytes</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>其中 docker 目录下除了 container id的目录其他目录都是无效的，docker这个目录只是限制所有container id的一个顶层目录而已。通过 docker/tasks 为空就可以看出来。<br>可以看到 <code>memory/docker/b3c618bb4df9/</code> 目录下的最大内存限制，就是创建这个容器时设置的最大内存使用示4MB的限制。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory&#x2F;docker# cat tasks</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory&#x2F;docker#</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df# cat memory.limit_in_bytes</span><br><span class="line">4194304</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df# cat tasks</span><br><span class="line">1733194</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df# ps -aux | grep 17</span><br><span class="line">33194</span><br><span class="line">root     1733194  0.0  0.1   4108  3296 pts&#x2F;0    Ss+  19:03   0:00 &#x2F;bin&#x2F;bash</span><br><span class="line">ubuntu   1737657  0.0  0.0   6432   736 pts&#x2F;0    S+   19:11   0:00 grep --color&#x3D;auto --exclude-dir&#x3D;.bzr --exclude-dir&#x3D;CVS --exclude-dir&#x3D;.git --exclude-dir&#x3D;.hg --exclude-dir&#x3D;.svn --exclude-dir&#x3D;.idea --exclude-dir&#x3D;.tox tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df# ps -aux | grep 17</span><br><span class="line">33194</span><br><span class="line">root     1733194  0.0  0.1   4108  3296 pts&#x2F;0    Ss+  19:03   0:00 &#x2F;bin&#x2F;bash</span><br><span class="line">ubuntu   1737657  0.0  0.0   6432   736 pts&#x2F;0    S+   19:11   0:00 grep --color&#x3D;auto --exclude-dir&#x3D;.bzr --exclude-dir&#x3D;CVS --exclude-dir&#x3D;.git --exclude-dir&#x3D;.hg --exclude-dir&#x3D;.svn --exclude-dir&#x3D;.idea --exclude-dir&#x3D;.tox 1733194</span><br></pre></td></tr></table></figure>
+<p>可以看到这个 <code>1733194</code> 进程就是启动 容器时的 /bin/bash 进程</p>
+</li>
+<li><p>由于其他的 cgroup子系统我们没有对刚刚启动的 container 进行限制，所以也理论上从 cgroup上看到的也是没有限制的，可以看看 cpu controller.</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpu&#x2F;docker# cat tasks</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpu&#x2F;docker# cd -</span><br><span class="line">&#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpu&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpu&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df# cat tasks</span><br><span class="line">1733194</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpu&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df# cat cpu.cfs_period_us</span><br><span class="line">100000</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpu&#x2F;docker&#x2F;b3c618bb4df96362b371860f84e5de5248339c9675e4eac7fd7fee6ebb5602df# cat cpu.cfs_quota_us</span><br><span class="line">-1</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<p>这里就不具体介绍 各个子系统目录下文件含义了。</p>
+
+      
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+        <div class="post-eof"></div>
+      
+    </footer>
+  </article>
+  
+  
+  
+
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
+    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/12/12/Docker%E6%9C%BA%E5%88%B6%E5%88%86%E6%9E%90/docker%E4%B8%8Enamespace%E5%A6%82%E4%BD%95%E8%81%94%E7%B3%BB%E8%B5%B7%E6%9D%A5%E7%9A%84/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="Su Hui">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liulangren Blog">
+    </span>
+
+    
+    
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/2020/12/12/Docker%E6%9C%BA%E5%88%B6%E5%88%86%E6%9E%90/docker%E4%B8%8Enamespace%E5%A6%82%E4%BD%95%E8%81%94%E7%B3%BB%E8%B5%B7%E6%9D%A5%E7%9A%84/" class="post-title-link" itemprop="url">docker与cgroup如何联系起来的</a>
+        </h2>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">Posted on</span>
+
+      <time title="Created: 2020-12-12 14:47:40" itemprop="dateCreated datePublished" datetime="2020-12-12T14:47:40+08:00">2020-12-12</time>
+    </span>
+      <span class="post-meta-item">
+        <span class="post-meta-item-icon">
+          <i class="far fa-calendar-check"></i>
+        </span>
+        <span class="post-meta-item-text">Edited on</span>
+        <time title="Modified: 2020-12-05 19:31:20" itemprop="dateModified" datetime="2020-12-05T19:31:20+08:00">2020-12-05</time>
+      </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">In</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/docker/" itemprop="url" rel="index"><span itemprop="name">docker</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+          <p>这篇文章主要实操看一看 Docker 与 Namespace 的联系。</p>
 <ol>
 <li><p>首先去 /sys/fs/cgroup/ 目录看一下当前支持的子系统controller，各个子系统controller下面一般情况下都是空的，表明系统中没有额外的cgroup，基本都只有root_cgroup.<br>虽然4.5版本之后 cgroup v2 就进入mainline了，但是 现在（2020.12.01）docker 基本还是在使用 cgroup v1, 应该也算是一个历史原因了吧，不知道何时 docker能迁移到 cgroup v2 上，期待ing</p>
 <figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup# ls</span><br><span class="line">blkio  cpuacct      cpuset   freezer  memory   net_cls,net_prio  perf_event  rdma     unified</span><br><span class="line">cpu    cpu,cpuacct  devices  hugetlb  net_cls  net_prio          pids        systemd</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup# mount | grep cgroup</span><br><span class="line">tmpfs on &#x2F;sys&#x2F;fs&#x2F;cgroup type tmpfs (ro,nosuid,nodev,noexec,mode&#x3D;755)</span><br><span class="line">cgroup2 on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;unified type cgroup2 (rw,nosuid,nodev,noexec,relatime)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;systemd type cgroup (rw,nosuid,nodev,noexec,relatime,xattr,name&#x3D;systemd)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpuset type cgroup (rw,nosuid,nodev,noexec,relatime,cpuset,clone_children)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;rdma type cgroup (rw,nosuid,nodev,noexec,relatime,rdma)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;hugetlb type cgroup (rw,nosuid,nodev,noexec,relatime,hugetlb)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;memory type cgroup (rw,nosuid,nodev,noexec,relatime,memory)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;net_cls,net_prio type cgroup (rw,nosuid,nodev,noexec,relatime,net_cls,net_prio)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;perf_event type cgroup (rw,nosuid,nodev,noexec,relatime,perf_event)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;devices type cgroup (rw,nosuid,nodev,noexec,relatime,devices)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cpu,cpuacct type cgroup (rw,nosuid,nodev,noexec,relatime,cpu,cpuacct)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;pids type cgroup (rw,nosuid,nodev,noexec,relatime,pids)</span><br><span class="line">cgroup on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;blkio type cgroup (rw,nosuid,nodev,noexec,relatime,blkio)</span><br><span class="line">freezer on &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;freezer type cgroup (rw,relatime,freezer)</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup# ls memory</span><br><span class="line">cgroup.clone_children  memory.kmem.failcnt                 memory.limit_in_bytes            memory.usage_in_bytes</span><br><span class="line">cgroup.event_control   memory.kmem.limit_in_bytes          memory.max_usage_in_bytes        memory.use_hierarchy</span><br><span class="line">cgroup.procs           memory.kmem.max_usage_in_bytes      memory.move_charge_at_immigrate  notify_on_release</span><br><span class="line">cgroup.sane_behavior   memory.kmem.slabinfo                memory.numa_stat                 release_agent</span><br><span class="line">docker                 memory.kmem.tcp.failcnt             memory.oom_control               system.slice</span><br><span class="line">init.scope             memory.kmem.tcp.limit_in_bytes      memory.pressure_level            tasks</span><br><span class="line">machine.slice          memory.kmem.tcp.max_usage_in_bytes  memory.soft_limit_in_bytes       user</span><br><span class="line">memory.failcnt         memory.kmem.tcp.usage_in_bytes      memory.stat                      user.slice</span><br><span class="line">memory.force_empty     memory.kmem.usage_in_bytes          memory.swappiness</span><br><span class="line">tencent_clould@ubuntu: &#x2F;sys&#x2F;fs&#x2F;cgroup# cat memory&#x2F;tasks</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">....</span><br><span class="line">1728692</span><br><span class="line">1731590</span><br></pre></td></tr></table></figure>
@@ -1171,230 +1422,6 @@
 </li>
 <li><p>回复邮件<br><a target="_blank" rel="noopener" href="https://lkml.org/lkml/2020/9/22/824">我的第一个patch</a></p>
 </li>
-</ol>
-
-      
-    </div>
-
-    
-    
-    
-
-    <footer class="post-footer">
-        <div class="post-eof"></div>
-      
-    </footer>
-  </article>
-  
-  
-  
-
-      
-  
-  
-  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
-    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/09/21/%E8%BF%9B%E7%A8%8B%E7%AE%A1%E7%90%86/%E5%85%B3%E4%BA%8Epreempt_count%E7%9A%84%E6%80%9D%E8%80%83/">
-
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="image" content="/images/avatar.gif">
-      <meta itemprop="name" content="Su Hui">
-      <meta itemprop="description" content="">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="liulangren Blog">
-    </span>
-
-    
-    
-      <header class="post-header">
-        <h2 class="post-title" itemprop="name headline">
-          
-            <a href="/2020/09/21/%E8%BF%9B%E7%A8%8B%E7%AE%A1%E7%90%86/%E5%85%B3%E4%BA%8Epreempt_count%E7%9A%84%E6%80%9D%E8%80%83/" class="post-title-link" itemprop="url">关于preempt_count的思考</a>
-        </h2>
-
-        <div class="post-meta-container">
-          <div class="post-meta">
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-calendar"></i>
-      </span>
-      <span class="post-meta-item-text">Posted on</span>
-      
-
-      <time title="Created: 2020-09-21 14:47:40 / Modified: 02:36:50" itemprop="dateCreated datePublished" datetime="2020-09-21T14:47:40+08:00">2020-09-21</time>
-    </span>
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-folder"></i>
-      </span>
-      <span class="post-meta-item-text">In</span>
-        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-          <a href="/categories/linux%E5%86%85%E6%A0%B8/" itemprop="url" rel="index"><span itemprop="name">linux内核</span></a>
-        </span>
-    </span>
-
-  
-</div>
-
-        </div>
-      </header>
-
-    
-    
-    
-    <div class="post-body" itemprop="articleBody">
-          <p>preempt_conut 本质就是一个int型的数，是每个 <code>task_struct</code> 的 <code>thread_info</code> 的一个成员变量，但是他和系统的调度密切相关，当然也十分重要。</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">struct thread_info &#123;</span><br><span class="line">	unsigned long		flags;		&#x2F;* low level flags *&#x2F;</span><br><span class="line">	int			preempt_count;	&#x2F;* 0 &#x3D;&gt; preemptable, &lt;0 &#x3D;&gt; bug *&#x2F;</span><br><span class="line">    .......</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
-
-<p>在 <code>inlcude/linux/preempt.h</code> 文件看相关定义</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br></pre></td><td class="code"><pre><span class="line">static __always_inline int preempt_count(void)</span><br><span class="line">&#123;</span><br><span class="line">	return READ_ONCE(current_thread_info()-&gt;preempt_count);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">&#x2F;*</span><br><span class="line"> *         PREEMPT_MASK:	0x000000ff</span><br><span class="line"> *         SOFTIRQ_MASK:	0x0000ff00</span><br><span class="line"> *         HARDIRQ_MASK:	0x000f0000</span><br><span class="line"> *             NMI_MASK:	0x00100000</span><br><span class="line"> * PREEMPT_NEED_RESCHED:	0x80000000</span><br><span class="line"> *&#x2F;</span><br><span class="line">#define PREEMPT_BITS	8</span><br><span class="line">#define SOFTIRQ_BITS	8</span><br><span class="line">#define HARDIRQ_BITS	4</span><br><span class="line">#define NMI_BITS	1</span><br><span class="line"></span><br><span class="line">#define PREEMPT_SHIFT	0</span><br><span class="line">#define SOFTIRQ_SHIFT	(PREEMPT_SHIFT + PREEMPT_BITS)</span><br><span class="line">#define HARDIRQ_SHIFT	(SOFTIRQ_SHIFT + SOFTIRQ_BITS)</span><br><span class="line">#define NMI_SHIFT	(HARDIRQ_SHIFT + HARDIRQ_BITS)</span><br><span class="line"></span><br><span class="line">#define hardirq_count()	(preempt_count() &amp; HARDIRQ_MASK)</span><br><span class="line">#define softirq_count()	(preempt_count() &amp; SOFTIRQ_MASK)</span><br><span class="line">#define irq_count()	(preempt_count() &amp; (HARDIRQ_MASK | SOFTIRQ_MASK \</span><br><span class="line">				 | NMI_MASK))</span><br><span class="line"></span><br><span class="line">#define in_irq()		(hardirq_count())</span><br><span class="line">#define in_softirq()		(softirq_count())</span><br><span class="line">#define in_interrupt()		(irq _count())</span><br><span class="line">#define in_serving_softirq()	(softirq_count() &amp; SOFTIRQ_OFFSET)</span><br><span class="line">#define in_nmi()		(preempt_count() &amp; NMI_MASK)</span><br><span class="line">#define in_task()		(!(preempt_count() &amp; \</span><br><span class="line">				   (NMI_MASK | HARDIRQ_MASK | SOFTIRQ_OFFSET)))</span><br></pre></td></tr></table></figure>
-
-<p>可以看出 <code>preempt_count</code> 0-7 bit被用来抢占计数，8-15 bit被用来软中断计数，16-19 bit被用来硬件中断计数，20bit 被用来 NMI中断计数，31 bit被用来记录是否需要立即sched.</p>
-<p>in_interrupt() 这些宏本质也是根据 preempt_count()来判断的。</p>
-<h2 id="hard-irq"><a href="#hard-irq" class="headerlink" title="hard irq"></a>hard irq</h2><p>在进入irq的时候通过 <code>irq_enter</code> 将preempt_count 的 16-19bit ++，在退出irq的时候通过 <code>irq_exit</code> 将preempt_count 的 16-19bit –，但是由于目前linux中的中断往往是不可嵌套的，所以一般 hardirq 只会用到 16 bit，为什么linux给 hardirq 保留了4bit呢，這是歷史原因造成的，早期hardirq还是可以嵌套的。</p>
-<p>irq_enter()</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line">#define preempt_count_add(val)	__preempt_count_add(val)</span><br><span class="line"></span><br><span class="line">#define __irq_enter()					\</span><br><span class="line">	do &#123;						\</span><br><span class="line">		account_irq_enter_time(current);	\</span><br><span class="line">		preempt_count_add(HARDIRQ_OFFSET);	\  &#x2F;&#x2F; preempt_count 和 hardirq相关++</span><br><span class="line">		trace_hardirq_enter();			\</span><br><span class="line">	&#125; while (0)</span><br><span class="line"></span><br><span class="line">void irq_enter(void) &#x2F;&#x2F;进入中断上下文</span><br><span class="line">&#123;</span><br><span class="line">	rcu_irq_enter();</span><br><span class="line">	if (is_idle_task(current) &amp;&amp; !in_interrupt()) &#123;</span><br><span class="line">		&#x2F;*</span><br><span class="line">		 * Prevent raise_softirq from needlessly waking up ksoftirqd</span><br><span class="line">		 * here, as softirq will be serviced on return from interrupt.</span><br><span class="line">		 *&#x2F;</span><br><span class="line">		local_bh_disable();</span><br><span class="line">		tick_irq_enter();</span><br><span class="line">		_local_bh_enable();</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	__irq_enter();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>irq_exit()</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">#define preempt_count_sub(val)	__preempt_count_sub(val)</span><br><span class="line"></span><br><span class="line">void irq_exit(void) &#x2F;&#x2F;退出中断上下文</span><br><span class="line">&#123;</span><br><span class="line">#ifndef __ARCH_IRQ_EXIT_IRQS_DISABLED</span><br><span class="line">	local_irq_disable();</span><br><span class="line">#else</span><br><span class="line">	lockdep_assert_irqs_disabled();</span><br><span class="line">#endif</span><br><span class="line">	account_irq_exit_time(current);</span><br><span class="line">	preempt_count_sub(HARDIRQ_OFFSET); &#x2F;&#x2F; preempt_count 和 hardirq相关--</span><br><span class="line">	if (!in_interrupt() &amp;&amp; local_softirq_pending())</span><br><span class="line">		invoke_softirq();</span><br><span class="line"></span><br><span class="line">	tick_irq_exit();</span><br><span class="line">	rcu_irq_exit();</span><br><span class="line">	trace_hardirq_exit(); &#x2F;* must be last! *&#x2F;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-
-<h2 id="soft-irq"><a href="#soft-irq" class="headerlink" title="soft irq"></a>soft irq</h2><p>preempt_count中的第8到15个bit表示softirq count，它记录了进入softirq的嵌套次数，如果softirq count的值为正数，说明现在正处于softirq上下文中。<br>由于softirq在单个CPU上是不会嵌套执行的，因此和hardirq count一样，实际只需要一个bit(bit 8)就可以了。<br>还有一种情况，softirq count 会用到不止 bit8，在禁用中断下半部的情况下，每禁用一次softirq count 就会增加1，理论上最多可以嵌套16次。</p>
-<p>进入退出软中断的case</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">asmlinkage __visible void __softirq_entry __do_softirq(void)</span><br><span class="line">&#123;</span><br><span class="line">    ......</span><br><span class="line">	__local_bh_disable_ip(_RET_IP_, SOFTIRQ_OFFSET);</span><br><span class="line">    ......</span><br><span class="line">	while ((softirq_bit &#x3D; ffs(pending))) &#123;</span><br><span class="line">        ......</span><br><span class="line">		h-&gt;action(h);</span><br><span class="line">        ......</span><br><span class="line">	&#125;</span><br><span class="line">    ......</span><br><span class="line">	__local_bh_enable(SOFTIRQ_OFFSET);</span><br><span class="line">    ......</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>禁止、开启中断下半部的case</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br></pre></td><td class="code"><pre><span class="line">void __local_bh_enable_ip(unsigned long ip, unsigned int cnt)</span><br><span class="line">&#123;</span><br><span class="line">    ...xxx</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">static inline void local_bh_enable_ip(unsigned long ip)</span><br><span class="line">&#123;</span><br><span class="line">	__local_bh_enable_ip(ip, SOFTIRQ_DISABLE_OFFSET);&#x2F;&#x2F; 开启中断下半部的preempt_count 和 softirq相关++</span><br><span class="line">&#125;</span><br><span class="line">&#x2F;&#x2F;开启下半部</span><br><span class="line">---------------</span><br><span class="line">&#x2F;&#x2F;禁止下半部</span><br><span class="line">static __always_inline void __local_bh_disable_ip(unsigned long ip, unsigned int cnt)</span><br><span class="line">&#123;</span><br><span class="line">	preempt_count_add(cnt);</span><br><span class="line">	barrier();</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">static inline void __raw_spin_lock_bh(raw_spinlock_t *lock)</span><br><span class="line">&#123;</span><br><span class="line">	__local_bh_disable_ip(_RET_IP_, SOFTIRQ_LOCK_OFFSET); &#x2F;&#x2F; 禁止中断下半部的preempt_count 和 softirq相关++</span><br><span class="line">	spin_acquire(&amp;lock-&gt;dep_map, 0, 0, _RET_IP_);</span><br><span class="line">	LOCK_CONTENDED(lock, do_raw_spin_trylock, do_raw_spin_lock);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">void __lockfunc _raw_spin_lock_bh(raw_spinlock_t *lock)</span><br><span class="line">&#123;</span><br><span class="line">	__raw_spin_lock_bh(lock);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">#define raw_spin_lock_bh(lock)		_raw_spin_lock_bh(lock)</span><br><span class="line"></span><br><span class="line">static __always_inline void spin_lock_bh(spinlock_t *lock)</span><br><span class="line">&#123;</span><br><span class="line">	raw_spin_lock_bh(&amp;lock-&gt;rlock);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-<p>可以看出来执行软中断 和 禁止中断下半部都属于软中断上下文。<br>（我有个疑问，禁止hard irq 属于硬件中断上下文吗？从 in_irq的定义上看不是，但是和软中断不太一样）</p>
-<h2 id="process-context"><a href="#process-context" class="headerlink" title="process context"></a>process context</h2><p>进程上下文，当然不仅仅是进程，只要不是出于NMI、HARD IRQ、SOFT IRQ上下文的都算进程上下文，包括内核线程（包括ksoftirqd、kworker内核线程等）</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">#define in_task()		(!(preempt_count() &amp; \</span><br><span class="line">				   (NMI_MASK | HARDIRQ_MASK | SOFTIRQ_OFFSET)))</span><br></pre></td></tr></table></figure>
-
-<p>中断上下文不会发生进程切换，是一种隐式的进制调度方法。通常也可以使用 <code>preempt_disable</code> 来显式关闭调度，对 preempt_count ++。</p>
-<h2 id="atomic-context"><a href="#atomic-context" class="headerlink" title="atomic context"></a>atomic context</h2><p>处于中断上下文中(NMI、hard、soft) 或者 禁止抢占的情况下，都属于原子上下文</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">static __always_inline int preempt_count(void)</span><br><span class="line">&#123;</span><br><span class="line">	return READ_ONCE(current_thread_info()-&gt;preempt_count);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">#define in_atomic()	(preempt_count() !&#x3D; 0)</span><br></pre></td></tr></table></figure>
-
-<p>参考：<br><a target="_blank" rel="noopener" href="https://zhuanlan.zhihu.com/p/88883239">Linux中的preempt_count</a></p>
-
-      
-    </div>
-
-    
-    
-    
-
-    <footer class="post-footer">
-        <div class="post-eof"></div>
-      
-    </footer>
-  </article>
-  
-  
-  
-
-      
-  
-  
-  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
-    <link itemprop="mainEntityOfPage" href="https://liulangrenaaa.github.io/2020/09/20/%E5%B9%B6%E5%8F%91%E9%97%AE%E9%A2%98/softirq%E4%BD%95%E6%97%B6%E4%BC%9A%E8%A2%AB%E6%89%A7%E8%A1%8C/">
-
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="image" content="/images/avatar.gif">
-      <meta itemprop="name" content="Su Hui">
-      <meta itemprop="description" content="">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="liulangren Blog">
-    </span>
-
-    
-    
-      <header class="post-header">
-        <h2 class="post-title" itemprop="name headline">
-          
-            <a href="/2020/09/20/%E5%B9%B6%E5%8F%91%E9%97%AE%E9%A2%98/softirq%E4%BD%95%E6%97%B6%E4%BC%9A%E8%A2%AB%E6%89%A7%E8%A1%8C/" class="post-title-link" itemprop="url">softirq何时会被执行</a>
-        </h2>
-
-        <div class="post-meta-container">
-          <div class="post-meta">
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-calendar"></i>
-      </span>
-      <span class="post-meta-item-text">Posted on</span>
-
-      <time title="Created: 2020-09-20 14:47:40" itemprop="dateCreated datePublished" datetime="2020-09-20T14:47:40+08:00">2020-09-20</time>
-    </span>
-      <span class="post-meta-item">
-        <span class="post-meta-item-icon">
-          <i class="far fa-calendar-check"></i>
-        </span>
-        <span class="post-meta-item-text">Edited on</span>
-        <time title="Modified: 2020-09-21 00:42:02" itemprop="dateModified" datetime="2020-09-21T00:42:02+08:00">2020-09-21</time>
-      </span>
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-folder"></i>
-      </span>
-      <span class="post-meta-item-text">In</span>
-        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-          <a href="/categories/linux%E5%86%85%E6%A0%B8/" itemprop="url" rel="index"><span itemprop="name">linux内核</span></a>
-        </span>
-    </span>
-
-  
-</div>
-
-        </div>
-      </header>
-
-    
-    
-    
-    <div class="post-body" itemprop="articleBody">
-          <p>很多人可能都知道中断irq，但是对软中断softfirq却比较陌生，软中断这个概念是纯软件意义上的，与中断依赖于硬件行为不一样。在linux中，软中断主要用于执行irq中没有执行，但又不是很紧急的事情，现在linux内核中为每个CPU都分配了一个线程 <code>[ksoftirqd/n]</code>，用来执行软中断。</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">sh@ubuntu[root]:&#x2F;sys&#x2F;kernel&#x2F;debug&#x2F;tracing# ps -aux |grep soft</span><br><span class="line">root          10  0.0  0.0      0     0 ?        S    9月19   0:19 [ksoftirqd&#x2F;0]</span><br><span class="line">root          18  0.0  0.0      0     0 ?        S    9月19   0:17 [ksoftirqd&#x2F;1]</span><br><span class="line">root          24  0.0  0.0      0     0 ?        S    9月19   0:18 [ksoftirqd&#x2F;2]</span><br><span class="line">root          30  0.0  0.0      0     0 ?        S    9月19   0:21 [ksoftirqd&#x2F;3]</span><br></pre></td></tr></table></figure>
-
-<p>具体软中断分以下几种</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">enum&#123;</span><br><span class="line">	HI_SOFTIRQ&#x3D;0,</span><br><span class="line">	TIMER_SOFTIRQ,</span><br><span class="line">	NET_TX_SOFTIRQ,</span><br><span class="line">	NET_RX_SOFTIRQ,</span><br><span class="line">	BLOCK_SOFTIRQ,</span><br><span class="line">	IRQ_POLL_SOFTIRQ,</span><br><span class="line">	TASKLET_SOFTIRQ,</span><br><span class="line">	SCHED_SOFTIRQ,</span><br><span class="line">	HRTIMER_SOFTIRQ, &#x2F;* Unused, but kept as tools rely on the numbering. Sigh! *&#x2F;</span><br><span class="line">	RCU_SOFTIRQ,    &#x2F;* Preferable RCU should always be the last softirq *&#x2F;</span><br><span class="line">	NR_SOFTIRQS</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
-
-<p>通过 <code>open_softirq</code> 初始化</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">static struct softirq_action softirq_vec[NR_SOFTIRQS] __cacheline_aligned_in_smp;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">void open_softirq(int nr, void (*action)(struct softirq_action *))</span><br><span class="line">&#123;</span><br><span class="line">	softirq_vec[nr].action &#x3D; action;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>触发软中断的时候通过 <code>raise_softirq</code> 来触发</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">void raise_softirq(unsigned int nr)</span><br><span class="line">&#123;</span><br><span class="line">	unsigned long flags;</span><br><span class="line"></span><br><span class="line">	local_irq_save(flags);</span><br><span class="line">	raise_softirq_irqoff(nr);</span><br><span class="line">	local_irq_restore(flags);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>但tasklet机制直接使用了 <code>raise_softirq_irqoff</code>，搜索代码可以发现其他类型的softirq也基本都是用 <code>raise_softirq_irqoff</code> 触发。</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">static void __tasklet_schedule_common(struct tasklet_struct *t,</span><br><span class="line">				      struct tasklet_head __percpu *headp,</span><br><span class="line">				      unsigned int softirq_nr)</span><br><span class="line">&#123;</span><br><span class="line">	struct tasklet_head *head;</span><br><span class="line">	unsigned long flags;</span><br><span class="line"></span><br><span class="line">	local_irq_save(flags);</span><br><span class="line">	head &#x3D; this_cpu_ptr(headp);</span><br><span class="line">	t-&gt;next &#x3D; NULL;</span><br><span class="line">	*head-&gt;tail &#x3D; t;</span><br><span class="line">	head-&gt;tail &#x3D; &amp;(t-&gt;next);</span><br><span class="line">	raise_softirq_irqoff(softirq_nr);</span><br><span class="line">	local_irq_restore(flags);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>来看下 <code>raise_softirq_irqoff</code> 实现，</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">#define local_softirq_pending_ref irq_stat.__softirq_pending</span><br><span class="line">#define or_softirq_pending(x)	(__this_cpu_or(local_softirq_pending_ref, (x)))</span><br><span class="line"></span><br><span class="line">void __raise_softirq_irqoff(unsigned int nr)</span><br><span class="line">&#123;</span><br><span class="line">	trace_softirq_raise(nr);       &#x2F;&#x2F; 软中断 raise 的 tracepoint 点</span><br><span class="line">	or_softirq_pending(1UL &lt;&lt; nr); &#x2F;&#x2F; 设置当前cpu的软中断pending状态</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">inline void raise_softirq_irqoff(unsigned int nr)</span><br><span class="line">&#123;</span><br><span class="line">	__raise_softirq_irqoff(nr);</span><br><span class="line">	if (!in_interrupt())</span><br><span class="line">		wakeup_softirqd(); &#x2F;&#x2F;如果不是中断上下文，就需要唤醒 ksoftirqd来执行相关软中断，这也保证了在线程上下文中软中断可以得到较快执行</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>__raise_softirq_irqoff 仅仅是设置 __softirq_pending 标志位，这有两个作用</p>
-<ol>
-<li>如果当前是中断irq上下文，在 irq_exit 之后，检查 local_softirq_pending，判断有软中断需要执行</li>
-<li>如果当前是线程上下文，在 ksoftirq 线程中检查标志位，最后执行相关的软中断</li>
-<li>如果当前在临界区上，在打开中断时，可以检测pending的软中断如何去执行</li>
-</ol>
-<p>irq_exit的情况</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line">static inline void invoke_softirq(void)</span><br><span class="line">&#123; &#x2F;&#x2F;不考虑软中断强制线程化，简化代码</span><br><span class="line">	if (ksoftirqd_running(local_softirq_pending()))</span><br><span class="line">		return;</span><br><span class="line">   __do_softirq();</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">void irq_exit(void)  </span><br><span class="line">&#123;</span><br><span class="line">#ifndef __ARCH_IRQ_EXIT_IRQS_DISABLED</span><br><span class="line">	local_irq_disable();</span><br><span class="line">#else</span><br><span class="line">	lockdep_assert_irqs_disabled();</span><br><span class="line">#endif</span><br><span class="line">	account_irq_exit_time(current);</span><br><span class="line">	preempt_count_sub(HARDIRQ_OFFSET);</span><br><span class="line">	if (!in_interrupt() &amp;&amp; local_softirq_pending())</span><br><span class="line">		invoke_softirq();   &#x2F;&#x2F;在中断退出之后，如果有 pending的软中断，就需要执行 软中断</span><br><span class="line"></span><br><span class="line">	tick_irq_exit();</span><br><span class="line">	rcu_irq_exit();</span><br><span class="line">	trace_hardirq_exit(); &#x2F;* must be last! *&#x2F;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>ksoftirq线程</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">static void run_ksoftirqd(unsigned int cpu)</span><br><span class="line">&#123;</span><br><span class="line">	local_irq_disable();</span><br><span class="line">	if (local_softirq_pending()) &#123;</span><br><span class="line">		&#x2F;*</span><br><span class="line">		 * We can safely run softirq on inline stack, as we are not deep</span><br><span class="line">		 * in the task stack here.</span><br><span class="line">		 *&#x2F;</span><br><span class="line">		__do_softirq();</span><br><span class="line">		local_irq_enable();</span><br><span class="line">		cond_resched();</span><br><span class="line">		return;</span><br><span class="line">	&#125;</span><br><span class="line">	local_irq_enable();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>开启中断的情况下</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">void __local_bh_enable_ip(unsigned long ip, unsigned int cnt)</span><br><span class="line">&#123;</span><br><span class="line">	WARN_ON_ONCE(in_irq());</span><br><span class="line">	lockdep_assert_irqs_enabled();</span><br><span class="line">	preempt_count_sub(cnt - 1);</span><br><span class="line">	if (unlikely(!in_interrupt() &amp;&amp; local_softirq_pending())) &#123;</span><br><span class="line">        &#x2F;&#x2F; 如果不在中断中，且 softirq 有pending的位，就需要执行软中断</span><br><span class="line">		do_softirq();</span><br><span class="line">	&#125;</span><br><span class="line">	preempt_count_dec();</span><br><span class="line">	preempt_check_resched();</span><br><span class="line">&#125;</span><br><span class="line">EXPORT_SYMBOL(__local_bh_enable_ip);</span><br><span class="line"></span><br><span class="line">static inline void local_bh_enable(void)</span><br><span class="line">&#123;</span><br><span class="line">	__local_bh_enable_ip(_THIS_IP_, SOFTIRQ_DISABLE_OFFSET);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-<h2 id="do-softirq"><a href="#do-softirq" class="headerlink" title="__do_softirq"></a>__do_softirq</h2><p>不管是退出中断时执行软中断，还是在ksoftirqd中執行软中断，最终都会执行到 <code>__do_softirq</code> 这个函数</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br></pre></td><td class="code"><pre><span class="line">#define MAX_SOFTIRQ_TIME  msecs_to_jiffies(2)       &#x2F;&#x2F;2ms</span><br><span class="line">#define MAX_SOFTIRQ_RESTART 10</span><br><span class="line"></span><br><span class="line">asmlinkage __visible void __softirq_entry __do_softirq(void)</span><br><span class="line">&#123;</span><br><span class="line">	unsigned long end &#x3D; jiffies + MAX_SOFTIRQ_TIME;</span><br><span class="line">	unsigned long old_flags &#x3D; current-&gt;flags;</span><br><span class="line">	int max_restart &#x3D; MAX_SOFTIRQ_RESTART;</span><br><span class="line">	struct softirq_action *h;</span><br><span class="line">	bool in_hardirq;</span><br><span class="line">	__u32 pending;</span><br><span class="line">	int softirq_bit;</span><br><span class="line"></span><br><span class="line">	&#x2F;*</span><br><span class="line">	 * Mask out PF_MEMALLOC as the current task context is borrowed for the</span><br><span class="line">	 * softirq. A softirq handled, such as network RX, might set PF_MEMALLOC</span><br><span class="line">	 * again if the socket is related to swapping.</span><br><span class="line">	 *&#x2F;</span><br><span class="line">	current-&gt;flags &amp;&#x3D; ~PF_MEMALLOC;</span><br><span class="line"></span><br><span class="line">	pending &#x3D; local_softirq_pending();</span><br><span class="line">	account_irq_enter_time(current);</span><br><span class="line"></span><br><span class="line">	__local_bh_disable_ip(_RET_IP_, SOFTIRQ_OFFSET);</span><br><span class="line">	in_hardirq &#x3D; lockdep_softirq_start();</span><br><span class="line"></span><br><span class="line">restart:</span><br><span class="line">	&#x2F;* Reset the pending bitmask before enabling irqs *&#x2F;</span><br><span class="line">	set_softirq_pending(0);</span><br><span class="line"></span><br><span class="line">	local_irq_enable();</span><br><span class="line"></span><br><span class="line">	h &#x3D; softirq_vec;</span><br><span class="line"></span><br><span class="line">	while ((softirq_bit &#x3D; ffs(pending))) &#123; &#x2F;&#x2F;循环执行 pending的软中断</span><br><span class="line">		unsigned int vec_nr;</span><br><span class="line">		int prev_count;</span><br><span class="line"></span><br><span class="line">		h +&#x3D; softirq_bit - 1;</span><br><span class="line"></span><br><span class="line">		vec_nr &#x3D; h - softirq_vec;</span><br><span class="line">		prev_count &#x3D; preempt_count();</span><br><span class="line"></span><br><span class="line">		kstat_incr_softirqs_this_cpu(vec_nr);</span><br><span class="line"></span><br><span class="line">		trace_softirq_entry(vec_nr);  &#x2F;&#x2F;trace 软中断执行</span><br><span class="line">		h-&gt;action(h);</span><br><span class="line">		trace_softirq_exit(vec_nr);   &#x2F;&#x2F;trace 软中断退出</span><br><span class="line">		if (unlikely(prev_count !&#x3D; preempt_count())) &#123;</span><br><span class="line">			pr_err(&quot;huh, entered softirq %u %s %p with preempt_count %08x, exited with %08x?\n&quot;,</span><br><span class="line">			       vec_nr, softirq_to_name[vec_nr], h-&gt;action,</span><br><span class="line">			       prev_count, preempt_count());</span><br><span class="line">			preempt_count_set(prev_count);</span><br><span class="line">		&#125;</span><br><span class="line">		h++;</span><br><span class="line">		pending &gt;&gt;&#x3D; softirq_bit;</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	if (__this_cpu_read(ksoftirqd) &#x3D;&#x3D; current)</span><br><span class="line">		rcu_softirq_qs();</span><br><span class="line">	local_irq_disable();</span><br><span class="line"></span><br><span class="line">	pending &#x3D; local_softirq_pending();</span><br><span class="line">	if (pending) &#123;</span><br><span class="line">		if (time_before(jiffies, end) &amp;&amp; !need_resched() &amp;&amp;</span><br><span class="line">		    --max_restart) &#x2F;&#x2F;如果又有pending的软中断了，看看是否执行超时了 2ms，且 restart 不能超过10次</span><br><span class="line">			goto restart; &#x2F;&#x2F;未超时</span><br><span class="line"></span><br><span class="line">		wakeup_softirqd(); &#x2F;&#x2F;超时 2ms，唤醒softirqd去执行软中断</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	lockdep_softirq_end(in_hardirq);</span><br><span class="line">	account_irq_exit_time(current);</span><br><span class="line">	__local_bh_enable(SOFTIRQ_OFFSET);</span><br><span class="line">	WARN_ON_ONCE(in_interrupt());</span><br><span class="line">	current_restore_flags(old_flags, PF_MEMALLOC);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<h2 id="do-softirq-1"><a href="#do-softirq-1" class="headerlink" title="do_softirq"></a>do_softirq</h2><p><code>do_softirq</code> 和 其他代码路径下执行软中断不一样，最终执行代码的是 <code>do_softirq_own_stack</code>，后续分析 -=-！</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line">void do_softirq_own_stack(void)</span><br><span class="line">&#123;</span><br><span class="line">	struct irq_stack *irqstk;</span><br><span class="line">	u32 *isp, *prev_esp;</span><br><span class="line"></span><br><span class="line">	irqstk &#x3D; __this_cpu_read(softirq_stack_ptr);</span><br><span class="line"></span><br><span class="line">	&#x2F;* build the stack frame on the softirq stack *&#x2F;</span><br><span class="line">	isp &#x3D; (u32 *) ((char *)irqstk + sizeof(*irqstk));</span><br><span class="line"></span><br><span class="line">	&#x2F;* Push the previous esp onto the stack *&#x2F;</span><br><span class="line">	prev_esp &#x3D; (u32 *)irqstk;</span><br><span class="line">	*prev_esp &#x3D; current_stack_pointer;</span><br><span class="line"></span><br><span class="line">	call_on_stack(__do_softirq, isp);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">asmlinkage __visible void do_softirq(void)</span><br><span class="line">&#123;</span><br><span class="line">	unsigned long flags;</span><br><span class="line">	local_irq_save(flags);</span><br><span class="line">	if (local_softirq_pending() &amp;&amp; !ksoftirqd_running(pending))</span><br><span class="line">		do_softirq_own_stack();</span><br><span class="line">	local_irq_restore(flags);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<h2 id="如何观察softirq"><a href="#如何观察softirq" class="headerlink" title="如何观察softirq"></a>如何观察softirq</h2><p>在softirq处理过程中（非ksoftirqd线程），在该local cpu上的其他进程是无法进行调度的，不管进程有多高的优先级。因此这点势必对系统实时性造成影响。</p>
-<ol>
-<li>通过 <code>/proc/softirqs</code> ，配合 <code>watch</code> 命令来观察</li>
-<li>通过一些tracepoint来观察</li>
 </ol>
 
       

@@ -30,7 +30,7 @@
 <meta property="og:description" content="虚拟内存泄漏一般情况我们说 内存泄漏，都是指的是物理内存泄漏，毕竟物理内存是实实在在的，一个进程泄漏了，那么整个系统中的可用内存就会变少。 但是linux的虚拟内存空间是各个进程之间相互隔离的，在arm64系统中 有 T,在 arm32系统中也有3G多。但是否意味着这种 虚拟内存我们就不需要关心呢？ 尝试复现代码： 12345678910111213141516171819#include &amp;lt">
 <meta property="og:locale">
 <meta property="article:published_time" content="2021-01-15T11:00:00.000Z">
-<meta property="article:modified_time" content="2021-01-18T08:30:12.636Z">
+<meta property="article:modified_time" content="2021-01-21T16:39:25.597Z">
 <meta property="article:author" content="Su Hui">
 <meta property="article:tag" content="内存泄露">
 <meta property="article:tag" content="资源泄漏">
@@ -197,7 +197,7 @@
       <div class="site-state-item site-state-posts">
           <a href="/archives/">
         
-          <span class="site-state-item-count">37</span>
+          <span class="site-state-item-count">39</span>
           <span class="site-state-item-name">posts</span>
         </a>
       </div>
@@ -210,7 +210,7 @@
       <div class="site-state-item site-state-tags">
             <a href="/tags/">
           
-        <span class="site-state-item-count">62</span>
+        <span class="site-state-item-count">68</span>
         <span class="site-state-item-name">tags</span></a>
       </div>
   </nav>
@@ -280,7 +280,7 @@
           <i class="far fa-calendar-check"></i>
         </span>
         <span class="post-meta-item-text">Edited on</span>
-        <time title="Modified: 2021-01-18 16:30:12" itemprop="dateModified" datetime="2021-01-18T16:30:12+08:00">2021-01-18</time>
+        <time title="Modified: 2021-01-22 00:39:25" itemprop="dateModified" datetime="2021-01-22T00:39:25+08:00">2021-01-22</time>
       </span>
     <span class="post-meta-item">
       <span class="post-meta-item-icon">
@@ -306,7 +306,7 @@
 <p>但是linux的虚拟内存空间是各个进程之间相互隔离的，在arm64系统中 有 T,在 arm32系统中也有3G<br>多。但是否意味着这种 虚拟内存我们就不需要关心呢？</p>
 <h2 id="尝试复现"><a href="#尝试复现" class="headerlink" title="尝试复现"></a>尝试复现</h2><p>代码：</p>
 <figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line">#include &lt;stdio.h&gt;</span><br><span class="line">#include &lt;stdlib.h&gt;</span><br><span class="line"></span><br><span class="line">void main(void)</span><br><span class="line">&#123;</span><br><span class="line">        int i &#x3D; 0;</span><br><span class="line">        char *p &#x3D; NULL;</span><br><span class="line">        for (i &#x3D; 0; i &lt; 1024 * 1024 * 64; i++) &#123;</span><br><span class="line">                p &#x3D; malloc(1024 * 1024);</span><br><span class="line">                if (!p) &#123;printf(&quot;malloc failed,p &#x3D; %p, i &#x3D; %d\n&quot;, p, i); break;&#125;</span><br><span class="line">                else    &#123;printf(&quot;malloc sucess.p &#x3D; %p, i &#x3D; %d\n&quot;, p, i);&#125;</span><br><span class="line">                usleep(1000 * 10);</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        printf(&quot;malloc failed,just wait!!\n&quot;);</span><br><span class="line">        while(1) &#123;</span><br><span class="line">                usleep(1000 * 10);</span><br><span class="line">        &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-<p>每次尝试需非陪 1G的虚拟内存，但是不会去使用，也就是不会去申请物理内存</p>
+<p>每次尝试需分配 1G的虚拟内存，但是不会去使用，也就是不会去申请物理内存</p>
 <h2 id="x86-64-平台"><a href="#x86-64-平台" class="headerlink" title="x86_64 平台"></a>x86_64 平台</h2><p>我一开始尝试在腾讯云 服务器上复现：</p>
 <figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@130ubuntu: ~&#x2F;workspace&#x2F;test_modules&#x2F;resource_leak&#x2F;process_virtual_address_memleak# .&#x2F;a.out</span><br><span class="line">malloc sucess. p &#x3D; 0x7f8e3f5c6010, i &#x3D; 0</span><br><span class="line">malloc sucess. p &#x3D; 0x7f8e3f4c5010, i &#x3D; 1</span><br><span class="line">......</span><br><span class="line">malloc sucess. p &#x3D; 0x56771e4ba6e0, i &#x3D; 461827</span><br><span class="line">malloc sucess. p &#x3D; 0x56771e5ba6f0, i &#x3D; 461828</span><br><span class="line">[1]    2721866 killed     .&#x2F;a.out</span><br></pre></td></tr></table></figure>
 
@@ -339,7 +339,7 @@
 <p>我们看 <code>libc_malloc</code> 区域的 的大小</p>
 <figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">00080000-7f580000 rw-p 00000000 00:00 0          [anon:libc_malloc]  &#x3D;&#x3D; 2037MB</span><br><span class="line">7f600000-b6d00000 rw-p 00000000 00:00 0          [anon:libc_malloc]  &#x3D;&#x3D; 887MB</span><br><span class="line">b6f80000-beb80000 rw-p 00000000 00:00 0          [anon:libc_malloc]  &#x3D;&#x3D; 124MB</span><br><span class="line">bed80000-bee80000 rw-p 00000000 00:00 0          [anon:libc_malloc]  &#x3D;&#x3D; 1MB</span><br></pre></td></tr></table></figure>
 <p>总和是 <code>2037 + 887 + 124 + 1 = 3049MB</code></p>
-<p>这是项目中一个实际的bug，场景是 直播盒子 做长跑测试的时候，每到7天左右，直播业务就会因为<br>malloc失败而导致失败，但是由于业务代码写的问题，没有检查 malloc返回值的原因，导致业务应用会<br>crash, 现象是空指针错误。。很难联想到是因为进程虚拟地址空间全部泄漏导致的问题。<br>业务的小伙伴差了一个多月都没有头绪。。</p>
+<p>这是项目中一个实际的bug，场景是 直播盒子 做长跑测试的时候，每到7天左右，直播业务就会因<br>为malloc失败而导致失败，但是由于业务代码写的问题，没有检查 malloc返回值的原因，导致业<br>务应用会crash, 现象是空指针错误。。很难联想到是因为进程虚拟地址空间全部泄漏导致的问题。<br>业务的小伙伴差了一个多月都没有头绪。。</p>
 <p>在 <code>arm32</code> 设备上，<br>User 14 + Nice 0 + Sys 49 + Idle 246 + IOW 1 + IRQ 0 + SIRQ 0 = 310</p>
 <p>  PID PR CPU% S  #THR     VSS     RSS PCY UID      Name<br> 3592  0   0% S     1 3124044K   1688K  fg root     mytest</p>
 <p>RSS 也占用了一些，但是远没 X86设备上夸张</p>
@@ -372,13 +372,13 @@
 
           <div class="post-nav">
             <div class="post-nav-item">
-                <a href="/2021/01/11/%E7%94%9F%E6%B4%BB%E6%84%9F%E6%82%9F/%E6%88%91%E5%BA%94%E8%AF%A5%E5%A6%82%E4%BD%95%E7%9C%8B%E4%BB%A3%E7%A0%81/" rel="prev" title="我应该如何看代码">
-                  <i class="fa fa-chevron-left"></i> 我应该如何看代码
+                <a href="/2021/01/15/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/%E6%96%87%E4%BB%B6%E8%B5%84%E6%BA%90%E6%B3%84%E6%BC%8F%E9%97%AE%E9%A2%98/" rel="prev" title="文件资源泄漏问题">
+                  <i class="fa fa-chevron-left"></i> 文件资源泄漏问题
                 </a>
             </div>
             <div class="post-nav-item">
-                <a href="/2021/01/15/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/%E6%96%87%E4%BB%B6%E8%B5%84%E6%BA%90%E6%B3%84%E6%BC%8F%E9%97%AE%E9%A2%98/" rel="next" title="文件资源泄漏问题">
-                  文件资源泄漏问题 <i class="fa fa-chevron-right"></i>
+                <a href="/2021/01/16/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/kmemleak%20%E5%AE%9A%E4%BD%8D%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F/" rel="next" title="kmemleak 定位内存泄露">
+                  kmemleak 定位内存泄露 <i class="fa fa-chevron-right"></i>
                 </a>
             </div>
           </div>
