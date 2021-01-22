@@ -1,425 +1,132 @@
-<!DOCTYPE html>
-<html lang="cn">
-<head>
-  <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
-<meta name="theme-color" content="#222">
-<meta name="generator" content="Hexo 5.1.1">
-  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
-  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
-  <link rel="mask-icon" href="/images/logo.svg" color="#222">
-
-<link rel="stylesheet" href="/css/main.css">
-
-
-
-<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@5.14.0/css/all.min.css">
-  <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/animate.css@3.1.1/animate.min.css">
-
-<script class="hexo-configurations">
-    var NexT = window.NexT || {};
-    var CONFIG = {"hostname":"liulangrenaaa.github.io","root":"/","scheme":"Muse","version":"8.0.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12},"copycode":false,"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"Searching...","empty":"We didn't find any results for the search: ${query}","hits_time":"${hits} results found in ${time} ms","hits":"${hits} results found"}};
-  </script>
-
-  <meta property="og:type" content="website">
-<meta property="og:title" content="liulangren Blog">
-<meta property="og:url" content="https://liulangrenaaa.github.io/tags/%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F/index.html">
-<meta property="og:site_name" content="liulangren Blog">
-<meta property="og:locale">
-<meta property="article:author" content="Su Hui">
-<meta name="twitter:card" content="summary">
-
-
-<link rel="canonical" href="https://liulangrenaaa.github.io/tags/%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F/">
-
-
-<script class="page-configurations">
-  // https://hexo.io/docs/variables.html
-  CONFIG.page = {
-    sidebar: "",
-    isHome : false,
-    isPost : false,
-    lang   : 'cn'
-  };
-</script>
-
-  <title>Tag: 内存泄漏 | liulangren Blog</title>
-  
-
-
-
-
-
-
-  <noscript>
-  <style>
-  body { margin-top: 2rem; }
-
-  .use-motion .menu-item,
-  .use-motion .sidebar,
-  .use-motion .post-block,
-  .use-motion .pagination,
-  .use-motion .comments,
-  .use-motion .post-header,
-  .use-motion .post-body,
-  .use-motion .collection-header {
-    visibility: visible;
-  }
-
-  .use-motion .header,
-  .use-motion .site-brand-container .toggle,
-  .use-motion .footer { opacity: initial; }
-
-  .use-motion .site-title,
-  .use-motion .site-subtitle,
-  .use-motion .custom-logo-image {
-    opacity: initial;
-    top: initial;
-  }
-
-  .use-motion .logo-line {
-    transform: scaleX(1);
-  }
-
-  .search-pop-overlay, .sidebar-nav { display: none; }
-  .sidebar-panel { display: block; }
-  </style>
-</noscript>
-
-</head>
-
-<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
-  <div class="headband"></div>
-
-  <main class="main">
-    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
-      <div class="header-inner"><div class="site-brand-container">
-  <div class="site-nav-toggle">
-    <div class="toggle" aria-label="Toggle navigation bar">
-        <span class="toggle-line"></span>
-        <span class="toggle-line"></span>
-        <span class="toggle-line"></span>
-    </div>
-  </div>
-
-  <div class="site-meta">
-
-    <a href="/" class="brand" rel="start">
-      <i class="logo-line"></i>
-      <h1 class="site-title">liulangren Blog</h1>
-      <i class="logo-line"></i>
-    </a>
-  </div>
-
-  <div class="site-nav-right">
-    <div class="toggle popup-trigger">
-    </div>
-  </div>
-</div>
-
-
-
-<nav class="site-nav">
-  <ul class="main-menu menu">
-        <li class="menu-item menu-item-home">
-
-    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
-
-  </li>
-        <li class="menu-item menu-item-about">
-
-    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
-
-  </li>
-        <li class="menu-item menu-item-tags">
-
-    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
-
-  </li>
-        <li class="menu-item menu-item-categories">
-
-    <a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>Categories</a>
-
-  </li>
-        <li class="menu-item menu-item-archives">
-
-    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
-
-  </li>
-  </ul>
-</nav>
-
-
-
-
-</div>
-        
-  
-  <div class="toggle sidebar-toggle">
-    <span class="toggle-line"></span>
-    <span class="toggle-line"></span>
-    <span class="toggle-line"></span>
-  </div>
-
-  <aside class="sidebar">
-
-    <div class="sidebar-inner sidebar-overview-active">
-      <ul class="sidebar-nav">
-        <li class="sidebar-nav-toc">
-          Table of Contents
-        </li>
-        <li class="sidebar-nav-overview">
-          Overview
-        </li>
-      </ul>
-
-      <!--noindex-->
-      <section class="post-toc-wrap sidebar-panel">
-      </section>
-      <!--/noindex-->
-
-      <section class="site-overview-wrap sidebar-panel">
-        <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
-  <p class="site-author-name" itemprop="name">Su Hui</p>
-  <div class="site-description" itemprop="description"></div>
-</div>
-<div class="site-state-wrap animated">
-  <nav class="site-state">
-      <div class="site-state-item site-state-posts">
-          <a href="/archives/">
-        
-          <span class="site-state-item-count">39</span>
-          <span class="site-state-item-name">posts</span>
-        </a>
-      </div>
-      <div class="site-state-item site-state-categories">
-            <a href="/categories/">
-          
-        <span class="site-state-item-count">7</span>
-        <span class="site-state-item-name">categories</span></a>
-      </div>
-      <div class="site-state-item site-state-tags">
-            <a href="/tags/">
-          
-        <span class="site-state-item-count">68</span>
-        <span class="site-state-item-name">tags</span></a>
-      </div>
-  </nav>
-</div>
-
-
-
-      </section>
-    </div>
-  </aside>
-  <div class="sidebar-dimmer"></div>
-
-
-    </header>
-
+<!doctype html>
+<html lang="cn"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"><meta><title>Tag: 内存泄漏 - liulangren Blog</title><link rel="manifest" href="/manifest.json"><meta name="application-name" content="liulangren blog"><meta name="msapplication-TileImage" content="/img/favicon.svg"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="liulangren blog"><meta name="apple-mobile-web-app-status-bar-style" content="default"><meta property="og:type" content="blog"><meta property="og:title" content="liulangren Blog"><meta property="og:url" content="https://liulangrenaaa.github.io/"><meta property="og:site_name" content="liulangren Blog"><meta property="og:locale" content="cn"><meta property="og:image" content="https://liulangrenaaa.github.io/img/og_image.png"><meta property="article:author" content="Su Hui"><meta property="twitter:card" content="summary"><meta property="twitter:image" content="/img/og_image.png"><script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","mainEntityOfPage":{"@type":"WebPage","@id":"https://liulangrenaaa.github.io"},"headline":"liulangren Blog","image":["https://liulangrenaaa.github.io/img/og_image.png"],"author":{"@type":"Person","name":"Su Hui"},"description":""}</script><link rel="icon" href="/img/favicon.svg"><link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.12.0/css/all.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@9.12.0/styles/monokai.css"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Ubuntu:wght@400;600&amp;family=Source+Code+Pro"><link rel="stylesheet" href="/css/default.css"><style>body>.footer,body>.navbar,body>.section{opacity:0}</style><!--!--><script>var _hmt = _hmt || [];
+        (function() {
+            var hm = document.createElement("script");
+            hm.src = "//hm.baidu.com/hm.js?cabdc5b9b70bb83fa919a6ebeb439f93";
+            var s = document.getElementsByTagName("script")[0];
+            s.parentNode.insertBefore(hm, s);
+        })();</script><!--!--><script src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js" defer></script><!--!--><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cookieconsent@3.1.1/build/cookieconsent.min.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lightgallery@1.6.8/dist/css/lightgallery.min.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/justifiedGallery@3.7.0/dist/css/justifiedGallery.min.css"><script src="https://www.googletagmanager.com/gtag/js?id=PTKX6HMR55" async></script><script>window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
     
-  <div class="back-to-top">
-    <i class="fa fa-arrow-up"></i>
-    <span>0%</span>
-  </div>
+        gtag('config', 'PTKX6HMR55');</script><!--!--><script src="https://cdn.jsdelivr.net/npm/pace-js@1.0.2/pace.min.js"></script><!--!--><!--!--><meta name="generator" content="Hexo 5.1.1"></head><body class="is-3-column"><nav class="navbar navbar-main"><div class="container"><div class="navbar-brand justify-content-center"><a class="navbar-item navbar-logo" href="/"><img src="/img/logo.svg" alt="liulangren Blog" height="28"></a></div><div class="navbar-menu"><div class="navbar-start"><a class="navbar-item" href="/">Home</a><a class="navbar-item" href="/archives">Archives</a><a class="navbar-item" href="/categories">Categories</a><a class="navbar-item" href="/tags">Tags</a><a class="navbar-item" href="/about">About</a></div><div class="navbar-end"><a class="navbar-item" target="_blank" rel="noopener" title="Download on GitHub" href="https://github.com/ppoffice/hexo-theme-icarus"><i class="fab fa-github"></i></a><a class="navbar-item search" title="Suche" href="javascript:;"><i class="fas fa-search"></i></a></div></div></div></nav><section class="section"><div class="container"><div class="columns"><div class="column order-2 column-main is-8-tablet is-8-desktop is-6-widescreen"><div class="card"><div class="card-content"><nav class="breadcrumb" aria-label="breadcrumbs"><ul><li><a href="/tags">Tags</a></li><li class="is-active"><a href="#" aria-current="page">内存泄漏</a></li></ul></nav></div></div><div class="card"><article class="card-content article" role="article"><div class="article-meta is-size-7 is-uppercase level is-mobile"><div class="level-left"><span class="level-item">Gepostet vor&nbsp;<time dateTime="2021-01-17T11:00:00.000Z" title="1/17/2021, 7:00:00 PM">2021-01-17</time></span><span class="level-item">Aktualisiert vor&nbsp;<time dateTime="2021-01-21T09:06:22.284Z" title="1/21/2021, 5:06:22 PM">2021-01-21</time></span><span class="level-item"><a class="link-muted" href="/categories/linux%E5%86%85%E6%A0%B8/">linux内核</a></span><span class="level-item">12 minutes lesen (Über 1859 Wörter)</span></div></div><h1 class="title is-3 is-size-4-mobile"><a class="link-muted" href="/2021/01/17/%E7%94%A8%E6%88%B7%E7%A9%BA%E9%97%B4/valgrind%20%E5%AE%9A%E4%BD%8D%E7%94%A8%E6%88%B7%E7%A9%BA%E9%97%B4%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F/">valgrind 定位用户空间内存泄漏</a></h1><div class="content"><h2 id="WHY"><a href="#WHY" class="headerlink" title="WHY"></a>WHY</h2><p>在实际开发中，某个应用程序如果存在内存泄露，且是长时间运行的程序，就会导致比较严重的后果。<br>在一些业务场景的长跑测试中，这些问题往往会充分暴露出来。</p>
+<p>一般情况下这种内存泄漏都是以 OOM Kill 而结尾的。 kmsg log 往往只有 这个进程确实消耗了大量进<br>程的证据，但是无法确切知道是哪里的内存泄漏，这里就需要一个工具来帮助检测，如果是发生内存泄漏之后<br>仅仅通过人肉去分析代码，往往很困难。</p>
+<p>valgrind 就是这样一款 强大的工具：</p>
+<ol>
+<li>检查用户空间内存泄漏</li>
+<li>检查</li>
+</ol>
+<h2 id="valdrind-原理"><a href="#valdrind-原理" class="headerlink" title="valdrind 原理"></a>valdrind 原理</h2><h2 id="valdrind-安装，使用"><a href="#valdrind-安装，使用" class="headerlink" title="valdrind 安装，使用"></a>valdrind 安装，使用</h2><p>直接安装， ubuntu 官方软件源已经包含了，其他平台可以通过源码编译安装</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@100ubuntu: ~&#x2F;workspace&#x2F;test_modules&#x2F;resource_leak&#x2F;user_space_memleak# sudo apt install valgrind</span><br><span class="line">Reading package lists... Done</span><br><span class="line">Building dependency tree</span><br><span class="line">Reading state information... Done</span><br><span class="line">The following packages were automatically installed and are no longer required:</span><br><span class="line">  openbsd-inetd openjdk-11-jdk-headless tcpd update-inetd</span><br><span class="line">Use &#39;sudo apt autoremove&#39; to remove them.</span><br><span class="line">Suggested packages:</span><br><span class="line">  valgrind-dbg valgrind-mpi kcachegrind alleyoop valkyrie</span><br><span class="line">The following NEW packages will be installed:</span><br><span class="line">  valgrind</span><br><span class="line">0 upgraded, 1 newly installed, 0 to remove and 231 not upgraded.</span><br><span class="line">Need to get 20.3 MB of archives.</span><br><span class="line">After this operation, 90.0 MB of additional disk space will be used.</span><br><span class="line">Get:1 https:&#x2F;&#x2F;mirrors.tuna.tsinghua.edu.cn&#x2F;ubuntu focal-updates&#x2F;main amd64 valgrind amd64 1:3.15.0-1ubuntu9.1 [20.3 MB]</span><br><span class="line">48% [1 valgrind 12.2 MB&#x2F;20.3 MB 60%]</span><br><span class="line">tencent_clould@ubuntu: ~&#x2F;workspace&#x2F;test_modules&#x2F;resource_leak&#x2F;user_space_memleak# ls</span><br></pre></td></tr></table></figure>
 
-<noscript>
-  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
-</noscript>
-
-
-    <div class="main-inner tag posts-collapse">
-      
-
-      
-
-  
-  
-  
-  <div class="post-block">
-    <div class="post-content">
-      <div class="collection-title">
-        <h2 class="collection-header">内存泄漏
-          <small>Tag</small>
-        </h2>
-      </div>
-
-      
-    <div class="collection-year">
-      <span class="collection-header">2021</span>
-    </div>
-
-  <article itemscope itemtype="http://schema.org/Article">
-    <header class="post-header">
-      <div class="post-meta-container">
-        <time itemprop="dateCreated"
-              datetime="2021-01-17T19:00:00+08:00"
-              content="2021-01-17">
-          01-17
-        </time>
-      </div>
-
-      <div class="post-title">
-          <a class="post-title-link" href="/2021/01/17/%E7%94%A8%E6%88%B7%E7%A9%BA%E9%97%B4/valgrind%20%E5%AE%9A%E4%BD%8D%E7%94%A8%E6%88%B7%E7%A9%BA%E9%97%B4%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F/" itemprop="url">
-            <span itemprop="name">valgrind 定位用户空间内存泄漏</span>
-          </a>
-      </div>
-
-      
-    </header>
-  </article>
-
-  <article itemscope itemtype="http://schema.org/Article">
-    <header class="post-header">
-      <div class="post-meta-container">
-        <time itemprop="dateCreated"
-              datetime="2021-01-16T19:00:00+08:00"
-              content="2021-01-16">
-          01-16
-        </time>
-      </div>
-
-      <div class="post-title">
-          <a class="post-title-link" href="/2021/01/16/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/kmemleak%20%E5%AE%9A%E4%BD%8D%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F/" itemprop="url">
-            <span itemprop="name">kmemleak 定位内存泄露</span>
-          </a>
-      </div>
-
-      
-    </header>
-  </article>
-
-  <article itemscope itemtype="http://schema.org/Article">
-    <header class="post-header">
-      <div class="post-meta-container">
-        <time itemprop="dateCreated"
-              datetime="2021-01-16T19:00:00+08:00"
-              content="2021-01-16">
-          01-16
-        </time>
-      </div>
-
-      <div class="post-title">
-          <a class="post-title-link" href="/2021/01/16/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/page_owner%20%E5%AE%9A%E4%BD%8D%20buddy%20%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F/" itemprop="url">
-            <span itemprop="name">page_owner 定位 buddy 内存泄漏</span>
-          </a>
-      </div>
-
-      
-    </header>
-  </article>
-
-  <article itemscope itemtype="http://schema.org/Article">
-    <header class="post-header">
-      <div class="post-meta-container">
-        <time itemprop="dateCreated"
-              datetime="2021-01-16T19:00:00+08:00"
-              content="2021-01-16">
-          01-16
-        </time>
-      </div>
-
-      <div class="post-title">
-          <a class="post-title-link" href="/2021/01/16/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/slub%20debug%20%E5%AE%9A%E4%BD%8D%E5%86%85%E5%AD%98%E8%B6%8A%E7%95%8C/" itemprop="url">
-            <span itemprop="name">slub_debug 定位内存越界</span>
-          </a>
-      </div>
-
-      
-    </header>
-  </article>
-
-    </div>
-  </div>
-  
-  
-  
-
-  
+<p>使用如下代码检测</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">#include &lt;stdio.h&gt;</span><br><span class="line">#include &lt;stdlib.h&gt;</span><br><span class="line">#include &lt;unistd.h&gt;</span><br><span class="line"></span><br><span class="line">void main(void)</span><br><span class="line">&#123;</span><br><span class="line">        int i &#x3D; 3;</span><br><span class="line">        char *p &#x3D; NULL;</span><br><span class="line">        p &#x3D; malloc(1024 * 1024);</span><br><span class="line">        if (!p)</span><br><span class="line">                printf(&quot;malloc failed,just wait!!\n&quot;);</span><br><span class="line"></span><br><span class="line">        printf(&quot;malloc sucess,just wait!!\n&quot;);</span><br><span class="line"></span><br><span class="line">        while(i--) &#123;</span><br><span class="line">                usleep(1000 * 1000);</span><br><span class="line">        &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 
 
+<p>对于 valgrind 不好的地方在于：</p>
+<ol>
+<li><p>对于想使用 valgrind来检查内存泄漏的业务来说，必须从开始 用valgrind 启动，意味着对于业务<br>需要重启。还有比如很难复现的内存泄漏，等你重启业务用 valgrind来启动，说不定又不复现了。。</p>
+</li>
+<li><p>对于 valgrind 启动的业务来说，会比直接启动有一些性能损失。</p>
+</li>
+</ol>
+<h3 id="userspace-memleak-demo"><a href="#userspace-memleak-demo" class="headerlink" title="userspace memleak demo"></a>userspace memleak demo</h3><p>使用上面代码 直接用 <code>valgrind</code> 启动</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: ~&#x2F;workspace&#x2F;test_modules&#x2F;resource_leak&#x2F;user_space_memleak# valgrind .&#x2F;a.out</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D; Memcheck, a memory error detector</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D; Copyright (C) 2002-2017, and GNU GPL&#39;d, by Julian Seward et al.</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D; Using Valgrind-3.15.0 and LibVEX; rerun with -h for copyright info</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D; Command: .&#x2F;a.out</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D;</span><br><span class="line">malloc sucess,just wait!!</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D;</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D; HEAP SUMMARY:</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D;     in use at exit: 1,048,576 bytes in 1 blocks</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D;   total heap usage: 2 allocs, 1 frees, 1,049,600 bytes allocated</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D;</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D; LEAK SUMMARY:</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D;    definitely lost: 1,048,576 bytes in 1 blocks</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D;    indirectly lost: 0 bytes in 0 blocks</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D;      possibly lost: 0 bytes in 0 blocks</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D;    still reachable: 0 bytes in 0 blocks</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D;         suppressed: 0 bytes in 0 blocks</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D; Rerun with --leak-check&#x3D;full to see details of leaked memory</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D;</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D; For lists of detected and suppressed errors, rerun with: -s</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D; ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)</span><br></pre></td></tr></table></figure>
 
-      
+<p>可以看到 <code>HEAP SUMMARY:</code> 中写了</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D;     in use at exit: 1,048,576 bytes in 1 blocks</span><br><span class="line">&#x3D;&#x3D;2813281&#x3D;&#x3D;   total heap usage: 2 allocs, 1 frees, 1,049,600 bytes allocated</span><br></pre></td></tr></table></figure>
+<p>在进程退出时，仍然有 <code>1048576 bytes</code> 内存在使用中，这部分就是泄漏的内存。但是我们仍然不能确<br>定到底是哪里泄漏的内存，按照他的建议 加上 <code>-leak-check=full</code></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: ~&#x2F;workspace&#x2F;test_modules&#x2F;resource_leak&#x2F;user_space_memleak# valgrind  --leak-check&#x3D;full  .&#x2F;a.out</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D; Memcheck, a memory error detector</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D; Copyright (C) 2002-2017, and GNU GPL&#39;d, by Julian Seward et al.</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D; Using Valgrind-3.15.0 and LibVEX; rerun with -h for copyright info</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D; Command: .&#x2F;a.out</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D;</span><br><span class="line">malloc sucess,just wait!!</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D;</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D; HEAP SUMMARY:</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D;     in use at exit: 1,048,576 bytes in 1 blocks</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D;   total heap usage: 2 allocs, 1 frees, 1,049,600 bytes allocated</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D;</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D; 1,048,576 bytes in 1 blocks are definitely lost in loss record 1 of 1</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D;    at 0x483B7F3: malloc (in &#x2F;usr&#x2F;lib&#x2F;x86_64-linux-gnu&#x2F;valgrind&#x2F;vgpreload_memcheck-amd64-linux.so)</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D;    by 0x1091AD: main (in &#x2F;home&#x2F;ubuntu&#x2F;workspace&#x2F;test_modules&#x2F;resource_leak&#x2F;user_space_memleak&#x2F;a.out)</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D;</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D; LEAK SUMMARY:</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D;    definitely lost: 1,048,576 bytes in 1 blocks</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D;    indirectly lost: 0 bytes in 0 blocks</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D;      possibly lost: 0 bytes in 0 blocks</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D;    still reachable: 0 bytes in 0 blocks</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D;         suppressed: 0 bytes in 0 blocks</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D;</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D; For lists of detected and suppressed errors, rerun with: -s</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D; ERROR SUMMARY: 1 errors from 1 contexts (suppressed: 0 from 0)</span><br><span class="line">tencent_clould@ubuntu: ~&#x2F;workspace&#x2F;test_modules&#x2F;resource_leak&#x2F;user_space_memleak#</span><br></pre></td></tr></table></figure>
 
-<script>
-  window.addEventListener('tabs:register', () => {
-    let { activeClass } = CONFIG.comments;
-    if (CONFIG.comments.storage) {
-      activeClass = localStorage.getItem('comments_active') || activeClass;
-    }
-    if (activeClass) {
-      const activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
-      if (activeTab) {
-        activeTab.click();
-      }
-    }
-  });
-  if (CONFIG.comments.storage) {
-    window.addEventListener('tabs:click', event => {
-      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
-      const commentClass = event.target.classList[1];
-      localStorage.setItem('comments_active', commentClass);
-    });
-  }
-</script>
+<p>可以看到这次， <code>valgrind</code> 已经将泄漏的具体位置打印了出来</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">&#x3D;&#x3D;2813434&#x3D; 1,048,576 bytes in 1 blocks are definitely lost in loss record 1 of 1</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D;    at 0x483B7F3: malloc (in &#x2F;usr&#x2F;lib&#x2F;x86_64-linux-gnu&#x2F;valgrind&#x2F;vgpreload_memcheck-amd64-linux.so)</span><br><span class="line">&#x3D;&#x3D;2813434&#x3D;&#x3D;    by 0x1091AD: main (in &#x2F;home&#x2F;ubuntu&#x2F;workspace&#x2F;test_modules&#x2F;resource_leak&#x2F;user_space_memleak&#x2F;a.out)</span><br></pre></td></tr></table></figure>
 
-    </div>
-  </main>
+<p>可以用 <code>gcc -g</code> 重新编译一下带上符号表信息，再次用 valgrind 定位，可以得到更详细信息。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">&#x3D;&#x3D;2822695&#x3D;&#x3D;    at 0x483B7F3: malloc (in &#x2F;usr&#x2F;lib&#x2F;x86_64-linux-gnu&#x2F;valgrind&#x2F;vgpreload_memcheck-amd64-linux.so)</span><br><span class="line">&#x3D;&#x3D;2822695&#x3D;&#x3D;    by 0x1091AD: main (user_space_memleak.c:9)</span><br></pre></td></tr></table></figure>
+<p>这次直接将 在 哪个文件 哪一行都直接打印出来了。</p>
+<h3 id="out-of-bounds-access-demo"><a href="#out-of-bounds-access-demo" class="headerlink" title="out of bounds access demo"></a>out of bounds access demo</h3><p>代码：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line">#include &lt;stdio.h&gt;</span><br><span class="line">#include &lt;stdlib.h&gt;</span><br><span class="line">#include &lt;unistd.h&gt;</span><br><span class="line"></span><br><span class="line">void main(void)</span><br><span class="line">&#123;</span><br><span class="line">        int i &#x3D; 3;</span><br><span class="line">        char *p &#x3D; NULL;</span><br><span class="line">        p &#x3D; malloc(1024);</span><br><span class="line">        if (!p)</span><br><span class="line">                printf(&quot;malloc failed,just wait!!\n&quot;);</span><br><span class="line"></span><br><span class="line">        printf(&quot;malloc sucess,just wait!!*(p + 10) &#x3D; %d\n&quot;, *(p + 10));</span><br><span class="line">        *(p + 1023) &#x3D; *(p + 1024);</span><br><span class="line">        *(p + 1024) &#x3D; 1;</span><br><span class="line">        while(i--) &#123;</span><br><span class="line">                usleep(1000 * 1000);</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        free(p);</span><br><span class="line">        free(p + 1);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 
-  <footer class="footer">
-    <div class="footer-inner">
-      
+<p><code>gcc -g</code> 编译之偶 用 <code>valgrind ./a.out</code> 跑一下</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: ~&#x2F;workspace&#x2F;test_modules&#x2F;resource_leak&#x2F;valgrind# valgrind .&#x2F;a.out</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D; Memcheck, a memory error detector</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D; Copyright (C) 2002-2017, and GNU GPL&#39;d, by Julian Seward et al.</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D; Using Valgrind-3.15.0 and LibVEX; rerun with -h for copyright info</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D; Command: .&#x2F;a.out</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;</span><br><span class="line">&#x3D;&#x3D;2833797&#x3D;&#x3D; Use of uninitialised value of size 8</span><br><span class="line">&#x3D;&#x3D;2833797&#x3D;&#x3D;    at 0x48B681B: _itoa_word (_itoa.c:179)</span><br><span class="line">&#x3D;&#x3D;2833797&#x3D;&#x3D;    by 0x48D26F4: __vfprintf_internal (vfprintf-internal.c:1687)</span><br><span class="line">&#x3D;&#x3D;2833797&#x3D;&#x3D;    by 0x48BCEBE: printf (printf.c:33)</span><br><span class="line">&#x3D;&#x3D;2833797&#x3D;&#x3D;    by 0x109225: main (out_of_bounds_access.c:13)</span><br><span class="line">malloc sucess,just wait!!</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D; Invalid read of size 1</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;    at 0x109200: main (out_of_bounds_access.c:14)</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;  Address 0x4a4d440 is 0 bytes after a block of size 1,024 alloc&#39;d</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;    at 0x483B7F3: malloc (in &#x2F;usr&#x2F;lib&#x2F;x86_64-linux-gnu&#x2F;valgrind&#x2F;vgpreload_memcheck-amd64-linux.so)</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;    by 0x1091CD: main (out_of_bounds_access.c:9)</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D; Invalid write of size 1</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;    at 0x109213: main (out_of_bounds_access.c:15)</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;  Address 0x4a4d440 is 0 bytes after a block of size 1,024 alloc&#39;d</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;    at 0x483B7F3: malloc (in &#x2F;usr&#x2F;lib&#x2F;x86_64-linux-gnu&#x2F;valgrind&#x2F;vgpreload_memcheck-amd64-linux.so)</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;    by 0x1091CD: main (out_of_bounds_access.c:9)</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;</span><br><span class="line">&#x3D;&#x3D;2845980&#x3D;&#x3D; Invalid free() &#x2F; delete &#x2F; delete[] &#x2F; realloc()</span><br><span class="line">&#x3D;&#x3D;2845980&#x3D;&#x3D;    at 0x483CA3F: free (in &#x2F;usr&#x2F;lib&#x2F;x86_64-linux-gnu&#x2F;valgrind&#x2F;vgpreload_memcheck-amd64-linux.so)</span><br><span class="line">&#x3D;&#x3D;2845980&#x3D;&#x3D;    by 0x10927F: main (out_of_bounds_access.c:21)</span><br><span class="line">&#x3D;&#x3D;2845980&#x3D;&#x3D;  Address 0x4a4d041 is 1 bytes inside a block of size 1,024 free&#39;d</span><br><span class="line">&#x3D;&#x3D;2845980&#x3D;&#x3D;    at 0x483CA3F: free (in &#x2F;usr&#x2F;lib&#x2F;x86_64-linux-gnu&#x2F;valgrind&#x2F;vgpreload_memcheck-amd64-linux.so)</span><br><span class="line">&#x3D;&#x3D;2845980&#x3D;&#x3D;    by 0x10926F: main (out_of_bounds_access.c:20)</span><br><span class="line">&#x3D;&#x3D;2845980&#x3D;&#x3D;  Block was alloc&#39;d at</span><br><span class="line">&#x3D;&#x3D;2845980&#x3D;&#x3D;    at 0x483B7F3: malloc (in &#x2F;usr&#x2F;lib&#x2F;x86_64-linux-gnu&#x2F;valgrind&#x2F;vgpreload_memcheck-amd64-linux.so)</span><br><span class="line">&#x3D;&#x3D;2845980&#x3D;&#x3D;    by 0x1091ED: main (out_of_bounds_access.c:9)</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D; HEAP SUMMARY:</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;     in use at exit: 0 bytes in 0 blocks</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;   total heap usage: 2 allocs, 3 frees, 2,048 bytes allocated</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D; All heap blocks were freed -- no leaks are possible</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D; For lists of detected and suppressed errors, rerun with: -s</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D; ERROR SUMMARY: 2 errors from 2 contexts (suppressed: 0 from 0)</span><br></pre></td></tr></table></figure>
 
-      
+<p>也是直接指出了 一次引用未初始化的内存, 两次越界访问, 一次非法 free：</p>
+<ol>
+<li><p>一次引用为初始化的内存</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">&#x3D;&#x3D;2833797&#x3D;&#x3D; Use of uninitialised value of size 8</span><br><span class="line">&#x3D;&#x3D;2833797&#x3D;&#x3D;    at 0x48B681B: _itoa_word (_itoa.c:179)</span><br><span class="line">&#x3D;&#x3D;2833797&#x3D;&#x3D;    by 0x48D26F4: __vfprintf_internal (vfprintf-internal.c:1687)</span><br><span class="line">&#x3D;&#x3D;2833797&#x3D;&#x3D;    by 0x48BCEBE: printf (printf.c:33)</span><br><span class="line">&#x3D;&#x3D;2833797&#x3D;&#x3D;    by 0x109225: main (out_of_bounds_access.c:13)</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>一次越界读访问：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D; Invalid read of size 1</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;    at 0x109200: main (out_of_bounds_access.c:14)</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;  Address 0x4a4d440 is 0 bytes after a block of size 1,024 alloc&#39;d</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;    at 0x483B7F3: malloc (in &#x2F;usr&#x2F;lib&#x2F;x86_64-linux-gnu&#x2F;valgrind&#x2F;vgpreload_memcheck-amd64-linux.so)</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;    by 0x1091CD: main (out_of_bounds_access.c:9)</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>一次越界写访问</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D; Invalid write of size 1</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;    at 0x109213: main (out_of_bounds_access.c:15)</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;  Address 0x4a4d440 is 0 bytes after a block of size 1,024 alloc&#39;d</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;    at 0x483B7F3: malloc (in &#x2F;usr&#x2F;lib&#x2F;x86_64-linux-gnu&#x2F;valgrind&#x2F;vgpreload_memcheck-amd64-linux.so)</span><br><span class="line">&#x3D;&#x3D;2826928&#x3D;&#x3D;    by 0x1091CD: main (out_of_bounds_access.c:9)</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>一次 invaild free</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">&#x3D;&#x3D;2845980&#x3D;&#x3D; Invalid free() &#x2F; delete &#x2F; delete[] &#x2F; realloc()</span><br><span class="line">&#x3D;&#x3D;2845980&#x3D;&#x3D;    at 0x483CA3F: free (in &#x2F;usr&#x2F;lib&#x2F;x86_64-linux-gnu&#x2F;valgrind&#x2F;vgpreload_memcheck-amd64-linux.so)</span><br><span class="line">&#x3D;&#x3D;2845980&#x3D;&#x3D;    by 0x10927F: main (out_of_bounds_access.c:21)</span><br><span class="line">&#x3D;&#x3D;2845980&#x3D;&#x3D;  Address 0x4a4d041 is 1 bytes inside a block of size 1,024 free&#39;d</span><br><span class="line">&#x3D;&#x3D;2845980&#x3D;&#x3D;    at 0x483CA3F: free (in &#x2F;usr&#x2F;lib&#x2F;x86_64-linux-gnu&#x2F;valgrind&#x2F;vgpreload_memcheck-amd64-linux.so)</span><br><span class="line">&#x3D;&#x3D;2845980&#x3D;&#x3D;    by 0x10926F: main (out_of_bounds_access.c:20)</span><br><span class="line">&#x3D;&#x3D;2845980&#x3D;&#x3D;  Block was alloc&#39;d at</span><br><span class="line">&#x3D;&#x3D;2845980&#x3D;&#x3D;    at 0x483B7F3: malloc (in &#x2F;usr&#x2F;lib&#x2F;x86_64-linux-gnu&#x2F;valgrind&#x2F;vgpreload_memcheck-amd64-linux.so)</span><br><span class="line">&#x3D;&#x3D;2845980&#x3D;&#x3D;    by 0x1091ED: main (out_of_bounds_access.c:9)</span><br></pre></td></tr></table></figure>
 
-<div class="copyright">
-  
-  &copy; 
-  <span itemprop="copyrightYear">2021</span>
-  <span class="with-love">
-    <i class="fa fa-heart"></i>
-  </span>
-  <span class="author" itemprop="copyrightHolder">Su Hui</span>
-</div>
-  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/muse/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a>
-  </div>
+</li>
+</ol>
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>实际项目中应用的内存泄漏往往比这要复杂很多，可能代码考虑了正常情况下的 free，异常情况下没有<br>free等， <code>valgrind</code> 是很强大，有很多参数，但也只能帮助我们在出现问题之后定位，还是需要养成良<br>好的编码习惯，减少杜绝这类问题</p>
+<p>参考<a target="_blank" rel="noopener" href="http://senlinzhan.github.io/2017/12/31/valgrind/">文章1</a><br>参考<a target="_blank" rel="noopener" href="https://www.cprogramming.com/debugging/valgrind.html">文章2</a></p>
+</div></article></div><div class="card"><article class="card-content article" role="article"><div class="article-meta is-size-7 is-uppercase level is-mobile"><div class="level-left"><span class="level-item">Gepostet vor&nbsp;<time dateTime="2021-01-16T11:00:00.000Z" title="1/16/2021, 7:00:00 PM">2021-01-16</time></span><span class="level-item">Aktualisiert vor&nbsp;<time dateTime="2021-01-18T11:54:30.599Z" title="1/18/2021, 7:54:30 PM">2021-01-18</time></span><span class="level-item"><a class="link-muted" href="/categories/linux%E5%86%85%E6%A0%B8/">linux内核</a></span><span class="level-item">a minute lesen (Über 154 Wörter)</span></div></div><h1 class="title is-3 is-size-4-mobile"><a class="link-muted" href="/2021/01/16/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/kmemleak%20%E5%AE%9A%E4%BD%8D%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F/">kmemleak 定位内存泄露</a></h1><div class="content"><h2 id="WHY"><a href="#WHY" class="headerlink" title="WHY"></a>WHY</h2><h2 id="kmemleak-原理"><a href="#kmemleak-原理" class="headerlink" title="kmemleak 原理"></a>kmemleak 原理</h2><h2 id="kmemleak-使用"><a href="#kmemleak-使用" class="headerlink" title="kmemleak 使用"></a>kmemleak 使用</h2><h2 id="kmemleak-代码"><a href="#kmemleak-代码" class="headerlink" title="kmemleak 代码"></a>kmemleak 代码</h2><h2 id="kmemleak-overhead"><a href="#kmemleak-overhead" class="headerlink" title="kmemleak overhead"></a>kmemleak overhead</h2><p>当然假设我们场景允许 使能kmemleak之后，重新编译 kernel，也要关系 kmemleak 所带来的<br>overhead是否允许，如果你的场景本来就是一个高负载的已经80%多的CPU使用率了，然后开启<br>kmemleak,是很可能出问题的。</p>
+<p>在 公司 一款三核心的 Cortex-A7 的产品中测试结果：<br>        disabled        enabled     Per Core增加%       换算成单核CPU%<br>User:     3.54%          7.63%          4.09%            12.27%<br>Sys:      10.68%         23.76%         13.08%           38.7%<br>Idle:     84.6%          67.68%         17.02%           -50.76%</p>
+<p>在我自己 qemu 虚拟机中测试结果是：</p>
+<pre><code>    disabled        enabled     Per Core增加%       换算成单核CPU%</code></pre>
+<p>User:     3.54%          7.63%                           12.27%<br>Sys:      10.68%         23.76%                          38.7%<br>Idle:     84.6%          67.68%                          -50.76%</p>
+</div></article></div><div class="card"><article class="card-content article" role="article"><div class="article-meta is-size-7 is-uppercase level is-mobile"><div class="level-left"><span class="level-item">Gepostet vor&nbsp;<time dateTime="2021-01-16T11:00:00.000Z" title="1/16/2021, 7:00:00 PM">2021-01-16</time></span><span class="level-item">Aktualisiert vor&nbsp;<time dateTime="2021-01-18T12:01:27.495Z" title="1/18/2021, 8:01:27 PM">2021-01-18</time></span><span class="level-item"><a class="link-muted" href="/categories/linux%E5%86%85%E6%A0%B8/">linux内核</a></span><span class="level-item">a few seconds lesen (Über 110 Wörter)</span></div></div><h1 class="title is-3 is-size-4-mobile"><a class="link-muted" href="/2021/01/16/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/page_owner%20%E5%AE%9A%E4%BD%8D%20buddy%20%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F/">page_owner 定位 buddy 内存泄漏</a></h1><div class="content"><h2 id="WHY"><a href="#WHY" class="headerlink" title="WHY"></a>WHY</h2><h2 id="page-owner-原理"><a href="#page-owner-原理" class="headerlink" title="page_owner 原理"></a>page_owner 原理</h2><h2 id="page-owner-使用"><a href="#page-owner-使用" class="headerlink" title="page_owner 使用"></a>page_owner 使用</h2><p>从mm/makefile 看，需要配置 <code>CONFIG_PAGE_OWNER=y</code></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">obj-$(CONFIG_PAGE_OWNER) +&#x3D; page_owner.o</span><br></pre></td></tr></table></figure>
 
-    </div>
-  </footer>
-
-  
-  <script src="//cdn.jsdelivr.net/npm/animejs@3.2.0/lib/anime.min.js"></script>
-<script src="/js/utils.js"></script><script src="/js/motion.js"></script><script src="/js/schemes/muse.js"></script><script src="/js/next-boot.js"></script>
-
-  
-
-
-
+<p>重新编译之后，启动qemu, 需要加上 <code>page_owner=on</code>:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">sudo qemu-system-x86_64 \</span><br><span class="line">	-kernel &#x2F;tmp&#x2F;bzImage \</span><br><span class="line">	-hda &#x2F;home&#x2F;ubuntu&#x2F;myspace&#x2F;qemu_build&#x2F;stable_ubuntu.img \</span><br><span class="line">	-append &quot;root&#x3D;&#x2F;dev&#x2F;sda5 console&#x3D;ttyS0 crashkernel&#x3D;256M page_owner&#x3D;on&quot; \</span><br><span class="line">	-smp 4 \</span><br><span class="line">	-m 2048 \</span><br><span class="line">	--enable-kvm \</span><br><span class="line">	-net nic \</span><br><span class="line">	-net user,hostfwd&#x3D;tcp::2222-:22 \</span><br><span class="line">	--nographic \</span><br><span class="line">	-fsdev local,id&#x3D;fs1,path&#x3D;&#x2F;home&#x2F;ubuntu&#x2F;workspace&#x2F;share,security_model&#x3D;none \</span><br><span class="line">	-device virtio-9p-pci,fsdev&#x3D;fs1,mount_tag&#x3D;host_share</span><br></pre></td></tr></table></figure>
 
 
-
-
-
-
-
-
-
-
-
-
-  
-
-
-
-
-
-
-
-
-  
-
-  
-
-</body>
-</html>
+<h2 id="page-owner-代码"><a href="#page-owner-代码" class="headerlink" title="page_owner 代码"></a>page_owner 代码</h2></div></article></div><div class="card"><article class="card-content article" role="article"><div class="article-meta is-size-7 is-uppercase level is-mobile"><div class="level-left"><span class="level-item">Gepostet vor&nbsp;<time dateTime="2021-01-16T11:00:00.000Z" title="1/16/2021, 7:00:00 PM">2021-01-16</time></span><span class="level-item">Aktualisiert vor&nbsp;<time dateTime="2021-01-18T11:59:19.091Z" title="1/18/2021, 7:59:19 PM">2021-01-18</time></span><span class="level-item"><a class="link-muted" href="/categories/linux%E5%86%85%E6%A0%B8/">linux内核</a></span><span class="level-item">a minute lesen (Über 161 Wörter)</span></div></div><h1 class="title is-3 is-size-4-mobile"><a class="link-muted" href="/2021/01/16/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/slub%20debug%20%E5%AE%9A%E4%BD%8D%E5%86%85%E5%AD%98%E8%B6%8A%E7%95%8C/">slub_debug 定位内存越界</a></h1><div class="content"><h2 id="WHY"><a href="#WHY" class="headerlink" title="WHY"></a>WHY</h2><h2 id="slub-debug-原理"><a href="#slub-debug-原理" class="headerlink" title="slub_debug 原理"></a>slub_debug 原理</h2><h2 id="slub-debug-使用"><a href="#slub-debug-使用" class="headerlink" title="slub_debug 使用"></a>slub_debug 使用</h2><h2 id="slub-debug-代码"><a href="#slub-debug-代码" class="headerlink" title="slub_debug 代码"></a>slub_debug 代码</h2><h2 id="slub-debug-overhead"><a href="#slub-debug-overhead" class="headerlink" title="slub_debug overhead"></a>slub_debug overhead</h2><p>当然假设我们场景允许 使能slub_debug之后，重新编译 kernel，也要关系 slub_debug 所带来的<br>overhead是否允许，如果你的场景本来就是一个高负载的已经80%多的CPU使用率了，然后开启<br>slub_debug,是很可能出问题的。</p>
+<p>在 公司 一款三核心的 Cortex-A7 的产品中测试结果：<br>        disabled        enabled     Per Core增加%       换算成单核CPU%<br>User:     3.54%          7.63%          4.09%            12.27%<br>Sys:      10.68%         23.76%         13.08%           38.7%<br>Idle:     84.6%          67.68%         17.02%           -50.76%</p>
+<p>在我自己 qemu 虚拟机中测试结果是：</p>
+<pre><code>    disabled        enabled     Per Core增加%       换算成单核CPU%</code></pre>
+<p>User:     3.54%          7.63%                           12.27%<br>Sys:      10.68%         23.76%                          38.7%<br>Idle:     84.6%          67.68%                          -50.76%</p>
+</div></article></div></div><div class="column column-left is-4-tablet is-4-desktop is-3-widescreen  order-1"><div class="card widget" data-type="profile"><div class="card-content"><nav class="level"><div class="level-item has-text-centered flex-shrink-1"><div><figure class="image is-128x128 mx-auto mb-2"><img class="avatar" src="/img/avatar.png" alt="Hui Su"></figure><p class="title is-size-4 is-block" style="line-height:inherit;">Hui Su</p><p class="is-size-6 is-block">liulangren bolg</p><p class="is-size-6 is-flex justify-content-center"><i class="fas fa-map-marker-alt mr-1"></i><span>Shang Hai</span></p></div></div></nav><nav class="level is-mobile"><div class="level-item has-text-centered is-marginless"><div><p class="heading">Seiten</p><a href="/archives"><p class="title">39</p></a></div></div><div class="level-item has-text-centered is-marginless"><div><p class="heading">Kategorien</p><a href="/categories"><p class="title">7</p></a></div></div><div class="level-item has-text-centered is-marginless"><div><p class="heading">Tags</p><a href="/tags"><p class="title">68</p></a></div></div></nav><div class="level"><a class="level-item button is-primary is-rounded" href="https://github.com/liulangrenaaa" target="_blank" rel="noopener">Folgen</a></div><div class="level is-mobile"><a class="level-item button is-transparent is-marginless" target="_blank" rel="noopener" title="Github" href="https://github.com/"><i class="fab fa-github"></i></a><a class="level-item button is-transparent is-marginless" target="_blank" rel="noopener" title="Facebook" href="https://facebook.com"><i class="fab fa-facebook"></i></a><a class="level-item button is-transparent is-marginless" target="_blank" rel="noopener" title="Twitter" href="https://twitter.com"><i class="fab fa-twitter"></i></a><a class="level-item button is-transparent is-marginless" target="_blank" rel="noopener" title="Dribbble" href="https://dribbble.com"><i class="fab fa-dribbble"></i></a><a class="level-item button is-transparent is-marginless" target="_blank" rel="noopener" title="RSS" href="/"><i class="fas fa-rss"></i></a></div></div></div><!--!--><div class="card widget" data-type="links"><div class="card-content"><div class="menu"><h3 class="menu-label">Links</h3><ul class="menu-list"><li><a class="level is-mobile" href="https://www.google.com.hk/" target="_blank" rel="noopener"><span class="level-left"><span class="level-item">Google</span></span><span class="level-right"><span class="level-item tag">www.google.com.hk</span></span></a></li><li><a class="level is-mobile" href="https://lkml.org/" target="_blank" rel="noopener"><span class="level-left"><span class="level-item">LKML</span></span><span class="level-right"><span class="level-item tag">lkml.org</span></span></a></li><li><a class="level is-mobile" href="https://mail.google.com/mail" target="_blank" rel="noopener"><span class="level-left"><span class="level-item">Gmail</span></span><span class="level-right"><span class="level-item tag">mail.google.com</span></span></a></li><li><a class="level is-mobile" href="https://github.com/" target="_blank" rel="noopener"><span class="level-left"><span class="level-item">Github</span></span><span class="level-right"><span class="level-item tag">github.com</span></span></a></li><li><a class="level is-mobile" href="https://gitee.com/" target="_blank" rel="noopener"><span class="level-left"><span class="level-item">Gitee</span></span><span class="level-right"><span class="level-item tag">gitee.com</span></span></a></li><li><a class="level is-mobile" href="https://leetcode-cn.com/contest/" target="_blank" rel="noopener"><span class="level-left"><span class="level-item">Leetcode 剑指offer</span></span><span class="level-right"><span class="level-item tag">leetcode-cn.com</span></span></a></li><li><a class="level is-mobile" href="https://leetcode-cn.com/problemset/lcof/" target="_blank" rel="noopener"><span class="level-left"><span class="level-item">Leetcode 周赛</span></span><span class="level-right"><span class="level-item tag">leetcode-cn.com</span></span></a></li><li><a class="level is-mobile" href="https://tongji.baidu.com/sc-web/32051076/home/site/index?from=3" target="_blank" rel="noopener"><span class="level-left"><span class="level-item">百度分析</span></span><span class="level-right"><span class="level-item tag">tongji.baidu.com</span></span></a></li><li><a class="level is-mobile" href="https://analytics.google.com/analytics/web/#/a187909645p259761261/admin/streams/table/" target="_blank" rel="noopener"><span class="level-left"><span class="level-item">google分析</span></span><span class="level-right"><span class="level-item tag">analytics.google.com</span></span></a></li></ul></div></div></div><div class="card widget" data-type="tags"><div class="card-content"><div class="menu"><h3 class="menu-label">Tags</h3><div class="field is-grouped is-grouped-multiline"><div class="control"><a class="tags has-addons" href="/tags/KASAN/"><span class="tag">KASAN</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/OOM/"><span class="tag">OOM</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/bpf/"><span class="tag">bpf</span><span class="tag">2</span></a></div><div class="control"><a class="tags has-addons" href="/tags/bpftrace/"><span class="tag">bpftrace</span><span class="tag">3</span></a></div><div class="control"><a class="tags has-addons" href="/tags/cgroup/"><span class="tag">cgroup</span><span class="tag">2</span></a></div><div class="control"><a class="tags has-addons" href="/tags/crash/"><span class="tag">crash</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/deadlock/"><span class="tag">deadlock</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/docker/"><span class="tag">docker</span><span class="tag">3</span></a></div><div class="control"><a class="tags has-addons" href="/tags/event-trace/"><span class="tag">event trace</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/ftrace/"><span class="tag">ftrace</span><span class="tag">2</span></a></div><div class="control"><a class="tags has-addons" href="/tags/hardlockup/"><span class="tag">hardlockup</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/hungtask/"><span class="tag">hungtask</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/irq/"><span class="tag">irq</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/kdump/"><span class="tag">kdump</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/kernel-patch/"><span class="tag">kernel patch</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/kmemleak/"><span class="tag">kmemleak</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/ksoftirqd/"><span class="tag">ksoftirqd</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/kthread/"><span class="tag">kthread</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/kvm/"><span class="tag">kvm</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/lockdep/"><span class="tag">lockdep</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/makedumpfile/"><span class="tag">makedumpfile</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/memleak/"><span class="tag">memleak</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/oops/"><span class="tag">oops</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/page-cache/"><span class="tag">page_cache</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/page-owner/"><span class="tag">page_owner</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/pagecache/"><span class="tag">pagecache</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/panic/"><span class="tag">panic</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/per-cpu/"><span class="tag">per-cpu</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/preempt-count/"><span class="tag">preempt_count</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/qemu/"><span class="tag">qemu</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/read-code/"><span class="tag">read code</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/shell/"><span class="tag">shell</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/slub/"><span class="tag">slub</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/slub-debug/"><span class="tag">slub_debug</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/softlockup/"><span class="tag">softlockup</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/systemTap/"><span class="tag">systemTap</span><span class="tag">2</span></a></div><div class="control"><a class="tags has-addons" href="/tags/tasklet/"><span class="tag">tasklet</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/ubuntu/"><span class="tag">ubuntu</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/valgrind/"><span class="tag">valgrind</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/vmtouch/"><span class="tag">vmtouch</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/x86/"><span class="tag">x86</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F/"><span class="tag">内存泄漏</span><span class="tag">4</span></a></div><div class="control"><a class="tags has-addons" href="/tags/%E5%86%85%E5%AD%98%E6%B3%84%E9%9C%B2/"><span class="tag">内存泄露</span><span class="tag">2</span></a></div><div class="control"><a class="tags has-addons" href="/tags/%E5%86%85%E5%AD%98%E8%B6%8A%E7%95%8C/"><span class="tag">内存越界</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/%E5%86%85%E6%A0%B8%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F/"><span class="tag">内核内存泄漏</span><span class="tag">3</span></a></div><div class="control"><a class="tags has-addons" href="/tags/%E5%86%85%E6%A0%B8%E5%86%85%E5%AD%98%E8%B6%8A%E7%95%8C/"><span class="tag">内核内存越界</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/%E5%86%85%E6%A0%B8%E5%90%8C%E6%AD%A5/"><span class="tag">内核同步</span><span class="tag">5</span></a></div><div class="control"><a class="tags has-addons" href="/tags/%E5%86%85%E6%A0%B8%E6%8A%A2%E5%8D%A0/"><span class="tag">内核抢占</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/%E5%86%85%E7%AE%A1%E7%AE%A1%E7%90%86/"><span class="tag">内管管理</span><span class="tag">2</span></a></div><div class="control"><a class="tags has-addons" href="/tags/%E5%87%BD%E6%95%B0%E8%B0%83%E7%94%A8/"><span class="tag">函数调用</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7/"><span class="tag">开发工具</span><span class="tag">2</span></a></div><div class="control"><a class="tags has-addons" href="/tags/%E6%80%A7%E8%83%BD%E7%A8%B3%E5%AE%9A%E6%80%A7/"><span class="tag">性能稳定性</span><span class="tag">2</span></a></div><div class="control"><a class="tags has-addons" href="/tags/%E6%96%87%E4%BB%B6%E6%8F%8F%E8%BF%B0%E7%AC%A6%E6%B3%84%E6%BC%8F/"><span class="tag">文件描述符泄漏</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/%E6%96%87%E4%BB%B6%E7%B3%BB%E7%BB%9F/"><span class="tag">文件系统</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/%E6%9C%8D%E5%8A%A1%E5%99%A8/"><span class="tag">服务器</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/%E6%9D%82%E9%A1%B9/"><span class="tag">杂项</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/%E6%A0%88/"><span class="tag">栈</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/%E6%AD%BB%E9%94%81%E6%A3%80%E6%B5%8B/"><span class="tag">死锁检测</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/%E7%94%9F%E6%B4%BB%E6%84%9F%E6%82%9F/"><span class="tag">生活感悟</span><span class="tag">3</span></a></div><div class="control"><a class="tags has-addons" href="/tags/%E7%94%A8%E6%88%B7%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F/"><span class="tag">用户内存泄漏</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/%E7%A9%BA%E6%8C%87%E9%92%88/"><span class="tag">空指针</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/%E8%99%9A%E6%8B%9F%E5%9C%B0%E5%9D%80%E7%A9%BA%E9%97%B4%E6%B3%84%E6%BC%8F/"><span class="tag">虚拟地址空间泄漏</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/%E8%B5%84%E6%BA%90%E6%B3%84%E6%BC%8F/"><span class="tag">资源泄漏</span><span class="tag">2</span></a></div><div class="control"><a class="tags has-addons" href="/tags/%E8%BD%AF%E4%B8%AD%E6%96%AD/"><span class="tag">软中断</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/%E8%BF%9B%E7%A8%8B%E8%B0%83%E5%BA%A6/"><span class="tag">进程调度</span><span class="tag">4</span></a></div><div class="control"><a class="tags has-addons" href="/tags/%E9%80%9A%E7%94%A8%E5%AF%84%E5%AD%98%E5%99%A8/"><span class="tag">通用寄存器</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/%E9%94%81%E7%B2%92%E5%BA%A6/"><span class="tag">锁粒度</span><span class="tag">1</span></a></div><div class="control"><a class="tags has-addons" href="/tags/%E9%97%AE%E9%A2%98%E7%B3%BB%E7%BB%9F/"><span class="tag">问题系统</span><span class="tag">1</span></a></div></div></div></div></div><div class="card widget" data-type="subscribe-email"><div class="card-content"><div class="menu"><h3 class="menu-label">Abonnieren Sie Updates</h3><form action="https://feedburner.google.com/fb/a/mailverify" method="post" target="popupwindow" onsubmit="window.open(&#039;https://feedburner.google.com/fb/a/mailverify?uri=&#039;,&#039;popupwindow&#039;,&#039;scrollbars=yes,width=550,height=520&#039;);return true"><input type="hidden" value="" name="uri"><input type="hidden" name="loc" value="en_US"><div class="field has-addons"><div class="control has-icons-left is-expanded"><input class="input" name="email" type="email" placeholder="Email"><span class="icon is-small is-left"><i class="fas fa-envelope"></i></span></div><div class="control"><input class="button" type="submit" value="Abonnieren"></div></div></form></div></div></div><div class="column-right-shadow is-hidden-widescreen"></div></div><div class="column column-right is-4-tablet is-4-desktop is-3-widescreen is-hidden-touch is-hidden-desktop-only order-3"><div class="card widget" data-type="archives"><div class="card-content"><div class="menu"><h3 class="menu-label">Archive</h3><ul class="menu-list"><li><a class="level is-mobile" href="/archives/2021/01/"><span class="level-start"><span class="level-item">January 2021</span></span><span class="level-end"><span class="level-item tag">15</span></span></a></li><li><a class="level is-mobile" href="/archives/2020/12/"><span class="level-start"><span class="level-item">December 2020</span></span><span class="level-end"><span class="level-item tag">4</span></span></a></li><li><a class="level is-mobile" href="/archives/2020/09/"><span class="level-start"><span class="level-item">September 2020</span></span><span class="level-end"><span class="level-item tag">20</span></span></a></li></ul></div></div></div><div class="card widget" data-type="categories"><div class="card-content"><div class="menu"><h3 class="menu-label">Kategorien</h3><ul class="menu-list"><li><a class="level is-mobile" href="/categories/docker/"><span class="level-start"><span class="level-item">docker</span></span><span class="level-end"><span class="level-item tag">3</span></span></a></li><li><a class="level is-mobile" href="/categories/kernel-debug/"><span class="level-start"><span class="level-item">kernel debug</span></span><span class="level-end"><span class="level-item tag">3</span></span></a></li><li><a class="level is-mobile" href="/categories/linux%E5%86%85%E6%A0%B8/"><span class="level-start"><span class="level-item">linux内核</span></span><span class="level-end"><span class="level-item tag">26</span></span></a></li><li><a class="level is-mobile" href="/categories/server/"><span class="level-start"><span class="level-item">server</span></span><span class="level-end"><span class="level-item tag">1</span></span></a></li><li><a class="level is-mobile" href="/categories/shell%E8%84%9A%E6%9C%AC/"><span class="level-start"><span class="level-item">shell脚本</span></span><span class="level-end"><span class="level-item tag">1</span></span></a></li><li><a class="level is-mobile" href="/categories/%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7/"><span class="level-start"><span class="level-item">开发工具</span></span><span class="level-end"><span class="level-item tag">2</span></span></a></li><li><a class="level is-mobile" href="/categories/%E7%94%9F%E6%B4%BB%E6%84%9F%E6%82%9F/"><span class="level-start"><span class="level-item">生活感悟</span></span><span class="level-end"><span class="level-item tag">3</span></span></a></li></ul></div></div></div><div class="card widget" data-type="recent-posts"><div class="card-content"><h3 class="menu-label">Letzte Einträge</h3><article class="media"><div class="media-content"><p class="date"><time dateTime="2021-01-23T11:00:00.000Z">2021-01-23</time></p><p class="title"><a href="/2021/01/23/crash%E4%B8%93%E9%A2%98/x86%20%E5%B9%B3%E5%8F%B0%E5%B8%B8%E7%94%A8%E5%AF%84%E5%AD%98%E5%99%A8%E5%92%8C%E5%87%BD%E6%95%B0%E8%B0%83%E7%94%A8%E5%88%86%E6%9E%90/">x86 平台常用寄存器和函数调用分析</a></p><p class="categories"><a href="/categories/linux%E5%86%85%E6%A0%B8/">linux内核</a></p></div></article><article class="media"><div class="media-content"><p class="date"><time dateTime="2021-01-23T11:00:00.000Z">2021-01-23</time></p><p class="title"><a href="/2021/01/23/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/%E4%BD%BF%E8%83%BDlock_dep%E8%A7%A3%E5%86%B3%E6%AD%BB%E9%94%81%E9%97%AE%E9%A2%98/">使能lock_dep解决死锁问题</a></p><p class="categories"><a href="/categories/linux%E5%86%85%E6%A0%B8/">linux内核</a></p></div></article><article class="media"><div class="media-content"><p class="date"><time dateTime="2021-01-21T07:00:00.000Z">2021-01-21</time></p><p class="title"><a href="/2021/01/21/crash%E4%B8%93%E9%A2%98/%E6%9C%80%E7%AE%80%E5%8D%95%E7%9A%84%E7%A9%BA%E6%8C%87%E9%92%88oops/">最简单的空指针oops</a></p><p class="categories"><a href="/categories/linux%E5%86%85%E6%A0%B8/">linux内核</a></p></div></article><article class="media"><div class="media-content"><p class="date"><time dateTime="2021-01-20T02:49:13.873Z">2021-01-20</time></p><p class="title"><a href="/2021/01/20/%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7/kdump+crash%E5%AE%9A%E4%BD%8D%E7%A8%B3%E5%AE%9A%E6%80%A7%E9%97%AE%E9%A2%98/">kdump+crash定位稳定性问题</a></p><p class="categories"><a href="/categories/linux%E5%86%85%E6%A0%B8/">linux内核</a></p></div></article><article class="media"><div class="media-content"><p class="date"><time dateTime="2021-01-17T11:00:00.000Z">2021-01-17</time></p><p class="title"><a href="/2021/01/17/%E7%94%A8%E6%88%B7%E7%A9%BA%E9%97%B4/valgrind%20%E5%AE%9A%E4%BD%8D%E7%94%A8%E6%88%B7%E7%A9%BA%E9%97%B4%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F/">valgrind 定位用户空间内存泄漏</a></p><p class="categories"><a href="/categories/linux%E5%86%85%E6%A0%B8/">linux内核</a></p></div></article></div></div></div></div></div></section><footer class="footer"><div class="container"><div class="level"><div class="level-start"><a class="footer-logo is-block mb-2" href="/"><img src="/img/logo.svg" alt="liulangren Blog" height="28"></a><p class="is-size-7"><span>&copy; 2021 Su Hui</span>  Powered by <a href="https://hexo.io/" target="_blank" rel="noopener">Hexo</a> &amp; <a href="https://github.com/ppoffice/hexo-theme-icarus" target="_blank" rel="noopener">Icarus</a><br><span id="busuanzi_container_site_uv">Von <span id="busuanzi_value_site_uv">0</span> Nutzern besucht</span></p></div><div class="level-end"><div class="field has-addons"><p class="control"><a class="button is-transparent is-large" target="_blank" rel="noopener" title="Creative Commons" href="https://creativecommons.org/"><i class="fab fa-creative-commons"></i></a></p><p class="control"><a class="button is-transparent is-large" target="_blank" rel="noopener" title="Attribution 4.0 International" href="https://creativecommons.org/licenses/by/4.0/"><i class="fab fa-creative-commons-by"></i></a></p><p class="control"><a class="button is-transparent is-large" target="_blank" rel="noopener" title="Download on GitHub" href="https://github.com/ppoffice/hexo-theme-icarus"><i class="fab fa-github"></i></a></p></div></div></div></div></footer><script src="https://cdn.jsdelivr.net/npm/jquery@3.3.1/dist/jquery.min.js"></script><script src="https://cdn.jsdelivr.net/npm/moment@2.22.2/min/moment-with-locales.min.js"></script><script src="https://cdn.jsdelivr.net/npm/clipboard@2.0.4/dist/clipboard.min.js" defer></script><script>moment.locale("cn");</script><script>var IcarusThemeSettings = {
+            article: {
+                highlight: {
+                    clipboard: true,
+                    fold: 'unfolded'
+                }
+            }
+        };</script><script src="/js/column.js"></script><script src="/js/animation.js"></script><a id="back-to-top" title="Zurück nach oben" href="javascript:;"><i class="fas fa-chevron-up"></i></a><script src="/js/back_to_top.js" defer></script><!--!--><!--!--><!--!--><!--!--><script src="https://cdn.jsdelivr.net/npm/cookieconsent@3.1.1/build/cookieconsent.min.js" defer></script><script>window.addEventListener("load", () => {
+      window.cookieconsent.initialise({
+        type: "info",
+        theme: "edgeless",
+        static: false,
+        position: "bottom-left",
+        content: {
+          message: "Diese Website verwendet Cookies, um Ihre Erfahrung zu verbessern.",
+          dismiss: "Verstanden!",
+          allow: "Cookies zulassen",
+          deny: "Ablehnen",
+          link: "Mehr erfahren",
+          policy: "Cookie-Richtlinie",
+          href: "https://www.cookiesandyou.com/",
+        },
+        palette: {
+          popup: {
+            background: "#edeff5",
+            text: "#838391"
+          },
+          button: {
+            background: "#4b81e8"
+          },
+        },
+      });
+    });</script><script src="https://cdn.jsdelivr.net/npm/lightgallery@1.6.8/dist/js/lightgallery.min.js" defer></script><script src="https://cdn.jsdelivr.net/npm/justifiedGallery@3.7.0/dist/js/jquery.justifiedGallery.min.js" defer></script><script>window.addEventListener("load", () => {
+            if (typeof $.fn.lightGallery === 'function') {
+                $('.article').lightGallery({ selector: '.gallery-item' });
+            }
+            if (typeof $.fn.justifiedGallery === 'function') {
+                if ($('.justified-gallery > p > .gallery-item').length) {
+                    $('.justified-gallery > p > .gallery-item').unwrap();
+                }
+                $('.justified-gallery').justifiedGallery();
+            }
+        });</script><!--!--><!--!--><!--!--><!--!--><!--!--><script src="/js/main.js" defer></script><div class="searchbox"><div class="searchbox-container"><div class="searchbox-header"><div class="searchbox-input-container"><input class="searchbox-input" type="text" placeholder="Tippen Sie etwas..."></div><a class="searchbox-close" href="javascript:;">×</a></div><div class="searchbox-body"></div></div></div><script src="/js/insight.js" defer></script><script>document.addEventListener('DOMContentLoaded', function () {
+            loadInsight({"contentUrl":"/content.json"}, {"hint":"Tippen Sie etwas...","untitled":"(Ohne Titel)","posts":"Seiten","pages":"Pages","categories":"Kategorien","tags":"Tags"});
+        });</script></body></html>
