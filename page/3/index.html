@@ -1023,7 +1023,7 @@
           <i class="far fa-calendar-check"></i>
         </span>
         <span class="post-meta-item-text">Edited on</span>
-        <time title="Modified: 2021-01-21 14:24:43" itemprop="dateModified" datetime="2021-01-21T14:24:43+08:00">2021-01-21</time>
+        <time title="Modified: 2021-01-22 19:59:42" itemprop="dateModified" datetime="2021-01-22T19:59:42+08:00">2021-01-22</time>
       </span>
     <span class="post-meta-item">
       <span class="post-meta-item-icon">
@@ -1202,8 +1202,21 @@
 </ol>
 <figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">mount -o 128M -o remount &#x2F;tmp</span><br></pre></td></tr></table></figure>
 
-<ol start="20">
-<li>vmbox 虚拟机？</li>
+
+<ol start="19">
+<li>ubuntu shell 切换 wifi<br>切换wifi<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">sudo nmcli connection up Su</span><br><span class="line">sudo nmcli connection up ChinaNet-5mrv</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<p>连接wifi</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo nmcli dev wifi connect ChinaNet-5mrv password ejgaefpq</span><br></pre></td></tr></table></figure>
+
+<ol start="21">
+<li><p>ubuntu cmd 测试网络速度</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">amd_server@130ubuntu: ~&#x2F;workspace# sudo apt install speedtest-cli</span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace#</span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace# speedtest-cli</span><br><span class="line">Retrieving speedtest.net configuration...</span><br><span class="line">Testing from China Telecom Shanghai (101.228.28.85)...</span><br><span class="line">Retrieving speedtest.net server list...</span><br><span class="line">Selecting best server based on ping...</span><br><span class="line">Hosted by China Telecom (Shanghai) [21.59 km]: 8.567 ms</span><br><span class="line">Testing download speed................................................................................</span><br><span class="line">Download: 19.08 Mbit&#x2F;s</span><br><span class="line">Testing upload speed......................................................................................................</span><br><span class="line">Upload: 22.78 Mbit&#x2F;s</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>vmbox 虚拟机？</p>
+</li>
 </ol>
 
       
