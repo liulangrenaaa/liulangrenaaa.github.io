@@ -1,9 +1,9 @@
 ---
 title: Android消息机制(三)：Input 系统如何“白嫖” Looper (inputfd)
-date: 2026-05-13 21:15:02
+date: 2026-05-13 10:15:02
 categories:
-  - Android
-  - Framework基础
+  - android
+  - framework基础
 tags:
   - Input
   - socketpair

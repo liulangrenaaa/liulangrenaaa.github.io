@@ -1,9 +1,9 @@
 ---
 title: Android消息机制(二)：双层 MessageQueue 的并发与调度逻辑
-date: 2026-05-13 21:15:01
+date: 2026-05-13 10:15:01
 categories:
-  - Android
-  - Framework基础
+  - android
+  - framework基础
 tags:
   - MessageQueue
   - Native

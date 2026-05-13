@@ -1,9 +1,9 @@
 ---
 title: Android消息机制(四)：Vsync 信号与 UI 刷新 (vsyncfd)
-date: 2026-05-13 21:15:03
+date: 2026-05-13 10:15:03
 categories:
-  - Android
-  - Framework基础
+  - android
+  - framework基础
 tags:
   - Vsync
   - Choreographer

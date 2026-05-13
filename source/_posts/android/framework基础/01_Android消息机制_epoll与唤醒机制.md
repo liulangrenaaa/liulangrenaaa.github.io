@@ -1,9 +1,9 @@
 ---
 title: Android消息机制(一)：Looper的心脏——epoll与唤醒机制
-date: 2026-05-13 21:15:00
+date: 2026-05-13 10:15:00
 categories:
-  - Android
-  - Framework基础
+  - android
+  - framework基础
 tags:
   - Looper
   - epoll
