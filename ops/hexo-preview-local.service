@@ -1,0 +1,15 @@
+[Unit]
+Description=Hexo Preview Server (Local)
+After=network.target
+
+[Service]
+Type=simple
+User=suhui
+WorkingDirectory=/home/suhui/workspace/blog/liulangrenaaa.github.io
+ExecStart=/usr/bin/npm run server
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=development
+
+[Install]
+WantedBy=multi-user.target
