@@ -9,5 +9,6 @@
 
 ## 注意事项
 
+- 后续 Push 到 GitHub 上都使用 SSH Key。
 - 不需要手动运行 `npm run server` 或 `hexo server`，`npm run build` 完成之后 service 会自动重启
 - 本仓库分支为 `source`，部署由 GitHub Actions 自动完成
