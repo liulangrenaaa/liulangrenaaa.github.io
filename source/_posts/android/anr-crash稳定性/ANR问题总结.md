@@ -6,8 +6,10 @@ tags:
     - android
     - ANR
     - android framework
+    - 稳定性
 categories:
     - android
+    - anr-crash稳定性
 ---
 
 
