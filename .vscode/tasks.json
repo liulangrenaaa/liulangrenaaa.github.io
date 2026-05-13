@@ -1,0 +1,28 @@
+{
+        // See https://go.microsoft.com/fwlink/?LinkId=733558
+        // for the documentation about the tasks.json format
+        "version": "2.0.0",
+        "tasks": [
+                {
+                        "label": "hexo generate",
+                        "type": "shell",
+                        "command": " hexo g"
+                },
+                {
+                        "label": "hexo pushlish",
+                        "type": "shell",
+                        "command": "hexo d",
+                        "problemMatcher": []
+                },
+                {
+                        "label": "hexo run",
+                        "type": "shell",
+                        "command": "hexo s -p 5555"
+                },
+                {
+                        "label": "hexo stop",
+                        "type": "shell",
+                        "command": "pkill hexo"
+                }
+        ]
+}
