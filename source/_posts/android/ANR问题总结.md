@@ -1,9 +1,11 @@
 ---
 title: ANR问题总结
 date: 2022-07-01 19:00:40
+sticky: 100
 tags:
     - android
     - ANR
+    - android framework
 categories:
     - android
 ---

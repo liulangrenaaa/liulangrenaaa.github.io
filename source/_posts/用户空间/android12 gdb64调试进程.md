@@ -1,6 +1,7 @@
 ---
 title: android12 gdb64调试进程
 date: 2021-09-23 19:00:00
+sticky: 90
 tags:
     - android12 gdb64调试进程
     - android framework
@@ -161,4 +162,3 @@ Reading symbols from target:/vendor/bin/hw/android.hardware.power-service.pixel-
 
 
 参考[使用gdb远程调试android native程序](https://blog.csdn.net/rikeyone/article/details/80284115)
-

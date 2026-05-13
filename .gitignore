@@ -2,6 +2,13 @@
 Thumbs.db
 db.json
 *.log
+*.bak
+*.backup
+*.old
+*.orig
+*.swp
+*~
 node_modules/
 public/
 .deploy*/
+/tags

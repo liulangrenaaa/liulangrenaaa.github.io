@@ -1,0 +1,63 @@
+plugins:
+  mermaid:
+    enable: true
+    style_optimization: false
+    js: /js/vendor/mermaid.min.js
+    theme: neutral
+
+site_tree:
+  home:
+    leftbar:
+      - welcome
+      - layout: linklist
+        title: 核心专题
+        columns: 1
+        items:
+          - title: Android Framework
+            url: /tags/android-framework/
+          - title: 性能稳定性
+            url: /tags/性能稳定性/
+          - title: Linux 调度
+            url: /categories/linux-kernel/linux-schedule/
+          - title: Android
+            url: /categories/android/
+      - layout: linklist
+        title: 精选文章
+        columns: 1
+        items:
+          - title: ANR问题总结
+            url: /2022/07/01/android/ANR问题总结/
+          - title: android12 gdb64调试进程
+            url: /2021/09/23/用户空间/android12%20gdb64调试进程/
+          - title: 60s定位内核性能瓶颈
+            url: /2020/09/13/内核观测/性能稳定性/60s定位内核性能瓶颈/
+          - title: 关于preempt_count的思考
+            url: /2020/09/21/进程管理/关于preempt_count的思考/
+
+  index_blog:
+    leftbar:
+      - welcome
+      - layout: linklist
+        title: 核心专题
+        columns: 1
+        items:
+          - title: Android Framework
+            url: /tags/android-framework/
+          - title: 性能稳定性
+            url: /tags/性能稳定性/
+          - title: Linux 调度
+            url: /categories/linux-kernel/linux-schedule/
+          - title: Android
+            url: /categories/android/
+      - layout: linklist
+        title: 精选文章
+        columns: 1
+        items:
+          - title: ANR问题总结
+            url: /2022/07/01/android/ANR问题总结/
+          - title: android12 gdb64调试进程
+            url: /2021/09/23/用户空间/android12%20gdb64调试进程/
+          - title: 60s定位内核性能瓶颈
+            url: /2020/09/13/内核观测/性能稳定性/60s定位内核性能瓶颈/
+          - title: 关于preempt_count的思考
+            url: /2020/09/21/进程管理/关于preempt_count的思考/

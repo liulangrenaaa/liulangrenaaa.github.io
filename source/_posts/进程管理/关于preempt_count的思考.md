@@ -1,6 +1,7 @@
 ---
 title: 关于preempt_count的思考
 date: 2020-09-21 19:00:00
+sticky: 70
 tags:
     - 进程调度
     - 内核同步
