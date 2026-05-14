@@ -153,6 +153,25 @@ async function renderMermaidSvg(hexo, sourceText, outputKey) {
   return fsPromises.readFile(outputPath, 'utf8');
 }
 
+// 在 Mermaid 渲染失败时生成占位图，避免整站构建被单张图阻塞。
+function buildMermaidFallbackSvg(message) {
+  const safeMessage = message
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+
+  return [
+    '<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="320" viewBox="0 0 1600 320" style="background-color: #ffffff;">',
+    '  <rect width="1600" height="320" fill="#ffffff"/>',
+    '  <rect x="24" y="24" width="1552" height="272" rx="20" fill="#fff7ed" stroke="#f97316" stroke-width="2"/>',
+    '  <text x="64" y="110" font-size="40" fill="#9a3412" font-family="sans-serif">Mermaid 渲染异常</text>',
+    `  <text x="64" y="170" font-size="24" fill="#7c2d12" font-family="sans-serif">${safeMessage}</text>`,
+    '  <text x="64" y="220" font-size="22" fill="#9a3412" font-family="sans-serif">请查看构建日志中的 mermaid-static 告警。</text>',
+    '</svg>'
+  ].join('\n');
+}
+
 // 检查 Mermaid CLI 输出是否为错误占位图，并返回可用于日志展示的异常信息。
 function getMermaidSvgWarning(svgText, outputKey) {
   if (svgText.includes('Syntax error in graph') || svgText.includes('mermaid version')) {
@@ -220,11 +239,23 @@ async function prebuildMermaidSvgs(hexo) {
       }
 
       hexo.log.info(`[mermaid-static] 生成 ${fileName}`);
-      const rawSvgText = await renderMermaidSvg(hexo, normalizedSource, diagramHash);
-      const renderWarning = getMermaidSvgWarning(rawSvgText, fileName);
-      if (renderWarning) {
+      let rawSvgText = '';
+      let renderWarning = '';
+      let warningAlreadyLogged = false;
+      try {
+        rawSvgText = await renderMermaidSvg(hexo, normalizedSource, diagramHash);
+        renderWarning = getMermaidSvgWarning(rawSvgText, fileName);
+      } catch (error) {
+        renderWarning = `[mermaid-static] Mermaid CLI 执行失败: ${fileName}`;
+        pushMermaidWarning(hexo, renderWarning);
+        warningAlreadyLogged = true;
+        rawSvgText = buildMermaidFallbackSvg(renderWarning);
+      }
+
+      if (renderWarning && !warningAlreadyLogged) {
         pushMermaidWarning(hexo, renderWarning);
       }
+
       const svgText = ensureOpaqueSvgBackground(rawSvgText);
       generatedSvgMap.set(fileName, svgText);
       await persistSvgToSource(hexo, fileName, svgText);
@@ -335,25 +366,18 @@ function buildHomepageWarningHtml() {
   ].join('\n');
 }
 
-// 将 Mermaid 告警摘要注入首页，避免异常被静默忽略。
-function injectHomepageWarning(hexo) {
+// 将 Mermaid 告警摘要注入首页 HTML，避免异常被静默忽略。
+function injectHomepageWarningToHtml(htmlContent) {
   if (mermaidWarnings.length === 0) {
-    return;
+    return htmlContent;
   }
 
-  const indexPath = path.join(hexo.public_dir, 'index.html');
-  if (!fs.existsSync(indexPath)) {
-    return;
-  }
-
-  const indexHtml = fs.readFileSync(indexPath, 'utf8');
-  if (indexHtml.includes('id="mermaid-build-warning"')) {
-    return;
+  if (htmlContent.includes('id="mermaid-build-warning"')) {
+    return htmlContent;
   }
 
   const warningHtml = buildHomepageWarningHtml();
-  const nextHtml = indexHtml.replace('<div class="post-list post">', `${warningHtml}\n<div class="post-list post">`);
-  fs.writeFileSync(indexPath, nextHtml, 'utf8');
+  return htmlContent.replace('<div class="post-list post">', `${warningHtml}\n<div class="post-list post">`);
 }
 
 // 在每次 generate 前清空缓存并重建 source/generated/mermaid 目录。
@@ -372,15 +396,21 @@ hexo.extend.filter.register('after_render:html', function (htmlContent, data) {
   }
 
   if (htmlContent.indexOf('<pre class="mermaid">') === -1 && htmlContent.indexOf('<figure class="highlight plain">') === -1) {
+    if (data && data.path === 'index.html') {
+      return injectHomepageWarningToHtml(htmlContent);
+    }
     return htmlContent;
   }
 
-  return replaceResidualHtmlMermaidBlocks(hexo, htmlContent, data && data.title);
+  let nextHtml = replaceResidualHtmlMermaidBlocks(hexo, htmlContent, data && data.title);
+  if (data && data.path === 'index.html') {
+    nextHtml = injectHomepageWarningToHtml(nextHtml);
+  }
+  return nextHtml;
 });
 
 // 在 generate 收尾阶段同步拷贝 Mermaid SVG，避免资源引用落空。
 hexo.extend.filter.register('after_generate', function () {
   copyGeneratedSvgsToPublic(hexo);
   validateReferencedSvgs(hexo);
-  injectHomepageWarning(hexo);
 });
