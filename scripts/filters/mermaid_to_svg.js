@@ -10,7 +10,7 @@ const { execFile } = require('child_process');
 const execFileAsync = promisify(execFile);
 const generatedSvgMap = new Map();
 const MARKDOWN_MERMAID_REGEX = /```mermaid\s*\n([\s\S]*?)```/g;
-const HTML_MERMAID_REGEX = /<pre class="mermaid">([\s\S]*?)<\/pre>/g;
+const HTML_HIGHLIGHT_BLOCK_REGEX = /<figure class="highlight plain">[\s\S]*?<\/figure>/g;
 const PUBLIC_PREFIX = '/generated/mermaid';
 const TMP_DIR = '.tmp/hexo-mermaid';
 const SOURCE_OUTPUT_DIR = path.join('source', 'generated', 'mermaid');
@@ -33,6 +33,28 @@ function decodeHtml(content) {
 // 规范化 Mermaid 源码内容，避免仅空白差异导致重复生成。
 function normalizeMermaidSource(content) {
   return decodeHtml(content).replace(/\r\n/g, '\n').trim() + '\n';
+}
+
+// 从代码高亮后的 HTML 代码块中提取纯文本源码，供 Mermaid 静态化匹配使用。
+function extractCodeTextFromHighlightBlock(blockHtml) {
+  const codeCellMatch = blockHtml.match(/<td class="code"><pre>([\s\S]*?)<\/pre><\/td>/);
+  if (!codeCellMatch) {
+    return '';
+  }
+
+  return decodeHtml(
+    codeCellMatch[1]
+      .replace(/<br\s*\/?>/g, '\n')
+      .replace(/<\/span>/g, '')
+      .replace(/<span[^>]*>/g, '')
+      .replace(/<[^>]+>/g, '')
+  ).trim();
+}
+
+// 判断高亮代码块是否实际承载的是 Mermaid 语法，而不是普通 plain 文本代码块。
+function isMermaidCodeBlock(content) {
+  const firstLine = content.split('\n').find((line) => line.trim().length > 0) || '';
+  return /^(sequenceDiagram|flowchart|graph|classDiagram|stateDiagram|erDiagram|journey|gantt|pie|mindmap|timeline)\b/.test(firstLine.trim());
 }
 
 // 返回 Mermaid 静态图在 source 目录中的绝对输出路径。
@@ -199,23 +221,41 @@ function buildMermaidFigureHtml(publicPath, altText) {
   ].join('\n');
 }
 
-// 把 HTML 中的 Mermaid 代码块替换为构建期生成的 SVG 图片引用。
-function replaceMermaidBlocks(htmlContent, postTitle) {
-  const matches = Array.from(htmlContent.matchAll(HTML_MERMAID_REGEX));
-  if (matches.length === 0) {
-    return htmlContent;
+// 根据 Mermaid 源码内容生成静态图引用 HTML，供 Markdown 渲染前直接替换代码块。
+function buildMermaidFigureFromSource(sourceContent, postTitle, index) {
+  const normalizedSource = normalizeMermaidSource(sourceContent);
+  const diagramHash = buildDiagramHash(normalizedSource);
+  const fileName = `${diagramHash}.svg`;
+  const publicPath = `${PUBLIC_PREFIX}/${fileName}`;
+  const altText = `${postTitle || 'Mermaid 图'} - 图 ${index + 1}`;
+
+  return buildMermaidFigureHtml(publicPath, altText);
+}
+
+// 兼容少量仍以 Mermaid 预标签输出的场景，在 HTML 阶段继续兜底替换。
+function replaceResidualHtmlMermaidBlocks(htmlContent, postTitle) {
+  const htmlMermaidRegex = /<pre class="mermaid">([\s\S]*?)<\/pre>/g;
+  let replacedContent = htmlContent;
+
+  const preMatches = Array.from(replacedContent.matchAll(htmlMermaidRegex));
+  for (let index = 0; index < preMatches.length; index += 1) {
+    const fullMatch = preMatches[index][0];
+    const figureHtml = buildMermaidFigureFromSource(preMatches[index][1], postTitle, index);
+    replacedContent = replacedContent.replace(fullMatch, figureHtml);
   }
 
-  let replacedContent = htmlContent;
-  for (let index = 0; index < matches.length; index += 1) {
-    const fullMatch = matches[index][0];
-    const normalizedSource = normalizeMermaidSource(matches[index][1]);
-    const diagramHash = buildDiagramHash(normalizedSource);
-    const fileName = `${diagramHash}.svg`;
-    const publicPath = `${PUBLIC_PREFIX}/${fileName}`;
-    const altText = `${postTitle || 'Mermaid 图'} - 图 ${index + 1}`;
+  let highlightIndex = preMatches.length;
+  const highlightMatches = Array.from(replacedContent.matchAll(HTML_HIGHLIGHT_BLOCK_REGEX));
+  for (const match of highlightMatches) {
+    const fullMatch = match[0];
+    const codeText = extractCodeTextFromHighlightBlock(fullMatch);
+    if (!codeText || !isMermaidCodeBlock(codeText)) {
+      continue;
+    }
 
-    replacedContent = replacedContent.replace(fullMatch, buildMermaidFigureHtml(publicPath, altText));
+    const figureHtml = buildMermaidFigureFromSource(codeText, postTitle, highlightIndex);
+    highlightIndex += 1;
+    replacedContent = replacedContent.replace(fullMatch, figureHtml);
   }
 
   return replacedContent;
@@ -242,13 +282,17 @@ hexo.extend.filter.register('before_generate', async function () {
   await prebuildMermaidSvgs(hexo);
 });
 
-// 在 HTML 输出阶段把 Mermaid 代码块转换成静态图片引用。
+// 在 HTML 输出阶段继续兜底处理残留 Mermaid 预标签。
 hexo.extend.filter.register('after_render:html', function (htmlContent, data) {
-  if (!htmlContent || htmlContent.indexOf('<pre class="mermaid">') === -1) {
+  if (!htmlContent) {
     return htmlContent;
   }
 
-  return replaceMermaidBlocks(htmlContent, data && data.title);
+  if (htmlContent.indexOf('<pre class="mermaid">') === -1 && htmlContent.indexOf('<figure class="highlight plain">') === -1) {
+    return htmlContent;
+  }
+
+  return replaceResidualHtmlMermaidBlocks(htmlContent, data && data.title);
 });
 
 // 在 generate 收尾阶段同步拷贝 Mermaid SVG，避免资源引用落空。
