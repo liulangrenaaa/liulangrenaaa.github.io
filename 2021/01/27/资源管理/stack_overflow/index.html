@@ -1,0 +1,909 @@
+
+<!DOCTYPE html><html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="hexo-theme" content="https://github.com/xaoxuu/hexo-theme-stellar/tree/1.33.1" theme-name="Stellar" theme-version="1.33.1">
+  
+  
+  <meta name="generator" content="Hexo 5.1.1">
+  <meta http-equiv='x-dns-prefetch-control' content='on' />
+  
+  <meta name="renderer" content="webkit">
+  <meta name="force-rendering" content="webkit">
+  <meta http-equiv="X-UA-Compatible" content="IE=Edge,chrome=1">
+  <meta name="HandheldFriendly" content="True" >
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000">
+  <meta name="theme-color" content="#f9fafb">
+  <title>stack_overflow - liulangren Blog</title>
+
+  
+    <meta name="description" content="stack_overflow 概述一般linux内核栈大小都是8kb，当内核中调用层次太多，或者局部变量太大的时候，就会使得栈实际使用的大小超过8Kb，但是8kb之外就是别的内存了，不属于当前task的 stack了。一般会破坏其他task的stack或者其他的重要数据结构(slub等)，轻则导致运行的程序的异常，重则导致系统直接panic，而且由于破坏数据结构不确定，panic的位置也是不确定的">
+<meta property="og:type" content="article">
+<meta property="og:title" content="stack_overflow">
+<meta property="og:url" content="https://liulangrenaaa.github.io/2021/01/27/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/stack_overflow/">
+<meta property="og:site_name" content="liulangren Blog">
+<meta property="og:description" content="stack_overflow 概述一般linux内核栈大小都是8kb，当内核中调用层次太多，或者局部变量太大的时候，就会使得栈实际使用的大小超过8Kb，但是8kb之外就是别的内存了，不属于当前task的 stack了。一般会破坏其他task的stack或者其他的重要数据结构(slub等)，轻则导致运行的程序的异常，重则导致系统直接panic，而且由于破坏数据结构不确定，panic的位置也是不确定的">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://liulangrenaaa.github.io/images/icons/image.png">
+<meta property="article:published_time" content="2021-01-27T19:00:00.000Z">
+<meta property="article:modified_time" content="2026-05-14T03:56:22.509Z">
+<meta property="article:author" content="Su Hui">
+<meta property="article:tag" content="stack_overflow">
+<meta property="article:tag" content="内核栈溢出">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://liulangrenaaa.github.io/images/icons/image.png">
+  
+  
+  
+  <meta name="keywords" content="stack_overflow,内核栈溢出">
+
+  <!-- feed -->
+  
+
+  <link rel="stylesheet" href="/css/main.css?v=1.33.1">
+
+
+  
+    <link rel="shortcut icon" href="/images/icons/image.png">
+  
+
+  
+
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"Su Hui","sameAs":[],"image":"/images/icons/image.png"},"dateCreated":"2021-01-27T19:00:00+00:00","dateModified":"2026-05-14T03:56:22+00:00","datePublished":"2021-01-27T19:00:00+00:00","description":"","headline":"stack_overflow","mainEntityOfPage":{"@type":"WebPage","@id":"https://liulangrenaaa.github.io/2021/01/27/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/stack_overflow/"},"publisher":{"@type":"Organization","name":"Su Hui","sameAs":[],"image":"/images/icons/image.png","logo":{"@type":"ImageObject","url":"/images/icons/image.png"}},"url":"https://liulangrenaaa.github.io/2021/01/27/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/stack_overflow/","keywords":"stack_overflow, 内核栈溢出","image":[]}</script>
+  
+</head>
+<body>
+
+<div class="l_body content" id="start" layout="post" type="tech" ><aside class="l_left"><div class="sidebg"></div><div class="leftbar-container">
+
+
+<header class="header"><div class="logo-wrap"><a class="avatar" href="/about/"><div class="bg" style="opacity:0;background-image:url(https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/avatar/round/rainbow64@3x.webp);"></div><img no-lazy class="avatar" src="/images/icons/image.png" onerror="javascript:this.classList.add('error');this.src='https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/image/2659360.svg';"></a><a class="title" href="/"><div class="main">liulangren Blog</div></a></div></header>
+
+<div class="nav-area">
+
+<nav class="menu dis-select"></nav>
+</div>
+<div class="widgets">
+<div class="search-wrapper" id="search-wrapper"><form class="search-form"><a class="search-button" onclick="document.getElementById(&quot;search-input&quot;).focus();"><svg t="1705074644177" viewBox="0 0 1025 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="1560" width="200" height="200"><path d="M1008.839137 935.96571L792.364903 719.491476a56.783488 56.783488 0 0 0-80.152866 0 358.53545 358.53545 0 1 1 100.857314-335.166073 362.840335 362.840335 0 0 1-3.689902 170.145468 51.248635 51.248635 0 1 0 99.217358 26.444296 462.057693 462.057693 0 1 0-158.255785 242.303546l185.930047 185.725053a51.248635 51.248635 0 0 0 72.568068 0 51.248635 51.248635 0 0 0 0-72.978056z" p-id="1561"></path><path d="M616.479587 615.969233a50.428657 50.428657 0 0 0-61.498362-5.534852 174.655348 174.655348 0 0 1-177.525271 3.484907 49.403684 49.403684 0 0 0-58.833433 6.76482l-3.074918 2.869923a49.403684 49.403684 0 0 0 8.609771 78.10292 277.767601 277.767601 0 0 0 286.992355-5.739847 49.403684 49.403684 0 0 0 8.404776-76.667958z" p-id="1562"></path></svg></a><input type="text" class="search-input" id="search-input" placeholder="站内搜索"></form><div id="search-result"></div><div class="search-no-result">没有找到内容！</div></div>
+
+<widget class="widget-wrapper linklist"><div class="widget-header dis-select"><span class="name">核心专题</span></div><div class="widget-body fs14">
+<div class="linklist left" style="grid-template-columns:repeat(1,1fr);">
+<a class="link" title="framework基础" href="/categories/android/framework基础/"><div class="flex"><span>framework基础</span></div></a>
+<a class="link" title="app启动与生命周期" href="/categories/android/app启动与生命周期/"><div class="flex"><span>app启动与生命周期</span></div></a>
+<a class="link" title="wms窗口系统" href="/categories/android/wms窗口系统/"><div class="flex"><span>wms窗口系统</span></div></a>
+<a class="link" title="input输入系统" href="/categories/android/input输入系统/"><div class="flex"><span>input输入系统</span></div></a>
+<a class="link" title="binder与系统服务" href="/categories/android/binder与系统服务/"><div class="flex"><span>binder与系统服务</span></div></a>
+<a class="link" title="graphics图形系统" href="/categories/android/graphics图形系统/"><div class="flex"><span>graphics图形系统</span></div></a>
+<a class="link" title="anr-crash稳定性" href="/categories/android/anr-crash稳定性/"><div class="flex"><span>anr-crash稳定性</span></div></a>
+<a class="link" title="debug-trace工具链" href="/categories/android/debug-trace工具链/"><div class="flex"><span>debug-trace工具链</span></div></a>
+<a class="link" title="性能稳定性" href="/tags/性能稳定性/"><div class="flex"><span>性能稳定性</span></div></a>
+<a class="link" title="Linux 调度" href="/categories/linux-kernel/linux-schedule/"><div class="flex"><span>Linux 调度</span></div></a></div></div></widget>
+
+<widget class="widget-wrapper linklist"><div class="widget-header dis-select"><span class="name">精选文章</span></div><div class="widget-body fs14">
+<div class="linklist left" style="grid-template-columns:repeat(1,1fr);">
+<a class="link" title="ANR问题总结" href="/2022/07/01/android/anr-crash稳定性/ANR问题总结/"><div class="flex"><span>ANR问题总结</span></div></a>
+<a class="link" title="android12 gdb64调试进程" href="/2021/09/23/用户空间/android12%20gdb64调试进程/"><div class="flex"><span>android12 gdb64调试进程</span></div></a>
+<a class="link" title="60s定位内核性能瓶颈" href="/2020/09/13/内核观测/性能稳定性/60s定位内核性能瓶颈/"><div class="flex"><span>60s定位内核性能瓶颈</span></div></a>
+<a class="link" title="关于preempt_count的思考" href="/2020/09/21/进程管理/关于preempt_count的思考/"><div class="flex"><span>关于preempt_count的思考</span></div></a></div></div></widget>
+</div>
+
+</div></aside><div class="l_main" id="main">
+
+
+
+
+
+<div class="article banner top">
+  <div class="content">
+    <div class="top bread-nav footnote"><div class="left"><div class="flex-row" id="breadcrumb"><a class="cap breadcrumb" href="/">主页</a>
+<span class="sep"></span><a class="cap breadcrumb" href="/">文章</a><span class="sep"></span><a class="cap breadcrumb-link" href="/categories/linux%E5%86%85%E6%A0%B8/">linux内核</a></div>
+<div class="flex-row" id="post-meta"><span class="text created">发布于：<time datetime="2021-01-27T19:00:00.000Z">2021-01-27</time></span><span class="sep updated"></span><span class="text updated">更新于：<time datetime="2026-05-14T03:56:22.509Z">2026-05-14</time></span></div></div></div>
+    
+    <div class="bottom only-title">
+      
+      <div class="text-area">
+        <h1 class="text title"><span>stack_overflow</span></h1>
+        
+      </div>
+    </div>
+    
+  </div>
+  </div><article class="md-text content"><h2 id="stack-overflow-概述"><a href="#stack-overflow-概述" class="headerlink" title="stack_overflow 概述"></a>stack_overflow 概述</h2><p>一般linux内核栈大小都是<code>8kb</code>，当内核中调用层次太多，或者局部变量太大的时候，就会使得栈实际使用的大小超过8Kb，但是8kb之外就是别的内存了，不属于当前task的 <code>stack</code>了。一般会破坏其他task的<code>stack</code>或者其他的重要数据结构(slub等)，轻则导致运行的程序的异常，重则导致系统直接<code>panic</code>，而且由于破坏数据结构不确定，panic的位置也是不确定的，所以往往很难定位这种问题。</p>
+<h2 id="stack-overflow-如何检测"><a href="#stack-overflow-如何检测" class="headerlink" title="stack_overflow 如何检测"></a>stack_overflow 如何检测</h2><h3 id="传统RTOS上如何做的？"><a href="#传统RTOS上如何做的？" class="headerlink" title="传统RTOS上如何做的？"></a>传统RTOS上如何做的？</h3><p>这是我大四总结的RTOS栈溢出如何检测的节选</p>
+<ol>
+<li>检查指针：每次任务切换时检查栈指针是在合法范围内（是否越界），但是仍然存在检测不到情况，比如在任务执行过程中栈指针越界了，但是在任务切换前，栈指针pop到了合法位置。</li>
+<li>检查数据：将栈空间顶部16字节数据初始化一定值如0XA5，然后在每次任务切换的时候检查栈顶部16字节有没有改变，如果改变了就说明肯定栈溢出了，想较于检查指针方法费时费事。但是仍然可能检测不到栈溢出，比如虽然溢出但是栈顶部数据没有被修改，溢出后的数据被修改了。</li>
+</ol>
+<h3 id="linux上如何做的？"><a href="#linux上如何做的？" class="headerlink" title="linux上如何做的？"></a>linux上如何做的？</h3><p>其实在<code>linux</code> 系统上也无外乎这几种方法。（其实多了一种方法）</p>
+<ol>
+<li>首先linux会在<code>kernel stack</code>的结尾处放置一个<code>magic num</code>，就是方法2<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line">void set_task_stack_end_magic(struct task_struct *tsk) &#123;</span><br><span class="line">	*end_of_stack(tsk) &#x3D; STACK_END_MAGIC;	&#x2F;* for overflow detection *&#x2F;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">asmlinkage __visible void __init __no_sanitize_address start_kernel(void) &#123;</span><br><span class="line">	set_task_stack_end_magic(&amp;init_task);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">static struct task_struct *dup_task_struct(struct task_struct *orig, int node) &#123;</span><br><span class="line">        setup_thread_stack(tsk, orig);</span><br><span class="line">	clear_user_return_notifier(tsk);</span><br><span class="line">	clear_tsk_need_resched(tsk);</span><br><span class="line">	set_task_stack_end_magic(tsk);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">static __latent_entropy struct task_struct *copy_process(...) &#123;</span><br><span class="line">        p &#x3D; dup_task_struct(current, node);</span><br><span class="line">        ......</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<p>那么何时来检测呢？</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">#define STACK_END_MAGIC		0x57AC6E9D</span><br><span class="line">#define task_stack_end_corrupted(task) \</span><br><span class="line">		(*(end_of_stack(task)) !&#x3D; STACK_END_MAGIC)</span><br><span class="line"></span><br><span class="line">static inline void schedule_debug(struct task_struct *prev, bool preempt)</span><br><span class="line">&#123;</span><br><span class="line">#ifdef CONFIG_SCHED_STACK_END_CHECK</span><br><span class="line">	if (task_stack_end_corrupted(prev))</span><br><span class="line">		panic(&quot;corrupted stack end detected inside scheduler\n&quot;);</span><br><span class="line"></span><br><span class="line">	if (task_scs_end_corrupted(prev))</span><br><span class="line">		panic(&quot;corrupted shadow stack detected inside scheduler\n&quot;);</span><br><span class="line">#endif</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这个功能还需要 开启 <code>CONFIG_SCHED_STACK_END_CHECK</code> 配置。</p>
+<ol start="2">
+<li><p>使用虚拟内存的特性来保证。<br>以前内核栈都是通过连续物理内存页面来分配的，且是线性映射的内存，这样做的好处是减少了部分开销。<br>但是这样也导致如果发生栈溢出，就是真切的踩到别的物理内存了。<br>所以内核提供了一个新的方式，配置<code>CONFIG_VMAP_STACK</code>之后，可以使用 vmalloc的方式来提供栈空间，由于 <code>vmalloc</code> 还提供了 <code>guard page</code>机制，所以一旦检测到栈溢出，就可以立即报告出来。<br>由这个commit：(ba14a194a434ccc8f733e263ad2ce941e35e5787)加入,<br>后面又优化了一把(ac496bf48d97f2503eaa353996a4dd5e4383eaf0)，主要是用<code>cached_stacks</code> 这个 percpu 变量缓存了 一些vmalloc页面。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line">static unsigned long *alloc_thread_stack_node(struct task_struct *tsk, int node)&#123;</span><br><span class="line">#ifdef CONFIG_VMAP_STACK</span><br><span class="line">	void *stack;</span><br><span class="line">	stack &#x3D; __vmalloc_node_range(THREAD_SIZE, THREAD_ALIGN,</span><br><span class="line">				     VMALLOC_START, VMALLOC_END,</span><br><span class="line">				     THREADINFO_GFP &amp; ~__GFP_ACCOUNT,</span><br><span class="line">				     PAGE_KERNEL,</span><br><span class="line">				     0, node, __builtin_return_address(0));</span><br><span class="line">	return stack;</span><br><span class="line">#else</span><br><span class="line">	struct page *page &#x3D; alloc_pages_node(node, THREADINFO_GFP,THREAD_SIZE_ORDER);</span><br><span class="line"></span><br><span class="line">	if (likely(page)) &#123;</span><br><span class="line">		tsk-&gt;stack &#x3D; kasan_reset_tag(page_address(page));</span><br><span class="line">		return tsk-&gt;stack;</span><br><span class="line">	&#125;</span><br><span class="line">	return NULL;</span><br><span class="line">#endif</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">static struct task_struct *dup_task_struct(struct task_struct *orig, int node) &#123;</span><br><span class="line">	stack &#x3D; alloc_thread_stack_node(tsk, node);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>gcc特性保证<br>可以在函数<br>在gcc编译的时候，加入”-fstack-protector”选项即可。每个函数会对应一个stack frame，<br>这样每个stack frame都需要一个canary，这会消耗掉一部分的栈空间。<br>此外，由于每次函数返回时都需要检测canary，代码的整执行时间也势必会增加。</p>
+</li>
+</ol>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">jenkins@server:~&#x2F;workspace&#x2F;linux_kernel_ltp$ cat .&#x2F;debug_out&#x2F;.config | grep STACKPROTECTOR</span><br><span class="line">CONFIG_CC_HAS_SANE_STACKPROTECTOR&#x3D;y</span><br><span class="line">CONFIG_HAVE_STACKPROTECTOR&#x3D;y</span><br><span class="line">CONFIG_STACKPROTECTOR&#x3D;y</span><br><span class="line">CONFIG_STACKPROTECTOR_STRONG&#x3D;y</span><br></pre></td></tr></table></figure>
+
+<p>看<code>makefile</code>文件</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">stackp-flags-y                                    :&#x3D; -fno-stack-protector</span><br><span class="line">stackp-flags-$(CONFIG_STACKPROTECTOR)             :&#x3D; -fstack-protector</span><br><span class="line">stackp-flags-$(CONFIG_STACKPROTECTOR_STRONG)      :&#x3D; -fstack-protector-strong</span><br><span class="line">KBUILD_CFLAGS +&#x3D; $(stackp-flags-y)</span><br></pre></td></tr></table></figure>
+<p>可以参考<a target="_blank" rel="noopener" href="https://www.cnblogs.com/arnoldlu/p/11630979.html">文章1</a><br>可以参考<a target="_blank" rel="noopener" href="https://www.cnblogs.com/gm-201705/p/9863958.html">文章2</a></p>
+<h2 id="stack-overflow-配置"><a href="#stack-overflow-配置" class="headerlink" title="stack_overflow 配置"></a>stack_overflow 配置</h2><ol>
+<li>开启<code>CONFIG_SCHED_STACK_END_CHECK</code>，关闭<code>CONFIG_VMAP_STACK</code>查看效果<br>参考<a target="_blank" rel="noopener" href="https://github.com/liulangrenaaa/test_modules/blob/main/memory/stack_overflow/stack_overflow.c">代码</a></li>
+</ol>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line">crash&gt; log | tail -n 18</span><br><span class="line">[   16.480669] systemd-journald[122]: File &#x2F;var&#x2F;log&#x2F;journal&#x2F;99626a991f7d4bfa8cb2df0e3b8ce643&#x2F;user-1000.journal corrupted or uncleanly shut .</span><br><span class="line">[   28.311464] rfkill: input handler disabled</span><br><span class="line">[   32.585818] loop0: detected capacity change from 63672 to 0</span><br><span class="line">[   33.713469] loop0: detected capacity change from 113424 to 0</span><br><span class="line">[   36.372258] stack_overflow: loading out-of-tree module taints kernel.</span><br><span class="line">[   37.396337] k_stackoverflow_thread have alloc 4096 bytes in stack, times &#x3D; 9</span><br><span class="line">[   38.420098] k_stackoverflow_thread have alloc 4096 bytes in stack, times &#x3D; 8</span><br><span class="line">[   39.444356] k_stackoverflow_thread have alloc 4096 bytes in stack, times &#x3D; 7</span><br><span class="line">[   39.444369] Kernel panic - not syncing: corrupted stack end detected inside scheduler</span><br><span class="line">[   39.445278] CPU: 3 PID: 3378 Comm: k_stackoverflow Kdump: loaded Tainted: G           O      5.11.0-rc5+ #10</span><br><span class="line">[   39.445278] Hardware name: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.13.0-1ubuntu1.1 04&#x2F;01&#x2F;2014</span><br><span class="line">[   39.445278] Call Trace:</span><br><span class="line">[   39.445278]  ? k_stackoverflow_thread.cold+0x16&#x2F;0x20 [stack_overflow]</span><br><span class="line">[   39.445278]  ? k_stackoverflow_thread.cold+0x16&#x2F;0x20 [stack_overflow]</span><br><span class="line">[   39.445278]  ? k_stackoverflow_thread.cold+0x16&#x2F;0x20 [stack_overflow]</span><br><span class="line">[   39.445278]  ? kthread+0x10a&#x2F;0x140</span><br><span class="line">[   39.445278]  ? kthread_park+0x80&#x2F;0x80</span><br><span class="line">[   39.445278]  ? ret_from_fork+0x22&#x2F;0x30</span><br><span class="line">crash&gt;</span><br><span class="line">crash&gt; bt</span><br><span class="line">PID: 3378   TASK: ffff8fce4d6d4b40  CPU: 3   COMMAND: &quot;k_stackoverflow&quot;</span><br><span class="line">bt: invalid size request: 0  type: &quot;stack contents&quot;</span><br><span class="line">bt: read of stack at fffffe00000b1000 failed</span><br></pre></td></tr></table></figure>
+
+<p>可以看到报错信息，显示很明显，打印出了backtrace</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">[   39.444369] Kernel panic - not syncing: corrupted stack end detected inside scheduler</span><br></pre></td></tr></table></figure>
+<p>但是看到<code>bt</code> 命令已经不能正常显示了。</p>
+<ol start="2">
+<li>开启<code>CONFIG_VMAP_STACK</code>，使用虚拟内存机制保证<br>参考<a target="_blank" rel="noopener" href="https://github.com/liulangrenaaa/test_modules/blob/main/memory/stack_overflow/stack_overflow.c">代码</a><br>重新编译内核启动，编译安装test 驱动，得到如下报错信息，由于检测到栈溢出，直接panic了，需要 crash查看现场信息<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br></pre></td><td class="code"><pre><span class="line">[ 1188.110899] k_stackoverflow_thread have alloc 4096 bytes in stack, times &#x3D; 9</span><br><span class="line">[ 1189.134809] k_stackoverflow_thread have alloc 4096 bytes in stack, times &#x3D; 8</span><br><span class="line">[ 1190.158790] k_stackoverflow_thread have alloc 4096 bytes in stack, times &#x3D; 7</span><br><span class="line">[ 1190.159424] BUG: stack guard page was hit at 000000009af4b1c0 (stack is 0000000013046cba..00000000bab11d7d)</span><br><span class="line">[ 1190.159427] kernel stack overflow (double-fault): 0000 [#1] SMP NOPTI</span><br><span class="line">[ 1190.159428] CPU: 1 PID: 3607 Comm: k_stackoverflow Kdump: loaded Tainted: G           O      5.11.0-rc5+ #8</span><br><span class="line">[ 1190.159430] Hardware name: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.13.0-1ubuntu1.1 04&#x2F;01&#x2F;2014</span><br><span class="line">[ 1190.159431] RIP: 0010:k_stackoverflow_thread+0x8&#x2F;0x80 [stack_overflow]</span><br><span class="line">[ 1190.159433] Code: Unable to access opcode bytes at RIP 0xffffffffc0238fde.</span><br><span class="line">[ 1190.159434] RSP: 0018:ffff9cc38089bec0 EFLAGS: 00010286</span><br><span class="line">[ 1190.159436] RAX: 0000000000000040 RBX: ffffffffc0239000 RCX: 0000000000000000</span><br><span class="line">[ 1190.159438] RDX: 0000000000000000 RSI: ffff8bc8bfc97fd0 RDI: 0000000000000000</span><br><span class="line">[ 1190.159439] RBP: 0000000000000000 R08: ffff8bc8bfc97fd0 R09: 0000000000000001</span><br><span class="line">[ 1190.159440] R10: 0000000000000001 R11: 0000000000000001 R12: ffff8bc857788040</span><br><span class="line">[ 1190.159441] R13: ffff9cc380907ba8 R14: 0000000000000000 R15: ffff8bc8843a0040</span><br><span class="line">[ 1190.159443] FS:  0000000000000000(0000) GS:ffff8bc8bfc80000(0000) knlGS:0000000000000000</span><br><span class="line">[ 1190.159444] CS:  0010 DS: 0000 ES: 0000 CR0: 0000000080050033</span><br><span class="line">[ 1190.159445] CR2: ffffffffc0238fde CR3: 000000001627c000 CR4: 00000000000006e0</span><br><span class="line">[ 1190.159446] Call Trace:</span><br><span class="line">[ 1190.159447]  ? __lock_acquire+0x3be&#x2F;0x28a0</span><br><span class="line">[ 1190.159448]  ? __lock_acquire+0x3be&#x2F;0x28a0</span><br><span class="line">[ 1190.159486]  ? rcu_read_lock_sched_held+0x4d&#x2F;0x80</span><br><span class="line">[ 1190.159487]  ? __lock_acquire+0x3be&#x2F;0x28a0</span><br><span class="line">[ 1190.159488]  ? __lock_acquire+0x3be&#x2F;0x28a0</span><br><span class="line">[ 1190.159489]  ? desc_read_finalized_seq+0x26&#x2F;0x80</span><br><span class="line">[ 1190.159490]  ? find_held_lock+0x2b&#x2F;0x80</span><br><span class="line">[ 1190.159491]  ? console_unlock+0x35f&#x2F;0x570</span><br><span class="line">[ 1190.159492]  ? lockdep_hardirqs_on_prepare+0xd4&#x2F;0x170</span><br><span class="line">[ 1190.159493]  ? console_unlock+0x487&#x2F;0x570</span><br><span class="line">[ 1190.159494]  ? __irq_work_queue_local+0x48&#x2F;0x50</span><br><span class="line">[ 1190.159495]  ? irq_work_queue+0x20&#x2F;0x30</span><br><span class="line">[ 1190.159495]  ? wake_up_klogd.part.0+0x32&#x2F;0x40</span><br><span class="line">[ 1190.159496]  ? vprintk_emit+0x98&#x2F;0x2a0</span><br><span class="line">[ 1190.159497]  ? 0xffffffffc0239000</span><br><span class="line">[ 1190.159498]  ? printk+0x53&#x2F;0x6a</span><br><span class="line">[ 1190.159499]  k_stackoverflow_thread.cold+0x16&#x2F;0x20 [stack_overflow]</span><br><span class="line">[ 1190.159500]  k_stackoverflow_thread.cold+0x16&#x2F;0x20 [stack_overflow]</span><br><span class="line">[ 1190.159501]  k_stackoverflow_thread.cold+0x16&#x2F;0x20 [stack_overflow]</span><br><span class="line">[ 1190.159502]  kthread+0x10a&#x2F;0x140</span><br><span class="line">[ 1190.159503]  ? kthread_park+0x80&#x2F;0x80</span><br><span class="line">[ 1190.159504]  ret_from_fork+0x22&#x2F;0x30</span><br><span class="line">[ 1190.159505] Modules linked in: stack_overflow(O)</span><br><span class="line">crash&gt;</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<p>可以很明显看到报错信息指出是 <code>stack overflow</code></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">[ 1190.159424] BUG: stack guard page was hit at 000000009af4b1c0 (stack is 0000000013046cba..00000000bab11d7d)</span><br><span class="line">[ 1190.159427] kernel stack overflow (double-fault): 0000 [#1] SMP NOPTI</span><br></pre></td></tr></table></figure>
+<p>反汇编一下就可以知道函数地址，结合 backtrace 就看可以知道具体原因</p>
+<ol start="3">
+<li>gcc 相关参数<code>  </code>默认开启的？<br>我试了一下，有栈溢出，但是没有触发报错，后面有空再看…<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">jenkins@server:~&#x2F;workspace&#x2F;linux_kernel_ltp$ cat debug_out&#x2F;.config |grep STACKPROTECTOR</span><br><span class="line">CONFIG_CC_HAS_SANE_STACKPROTECTOR&#x3D;y</span><br><span class="line">CONFIG_HAVE_STACKPROTECTOR&#x3D;y</span><br><span class="line">CONFIG_STACKPROTECTOR&#x3D;y</span><br><span class="line">CONFIG_STACKPROTECTOR_STRONG&#x3D;y</span><br><span class="line">jenkins@server:~&#x2F;workspace&#x2F;linux_kernel_ltp$</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><ol>
+<li><p>开启 <code>CONFIG_SCHED_STACK_END_CHECK</code> 是有一定 overhead的，每次sched的时候都会去检<br>查栈顶的 <code>magic num</code>有无被修改过，且这个也不一定准确，也可能是虽然栈溢了，但是恰好没有<br>改写到 <code>magic num</code>的数据，这种就比较难办。</p>
+</li>
+<li><p>开启 <code>CONFIG_VMAP_STACK</code>，相对来说 overhead 就少很多了，现在 64bit kernel都是默<br>认打开这个宏定义的，32bit 猜测主要可能是 vmalloc区域太小。</p>
+</li>
+</ol>
+<p>參考<a target="_blank" rel="noopener" href="https://zhuanlan.zhihu.com/p/84591715">知乎文章</a></p>
+<p>参考<a target="_blank" rel="noopener" href="https://github.com/hardenedlinux/grsecurity-101-tutorials/blob/master/grsec-code-analysis/kstack.md">文章1</a></p>
+<p>參考<a target="_blank" rel="noopener" href="https://github.com/hardenedlinux/grsecurity-101-tutorials/blob/master/grsec-code-analysis/KSTACKOVERFLOW.md">文章2</a></p>
+</article>
+<div class="article-footer">
+    <section id="license">
+      <div class="header"><span>许可协议</span></div>
+      <div class="body"><p>本文采用 <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">署名-非商业性使用-相同方式共享 4.0 国际</a> 许可协议，转载请注明出处。</p>
+</div>
+    </section>
+    
+
+</div>
+
+<div class="related-wrap" id="read-next"><section class="body"><div class="item" id="prev"><div class="note">较新文章</div><a href="/2021/01/27/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/KASAN%20%E5%8E%9F%E7%90%86%E5%88%86%E6%9E%90/">KASAN 原理分析</a></div><div class="item" id="next"><div class="note">较早文章</div><a href="/2021/01/27/%E9%94%81%E6%9C%BA%E5%88%B6/futex/">futex</a></div></section></div>
+
+
+
+
+
+
+<footer class="page-footer footnote"><hr><div class="text"><p>本站由 <a href="/">Su Hui</a> 使用 <a target="_blank" rel="noopener" href="https://github.com/xaoxuu/hexo-theme-stellar/tree/1.33.1">Stellar 1.33.1</a> 主题创建。<br>本博客所有文章除特别声明外，均采用 <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> 许可协议，转载请注明出处。</p>
+</div></footer>
+<div class="main-mask" onclick="sidebar.dismiss()"></div></div><aside class="l_right">
+<div class="widgets">
+
+
+
+<widget class="widget-wrapper toc" id="data-toc" collapse="false"><div class="widget-header dis-select"><span class="name">本文目录</span><a class="cap-action" onclick="sidebar.toggleTOC()" ><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h11m-11 6h11m-11 6h11M4 6h1v4m-1 0h2m0 8H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg></a></div><div class="widget-body"><ol class="toc"><li class="toc-item toc-level-2"><a class="toc-link" href="#stack-overflow-%E6%A6%82%E8%BF%B0"><span class="toc-text">stack_overflow 概述</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#stack-overflow-%E5%A6%82%E4%BD%95%E6%A3%80%E6%B5%8B"><span class="toc-text">stack_overflow 如何检测</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E4%BC%A0%E7%BB%9FRTOS%E4%B8%8A%E5%A6%82%E4%BD%95%E5%81%9A%E7%9A%84%EF%BC%9F"><span class="toc-text">传统RTOS上如何做的？</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#linux%E4%B8%8A%E5%A6%82%E4%BD%95%E5%81%9A%E7%9A%84%EF%BC%9F"><span class="toc-text">linux上如何做的？</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#stack-overflow-%E9%85%8D%E7%BD%AE"><span class="toc-text">stack_overflow 配置</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E6%80%BB%E7%BB%93"><span class="toc-text">总结</span></a></li></ol></div><div class="widget-footer"><a class="top" onclick="util.scrollTop()"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><!-- Icon from Solar by 480 Design - https://creativecommons.org/licenses/by/4.0/ --><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><path stroke-linejoin="round" d="m9 15.5l3-3l3 3m-6-4l3-3l3 3"/><path d="M7 3.338A9.95 9.95 0 0 1 12 2c5.523 0 10 4.477 10 10s-4.477 10-10 10S2 17.523 2 12c0-1.821.487-3.53 1.338-5"/></g></svg><span>回到顶部</span></a></div></widget>
+</div></aside><div class='float-panel'>
+  <button type='button' style='display:none' class='laptop-only rightbar-toggle mobile' onclick='sidebar.rightbar()'>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h11m-11 6h11m-11 6h11M4 6h1v4m-1 0h2m0 8H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>
+  </button>
+  <button type='button' style='display:none' class='mobile-only leftbar-toggle mobile' onclick='sidebar.leftbar()'>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 11c0-3.771 0-5.657 1.172-6.828C4.343 3 6.229 3 10 3h4c3.771 0 5.657 0 6.828 1.172C22 5.343 22 7.229 22 11v2c0 3.771 0 5.657-1.172 6.828C19.657 21 17.771 21 14 21h-4c-3.771 0-5.657 0-6.828-1.172C2 18.657 2 16.771 2 13z"/><path id="sep" stroke-linecap="round" d="M5.5 10h6m-5 4h4m4.5 7V3"/></g></svg>
+  </button>
+</div>
+</div><div class="scripts">
+
+
+<script type="text/javascript">
+  window.canonical = {"originalHost":null,"officialHosts":["localhost"],"encoded":""};
+  const ctx = {
+    date_suffix: {
+      just: `刚刚`,
+      min: `分钟前`,
+      hour: `小时前`,
+      day: `天前`,
+    },
+    root : `/`,
+    tag_plugins: {
+      chat: Object.assign({"api":"https://siteinfo.listentothewind.cn/api/v1"}),
+    }
+  };
+
+  // required plugins (only load if needs)
+  if (`local_search`) {
+    ctx.search = {};
+    ctx.search.service = `local_search`;
+    if (ctx.search.service == 'local_search') {
+      let service_obj = Object.assign({}, `{"field":"all","path":"/search.json","content":true,"skip_search":null,"sort":"-date"}`);
+      ctx.search[ctx.search.service] = service_obj;
+    }
+  }
+  const def = {
+    avatar: `https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/avatar/round/3442075.svg`,
+    cover: `https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/cover/76b86c0226ffd.svg`,
+    loading: `https://api.iconify.design/eos-icons:three-dots-loading.svg?color=%231cd0fd`,
+  };
+  const deps = {
+    jquery: `https://gcore.jsdelivr.net/npm/jquery@3.7/dist/jquery.min.js`,
+    marked: `https://gcore.jsdelivr.net/npm/marked@13.0/lib/marked.umd.min.js`,
+    lazyload: `/%5Bobject%20Object%5D`
+  }
+  
+
+</script>
+
+<script type="text/javascript">
+  
+  function RunItem() {
+    this.list = []; // 存放回调函数
+    this.start = () => {
+      for (var i = 0; i < this.list.length; i++) {
+        this.list[i].run();
+      }
+    };
+    this.push = (fn, name, setRequestAnimationFrame = true) => {
+      let myfn = fn
+      if (setRequestAnimationFrame) {
+        myfn = () => {
+          utils.requestAnimationFrame(fn)
+        }
+      }
+      var f = new Item(myfn, name);
+      this.list.push(f);
+    };
+    this.remove = (name) => {
+      for (let index = 0; index < this.list.length; index++) {
+        const e = this.list[index];
+        if (e.name == name) {
+          this.list.splice(index, 1);
+        }
+      }
+    }
+    // 构造一个可以run的对象
+    function Item(fn, name) {
+      // 函数名称
+      this.name = name || fn.name;
+      // run方法
+      this.run = () => {
+        try {
+          fn()
+        } catch (error) {
+          console.log(error);
+        }
+      };
+    }
+  }
+
+  const utils = {
+    // 懒加载 css https://github.com/filamentgroup/loadCSS
+    css: (href, before, media, attributes) => {
+      var doc = window.document;
+      var ss = doc.createElement("link");
+      var ref;
+      if (before) {
+        ref = before;
+      } else {
+        var refs = (doc.body || doc.getElementsByTagName("head")[0]).childNodes;
+        ref = refs[refs.length - 1];
+      }
+      var sheets = doc.styleSheets;
+      if (attributes) {
+        for (var attributeName in attributes) {
+          if (attributes.hasOwnProperty(attributeName)) {
+            ss.setAttribute(attributeName, attributes[attributeName]);
+          }
+        }
+      }
+      ss.rel = "stylesheet";
+      ss.href = href;
+      ss.media = "only x";
+      function ready(cb) {
+        if (doc.body) {
+          return cb();
+        }
+        setTimeout(function () {
+          ready(cb);
+        });
+      }
+      ready(function () {
+        ref.parentNode.insertBefore(ss, before ? ref : ref.nextSibling);
+      });
+      var onloadcssdefined = function (cb) {
+        var resolvedHref = ss.href;
+        var i = sheets.length;
+        while (i--) {
+          if (sheets[i].href === resolvedHref) {
+            return cb();
+          }
+        }
+        setTimeout(function () {
+          onloadcssdefined(cb);
+        });
+      };
+      function loadCB() {
+        if (ss.addEventListener) {
+          ss.removeEventListener("load", loadCB);
+        }
+        ss.media = media || "all";
+      }
+      if (ss.addEventListener) {
+        ss.addEventListener("load", loadCB);
+      }
+      ss.onloadcssdefined = onloadcssdefined;
+      onloadcssdefined(loadCB);
+      return ss;
+    },
+
+    js: (src, opt) => new Promise((resolve, reject) => {
+      var script = document.createElement('script');
+      if (src.startsWith('/')) {
+        src = ctx.root + src.substring(1);
+      }
+      script.src = src;
+      if (opt) {
+        for (let key of Object.keys(opt)) {
+          script[key] = opt[key]
+        }
+      } else {
+        // 默认异步，如果需要同步，第二个参数传入 {} 即可
+        script.async = true
+      }
+      script.onerror = reject
+      script.onload = script.onreadystatechange = function () {
+        const loadState = this.readyState
+        if (loadState && loadState !== 'loaded' && loadState !== 'complete') return
+        script.onload = script.onreadystatechange = null
+        resolve()
+      }
+      document.head.appendChild(script)
+    }),
+
+    jq: (fn) => {
+      if (typeof jQuery === 'undefined') {
+        utils.js(deps.jquery).then(fn)
+      } else {
+        fn()
+      }
+    },
+
+    onLoading: (el) => {
+      if (el) {
+        $(el).append('<div class="loading-wrap"><svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" stroke-opacity=".3" d="M12 3C16.9706 3 21 7.02944 21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="1.3s" values="60;0"/></path><path stroke-dasharray="15" stroke-dashoffset="15" d="M12 3C16.9706 3 21 7.02944 21 12"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.3s" values="15;0"/><animateTransform attributeName="transform" dur="1.5s" repeatCount="indefinite" type="rotate" values="0 12 12;360 12 12"/></path></g></svg></div>');
+      }
+    },
+    onLoadSuccess: (el) => {
+      if (el) {
+        $(el).find('.loading-wrap').remove();
+      }
+    },
+    onLoadFailure: (el) => {
+      if (el) {
+        $(el).find('.loading-wrap svg').remove();
+        $(el).find('.loading-wrap').append('<svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" d="M12 3L21 20H3L12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.5s" values="60;0"/></path><path stroke-dasharray="6" stroke-dashoffset="6" d="M12 10V14"><animate fill="freeze" attributeName="stroke-dashoffset" begin="0.6s" dur="0.2s" values="6;0"/></path></g><circle cx="12" cy="17" r="1" fill="currentColor" fill-opacity="0"><animate fill="freeze" attributeName="fill-opacity" begin="0.8s" dur="0.4s" values="0;1"/></circle></svg>');
+        $(el).find('.loading-wrap').addClass('error');
+      }
+    },
+    request: (el, url, callback, onFailure) => {
+      const maxRetry = 3;
+      let retryCount = 0;
+
+      return new Promise((resolve, reject) => {
+        const load = () => {
+          utils.onLoading?.(el);
+
+          let timedOut = false;
+          const timeout = setTimeout(() => {
+            timedOut = true;
+            console.warn('[request] 超时:', url);
+
+            if (++retryCount >= maxRetry) {
+              utils.onLoadFailure?.(el);
+              onFailure?.();
+              reject('请求超时');
+            } else {
+              setTimeout(load, 1000);
+            }
+          }, 5000);
+
+          fetch(url).then(resp => {
+            if (timedOut) return;
+            clearTimeout(timeout);
+
+            if (!resp.ok) throw new Error('响应失败');
+            return resp;
+          }).then(data => {
+            if (timedOut) return;
+            utils.onLoadSuccess?.(el);
+            callback(data);
+            resolve(data);
+          }).catch(err => {
+            clearTimeout(timeout);
+            console.warn('[request] 错误:', err);
+
+            if (++retryCount >= maxRetry) {
+              utils.onLoadFailure?.(el);
+              onFailure?.();
+              reject(err);
+            } else {
+              setTimeout(load, 1000);
+            }
+          });
+        };
+
+        load();
+      });
+    },
+    requestWithoutLoading: (url, options = {}, maxRetry = 2, timeout = 5000) => {
+      return new Promise((resolve, reject) => {
+        let retryCount = 0;
+
+        const tryRequest = () => {
+          let timedOut = false;
+          const timer = setTimeout(() => {
+            timedOut = true;
+            if (++retryCount > maxRetry) reject('timeout');
+            else tryRequest();
+          }, timeout);
+
+          fetch(url, options)
+            .then(resp => {
+              clearTimeout(timer);
+              if (!resp.ok) throw new Error('bad response');
+              resolve(resp);
+            })
+            .catch(err => {
+              clearTimeout(timer);
+              if (++retryCount > maxRetry) reject(err);
+              else setTimeout(tryRequest, 500);
+            });
+        };
+
+        tryRequest();
+      });
+    },
+    /********************** requestAnimationFrame ********************************/
+    // 1、requestAnimationFrame 会把每一帧中的所有 DOM 操作集中起来，在一次重绘或回流中就完成，并且重绘或回流的时间间隔紧紧跟随浏览器的刷新频率，一般来说，这个频率为每秒60帧。
+    // 2、在隐藏或不可见的元素中，requestAnimationFrame 将不会进行重绘或回流，这当然就意味着更少的的 cpu，gpu 和内存使用量。
+    requestAnimationFrame: (fn) => {
+      if (!window.requestAnimationFrame) {
+        window.requestAnimationFrame = window.requestAnimationFrame || window.mozRequestAnimationFrame || window.webkitRequestAnimationFrame;
+      }
+      window.requestAnimationFrame(fn)
+    },
+    dark: {},
+  };
+
+  // utils.dark.mode 当前模式 dark or light
+  // utils.dark.toggle() 暗黑模式触发器
+  // utils.dark.push(callBack[,"callBackName"]) 传入触发器回调函数
+  utils.dark.method = {
+    toggle: new RunItem(),
+  };
+  utils.dark = Object.assign(utils.dark, {
+    push: utils.dark.method.toggle.push,
+  });
+</script>
+<script>
+  const sidebar = {
+    leftbar: () => {
+      if (l_body) {
+        l_body.toggleAttribute('leftbar');
+        l_body.removeAttribute('rightbar');
+      }
+    },
+    rightbar: () => {
+      if (l_body) {
+        l_body.toggleAttribute('rightbar');
+        l_body.removeAttribute('leftbar');
+      }
+    },
+    dismiss: () => {
+      if (l_body) {
+        l_body.removeAttribute('leftbar');
+        l_body.removeAttribute('rightbar');
+      }
+    },
+    toggleTOC: () => {
+      document.querySelector('#data-toc').classList.toggle('collapse');
+    }
+  }
+</script>
+<script type="text/javascript">
+  (() => {
+    const tagSwitchers = document.querySelectorAll('.tag-subtree.parent-tag > a > .tag-switcher-wrapper')
+    for (const tagSwitcher of tagSwitchers) {
+      tagSwitcher.addEventListener('click', (e) => {
+        const parent = e.target.closest('.tag-subtree.parent-tag')
+        parent.classList.toggle('expanded')
+        e.preventDefault()
+      })
+    }
+
+    // Get active tag from query string, then activate it.
+    const urlParams = new URLSearchParams(window.location.search)
+    const activeTag = urlParams.get('tag')
+    if (activeTag) {
+      let tag = document.querySelector(`.tag-subtree[data-tag="${activeTag}"]`)
+      if (tag) {
+        tag.querySelector('a').classList.add('active')
+        
+        while (tag) {
+          tag.classList.add('expanded')
+          tag = tag.parentElement.closest('.tag-subtree.parent-tag')
+        }
+      }
+    }
+  })()
+</script>
+
+<script async src="https://gcore.jsdelivr.net/npm/vanilla-lazyload@19.1/dist/lazyload.min.js"></script>
+<script>
+  // https://www.npmjs.com/package/vanilla-lazyload
+  // Set the options globally
+  // to make LazyLoad self-initialize
+  window.lazyLoadOptions = {
+    elements_selector: ".lazy",
+    callback_loaded: (el) => {
+      el.classList.add('loaded');
+      const wrapper = el.closest('.lazy-box');
+      const icon = wrapper?.querySelector('.lazy-icon');
+      if (icon) icon.remove();
+    }
+  };
+  // Listen to the initialization event
+  // and get the instance of LazyLoad
+  window.addEventListener(
+    "LazyLoad::Initialized",
+    function (event) {
+      window.lazyLoadInstance = event.detail.instance;
+    },
+    false
+  );
+  document.addEventListener('DOMContentLoaded', function () {
+    window.lazyLoadInstance?.update();
+  });
+
+  window.wrapLazyloadImages = (container) => {
+    if (typeof container === 'string') {
+      container = document.querySelector(container);
+    }
+    if (!container) return;
+    
+    const images = container.querySelectorAll('img');
+    images.forEach((img) => {
+      if (img.classList.contains('lazy')) return;
+
+      const src = img.getAttribute('src');
+      if (!src) return;
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'lazy-box';
+
+      const newImg = img.cloneNode();
+      newImg.removeAttribute('src');
+      newImg.setAttribute('data-src', src);
+      newImg.classList.add('lazy');
+
+      const icon = document.createElement('div');
+      icon.className = 'lazy-icon';
+      if (def.loading) {
+        icon.style.backgroundImage = `url("${def.loading}")`;
+      }
+
+      wrapper.appendChild(newImg);
+      wrapper.appendChild(icon);
+
+      img.replaceWith(wrapper);
+    });
+
+    // 通知 LazyLoad 更新
+    if (window.lazyLoadInstance?.update) {
+      window.lazyLoadInstance.update();
+    }
+  }
+  
+</script>
+
+<!-- required -->
+<script src="/js/main.js?v=1.33.1" defer></script>
+
+<script type="text/javascript">
+  const applyTheme = (theme) => {
+    if (theme === 'auto') {
+      document.documentElement.removeAttribute('data-theme')
+    } else {
+      document.documentElement.setAttribute('data-theme', theme)
+    }
+
+    // applyThemeToGiscus(theme)
+  }
+
+  // FIXME: 这会导致无法使用 preferred_color_scheme 以外的主题
+  const applyThemeToGiscus = (theme) => {
+    // theme = theme === 'auto' ? 'preferred_color_scheme' : theme
+    const cmt = document.getElementById('giscus')
+    if (cmt) {
+      // This works before giscus load.
+      cmt.setAttribute('data-theme', theme)
+    }
+
+    const iframe = document.querySelector('#comments > section.giscus > iframe')
+    if (iframe) {
+      // This works after giscus loaded.
+      const src = iframe.src
+      const newSrc = src.replace(/theme=[\w]+/, `theme=${theme}`)
+      iframe.src = newSrc
+    }
+  }
+
+  const switchTheme = () => {
+    // light -> dark -> auto -> light -> ...
+    const currentTheme = document.documentElement.getAttribute('data-theme')
+    let newTheme;
+    switch (currentTheme) {
+      case 'light':
+        newTheme = 'dark'
+        break
+      case 'dark':
+        newTheme = 'auto'
+        break
+      default:
+        newTheme = 'light'
+    }
+    applyTheme(newTheme)
+    window.localStorage.setItem('Stellar.theme', newTheme)
+    utils.dark.mode = newTheme === 'auto' ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : newTheme;
+    utils.dark.method.toggle.start();
+
+    const messages = {
+      light: `切换到浅色模式`,
+      dark: `切换到深色模式`,
+      auto: `切换到跟随系统配色`,
+    }
+    hud?.toast?.(messages[newTheme])
+  }
+
+  (() => {
+    // Apply user's preferred theme, if any.
+    const theme = window.localStorage.getItem('Stellar.theme')
+    if (theme !== null) {
+      applyTheme(theme)
+    } else {
+      utils.dark.mode = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    utils.dark.method.toggle.start();
+  })()
+</script>
+
+
+<!-- optional -->
+
+
+
+<script defer>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    ctx.services = Object.assign({}, JSON.parse(`{"mdrender":{"js":"/js/services/mdrender.js"},"siteinfo":{"js":"/js/services/siteinfo.js","api":null},"ghinfo":{"js":"/js/services/ghinfo.js"},"rating":{"js":"/js/services/rating.js","api":"https://star-vote.xaox.cc/api/rating"},"vote":{"js":"/js/services/vote.js","api":"https://star-vote.xaox.cc/api/vote"},"sites":{"js":"/js/services/sites.js"},"friends":{"js":"/js/services/friends.js"},"friends_and_posts":{"js":"/js/services/friends_and_posts.js"},"timeline":{"js":"/js/services/timeline.js"},"fcircle":{"js":"/js/services/fcircle.js"},"weibo":{"js":"/js/services/weibo.js"},"memos":{"js":"/js/services/memos.js"},"voice":{"js":"/js/plugins/voice.js"},"video":{"js":"/js/plugins/video.js"},"download-file":{"js":"/js/plugins/download-file.js"},"twikoo":{"js":"/js/services/twikoo_latest_comment.js"},"waline":{"js":"/js/services/waline_latest_comment.js"},"artalk":{"js":"/js/services/artalk_latest_comment.js"},"giscus":{"js":"/js/services/giscus_latest_comment.js"},"contributors":{"edit_this_page":{"_posts/":null,"wiki/stellar/":"https://github.com/xaoxuu/hexo-theme-stellar-docs/blob/main/"},"js":"/js/services/contributors.js"}}`));
+    for (let id of Object.keys(ctx.services)) {
+      const js = ctx.services[id].js;
+      if (id == 'siteinfo') {
+        ctx.cardlinks = document.querySelectorAll('a.link-card[cardlink]');
+        if (ctx.cardlinks?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            setCardLink(ctx.cardlinks);
+          });
+        }
+      } else if (id == 'voice') {
+        ctx.voiceAudios = document.querySelectorAll('.voice>audio');
+        if (ctx.voiceAudios?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            createVoiceDom(ctx.voiceAudios);
+          });
+        }
+      } else if (id == 'video') {
+        ctx.videos = document.querySelectorAll('.video>video');
+        if (ctx.videos?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            videoEvents(ctx.videos);
+          });
+        }
+      } else if (id == 'download-file') {
+        ctx.files = document.querySelectorAll('.file');
+        if (ctx.files?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            downloadFileEvent(ctx.files);
+          });
+        }
+      } else {
+        const els = document.getElementsByClassName(`ds-${id}`);
+        if (els?.length > 0) {
+          utils.jq(() => {
+            if (id == 'timeline' || 'memos' || 'marked') {
+              utils.js(deps.marked).then(function () {
+                utils.js(js, { defer: true });
+              });
+            } else {
+              utils.js(js, { defer: true });
+            }
+          });
+        }
+      }
+    }
+
+    // chat iphone time
+    let phoneTimes = document.querySelectorAll('.chat .status-bar .time');
+
+    if (phoneTimes.length > 0) {
+      NowTime();
+      var date = new Date();
+      var sec = date.getSeconds();
+      var firstAdjustInterval = setInterval(firstAdjustTime, 1000 * (60 - sec));
+    }
+
+    function firstAdjustTime() {
+      NowTime();
+      clearInterval(firstAdjustInterval);
+      setInterval(NowTime, 1000 * 60);
+    }
+
+    function NowTime() {
+      for (let i = 0; i < phoneTimes.length; ++i) {
+        var timeSpan = phoneTimes[i];
+        var date = new Date();
+        var hour = date.getHours();
+        var min = date.getMinutes();
+        timeSpan.innerHTML = check(hour) + ":" + check(min);
+      }
+    };
+
+    function check(val) {
+      if (val < 10) {
+        return ("0" + val);
+      }
+      return (val);
+    }
+
+    // chat quote
+    const chat_quote_obverser = new IntersectionObserver((entries, observer) => {
+      entries.filter((entry) => { return entry.isIntersecting }).sort((a, b) => a.intersectionRect.y !== b.intersectionRect.y ? a.intersectionRect.y - b.intersectionRect.y : a.intersectionRect.x - b.intersectionRect.x).forEach((entry, index) => {
+          observer.unobserve(entry.target);
+          setTimeout(() => {
+            entry.target.classList.add('quote-blink');
+            setTimeout(() => {
+              entry.target.classList.remove('quote-blink');
+            }, 1000);
+          }, Math.max(100, 16) * (index + 1));
+        });
+    });
+
+    var chatQuotes = document.querySelectorAll(".chat .talk .quote");
+    chatQuotes.forEach((quote) => {
+      quote.addEventListener('click', function () {
+        var chatCellDom = document.getElementById("quote-" + quote.getAttribute("quotedCellTag"));
+        if (chatCellDom) {
+          var chatDiv = chatCellDom.parentElement;
+          var mid = chatDiv.clientHeight / 2;
+          var offsetTop = chatCellDom.offsetTop;
+          if (offsetTop > mid - chatCellDom.clientHeight / 2) {
+            chatDiv.scrollTo({
+              top: chatCellDom.offsetTop - mid + chatCellDom.clientHeight / 2,
+              behavior: "smooth"
+            });
+          } else {
+            chatDiv.scrollTo({
+              top: 0,
+              behavior: "smooth"
+            });
+          }
+          chat_quote_obverser.observe(chatCellDom);
+        }
+      });
+    });
+  });
+</script>
+
+<script>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    ctx.search = {
+      path: `/search.json`,
+    }
+    utils.js('/js/search/local-search.js', { defer: true });
+  });
+</script><script>
+  window.FPConfig = {
+    delay: 0,
+    ignoreKeywords: [],
+    maxRPS: 5,
+    hoverDelay: 25
+  };
+</script>
+<script defer src="https://gcore.jsdelivr.net/npm/flying-pages@2/flying-pages.min.js"></script><script>
+  ctx.fancybox = {
+    selector: `.timenode p>img`,
+    css: `https://gcore.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css`,
+    js: `https://gcore.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js`
+  };
+  var selector = '[data-fancybox]:not(.error), .with-fancybox .atk-content img:not([atk-emoticon])';
+  if (ctx.fancybox.selector) {
+    selector += `, ${ctx.fancybox.selector}`
+  }
+  var needFancybox = document.querySelectorAll(selector).length !== 0;
+  if (!needFancybox) {
+    const memos = document.getElementsByClassName('ds-memos');
+    if (memos != undefined && memos.length > 0) {
+      needFancybox = true;
+    }
+    const fancybox = document.getElementsByClassName('with-fancybox');
+    if (fancybox != undefined && fancybox.length > 0) {
+      needFancybox = true;
+    }
+  }
+  if (needFancybox) {
+    utils.css(ctx.fancybox.css);
+    utils.js(ctx.fancybox.js, { defer: true }).then(function () {
+      Fancybox.bind(selector, {
+        hideScrollbar: false,
+        Thumbs: {
+          autoStart: false,
+        },
+        caption: (fancybox, slide) => {
+          return slide.triggerEl.alt || slide.triggerEl.dataset.caption || null
+        }
+      });
+    })
+  }
+</script>
+<script>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    const swiper_api = document.getElementById('swiper-api');
+    if (swiper_api != undefined) {
+      utils.css(`https://unpkg.com/swiper@10.3/swiper-bundle.min.css`);
+      utils.js(`https://unpkg.com/swiper@10.3/swiper-bundle.min.js`, { defer: true }).then(function () {
+        const effect = swiper_api.getAttribute('effect') || '';
+        var swiper = new Swiper('.swiper#swiper-api', {
+          slidesPerView: 'auto',
+          spaceBetween: 8,
+          centeredSlides: true,
+          effect: effect,
+          rewind: true,
+          pagination: {
+            el: '.swiper-pagination',
+            clickable: true,
+          },
+          navigation: {
+            nextEl: '.swiper-button-next',
+            prevEl: '.swiper-button-prev',
+          },
+        });
+      })
+    }
+  });
+</script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    window.codeElements = document.querySelectorAll('.code');
+    if (window.codeElements.length > 0) {
+      ctx.copycode = {
+        default_text: `Copy`,
+        success_text: `Copied`,
+        toast: `复制成功`,
+      };
+      utils.js('/js/plugins/copycode.js');
+    }
+  });
+</script>
+
+
+<!-- inject -->
+
+</div></body></html>

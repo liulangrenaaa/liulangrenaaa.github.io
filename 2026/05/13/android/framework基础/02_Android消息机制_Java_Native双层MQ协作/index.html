@@ -1,0 +1,1257 @@
+
+<!DOCTYPE html><html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="hexo-theme" content="https://github.com/xaoxuu/hexo-theme-stellar/tree/1.33.1" theme-name="Stellar" theme-version="1.33.1">
+  
+  
+  <meta name="generator" content="Hexo 5.1.1">
+  <meta http-equiv='x-dns-prefetch-control' content='on' />
+  
+  <meta name="renderer" content="webkit">
+  <meta name="force-rendering" content="webkit">
+  <meta http-equiv="X-UA-Compatible" content="IE=Edge,chrome=1">
+  <meta name="HandheldFriendly" content="True" >
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000">
+  <meta name="theme-color" content="#f9fafb">
+  <title>Android消息机制(二)：Java 与 Native 双层队列如何协同调度 - liulangren Blog</title>
+
+  
+    <meta name="description" content="Android消息机制(二)：Java 与 Native 双层队列如何协同调度上一篇把 epoll、eventfd、nativePollOnce() 这条“能睡、能醒”的链路讲清了，但还留下一个更容易让人困惑的问题：  Java 层已经有 MessageQueue 了，为什么 Native 层 Looper 里也有一套消息结构？ epoll_wait() 返回后，到底先处理谁？ Java 消息、N">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Android消息机制(二)：Java 与 Native 双层队列如何协同调度">
+<meta property="og:url" content="https://liulangrenaaa.github.io/2026/05/13/android/framework%E5%9F%BA%E7%A1%80/02_Android%E6%B6%88%E6%81%AF%E6%9C%BA%E5%88%B6_Java_Native%E5%8F%8C%E5%B1%82MQ%E5%8D%8F%E4%BD%9C/">
+<meta property="og:site_name" content="liulangren Blog">
+<meta property="og:description" content="Android消息机制(二)：Java 与 Native 双层队列如何协同调度上一篇把 epoll、eventfd、nativePollOnce() 这条“能睡、能醒”的链路讲清了，但还留下一个更容易让人困惑的问题：  Java 层已经有 MessageQueue 了，为什么 Native 层 Looper 里也有一套消息结构？ epoll_wait() 返回后，到底先处理谁？ Java 消息、N">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://liulangrenaaa.github.io/images/icons/image.png">
+<meta property="article:published_time" content="2026-05-13T10:15:01.000Z">
+<meta property="article:modified_time" content="2026-05-14T03:56:22.498Z">
+<meta property="article:author" content="Su Hui">
+<meta property="article:tag" content="Looper">
+<meta property="article:tag" content="源码分析">
+<meta property="article:tag" content="MessageQueue">
+<meta property="article:tag" content="Native">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://liulangrenaaa.github.io/images/icons/image.png">
+  
+  
+  
+  <meta name="keywords" content="Looper,源码分析,MessageQueue,Native">
+
+  <!-- feed -->
+  
+
+  <link rel="stylesheet" href="/css/main.css?v=1.33.1">
+
+
+  
+    <link rel="shortcut icon" href="/images/icons/image.png">
+  
+
+  
+
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"Su Hui","sameAs":[],"image":"/images/icons/image.png"},"dateCreated":"2026-05-13T10:15:01+00:00","dateModified":"2026-05-14T03:56:22+00:00","datePublished":"2026-05-13T10:15:01+00:00","description":"","headline":"Android消息机制(二)：Java 与 Native 双层队列如何协同调度","mainEntityOfPage":{"@type":"WebPage","@id":"https://liulangrenaaa.github.io/2026/05/13/android/framework%E5%9F%BA%E7%A1%80/02_Android%E6%B6%88%E6%81%AF%E6%9C%BA%E5%88%B6_Java_Native%E5%8F%8C%E5%B1%82MQ%E5%8D%8F%E4%BD%9C/"},"publisher":{"@type":"Organization","name":"Su Hui","sameAs":[],"image":"/images/icons/image.png","logo":{"@type":"ImageObject","url":"/images/icons/image.png"}},"url":"https://liulangrenaaa.github.io/2026/05/13/android/framework%E5%9F%BA%E7%A1%80/02_Android%E6%B6%88%E6%81%AF%E6%9C%BA%E5%88%B6_Java_Native%E5%8F%8C%E5%B1%82MQ%E5%8D%8F%E4%BD%9C/","keywords":"Looper, 源码分析, MessageQueue, Native","image":[]}</script>
+  
+</head>
+<body>
+
+<div class="l_body content" id="start" layout="post" type="tech" ><aside class="l_left"><div class="sidebg"></div><div class="leftbar-container">
+
+
+<header class="header"><div class="logo-wrap"><a class="avatar" href="/about/"><div class="bg" style="opacity:0;background-image:url(https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/avatar/round/rainbow64@3x.webp);"></div><img no-lazy class="avatar" src="/images/icons/image.png" onerror="javascript:this.classList.add('error');this.src='https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/image/2659360.svg';"></a><a class="title" href="/"><div class="main">liulangren Blog</div></a></div></header>
+
+<div class="nav-area">
+
+<nav class="menu dis-select"></nav>
+</div>
+<div class="widgets">
+<div class="search-wrapper" id="search-wrapper"><form class="search-form"><a class="search-button" onclick="document.getElementById(&quot;search-input&quot;).focus();"><svg t="1705074644177" viewBox="0 0 1025 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="1560" width="200" height="200"><path d="M1008.839137 935.96571L792.364903 719.491476a56.783488 56.783488 0 0 0-80.152866 0 358.53545 358.53545 0 1 1 100.857314-335.166073 362.840335 362.840335 0 0 1-3.689902 170.145468 51.248635 51.248635 0 1 0 99.217358 26.444296 462.057693 462.057693 0 1 0-158.255785 242.303546l185.930047 185.725053a51.248635 51.248635 0 0 0 72.568068 0 51.248635 51.248635 0 0 0 0-72.978056z" p-id="1561"></path><path d="M616.479587 615.969233a50.428657 50.428657 0 0 0-61.498362-5.534852 174.655348 174.655348 0 0 1-177.525271 3.484907 49.403684 49.403684 0 0 0-58.833433 6.76482l-3.074918 2.869923a49.403684 49.403684 0 0 0 8.609771 78.10292 277.767601 277.767601 0 0 0 286.992355-5.739847 49.403684 49.403684 0 0 0 8.404776-76.667958z" p-id="1562"></path></svg></a><input type="text" class="search-input" id="search-input" placeholder="站内搜索"></form><div id="search-result"></div><div class="search-no-result">没有找到内容！</div></div>
+
+<widget class="widget-wrapper linklist"><div class="widget-header dis-select"><span class="name">核心专题</span></div><div class="widget-body fs14">
+<div class="linklist left" style="grid-template-columns:repeat(1,1fr);">
+<a class="link" title="framework基础" href="/categories/android/framework基础/"><div class="flex"><span>framework基础</span></div></a>
+<a class="link" title="app启动与生命周期" href="/categories/android/app启动与生命周期/"><div class="flex"><span>app启动与生命周期</span></div></a>
+<a class="link" title="wms窗口系统" href="/categories/android/wms窗口系统/"><div class="flex"><span>wms窗口系统</span></div></a>
+<a class="link" title="input输入系统" href="/categories/android/input输入系统/"><div class="flex"><span>input输入系统</span></div></a>
+<a class="link" title="binder与系统服务" href="/categories/android/binder与系统服务/"><div class="flex"><span>binder与系统服务</span></div></a>
+<a class="link" title="graphics图形系统" href="/categories/android/graphics图形系统/"><div class="flex"><span>graphics图形系统</span></div></a>
+<a class="link" title="anr-crash稳定性" href="/categories/android/anr-crash稳定性/"><div class="flex"><span>anr-crash稳定性</span></div></a>
+<a class="link" title="debug-trace工具链" href="/categories/android/debug-trace工具链/"><div class="flex"><span>debug-trace工具链</span></div></a>
+<a class="link" title="性能稳定性" href="/tags/性能稳定性/"><div class="flex"><span>性能稳定性</span></div></a>
+<a class="link" title="Linux 调度" href="/categories/linux-kernel/linux-schedule/"><div class="flex"><span>Linux 调度</span></div></a></div></div></widget>
+
+<widget class="widget-wrapper linklist"><div class="widget-header dis-select"><span class="name">精选文章</span></div><div class="widget-body fs14">
+<div class="linklist left" style="grid-template-columns:repeat(1,1fr);">
+<a class="link" title="ANR问题总结" href="/2022/07/01/android/anr-crash稳定性/ANR问题总结/"><div class="flex"><span>ANR问题总结</span></div></a>
+<a class="link" title="android12 gdb64调试进程" href="/2021/09/23/用户空间/android12%20gdb64调试进程/"><div class="flex"><span>android12 gdb64调试进程</span></div></a>
+<a class="link" title="60s定位内核性能瓶颈" href="/2020/09/13/内核观测/性能稳定性/60s定位内核性能瓶颈/"><div class="flex"><span>60s定位内核性能瓶颈</span></div></a>
+<a class="link" title="关于preempt_count的思考" href="/2020/09/21/进程管理/关于preempt_count的思考/"><div class="flex"><span>关于preempt_count的思考</span></div></a></div></div></widget>
+</div>
+
+</div></aside><div class="l_main" id="main">
+
+
+
+
+
+<div class="article banner top">
+  <div class="content">
+    <div class="top bread-nav footnote"><div class="left"><div class="flex-row" id="breadcrumb"><a class="cap breadcrumb" href="/">主页</a>
+<span class="sep"></span><a class="cap breadcrumb" href="/">文章</a><span class="sep"></span><a class="cap breadcrumb-link" href="/categories/android/">android</a> <span class="sep"></span> <a class="cap breadcrumb-link" href="/categories/android/framework%E5%9F%BA%E7%A1%80/">framework基础</a></div>
+<div class="flex-row" id="post-meta"><span class="text created">发布于：<time datetime="2026-05-13T10:15:01.000Z">2026-05-13</time></span><span class="sep updated"></span><span class="text updated">更新于：<time datetime="2026-05-14T03:56:22.498Z">2026-05-14</time></span></div></div></div>
+    
+    <div class="bottom only-title">
+      
+      <div class="text-area">
+        <h1 class="text title"><span>Android消息机制(二)：Java 与 Native 双层队列如何协同调度</span></h1>
+        
+      </div>
+    </div>
+    
+  </div>
+  </div><article class="md-text content"><h1 id="Android消息机制-二-：Java-与-Native-双层队列如何协同调度"><a href="#Android消息机制-二-：Java-与-Native-双层队列如何协同调度" class="headerlink" title="Android消息机制(二)：Java 与 Native 双层队列如何协同调度"></a>Android消息机制(二)：Java 与 Native 双层队列如何协同调度</h1><p>上一篇把 <code>epoll</code>、<code>eventfd</code>、<code>nativePollOnce()</code> 这条“能睡、能醒”的链路讲清了，但还留下一个更容易让人困惑的问题：</p>
+<ul>
+<li>Java 层已经有 <code>MessageQueue</code> 了，为什么 Native 层 <code>Looper</code> 里也有一套消息结构？</li>
+<li><code>epoll_wait()</code> 返回后，到底先处理谁？</li>
+<li>Java 消息、Native 消息、fd 回调三者之间是什么关系？</li>
+</ul>
+<p>如果不把这几个问题串起来，很多人就会误以为 Android 只有一条 Java 消息链，Native 层只是负责“帮忙睡一下”。实际上不是。Android 在线程事件循环上，采用的是 <strong>Java 调度策略 + Native 事件分发</strong> 的双层协作模型。</p>
+<h2 id="1-先看结论"><a href="#1-先看结论" class="headerlink" title="1. 先看结论"></a>1. 先看结论</h2><p>先把核心结论放前面：</p>
+<ol>
+<li>Java 层确实有一套 <code>MessageQueue</code>，核心结构是 <code>mMessages</code> 单链表。</li>
+<li>Native 层 <code>Looper</code> 里也确实有一套延时消息结构，核心容器是 <code>mMessageEnvelopes</code>。</li>
+<li>但这两套队列职责不同，并不是“同一批消息存两份”。</li>
+<li>Java 层负责应用常见的 <code>Handler/Message/Runnable</code> 调度。</li>
+<li>Native 层负责更底层的事件循环，包括：<ul>
+<li><code>epoll</code> 监听的 fd 事件</li>
+<li>Native 自己投递的延时消息</li>
+<li>Java 层阻塞等待时依赖的唤醒基础设施</li>
+</ul>
+</li>
+<li>对 Java 主线程来说，真正常走的主线仍然是：<ul>
+<li>先看 Java <code>mMessages</code></li>
+<li>没到时间就下沉到 <code>nativePollOnce</code></li>
+<li>Native 返回后再回 Java 层重新取消息</li>
+</ul>
+</li>
+</ol>
+<p>所以，“双层 MessageQueue”更准确的理解不是“两套队列抢着消费同一批消息”，而是：</p>
+<ul>
+<li>Java 队列解决 <code>Handler</code> 语义。</li>
+<li>Native 队列解决底层事件循环与 Native 延时任务。</li>
+<li>两者共用同一个线程的 Looper 节拍。</li>
+</ul>
+<h2 id="2-两套队列分别装的是什么"><a href="#2-两套队列分别装的是什么" class="headerlink" title="2. 两套队列分别装的是什么"></a>2. 两套队列分别装的是什么</h2><h3 id="2-1-Java-层-MessageQueue"><a href="#2-1-Java-层-MessageQueue" class="headerlink" title="2.1 Java 层 MessageQueue"></a>2.1 Java 层 <code>MessageQueue</code></h3><p>Java 层 <code>MessageQueue</code> 的核心成员是 <code>mMessages</code>，本质上是一条按 <code>when</code> 时间有序排列的单链表。</p>
+<p>它存放的是开发者最熟悉的这些东西：</p>
+<ul>
+<li><code>Handler.sendMessage</code></li>
+<li><code>Handler.post</code></li>
+<li><code>postDelayed</code></li>
+<li>同步屏障</li>
+<li>异步消息</li>
+<li><code>IdleHandler</code></li>
+</ul>
+<p>这里解决的是“Java 业务调度语义”：</p>
+<ul>
+<li>哪条消息先执行</li>
+<li>是否需要延迟</li>
+<li>是否被同步屏障拦住</li>
+<li>队列空闲时要不要跑 <code>IdleHandler</code></li>
+</ul>
+<h3 id="2-2-Native-层-Looper"><a href="#2-2-Native-层-Looper" class="headerlink" title="2.2 Native 层 Looper"></a>2.2 Native 层 <code>Looper</code></h3><p>Native <code>Looper</code> 里有两类很重要的数据：</p>
+<ol>
+<li><p><code>mRequests</code> / <code>mResponses</code></p>
+<ul>
+<li>用来管理 fd 监听请求与就绪响应。</li>
+<li>比如 <code>eventfd</code>、<code>socketpair</code>、Binder 相关 fd、显示事件 fd 等。</li>
+</ul>
+</li>
+<li><p><code>mMessageEnvelopes</code></p>
+<ul>
+<li>用来管理 Native 自己的延时消息。</li>
+<li>对应 <code>sendMessage()</code>、<code>sendMessageDelayed()</code>、<code>sendMessageAtTime()</code> 这套 Native API。</li>
+</ul>
+</li>
+</ol>
+<p>也就是说，Native 层并不只是“阻塞器”，它自己也能维护一套到期执行的消息表。</p>
+<h2 id="3-三类东西一定要分开：Java-Message、Native-Message、fd-event"><a href="#3-三类东西一定要分开：Java-Message、Native-Message、fd-event" class="headerlink" title="3. 三类东西一定要分开：Java Message、Native Message、fd event"></a>3. 三类东西一定要分开：Java Message、Native Message、fd event</h2><p>很多讨论会把下面三类东西混在一起，结果越分析越乱。其实它们不是一回事。</p>
+<h3 id="3-1-Java-Message"><a href="#3-1-Java-Message" class="headerlink" title="3.1 Java Message"></a>3.1 Java Message</h3><p>Java Message 指的是 Java <code>MessageQueue</code> 里的 <code>Message</code> 节点，典型来源包括：</p>
+<ul>
+<li><code>Handler.sendMessage</code></li>
+<li><code>Handler.post</code></li>
+<li><code>postDelayed</code></li>
+<li><code>Choreographer</code> 往 Java 队列投递的帧回调消息</li>
+</ul>
+<p>它的特点是：</p>
+<ul>
+<li>存在于 Java <code>mMessages</code></li>
+<li>由 <code>MessageQueue.next()</code> 决定何时出队</li>
+<li>最终走到 <code>Handler.dispatchMessage()</code></li>
+</ul>
+<h3 id="3-2-Native-Message"><a href="#3-2-Native-Message" class="headerlink" title="3.2 Native Message"></a>3.2 Native Message</h3><p>Native Message 指的是 Native <code>Looper</code> 里的延时消息，典型来源是：</p>
+<ul>
+<li><code>Looper::sendMessage</code></li>
+<li><code>Looper::sendMessageDelayed</code></li>
+<li><code>Looper::sendMessageAtTime</code></li>
+</ul>
+<p>它的特点是：</p>
+<ul>
+<li>存在于 Native <code>mMessageEnvelopes</code></li>
+<li>由 <code>Looper.cpp</code> 自己判断是否到期</li>
+<li>最终走 Native 回调，而不是 Java <code>Handler</code></li>
+</ul>
+<h3 id="3-3-fd-event"><a href="#3-3-fd-event" class="headerlink" title="3.3 fd event"></a>3.3 fd event</h3><p><code>inputfd</code>、<code>vsyncfd</code>、<code>eventfd</code> 这一类，严格说都不是“消息对象”，而是 <strong>文件描述符就绪事件</strong>。</p>
+<p>它的特点是：</p>
+<ul>
+<li>先由 Native <code>epoll_wait()</code> 监听到</li>
+<li>通过 <code>Looper.addFd</code> 对应的 callback 分发</li>
+<li>后续可能继续停留在 Native，也可能再桥接到 Java</li>
+</ul>
+<p>所以最容易记的一句话是：</p>
+<ul>
+<li><code>Java Message</code> 是 Java 队列里的消息</li>
+<li><code>Native Message</code> 是 Native 队列里的消息</li>
+<li><code>inputfd/vsyncfd</code> 不是消息，它们是 Native Looper 监听的事件源</li>
+</ul>
+<p>可以先看这张总览图：</p>
+<figure style="margin:1.25rem 0;">
+  <a href="/generated/mermaid/100abeee0c46fab0fd1028420b785f4c2b3a2a08.svg" data-fancybox="mermaid-diagrams" data-caption="Mermaid 图 - 图 1" style="display:block;cursor:zoom-in;">
+    <img src="/generated/mermaid/100abeee0c46fab0fd1028420b785f4c2b3a2a08.svg" alt="Mermaid 图 - 图 1" loading="lazy" style="display:block;width:100%;height:auto;border-radius:12px;border:1px solid rgba(15,23,42,.08);background:#fff;box-shadow:0 10px 30px rgba(15,23,42,.08);">
+  </a>
+  <figcaption style="margin-top:.5rem;font-size:.875rem;color:rgba(71,85,105,.9);text-align:center;">点击放大查看原图</figcaption>
+</figure>
+
+<h2 id="4-为什么要有-Native-消息队列"><a href="#4-为什么要有-Native-消息队列" class="headerlink" title="4. 为什么要有 Native 消息队列"></a>4. 为什么要有 Native 消息队列</h2><p>这个问题本质上是在问：既然 Java 已经有 <code>Handler</code> 了，Native 为什么不直接都发 Java 消息？</p>
+<p>原因主要有三点。</p>
+<h3 id="4-1-Native-组件并不一定依赖-Java-世界"><a href="#4-1-Native-组件并不一定依赖-Java-世界" class="headerlink" title="4.1 Native 组件并不一定依赖 Java 世界"></a>4.1 Native 组件并不一定依赖 Java 世界</h3><p><code>Looper.cpp</code> 是一个通用事件循环，很多 Native 组件根本不想依赖 Java <code>Handler</code>。它们只需要：</p>
+<ul>
+<li>某个时间点回调一次</li>
+<li>某个 fd 可读时被唤醒</li>
+<li>在当前线程的事件循环里执行回调</li>
+</ul>
+<p>对这类场景来说，直接使用 Native <code>Looper</code> 的消息和 fd 回调更自然。</p>
+<h3 id="4-2-fd-事件和定时任务天然应该在同一套事件循环里"><a href="#4-2-fd-事件和定时任务天然应该在同一套事件循环里" class="headerlink" title="4.2 fd 事件和定时任务天然应该在同一套事件循环里"></a>4.2 fd 事件和定时任务天然应该在同一套事件循环里</h3><p>Native Looper 的一个设计目标，就是把“定时任务”和“fd 事件”放进同一条 <code>poll</code> 主循环中处理。</p>
+<p>这样做的好处是：</p>
+<ul>
+<li>不需要额外线程</li>
+<li>不需要再桥接到 Java 层</li>
+<li>到期时间可以直接参与 <code>epoll_wait()</code> 的超时计算</li>
+</ul>
+<p>所以 <code>mMessageEnvelopes</code> 的存在，并不是重复造轮子，而是为了让 Native 事件循环本身闭环。</p>
+<h3 id="4-3-Java-MessageQueue-不是-Native-世界的统一调度中心"><a href="#4-3-Java-MessageQueue-不是-Native-世界的统一调度中心" class="headerlink" title="4.3 Java MessageQueue 不是 Native 世界的统一调度中心"></a>4.3 Java <code>MessageQueue</code> 不是 Native 世界的统一调度中心</h3><p>Java <code>MessageQueue</code> 只能调度 Java <code>Message</code>。但系统里还有很多事情发生在：</p>
+<ul>
+<li>JNI 下方</li>
+<li>system/core</li>
+<li>Native UI / graphics / input 辅助链路</li>
+</ul>
+<p>这些模块需要的是通用 Looper，而不是 Java <code>Handler</code>。</p>
+<h2 id="5-Java-与-Native-的关系不是“镜像”，而是“嵌套”"><a href="#5-Java-与-Native-的关系不是“镜像”，而是“嵌套”" class="headerlink" title="5. Java 与 Native 的关系不是“镜像”，而是“嵌套”"></a>5. Java 与 Native 的关系不是“镜像”，而是“嵌套”</h2><p>很多人会脑补出这样一种模型：</p>
+<ul>
+<li>Java 队列一份</li>
+<li>Native 队列一份</li>
+<li>两边互相同步</li>
+</ul>
+<p>这其实不对。真实情况更接近下面这样：</p>
+<figure style="margin:1.25rem 0;">
+  <a href="/generated/mermaid/3783df4ece54219e3b08db451cd5cf5a8d7aaf32.svg" data-fancybox="mermaid-diagrams" data-caption="Mermaid 图 - 图 2" style="display:block;cursor:zoom-in;">
+    <img src="/generated/mermaid/3783df4ece54219e3b08db451cd5cf5a8d7aaf32.svg" alt="Mermaid 图 - 图 2" loading="lazy" style="display:block;width:100%;height:auto;border-radius:12px;border:1px solid rgba(15,23,42,.08);background:#fff;box-shadow:0 10px 30px rgba(15,23,42,.08);">
+  </a>
+  <figcaption style="margin-top:.5rem;font-size:.875rem;color:rgba(71,85,105,.9);text-align:center;">点击放大查看原图</figcaption>
+</figure>
+
+<p>这里有两个关键点：</p>
+<ol>
+<li>Java 队列不会把 <code>Message</code> 拷贝进 <code>mMessageEnvelopes</code>。</li>
+<li>Native Looper 处理完自己的事件后，Java 层还会再检查一次 <code>mMessages</code>。</li>
+</ol>
+<p>所以两层关系不是“双写”，而是：</p>
+<ul>
+<li>Java <code>next()</code> 把等待动作委托给 Native。</li>
+<li>Native <code>pollOnce()</code> 在等待期间顺手处理自己负责的事件。</li>
+<li>返回后 Java 再决定是不是轮到某条 <code>Message</code> 出队。</li>
+</ul>
+<h2 id="6-inputfd-和-vsyncfd-算谁处理"><a href="#6-inputfd-和-vsyncfd-算谁处理" class="headerlink" title="6. inputfd 和 vsyncfd 算谁处理"></a>6. <code>inputfd</code> 和 <code>vsyncfd</code> 算谁处理</h2><p>这个问题最适合拆成两层来回答：</p>
+<ol>
+<li><code>fd</code> 的就绪，是谁先感知到的？</li>
+<li>事件后续的业务分发，最终落在哪一层？</li>
+</ol>
+<p>答案是：</p>
+<ul>
+<li><code>inputfd</code> / <code>vsyncfd</code> 的 <strong>就绪事件</strong>，先由 Native Looper 感知和分发。</li>
+<li>但后续业务不一定停在 Native，很多情况下还会继续桥接到 Java。</li>
+</ul>
+<h3 id="6-1-inputfd-的典型路径"><a href="#6-1-inputfd-的典型路径" class="headerlink" title="6.1 inputfd 的典型路径"></a>6.1 <code>inputfd</code> 的典型路径</h3><p><code>InputChannel</code> 本质上是 <code>socketpair</code>。当输入事件到来时，主线程监听的那个 input fd 变为 readable：</p>
+<ol>
+<li>Native <code>epoll_wait()</code> 先返回</li>
+<li>Native <code>Looper</code> 识别这个 fd 就绪</li>
+<li>回调到输入接收侧的 Native 对象</li>
+<li>再通过 JNI 分发给 Java <code>InputEventReceiver</code></li>
+<li>然后继续走 <code>ViewRootImpl</code>、<code>View</code> 那条 Java 输入分发链</li>
+</ol>
+<p>所以：</p>
+<ul>
+<li>“输入到了”这件事，先是 Native 感知</li>
+<li>“应用怎么消费输入”，通常会进入 Java</li>
+</ul>
+<h3 id="6-2-vsyncfd-的典型路径"><a href="#6-2-vsyncfd-的典型路径" class="headerlink" title="6.2 vsyncfd 的典型路径"></a>6.2 <code>vsyncfd</code> 的典型路径</h3><p>Vsync 也是类似思路，只是后续对接的是帧调度：</p>
+<ol>
+<li>显示事件 fd 就绪</li>
+<li>Native <code>epoll_wait()</code> 返回</li>
+<li>Native 接收器先拿到 vsync 节拍</li>
+<li>再桥接到 Java <code>DisplayEventReceiver</code></li>
+<li>Java <code>Choreographer</code> 收到后安排 <code>doFrame</code></li>
+<li>后续进入 <code>Input -&gt; Animation -&gt; Traversal</code></li>
+</ol>
+<p>所以：</p>
+<ul>
+<li>“这一帧的节拍到了”先是 Native 接住</li>
+<li>“这一帧怎么驱动 UI 刷新”主要在 Java 调度</li>
+</ul>
+<h3 id="6-3-一张时序图看清楚"><a href="#6-3-一张时序图看清楚" class="headerlink" title="6.3 一张时序图看清楚"></a>6.3 一张时序图看清楚</h3><figure style="margin:1.25rem 0;">
+  <a href="/generated/mermaid/7cb76564a86729941d14c2b0581505acd7ff6942.svg" data-fancybox="mermaid-diagrams" data-caption="Mermaid 图 - 图 3" style="display:block;cursor:zoom-in;">
+    <img src="/generated/mermaid/7cb76564a86729941d14c2b0581505acd7ff6942.svg" alt="Mermaid 图 - 图 3" loading="lazy" style="display:block;width:100%;height:auto;border-radius:12px;border:1px solid rgba(15,23,42,.08);background:#fff;box-shadow:0 10px 30px rgba(15,23,42,.08);">
+  </a>
+  <figcaption style="margin-top:.5rem;font-size:.875rem;color:rgba(71,85,105,.9);text-align:center;">点击放大查看原图</figcaption>
+</figure>
+
+<h3 id="6-4-为什么这俩不能简单叫“Native-消息”"><a href="#6-4-为什么这俩不能简单叫“Native-消息”" class="headerlink" title="6.4 为什么这俩不能简单叫“Native 消息”"></a>6.4 为什么这俩不能简单叫“Native 消息”</h3><p>因为它们和 <code>mMessageEnvelopes</code> 里的 Native Message 根本不是同一种东西：</p>
+<ul>
+<li>Native Message：Native Looper 主动排队的延时任务</li>
+<li>inputfd / vsyncfd：外部事件源触发的 fd ready 事件</li>
+</ul>
+<p>两者唯一的共同点只是：</p>
+<ul>
+<li>都会在 Native Looper 这一层被统一调度</li>
+</ul>
+<p>但它们的数据形态、触发方式、后续分发路径都不同。</p>
+<h2 id="7-Java-层-mMessages-到底怎么决定“现在该不该醒”"><a href="#7-Java-层-mMessages-到底怎么决定“现在该不该醒”" class="headerlink" title="7. Java 层 mMessages 到底怎么决定“现在该不该醒”"></a>7. Java 层 <code>mMessages</code> 到底怎么决定“现在该不该醒”</h2><p>Java <code>MessageQueue.next()</code> 是整条链路的策略入口。</p>
+<p>它每轮都会先看队头消息：</p>
+<ol>
+<li>如果队头消息已经到期，直接出队返回。</li>
+<li>如果队头消息还没到时间，算出还要等多久。</li>
+<li>如果当前没有可执行消息，就进入阻塞等待。</li>
+<li>如果前面有同步屏障，还要继续向后找第一条异步消息。</li>
+</ol>
+<p>因此 Java 层真正决定的是：</p>
+<ul>
+<li>当前线程要不要立刻执行一条 Java 消息</li>
+<li>如果不执行，要阻塞多久</li>
+</ul>
+<p>这个“阻塞多久”的结果，就是后面传给 <code>nativePollOnce()</code> 的 <code>nextPollTimeoutMillis</code>。</p>
+<p>换句话说：</p>
+<ul>
+<li>Java <code>MessageQueue</code> 决定调度策略。</li>
+<li>Native <code>Looper</code> 负责把这个策略落成一次真正的休眠等待。</li>
+</ul>
+<h2 id="8-Native-层-mMessageEnvelopes-又是怎么参与调度的"><a href="#8-Native-层-mMessageEnvelopes-又是怎么参与调度的" class="headerlink" title="8. Native 层 mMessageEnvelopes 又是怎么参与调度的"></a>8. Native 层 <code>mMessageEnvelopes</code> 又是怎么参与调度的</h2><p>Native <code>Looper</code> 自己也能被投递消息，这些消息会进入 <code>mMessageEnvelopes</code>，同样按执行时间排序。</p>
+<p>当 <code>pollOnce()</code> / <code>pollInner()</code> 开始一轮等待前，Looper 会先看 Native 队头消息是否已经到期：</p>
+<ul>
+<li>已到期：本轮无需继续阻塞，直接准备执行 Native 消息。</li>
+<li>未到期：拿它和外部传入的 timeout 一起计算一个更小的等待时间。</li>
+</ul>
+<p>这说明 Native Looper 的等待时间，其实受两部分共同约束：</p>
+<ol>
+<li>Java 层告诉它“最晚等多久”</li>
+<li>Native 层自己也可能有“更早到期的任务”</li>
+</ol>
+<p>最终谁更早，<code>epoll_wait()</code> 就按谁的时间睡。</p>
+<h2 id="9-pollOnce-返回后，处理顺序到底是什么"><a href="#9-pollOnce-返回后，处理顺序到底是什么" class="headerlink" title="9. pollOnce 返回后，处理顺序到底是什么"></a>9. <code>pollOnce</code> 返回后，处理顺序到底是什么</h2><p>这是最容易讲错的地方。</p>
+<p>很多文章会简单写成：</p>
+<ol>
+<li>先处理 fd 回调</li>
+<li>再处理 Native 消息</li>
+<li>最后回 Java 消息</li>
+</ol>
+<p>但如果按 AOSP14 的 <code>Looper.cpp</code> 看，至少在 <code>pollInner()</code> 这一轮内部，更接近下面这个顺序：</p>
+<ol>
+<li>处理 <code>epoll_wait()</code> 返回的事件，收集就绪 fd</li>
+<li>判断 Native 延时消息是否到期</li>
+<li>先分发已到期的 Native <code>mMessageEnvelopes</code></li>
+<li>再处理本轮收集到的 fd <code>Response</code></li>
+<li>最后返回上层</li>
+</ol>
+<p>也就是说，<strong>在同一轮 <code>pollInner()</code> 内，Native 自己的延时消息处理通常先于 fd 回调分发</strong>。</p>
+<p>但这还不是全部。因为 <code>pollOnce()</code> 外层还有一层逻辑，它可能先把上一轮遗留的 <code>Response</code> 返回掉，然后才进入新的 <code>pollInner()</code>。所以严格来说：</p>
+<ul>
+<li><code>pollInner()</code> 内部顺序，和</li>
+<li><code>pollOnce()</code> 对外暴露的整体行为</li>
+</ul>
+<p>不是完全一回事。</p>
+<p>对于 Java 主线程这条最常见路径，可以抓住一个足够稳定的结论：</p>
+<ul>
+<li>Java <code>nativePollOnce()</code> 返回前，Native Looper 可能已经把自己那边该执行的消息和 fd 回调处理掉了。</li>
+<li>Java 层恢复后，才会继续检查并分发 <code>mMessages</code>。</li>
+</ul>
+<p>所以从线程观察视角看，确实经常会表现为：</p>
+<ul>
+<li>先跑一部分 Native 事件</li>
+<li>再回到 Java <code>Handler</code> 消息</li>
+</ul>
+<h2 id="10-为什么很多人感觉“Native-事件优先级更高”"><a href="#10-为什么很多人感觉“Native-事件优先级更高”" class="headerlink" title="10. 为什么很多人感觉“Native 事件优先级更高”"></a>10. 为什么很多人感觉“Native 事件优先级更高”</h2><p>这是一种现象描述，但不能简单粗暴理解成“Native 永远比 Java 高优先级”。</p>
+<p>更准确的原因有三层。</p>
+<h3 id="8-1-Java-消息要先经过一次-nativePollOnce"><a href="#8-1-Java-消息要先经过一次-nativePollOnce" class="headerlink" title="8.1 Java 消息要先经过一次 nativePollOnce"></a>8.1 Java 消息要先经过一次 <code>nativePollOnce</code></h3><p>当 Java 当前没有可立即执行的 <code>Message</code> 时，线程会下沉到 Native 阻塞。等它醒来时，Native Looper 往往已经先把自己那边本轮该处理的事情处理了一部分。</p>
+<p>所以从观感上就像：</p>
+<ul>
+<li>线程先服务 Native 世界</li>
+<li>再回 Java 世界</li>
+</ul>
+<h3 id="8-2-fd-事件是唤醒线程的直接原因"><a href="#8-2-fd-事件是唤醒线程的直接原因" class="headerlink" title="8.2 fd 事件是唤醒线程的直接原因"></a>8.2 fd 事件是唤醒线程的直接原因</h3><p>很多时候线程之所以从 <code>epoll_wait()</code> 里出来，不是因为 Java 消息天然“抢到了 CPU”，而是因为：</p>
+<ul>
+<li>某个 fd 就绪了</li>
+<li>或某个唤醒事件发生了</li>
+</ul>
+<p>因此 Native 事件经常站在“唤醒入口”上，看起来更靠前。</p>
+<h3 id="8-3-Java-消息仍然有自己的强势路径"><a href="#8-3-Java-消息仍然有自己的强势路径" class="headerlink" title="8.3 Java 消息仍然有自己的强势路径"></a>8.3 Java 消息仍然有自己的强势路径</h3><p>如果 Java 队头消息已经到期，<code>MessageQueue.next()</code> 其实可以直接返回，不必进入新的阻塞等待。</p>
+<p>这时执行路径就是：</p>
+<ul>
+<li>直接从 <code>mMessages</code> 出队</li>
+<li>进入 <code>Handler.dispatchMessage</code></li>
+</ul>
+<p>所以不能说 Native 总是优先；更准确地说是：</p>
+<ul>
+<li>当线程已经进入 Native poll 阶段时，Native 事件通常先被处理。</li>
+<li>当 Java 本来就有现成可执行消息时，Java 也可以直接跑。</li>
+</ul>
+<h2 id="11-一个完整场景串起来看"><a href="#11-一个完整场景串起来看" class="headerlink" title="11. 一个完整场景串起来看"></a>11. 一个完整场景串起来看</h2><p>假设主线程此刻状态如下：</p>
+<ul>
+<li>Java 队列头部消息还要 20ms 才到期</li>
+<li>Native Looper 里 5ms 后有一个 Native 延时消息</li>
+<li>同时 Looper 还监听着若干 fd</li>
+</ul>
+<p>那么这一轮可能这样执行：</p>
+<ol>
+<li>Java <code>next()</code> 发现 Java 消息还没到点，算出 <code>timeout = 20ms</code></li>
+<li>进入 <code>nativePollOnce(20ms)</code></li>
+<li>Native Looper 检查自己的 <code>mMessageEnvelopes</code>，发现 5ms 后有更早任务</li>
+<li>实际传给 <code>epoll_wait()</code> 的等待时间变成 5ms</li>
+<li>5ms 到后，<code>epoll_wait()</code> 返回</li>
+<li>Native Looper 先执行自己到期的 Native 消息</li>
+<li>如果还有 fd 回调，也在 Native 这层继续处理</li>
+<li>然后返回 Java 层</li>
+<li>Java 再次检查 <code>mMessages</code>，发现那条 20ms 的消息还没到，因此继续下一轮等待</li>
+</ol>
+<p>这个例子很直观地说明了两件事：</p>
+<ul>
+<li>Java 的 timeout 并不是线程等待的唯一依据。</li>
+<li>Native 自己也可能把等待节奏“截胡”到更早的时间点。</li>
+</ul>
+<h2 id="12-这套设计解决了什么问题"><a href="#12-这套设计解决了什么问题" class="headerlink" title="12. 这套设计解决了什么问题"></a>12. 这套设计解决了什么问题</h2><p>双层协作的价值，主要体现在下面几点。</p>
+<h3 id="12-1-Java-语义与-Native-机制解耦"><a href="#12-1-Java-语义与-Native-机制解耦" class="headerlink" title="12.1 Java 语义与 Native 机制解耦"></a>12.1 Java 语义与 Native 机制解耦</h3><p>Java 层可以专注：</p>
+<ul>
+<li><code>Handler</code></li>
+<li>同步屏障</li>
+<li>异步消息</li>
+<li><code>IdleHandler</code></li>
+</ul>
+<p>Native 层可以专注：</p>
+<ul>
+<li><code>epoll</code></li>
+<li>fd 回调</li>
+<li>唤醒</li>
+<li>Native 延时任务</li>
+</ul>
+<p>两边各干各的，但共享同一个线程节拍。</p>
+<h3 id="12-2-一个线程就能同时服务多类事件"><a href="#12-2-一个线程就能同时服务多类事件" class="headerlink" title="12.2 一个线程就能同时服务多类事件"></a>12.2 一个线程就能同时服务多类事件</h3><p>同一条主线程既可以处理：</p>
+<ul>
+<li>Java Handler 消息</li>
+<li>Input / Display 等 fd 事件</li>
+<li>Native 内部定时任务</li>
+</ul>
+<p>而不需要每类事件各养一个线程。</p>
+<h3 id="12-3-等待时间可以被更精细地裁剪"><a href="#12-3-等待时间可以被更精细地裁剪" class="headerlink" title="12.3 等待时间可以被更精细地裁剪"></a>12.3 等待时间可以被更精细地裁剪</h3><p>线程到底睡多久，不只是 Java 说了算，也不只是 Native 说了算，而是双方共同决定一个“最近到期点”。</p>
+<p>这种设计让 Looper 在响应时延和资源利用率之间取得了较好的平衡。</p>
+<h2 id="13-对应到-AOSP14-的关键源码位置"><a href="#13-对应到-AOSP14-的关键源码位置" class="headerlink" title="13. 对应到 AOSP14 的关键源码位置"></a>13. 对应到 AOSP14 的关键源码位置</h2><p>如果你后续要继续顺着源码读，建议抓下面三个文件：</p>
+<h3 id="13-1-frameworks-base-core-java-android-os-MessageQueue-java"><a href="#13-1-frameworks-base-core-java-android-os-MessageQueue-java" class="headerlink" title="13.1 frameworks/base/core/java/android/os/MessageQueue.java"></a>13.1 <code>frameworks/base/core/java/android/os/MessageQueue.java</code></h3><p>重点看：</p>
+<ul>
+<li><code>next()</code></li>
+<li><code>enqueueMessage()</code></li>
+<li>同步屏障相关逻辑</li>
+<li><code>IdleHandler</code> 执行条件</li>
+</ul>
+<p>这个文件回答的是：</p>
+<ul>
+<li>Java 消息如何排队</li>
+<li>什么时候需要唤醒</li>
+<li>为什么有时会无限阻塞、有时只阻塞几毫秒</li>
+</ul>
+<h3 id="13-2-frameworks-base-core-jni-android-os-MessageQueue-cpp"><a href="#13-2-frameworks-base-core-jni-android-os-MessageQueue-cpp" class="headerlink" title="13.2 frameworks/base/core/jni/android_os_MessageQueue.cpp"></a>13.2 <code>frameworks/base/core/jni/android_os_MessageQueue.cpp</code></h3><p>重点看：</p>
+<ul>
+<li><code>NativeMessageQueue</code></li>
+<li><code>pollOnce</code></li>
+<li><code>wake</code></li>
+</ul>
+<p>这个文件回答的是：</p>
+<ul>
+<li>Java <code>MessageQueue</code> 如何绑定到 Native <code>Looper</code></li>
+<li><code>nativePollOnce()</code> / <code>nativeWake()</code> 如何桥接到 C++</li>
+</ul>
+<h3 id="13-3-system-core-libutils-Looper-cpp"><a href="#13-3-system-core-libutils-Looper-cpp" class="headerlink" title="13.3 system/core/libutils/Looper.cpp"></a>13.3 <code>system/core/libutils/Looper.cpp</code></h3><p>重点看：</p>
+<ul>
+<li><code>pollOnce()</code></li>
+<li><code>pollInner()</code></li>
+<li><code>sendMessageAtTime()</code></li>
+<li><code>wake()</code></li>
+<li><code>awoken()</code></li>
+</ul>
+<p>这个文件回答的是：</p>
+<ul>
+<li>fd 事件怎么等</li>
+<li>Native 消息怎么排队</li>
+<li>本轮到底先做什么、后做什么</li>
+</ul>
+<h2 id="14-小结"><a href="#14-小结" class="headerlink" title="14. 小结"></a>14. 小结</h2><p>Android 的消息机制并不是“一个 Java 队列 + 一个 Native 阻塞器”这么简单。</p>
+<p>更完整的理解应该是：</p>
+<ul>
+<li>Java <code>MessageQueue</code> 负责应用层消息语义。</li>
+<li>Native <code>Looper</code> 负责底层事件循环与 Native 延时任务。</li>
+<li><code>inputfd</code>、<code>vsyncfd</code> 这类东西不是 Java Message，也不是 Native Message，而是 fd 事件源。</li>
+<li>Java 把等待动作委托给 Native。</li>
+<li>Native 在等待期间顺带处理自己的消息和 fd 事件。</li>
+<li>返回 Java 后，再继续消费 <code>mMessages</code>。</li>
+</ul>
+<p>所以这套系统的本质不是“谁替代谁”，而是：</p>
+<p><strong>Java 负责决策消息语义，Native 负责统一承接线程事件循环。</strong></p>
+<p>下一篇再继续往下拆，就很自然会进入另一个问题：既然 Looper 能监听各种 fd，那 Input 事件到底是怎么接进这套循环里的？</p>
+</article>
+<div class="article-footer">
+    <section id="license">
+      <div class="header"><span>许可协议</span></div>
+      <div class="body"><p>本文采用 <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">署名-非商业性使用-相同方式共享 4.0 国际</a> 许可协议，转载请注明出处。</p>
+</div>
+    </section>
+    
+
+</div>
+
+<div class="related-wrap" id="read-next"><section class="body"><div class="item" id="prev"><div class="note">较新文章</div><a href="/2026/05/13/android/framework%E5%9F%BA%E7%A1%80/03_Android%E6%B6%88%E6%81%AF%E6%9C%BA%E5%88%B6_Input%E7%B3%BB%E7%BB%9F%E7%9A%84fd%E9%A9%B1%E5%8A%A8/">Android消息机制(三)：Input 系统如何“白嫖” Looper (inputfd)</a></div><div class="item" id="next"><div class="note">较早文章</div><a href="/2026/05/13/android/framework%E5%9F%BA%E7%A1%80/01_Android%E6%B6%88%E6%81%AF%E6%9C%BA%E5%88%B6_epoll%E4%B8%8E%E5%94%A4%E9%86%92%E6%9C%BA%E5%88%B6/">Android消息机制(一)：Looper的心脏——epoll与唤醒机制</a></div></section></div>
+
+
+
+
+
+
+<footer class="page-footer footnote"><hr><div class="text"><p>本站由 <a href="/">Su Hui</a> 使用 <a target="_blank" rel="noopener" href="https://github.com/xaoxuu/hexo-theme-stellar/tree/1.33.1">Stellar 1.33.1</a> 主题创建。<br>本博客所有文章除特别声明外，均采用 <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> 许可协议，转载请注明出处。</p>
+</div></footer>
+<div class="main-mask" onclick="sidebar.dismiss()"></div></div><aside class="l_right">
+<div class="widgets">
+
+
+
+<widget class="widget-wrapper toc" id="data-toc" collapse="false"><div class="widget-header dis-select"><span class="name">本文目录</span><a class="cap-action" onclick="sidebar.toggleTOC()" ><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h11m-11 6h11m-11 6h11M4 6h1v4m-1 0h2m0 8H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg></a></div><div class="widget-body"><ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#Android%E6%B6%88%E6%81%AF%E6%9C%BA%E5%88%B6-%E4%BA%8C-%EF%BC%9AJava-%E4%B8%8E-Native-%E5%8F%8C%E5%B1%82%E9%98%9F%E5%88%97%E5%A6%82%E4%BD%95%E5%8D%8F%E5%90%8C%E8%B0%83%E5%BA%A6"><span class="toc-text">Android消息机制(二)：Java 与 Native 双层队列如何协同调度</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#1-%E5%85%88%E7%9C%8B%E7%BB%93%E8%AE%BA"><span class="toc-text">1. 先看结论</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#2-%E4%B8%A4%E5%A5%97%E9%98%9F%E5%88%97%E5%88%86%E5%88%AB%E8%A3%85%E7%9A%84%E6%98%AF%E4%BB%80%E4%B9%88"><span class="toc-text">2. 两套队列分别装的是什么</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#2-1-Java-%E5%B1%82-MessageQueue"><span class="toc-text">2.1 Java 层 MessageQueue</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#2-2-Native-%E5%B1%82-Looper"><span class="toc-text">2.2 Native 层 Looper</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#3-%E4%B8%89%E7%B1%BB%E4%B8%9C%E8%A5%BF%E4%B8%80%E5%AE%9A%E8%A6%81%E5%88%86%E5%BC%80%EF%BC%9AJava-Message%E3%80%81Native-Message%E3%80%81fd-event"><span class="toc-text">3. 三类东西一定要分开：Java Message、Native Message、fd event</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#3-1-Java-Message"><span class="toc-text">3.1 Java Message</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#3-2-Native-Message"><span class="toc-text">3.2 Native Message</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#3-3-fd-event"><span class="toc-text">3.3 fd event</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#4-%E4%B8%BA%E4%BB%80%E4%B9%88%E8%A6%81%E6%9C%89-Native-%E6%B6%88%E6%81%AF%E9%98%9F%E5%88%97"><span class="toc-text">4. 为什么要有 Native 消息队列</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#4-1-Native-%E7%BB%84%E4%BB%B6%E5%B9%B6%E4%B8%8D%E4%B8%80%E5%AE%9A%E4%BE%9D%E8%B5%96-Java-%E4%B8%96%E7%95%8C"><span class="toc-text">4.1 Native 组件并不一定依赖 Java 世界</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#4-2-fd-%E4%BA%8B%E4%BB%B6%E5%92%8C%E5%AE%9A%E6%97%B6%E4%BB%BB%E5%8A%A1%E5%A4%A9%E7%84%B6%E5%BA%94%E8%AF%A5%E5%9C%A8%E5%90%8C%E4%B8%80%E5%A5%97%E4%BA%8B%E4%BB%B6%E5%BE%AA%E7%8E%AF%E9%87%8C"><span class="toc-text">4.2 fd 事件和定时任务天然应该在同一套事件循环里</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#4-3-Java-MessageQueue-%E4%B8%8D%E6%98%AF-Native-%E4%B8%96%E7%95%8C%E7%9A%84%E7%BB%9F%E4%B8%80%E8%B0%83%E5%BA%A6%E4%B8%AD%E5%BF%83"><span class="toc-text">4.3 Java MessageQueue 不是 Native 世界的统一调度中心</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#5-Java-%E4%B8%8E-Native-%E7%9A%84%E5%85%B3%E7%B3%BB%E4%B8%8D%E6%98%AF%E2%80%9C%E9%95%9C%E5%83%8F%E2%80%9D%EF%BC%8C%E8%80%8C%E6%98%AF%E2%80%9C%E5%B5%8C%E5%A5%97%E2%80%9D"><span class="toc-text">5. Java 与 Native 的关系不是“镜像”，而是“嵌套”</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#6-inputfd-%E5%92%8C-vsyncfd-%E7%AE%97%E8%B0%81%E5%A4%84%E7%90%86"><span class="toc-text">6. inputfd 和 vsyncfd 算谁处理</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#6-1-inputfd-%E7%9A%84%E5%85%B8%E5%9E%8B%E8%B7%AF%E5%BE%84"><span class="toc-text">6.1 inputfd 的典型路径</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#6-2-vsyncfd-%E7%9A%84%E5%85%B8%E5%9E%8B%E8%B7%AF%E5%BE%84"><span class="toc-text">6.2 vsyncfd 的典型路径</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#6-3-%E4%B8%80%E5%BC%A0%E6%97%B6%E5%BA%8F%E5%9B%BE%E7%9C%8B%E6%B8%85%E6%A5%9A"><span class="toc-text">6.3 一张时序图看清楚</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#6-4-%E4%B8%BA%E4%BB%80%E4%B9%88%E8%BF%99%E4%BF%A9%E4%B8%8D%E8%83%BD%E7%AE%80%E5%8D%95%E5%8F%AB%E2%80%9CNative-%E6%B6%88%E6%81%AF%E2%80%9D"><span class="toc-text">6.4 为什么这俩不能简单叫“Native 消息”</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#7-Java-%E5%B1%82-mMessages-%E5%88%B0%E5%BA%95%E6%80%8E%E4%B9%88%E5%86%B3%E5%AE%9A%E2%80%9C%E7%8E%B0%E5%9C%A8%E8%AF%A5%E4%B8%8D%E8%AF%A5%E9%86%92%E2%80%9D"><span class="toc-text">7. Java 层 mMessages 到底怎么决定“现在该不该醒”</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#8-Native-%E5%B1%82-mMessageEnvelopes-%E5%8F%88%E6%98%AF%E6%80%8E%E4%B9%88%E5%8F%82%E4%B8%8E%E8%B0%83%E5%BA%A6%E7%9A%84"><span class="toc-text">8. Native 层 mMessageEnvelopes 又是怎么参与调度的</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#9-pollOnce-%E8%BF%94%E5%9B%9E%E5%90%8E%EF%BC%8C%E5%A4%84%E7%90%86%E9%A1%BA%E5%BA%8F%E5%88%B0%E5%BA%95%E6%98%AF%E4%BB%80%E4%B9%88"><span class="toc-text">9. pollOnce 返回后，处理顺序到底是什么</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#10-%E4%B8%BA%E4%BB%80%E4%B9%88%E5%BE%88%E5%A4%9A%E4%BA%BA%E6%84%9F%E8%A7%89%E2%80%9CNative-%E4%BA%8B%E4%BB%B6%E4%BC%98%E5%85%88%E7%BA%A7%E6%9B%B4%E9%AB%98%E2%80%9D"><span class="toc-text">10. 为什么很多人感觉“Native 事件优先级更高”</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#8-1-Java-%E6%B6%88%E6%81%AF%E8%A6%81%E5%85%88%E7%BB%8F%E8%BF%87%E4%B8%80%E6%AC%A1-nativePollOnce"><span class="toc-text">8.1 Java 消息要先经过一次 nativePollOnce</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#8-2-fd-%E4%BA%8B%E4%BB%B6%E6%98%AF%E5%94%A4%E9%86%92%E7%BA%BF%E7%A8%8B%E7%9A%84%E7%9B%B4%E6%8E%A5%E5%8E%9F%E5%9B%A0"><span class="toc-text">8.2 fd 事件是唤醒线程的直接原因</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#8-3-Java-%E6%B6%88%E6%81%AF%E4%BB%8D%E7%84%B6%E6%9C%89%E8%87%AA%E5%B7%B1%E7%9A%84%E5%BC%BA%E5%8A%BF%E8%B7%AF%E5%BE%84"><span class="toc-text">8.3 Java 消息仍然有自己的强势路径</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#11-%E4%B8%80%E4%B8%AA%E5%AE%8C%E6%95%B4%E5%9C%BA%E6%99%AF%E4%B8%B2%E8%B5%B7%E6%9D%A5%E7%9C%8B"><span class="toc-text">11. 一个完整场景串起来看</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#12-%E8%BF%99%E5%A5%97%E8%AE%BE%E8%AE%A1%E8%A7%A3%E5%86%B3%E4%BA%86%E4%BB%80%E4%B9%88%E9%97%AE%E9%A2%98"><span class="toc-text">12. 这套设计解决了什么问题</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#12-1-Java-%E8%AF%AD%E4%B9%89%E4%B8%8E-Native-%E6%9C%BA%E5%88%B6%E8%A7%A3%E8%80%A6"><span class="toc-text">12.1 Java 语义与 Native 机制解耦</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#12-2-%E4%B8%80%E4%B8%AA%E7%BA%BF%E7%A8%8B%E5%B0%B1%E8%83%BD%E5%90%8C%E6%97%B6%E6%9C%8D%E5%8A%A1%E5%A4%9A%E7%B1%BB%E4%BA%8B%E4%BB%B6"><span class="toc-text">12.2 一个线程就能同时服务多类事件</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#12-3-%E7%AD%89%E5%BE%85%E6%97%B6%E9%97%B4%E5%8F%AF%E4%BB%A5%E8%A2%AB%E6%9B%B4%E7%B2%BE%E7%BB%86%E5%9C%B0%E8%A3%81%E5%89%AA"><span class="toc-text">12.3 等待时间可以被更精细地裁剪</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#13-%E5%AF%B9%E5%BA%94%E5%88%B0-AOSP14-%E7%9A%84%E5%85%B3%E9%94%AE%E6%BA%90%E7%A0%81%E4%BD%8D%E7%BD%AE"><span class="toc-text">13. 对应到 AOSP14 的关键源码位置</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#13-1-frameworks-base-core-java-android-os-MessageQueue-java"><span class="toc-text">13.1 frameworks&#x2F;base&#x2F;core&#x2F;java&#x2F;android&#x2F;os&#x2F;MessageQueue.java</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#13-2-frameworks-base-core-jni-android-os-MessageQueue-cpp"><span class="toc-text">13.2 frameworks&#x2F;base&#x2F;core&#x2F;jni&#x2F;android_os_MessageQueue.cpp</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#13-3-system-core-libutils-Looper-cpp"><span class="toc-text">13.3 system&#x2F;core&#x2F;libutils&#x2F;Looper.cpp</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#14-%E5%B0%8F%E7%BB%93"><span class="toc-text">14. 小结</span></a></li></ol></li></ol></div><div class="widget-footer"><a class="top" onclick="util.scrollTop()"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><!-- Icon from Solar by 480 Design - https://creativecommons.org/licenses/by/4.0/ --><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><path stroke-linejoin="round" d="m9 15.5l3-3l3 3m-6-4l3-3l3 3"/><path d="M7 3.338A9.95 9.95 0 0 1 12 2c5.523 0 10 4.477 10 10s-4.477 10-10 10S2 17.523 2 12c0-1.821.487-3.53 1.338-5"/></g></svg><span>回到顶部</span></a></div></widget>
+</div></aside><div class='float-panel'>
+  <button type='button' style='display:none' class='laptop-only rightbar-toggle mobile' onclick='sidebar.rightbar()'>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h11m-11 6h11m-11 6h11M4 6h1v4m-1 0h2m0 8H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>
+  </button>
+  <button type='button' style='display:none' class='mobile-only leftbar-toggle mobile' onclick='sidebar.leftbar()'>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 11c0-3.771 0-5.657 1.172-6.828C4.343 3 6.229 3 10 3h4c3.771 0 5.657 0 6.828 1.172C22 5.343 22 7.229 22 11v2c0 3.771 0 5.657-1.172 6.828C19.657 21 17.771 21 14 21h-4c-3.771 0-5.657 0-6.828-1.172C2 18.657 2 16.771 2 13z"/><path id="sep" stroke-linecap="round" d="M5.5 10h6m-5 4h4m4.5 7V3"/></g></svg>
+  </button>
+</div>
+</div><div class="scripts">
+
+
+<script type="text/javascript">
+  window.canonical = {"originalHost":null,"officialHosts":["localhost"],"encoded":""};
+  const ctx = {
+    date_suffix: {
+      just: `刚刚`,
+      min: `分钟前`,
+      hour: `小时前`,
+      day: `天前`,
+    },
+    root : `/`,
+    tag_plugins: {
+      chat: Object.assign({"api":"https://siteinfo.listentothewind.cn/api/v1"}),
+    }
+  };
+
+  // required plugins (only load if needs)
+  if (`local_search`) {
+    ctx.search = {};
+    ctx.search.service = `local_search`;
+    if (ctx.search.service == 'local_search') {
+      let service_obj = Object.assign({}, `{"field":"all","path":"/search.json","content":true,"skip_search":null,"sort":"-date"}`);
+      ctx.search[ctx.search.service] = service_obj;
+    }
+  }
+  const def = {
+    avatar: `https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/avatar/round/3442075.svg`,
+    cover: `https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/cover/76b86c0226ffd.svg`,
+    loading: `https://api.iconify.design/eos-icons:three-dots-loading.svg?color=%231cd0fd`,
+  };
+  const deps = {
+    jquery: `https://gcore.jsdelivr.net/npm/jquery@3.7/dist/jquery.min.js`,
+    marked: `https://gcore.jsdelivr.net/npm/marked@13.0/lib/marked.umd.min.js`,
+    lazyload: `/%5Bobject%20Object%5D`
+  }
+  
+
+</script>
+
+<script type="text/javascript">
+  
+  function RunItem() {
+    this.list = []; // 存放回调函数
+    this.start = () => {
+      for (var i = 0; i < this.list.length; i++) {
+        this.list[i].run();
+      }
+    };
+    this.push = (fn, name, setRequestAnimationFrame = true) => {
+      let myfn = fn
+      if (setRequestAnimationFrame) {
+        myfn = () => {
+          utils.requestAnimationFrame(fn)
+        }
+      }
+      var f = new Item(myfn, name);
+      this.list.push(f);
+    };
+    this.remove = (name) => {
+      for (let index = 0; index < this.list.length; index++) {
+        const e = this.list[index];
+        if (e.name == name) {
+          this.list.splice(index, 1);
+        }
+      }
+    }
+    // 构造一个可以run的对象
+    function Item(fn, name) {
+      // 函数名称
+      this.name = name || fn.name;
+      // run方法
+      this.run = () => {
+        try {
+          fn()
+        } catch (error) {
+          console.log(error);
+        }
+      };
+    }
+  }
+
+  const utils = {
+    // 懒加载 css https://github.com/filamentgroup/loadCSS
+    css: (href, before, media, attributes) => {
+      var doc = window.document;
+      var ss = doc.createElement("link");
+      var ref;
+      if (before) {
+        ref = before;
+      } else {
+        var refs = (doc.body || doc.getElementsByTagName("head")[0]).childNodes;
+        ref = refs[refs.length - 1];
+      }
+      var sheets = doc.styleSheets;
+      if (attributes) {
+        for (var attributeName in attributes) {
+          if (attributes.hasOwnProperty(attributeName)) {
+            ss.setAttribute(attributeName, attributes[attributeName]);
+          }
+        }
+      }
+      ss.rel = "stylesheet";
+      ss.href = href;
+      ss.media = "only x";
+      function ready(cb) {
+        if (doc.body) {
+          return cb();
+        }
+        setTimeout(function () {
+          ready(cb);
+        });
+      }
+      ready(function () {
+        ref.parentNode.insertBefore(ss, before ? ref : ref.nextSibling);
+      });
+      var onloadcssdefined = function (cb) {
+        var resolvedHref = ss.href;
+        var i = sheets.length;
+        while (i--) {
+          if (sheets[i].href === resolvedHref) {
+            return cb();
+          }
+        }
+        setTimeout(function () {
+          onloadcssdefined(cb);
+        });
+      };
+      function loadCB() {
+        if (ss.addEventListener) {
+          ss.removeEventListener("load", loadCB);
+        }
+        ss.media = media || "all";
+      }
+      if (ss.addEventListener) {
+        ss.addEventListener("load", loadCB);
+      }
+      ss.onloadcssdefined = onloadcssdefined;
+      onloadcssdefined(loadCB);
+      return ss;
+    },
+
+    js: (src, opt) => new Promise((resolve, reject) => {
+      var script = document.createElement('script');
+      if (src.startsWith('/')) {
+        src = ctx.root + src.substring(1);
+      }
+      script.src = src;
+      if (opt) {
+        for (let key of Object.keys(opt)) {
+          script[key] = opt[key]
+        }
+      } else {
+        // 默认异步，如果需要同步，第二个参数传入 {} 即可
+        script.async = true
+      }
+      script.onerror = reject
+      script.onload = script.onreadystatechange = function () {
+        const loadState = this.readyState
+        if (loadState && loadState !== 'loaded' && loadState !== 'complete') return
+        script.onload = script.onreadystatechange = null
+        resolve()
+      }
+      document.head.appendChild(script)
+    }),
+
+    jq: (fn) => {
+      if (typeof jQuery === 'undefined') {
+        utils.js(deps.jquery).then(fn)
+      } else {
+        fn()
+      }
+    },
+
+    onLoading: (el) => {
+      if (el) {
+        $(el).append('<div class="loading-wrap"><svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" stroke-opacity=".3" d="M12 3C16.9706 3 21 7.02944 21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="1.3s" values="60;0"/></path><path stroke-dasharray="15" stroke-dashoffset="15" d="M12 3C16.9706 3 21 7.02944 21 12"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.3s" values="15;0"/><animateTransform attributeName="transform" dur="1.5s" repeatCount="indefinite" type="rotate" values="0 12 12;360 12 12"/></path></g></svg></div>');
+      }
+    },
+    onLoadSuccess: (el) => {
+      if (el) {
+        $(el).find('.loading-wrap').remove();
+      }
+    },
+    onLoadFailure: (el) => {
+      if (el) {
+        $(el).find('.loading-wrap svg').remove();
+        $(el).find('.loading-wrap').append('<svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" d="M12 3L21 20H3L12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.5s" values="60;0"/></path><path stroke-dasharray="6" stroke-dashoffset="6" d="M12 10V14"><animate fill="freeze" attributeName="stroke-dashoffset" begin="0.6s" dur="0.2s" values="6;0"/></path></g><circle cx="12" cy="17" r="1" fill="currentColor" fill-opacity="0"><animate fill="freeze" attributeName="fill-opacity" begin="0.8s" dur="0.4s" values="0;1"/></circle></svg>');
+        $(el).find('.loading-wrap').addClass('error');
+      }
+    },
+    request: (el, url, callback, onFailure) => {
+      const maxRetry = 3;
+      let retryCount = 0;
+
+      return new Promise((resolve, reject) => {
+        const load = () => {
+          utils.onLoading?.(el);
+
+          let timedOut = false;
+          const timeout = setTimeout(() => {
+            timedOut = true;
+            console.warn('[request] 超时:', url);
+
+            if (++retryCount >= maxRetry) {
+              utils.onLoadFailure?.(el);
+              onFailure?.();
+              reject('请求超时');
+            } else {
+              setTimeout(load, 1000);
+            }
+          }, 5000);
+
+          fetch(url).then(resp => {
+            if (timedOut) return;
+            clearTimeout(timeout);
+
+            if (!resp.ok) throw new Error('响应失败');
+            return resp;
+          }).then(data => {
+            if (timedOut) return;
+            utils.onLoadSuccess?.(el);
+            callback(data);
+            resolve(data);
+          }).catch(err => {
+            clearTimeout(timeout);
+            console.warn('[request] 错误:', err);
+
+            if (++retryCount >= maxRetry) {
+              utils.onLoadFailure?.(el);
+              onFailure?.();
+              reject(err);
+            } else {
+              setTimeout(load, 1000);
+            }
+          });
+        };
+
+        load();
+      });
+    },
+    requestWithoutLoading: (url, options = {}, maxRetry = 2, timeout = 5000) => {
+      return new Promise((resolve, reject) => {
+        let retryCount = 0;
+
+        const tryRequest = () => {
+          let timedOut = false;
+          const timer = setTimeout(() => {
+            timedOut = true;
+            if (++retryCount > maxRetry) reject('timeout');
+            else tryRequest();
+          }, timeout);
+
+          fetch(url, options)
+            .then(resp => {
+              clearTimeout(timer);
+              if (!resp.ok) throw new Error('bad response');
+              resolve(resp);
+            })
+            .catch(err => {
+              clearTimeout(timer);
+              if (++retryCount > maxRetry) reject(err);
+              else setTimeout(tryRequest, 500);
+            });
+        };
+
+        tryRequest();
+      });
+    },
+    /********************** requestAnimationFrame ********************************/
+    // 1、requestAnimationFrame 会把每一帧中的所有 DOM 操作集中起来，在一次重绘或回流中就完成，并且重绘或回流的时间间隔紧紧跟随浏览器的刷新频率，一般来说，这个频率为每秒60帧。
+    // 2、在隐藏或不可见的元素中，requestAnimationFrame 将不会进行重绘或回流，这当然就意味着更少的的 cpu，gpu 和内存使用量。
+    requestAnimationFrame: (fn) => {
+      if (!window.requestAnimationFrame) {
+        window.requestAnimationFrame = window.requestAnimationFrame || window.mozRequestAnimationFrame || window.webkitRequestAnimationFrame;
+      }
+      window.requestAnimationFrame(fn)
+    },
+    dark: {},
+  };
+
+  // utils.dark.mode 当前模式 dark or light
+  // utils.dark.toggle() 暗黑模式触发器
+  // utils.dark.push(callBack[,"callBackName"]) 传入触发器回调函数
+  utils.dark.method = {
+    toggle: new RunItem(),
+  };
+  utils.dark = Object.assign(utils.dark, {
+    push: utils.dark.method.toggle.push,
+  });
+</script>
+<script>
+  const sidebar = {
+    leftbar: () => {
+      if (l_body) {
+        l_body.toggleAttribute('leftbar');
+        l_body.removeAttribute('rightbar');
+      }
+    },
+    rightbar: () => {
+      if (l_body) {
+        l_body.toggleAttribute('rightbar');
+        l_body.removeAttribute('leftbar');
+      }
+    },
+    dismiss: () => {
+      if (l_body) {
+        l_body.removeAttribute('leftbar');
+        l_body.removeAttribute('rightbar');
+      }
+    },
+    toggleTOC: () => {
+      document.querySelector('#data-toc').classList.toggle('collapse');
+    }
+  }
+</script>
+<script type="text/javascript">
+  (() => {
+    const tagSwitchers = document.querySelectorAll('.tag-subtree.parent-tag > a > .tag-switcher-wrapper')
+    for (const tagSwitcher of tagSwitchers) {
+      tagSwitcher.addEventListener('click', (e) => {
+        const parent = e.target.closest('.tag-subtree.parent-tag')
+        parent.classList.toggle('expanded')
+        e.preventDefault()
+      })
+    }
+
+    // Get active tag from query string, then activate it.
+    const urlParams = new URLSearchParams(window.location.search)
+    const activeTag = urlParams.get('tag')
+    if (activeTag) {
+      let tag = document.querySelector(`.tag-subtree[data-tag="${activeTag}"]`)
+      if (tag) {
+        tag.querySelector('a').classList.add('active')
+        
+        while (tag) {
+          tag.classList.add('expanded')
+          tag = tag.parentElement.closest('.tag-subtree.parent-tag')
+        }
+      }
+    }
+  })()
+</script>
+
+<script async src="https://gcore.jsdelivr.net/npm/vanilla-lazyload@19.1/dist/lazyload.min.js"></script>
+<script>
+  // https://www.npmjs.com/package/vanilla-lazyload
+  // Set the options globally
+  // to make LazyLoad self-initialize
+  window.lazyLoadOptions = {
+    elements_selector: ".lazy",
+    callback_loaded: (el) => {
+      el.classList.add('loaded');
+      const wrapper = el.closest('.lazy-box');
+      const icon = wrapper?.querySelector('.lazy-icon');
+      if (icon) icon.remove();
+    }
+  };
+  // Listen to the initialization event
+  // and get the instance of LazyLoad
+  window.addEventListener(
+    "LazyLoad::Initialized",
+    function (event) {
+      window.lazyLoadInstance = event.detail.instance;
+    },
+    false
+  );
+  document.addEventListener('DOMContentLoaded', function () {
+    window.lazyLoadInstance?.update();
+  });
+
+  window.wrapLazyloadImages = (container) => {
+    if (typeof container === 'string') {
+      container = document.querySelector(container);
+    }
+    if (!container) return;
+    
+    const images = container.querySelectorAll('img');
+    images.forEach((img) => {
+      if (img.classList.contains('lazy')) return;
+
+      const src = img.getAttribute('src');
+      if (!src) return;
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'lazy-box';
+
+      const newImg = img.cloneNode();
+      newImg.removeAttribute('src');
+      newImg.setAttribute('data-src', src);
+      newImg.classList.add('lazy');
+
+      const icon = document.createElement('div');
+      icon.className = 'lazy-icon';
+      if (def.loading) {
+        icon.style.backgroundImage = `url("${def.loading}")`;
+      }
+
+      wrapper.appendChild(newImg);
+      wrapper.appendChild(icon);
+
+      img.replaceWith(wrapper);
+    });
+
+    // 通知 LazyLoad 更新
+    if (window.lazyLoadInstance?.update) {
+      window.lazyLoadInstance.update();
+    }
+  }
+  
+</script>
+
+<!-- required -->
+<script src="/js/main.js?v=1.33.1" defer></script>
+
+<script type="text/javascript">
+  const applyTheme = (theme) => {
+    if (theme === 'auto') {
+      document.documentElement.removeAttribute('data-theme')
+    } else {
+      document.documentElement.setAttribute('data-theme', theme)
+    }
+
+    // applyThemeToGiscus(theme)
+  }
+
+  // FIXME: 这会导致无法使用 preferred_color_scheme 以外的主题
+  const applyThemeToGiscus = (theme) => {
+    // theme = theme === 'auto' ? 'preferred_color_scheme' : theme
+    const cmt = document.getElementById('giscus')
+    if (cmt) {
+      // This works before giscus load.
+      cmt.setAttribute('data-theme', theme)
+    }
+
+    const iframe = document.querySelector('#comments > section.giscus > iframe')
+    if (iframe) {
+      // This works after giscus loaded.
+      const src = iframe.src
+      const newSrc = src.replace(/theme=[\w]+/, `theme=${theme}`)
+      iframe.src = newSrc
+    }
+  }
+
+  const switchTheme = () => {
+    // light -> dark -> auto -> light -> ...
+    const currentTheme = document.documentElement.getAttribute('data-theme')
+    let newTheme;
+    switch (currentTheme) {
+      case 'light':
+        newTheme = 'dark'
+        break
+      case 'dark':
+        newTheme = 'auto'
+        break
+      default:
+        newTheme = 'light'
+    }
+    applyTheme(newTheme)
+    window.localStorage.setItem('Stellar.theme', newTheme)
+    utils.dark.mode = newTheme === 'auto' ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : newTheme;
+    utils.dark.method.toggle.start();
+
+    const messages = {
+      light: `切换到浅色模式`,
+      dark: `切换到深色模式`,
+      auto: `切换到跟随系统配色`,
+    }
+    hud?.toast?.(messages[newTheme])
+  }
+
+  (() => {
+    // Apply user's preferred theme, if any.
+    const theme = window.localStorage.getItem('Stellar.theme')
+    if (theme !== null) {
+      applyTheme(theme)
+    } else {
+      utils.dark.mode = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    utils.dark.method.toggle.start();
+  })()
+</script>
+
+
+<!-- optional -->
+
+
+
+<script defer>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    ctx.services = Object.assign({}, JSON.parse(`{"mdrender":{"js":"/js/services/mdrender.js"},"siteinfo":{"js":"/js/services/siteinfo.js","api":null},"ghinfo":{"js":"/js/services/ghinfo.js"},"rating":{"js":"/js/services/rating.js","api":"https://star-vote.xaox.cc/api/rating"},"vote":{"js":"/js/services/vote.js","api":"https://star-vote.xaox.cc/api/vote"},"sites":{"js":"/js/services/sites.js"},"friends":{"js":"/js/services/friends.js"},"friends_and_posts":{"js":"/js/services/friends_and_posts.js"},"timeline":{"js":"/js/services/timeline.js"},"fcircle":{"js":"/js/services/fcircle.js"},"weibo":{"js":"/js/services/weibo.js"},"memos":{"js":"/js/services/memos.js"},"voice":{"js":"/js/plugins/voice.js"},"video":{"js":"/js/plugins/video.js"},"download-file":{"js":"/js/plugins/download-file.js"},"twikoo":{"js":"/js/services/twikoo_latest_comment.js"},"waline":{"js":"/js/services/waline_latest_comment.js"},"artalk":{"js":"/js/services/artalk_latest_comment.js"},"giscus":{"js":"/js/services/giscus_latest_comment.js"},"contributors":{"edit_this_page":{"_posts/":null,"wiki/stellar/":"https://github.com/xaoxuu/hexo-theme-stellar-docs/blob/main/"},"js":"/js/services/contributors.js"}}`));
+    for (let id of Object.keys(ctx.services)) {
+      const js = ctx.services[id].js;
+      if (id == 'siteinfo') {
+        ctx.cardlinks = document.querySelectorAll('a.link-card[cardlink]');
+        if (ctx.cardlinks?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            setCardLink(ctx.cardlinks);
+          });
+        }
+      } else if (id == 'voice') {
+        ctx.voiceAudios = document.querySelectorAll('.voice>audio');
+        if (ctx.voiceAudios?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            createVoiceDom(ctx.voiceAudios);
+          });
+        }
+      } else if (id == 'video') {
+        ctx.videos = document.querySelectorAll('.video>video');
+        if (ctx.videos?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            videoEvents(ctx.videos);
+          });
+        }
+      } else if (id == 'download-file') {
+        ctx.files = document.querySelectorAll('.file');
+        if (ctx.files?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            downloadFileEvent(ctx.files);
+          });
+        }
+      } else {
+        const els = document.getElementsByClassName(`ds-${id}`);
+        if (els?.length > 0) {
+          utils.jq(() => {
+            if (id == 'timeline' || 'memos' || 'marked') {
+              utils.js(deps.marked).then(function () {
+                utils.js(js, { defer: true });
+              });
+            } else {
+              utils.js(js, { defer: true });
+            }
+          });
+        }
+      }
+    }
+
+    // chat iphone time
+    let phoneTimes = document.querySelectorAll('.chat .status-bar .time');
+
+    if (phoneTimes.length > 0) {
+      NowTime();
+      var date = new Date();
+      var sec = date.getSeconds();
+      var firstAdjustInterval = setInterval(firstAdjustTime, 1000 * (60 - sec));
+    }
+
+    function firstAdjustTime() {
+      NowTime();
+      clearInterval(firstAdjustInterval);
+      setInterval(NowTime, 1000 * 60);
+    }
+
+    function NowTime() {
+      for (let i = 0; i < phoneTimes.length; ++i) {
+        var timeSpan = phoneTimes[i];
+        var date = new Date();
+        var hour = date.getHours();
+        var min = date.getMinutes();
+        timeSpan.innerHTML = check(hour) + ":" + check(min);
+      }
+    };
+
+    function check(val) {
+      if (val < 10) {
+        return ("0" + val);
+      }
+      return (val);
+    }
+
+    // chat quote
+    const chat_quote_obverser = new IntersectionObserver((entries, observer) => {
+      entries.filter((entry) => { return entry.isIntersecting }).sort((a, b) => a.intersectionRect.y !== b.intersectionRect.y ? a.intersectionRect.y - b.intersectionRect.y : a.intersectionRect.x - b.intersectionRect.x).forEach((entry, index) => {
+          observer.unobserve(entry.target);
+          setTimeout(() => {
+            entry.target.classList.add('quote-blink');
+            setTimeout(() => {
+              entry.target.classList.remove('quote-blink');
+            }, 1000);
+          }, Math.max(100, 16) * (index + 1));
+        });
+    });
+
+    var chatQuotes = document.querySelectorAll(".chat .talk .quote");
+    chatQuotes.forEach((quote) => {
+      quote.addEventListener('click', function () {
+        var chatCellDom = document.getElementById("quote-" + quote.getAttribute("quotedCellTag"));
+        if (chatCellDom) {
+          var chatDiv = chatCellDom.parentElement;
+          var mid = chatDiv.clientHeight / 2;
+          var offsetTop = chatCellDom.offsetTop;
+          if (offsetTop > mid - chatCellDom.clientHeight / 2) {
+            chatDiv.scrollTo({
+              top: chatCellDom.offsetTop - mid + chatCellDom.clientHeight / 2,
+              behavior: "smooth"
+            });
+          } else {
+            chatDiv.scrollTo({
+              top: 0,
+              behavior: "smooth"
+            });
+          }
+          chat_quote_obverser.observe(chatCellDom);
+        }
+      });
+    });
+  });
+</script>
+
+<script>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    ctx.search = {
+      path: `/search.json`,
+    }
+    utils.js('/js/search/local-search.js', { defer: true });
+  });
+</script><script>
+  window.FPConfig = {
+    delay: 0,
+    ignoreKeywords: [],
+    maxRPS: 5,
+    hoverDelay: 25
+  };
+</script>
+<script defer src="https://gcore.jsdelivr.net/npm/flying-pages@2/flying-pages.min.js"></script><script>
+  ctx.fancybox = {
+    selector: `.timenode p>img`,
+    css: `https://gcore.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css`,
+    js: `https://gcore.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js`
+  };
+  var selector = '[data-fancybox]:not(.error), .with-fancybox .atk-content img:not([atk-emoticon])';
+  if (ctx.fancybox.selector) {
+    selector += `, ${ctx.fancybox.selector}`
+  }
+  var needFancybox = document.querySelectorAll(selector).length !== 0;
+  if (!needFancybox) {
+    const memos = document.getElementsByClassName('ds-memos');
+    if (memos != undefined && memos.length > 0) {
+      needFancybox = true;
+    }
+    const fancybox = document.getElementsByClassName('with-fancybox');
+    if (fancybox != undefined && fancybox.length > 0) {
+      needFancybox = true;
+    }
+  }
+  if (needFancybox) {
+    utils.css(ctx.fancybox.css);
+    utils.js(ctx.fancybox.js, { defer: true }).then(function () {
+      Fancybox.bind(selector, {
+        hideScrollbar: false,
+        Thumbs: {
+          autoStart: false,
+        },
+        caption: (fancybox, slide) => {
+          return slide.triggerEl.alt || slide.triggerEl.dataset.caption || null
+        }
+      });
+    })
+  }
+</script>
+<script>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    const swiper_api = document.getElementById('swiper-api');
+    if (swiper_api != undefined) {
+      utils.css(`https://unpkg.com/swiper@10.3/swiper-bundle.min.css`);
+      utils.js(`https://unpkg.com/swiper@10.3/swiper-bundle.min.js`, { defer: true }).then(function () {
+        const effect = swiper_api.getAttribute('effect') || '';
+        var swiper = new Swiper('.swiper#swiper-api', {
+          slidesPerView: 'auto',
+          spaceBetween: 8,
+          centeredSlides: true,
+          effect: effect,
+          rewind: true,
+          pagination: {
+            el: '.swiper-pagination',
+            clickable: true,
+          },
+          navigation: {
+            nextEl: '.swiper-button-next',
+            prevEl: '.swiper-button-prev',
+          },
+        });
+      })
+    }
+  });
+</script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    window.codeElements = document.querySelectorAll('.code');
+    if (window.codeElements.length > 0) {
+      ctx.copycode = {
+        default_text: `Copy`,
+        success_text: `Copied`,
+        toast: `复制成功`,
+      };
+      utils.js('/js/plugins/copycode.js');
+    }
+  });
+</script>
+
+
+<!-- inject -->
+
+</div></body></html>

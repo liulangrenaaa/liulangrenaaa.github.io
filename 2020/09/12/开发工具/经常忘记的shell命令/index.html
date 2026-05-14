@@ -1,0 +1,1801 @@
+
+<!DOCTYPE html><html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="hexo-theme" content="https://github.com/xaoxuu/hexo-theme-stellar/tree/1.33.1" theme-name="Stellar" theme-version="1.33.1">
+  
+  
+  <meta name="generator" content="Hexo 5.1.1">
+  <meta http-equiv='x-dns-prefetch-control' content='on' />
+  
+  <meta name="renderer" content="webkit">
+  <meta name="force-rendering" content="webkit">
+  <meta http-equiv="X-UA-Compatible" content="IE=Edge,chrome=1">
+  <meta name="HandheldFriendly" content="True" >
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000">
+  <meta name="theme-color" content="#f9fafb">
+  <title>那些经常忘记的shell命令 - liulangren Blog</title>
+
+  
+    <meta name="description" content="总有那么几条经常使用，但有比较难记住的命令，做个记录。  ln 创建连接  ln 创建 软链接 12ln -s   实际文件&#x2F;目录          软链接文件&#x2F;目录ln -s &#x2F;usr&#x2F;sbin&#x2F;trace-bpfcc &#x2F;usr&#x2F;bin&#x2F;trace  ln 创建 硬链接 12ln   实际文件          硬链">
+<meta property="og:type" content="article">
+<meta property="og:title" content="那些经常忘记的shell命令">
+<meta property="og:url" content="https://liulangrenaaa.github.io/2020/09/12/%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7/%E7%BB%8F%E5%B8%B8%E5%BF%98%E8%AE%B0%E7%9A%84shell%E5%91%BD%E4%BB%A4/">
+<meta property="og:site_name" content="liulangren Blog">
+<meta property="og:description" content="总有那么几条经常使用，但有比较难记住的命令，做个记录。  ln 创建连接  ln 创建 软链接 12ln -s   实际文件&#x2F;目录          软链接文件&#x2F;目录ln -s &#x2F;usr&#x2F;sbin&#x2F;trace-bpfcc &#x2F;usr&#x2F;bin&#x2F;trace  ln 创建 硬链接 12ln   实际文件          硬链">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://liulangrenaaa.github.io/images/icons/image.png">
+<meta property="article:published_time" content="2020-09-12T19:00:00.000Z">
+<meta property="article:modified_time" content="2026-05-14T03:56:22.507Z">
+<meta property="article:author" content="Su Hui">
+<meta property="article:tag" content="shell">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://liulangrenaaa.github.io/images/icons/image.png">
+  
+  
+  
+  <meta name="keywords" content="shell">
+
+  <!-- feed -->
+  
+
+  <link rel="stylesheet" href="/css/main.css?v=1.33.1">
+
+
+  
+    <link rel="shortcut icon" href="/images/icons/image.png">
+  
+
+  
+
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"Su Hui","sameAs":[],"image":"/images/icons/image.png"},"dateCreated":"2020-09-12T19:00:00+00:00","dateModified":"2026-05-14T03:56:22+00:00","datePublished":"2020-09-12T19:00:00+00:00","description":"","headline":"那些经常忘记的shell命令","mainEntityOfPage":{"@type":"WebPage","@id":"https://liulangrenaaa.github.io/2020/09/12/%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7/%E7%BB%8F%E5%B8%B8%E5%BF%98%E8%AE%B0%E7%9A%84shell%E5%91%BD%E4%BB%A4/"},"publisher":{"@type":"Organization","name":"Su Hui","sameAs":[],"image":"/images/icons/image.png","logo":{"@type":"ImageObject","url":"/images/icons/image.png"}},"url":"https://liulangrenaaa.github.io/2020/09/12/%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7/%E7%BB%8F%E5%B8%B8%E5%BF%98%E8%AE%B0%E7%9A%84shell%E5%91%BD%E4%BB%A4/","keywords":"shell","image":[]}</script>
+  
+</head>
+<body>
+
+<div class="l_body content" id="start" layout="post" type="tech" ><aside class="l_left"><div class="sidebg"></div><div class="leftbar-container">
+
+
+<header class="header"><div class="logo-wrap"><a class="avatar" href="/about/"><div class="bg" style="opacity:0;background-image:url(https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/avatar/round/rainbow64@3x.webp);"></div><img no-lazy class="avatar" src="/images/icons/image.png" onerror="javascript:this.classList.add('error');this.src='https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/image/2659360.svg';"></a><a class="title" href="/"><div class="main">liulangren Blog</div></a></div></header>
+
+<div class="nav-area">
+
+<nav class="menu dis-select"></nav>
+</div>
+<div class="widgets">
+<div class="search-wrapper" id="search-wrapper"><form class="search-form"><a class="search-button" onclick="document.getElementById(&quot;search-input&quot;).focus();"><svg t="1705074644177" viewBox="0 0 1025 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="1560" width="200" height="200"><path d="M1008.839137 935.96571L792.364903 719.491476a56.783488 56.783488 0 0 0-80.152866 0 358.53545 358.53545 0 1 1 100.857314-335.166073 362.840335 362.840335 0 0 1-3.689902 170.145468 51.248635 51.248635 0 1 0 99.217358 26.444296 462.057693 462.057693 0 1 0-158.255785 242.303546l185.930047 185.725053a51.248635 51.248635 0 0 0 72.568068 0 51.248635 51.248635 0 0 0 0-72.978056z" p-id="1561"></path><path d="M616.479587 615.969233a50.428657 50.428657 0 0 0-61.498362-5.534852 174.655348 174.655348 0 0 1-177.525271 3.484907 49.403684 49.403684 0 0 0-58.833433 6.76482l-3.074918 2.869923a49.403684 49.403684 0 0 0 8.609771 78.10292 277.767601 277.767601 0 0 0 286.992355-5.739847 49.403684 49.403684 0 0 0 8.404776-76.667958z" p-id="1562"></path></svg></a><input type="text" class="search-input" id="search-input" placeholder="站内搜索"></form><div id="search-result"></div><div class="search-no-result">没有找到内容！</div></div>
+
+<widget class="widget-wrapper linklist"><div class="widget-header dis-select"><span class="name">核心专题</span></div><div class="widget-body fs14">
+<div class="linklist left" style="grid-template-columns:repeat(1,1fr);">
+<a class="link" title="framework基础" href="/categories/android/framework基础/"><div class="flex"><span>framework基础</span></div></a>
+<a class="link" title="app启动与生命周期" href="/categories/android/app启动与生命周期/"><div class="flex"><span>app启动与生命周期</span></div></a>
+<a class="link" title="wms窗口系统" href="/categories/android/wms窗口系统/"><div class="flex"><span>wms窗口系统</span></div></a>
+<a class="link" title="input输入系统" href="/categories/android/input输入系统/"><div class="flex"><span>input输入系统</span></div></a>
+<a class="link" title="binder与系统服务" href="/categories/android/binder与系统服务/"><div class="flex"><span>binder与系统服务</span></div></a>
+<a class="link" title="graphics图形系统" href="/categories/android/graphics图形系统/"><div class="flex"><span>graphics图形系统</span></div></a>
+<a class="link" title="anr-crash稳定性" href="/categories/android/anr-crash稳定性/"><div class="flex"><span>anr-crash稳定性</span></div></a>
+<a class="link" title="debug-trace工具链" href="/categories/android/debug-trace工具链/"><div class="flex"><span>debug-trace工具链</span></div></a>
+<a class="link" title="性能稳定性" href="/tags/性能稳定性/"><div class="flex"><span>性能稳定性</span></div></a>
+<a class="link" title="Linux 调度" href="/categories/linux-kernel/linux-schedule/"><div class="flex"><span>Linux 调度</span></div></a></div></div></widget>
+
+<widget class="widget-wrapper linklist"><div class="widget-header dis-select"><span class="name">精选文章</span></div><div class="widget-body fs14">
+<div class="linklist left" style="grid-template-columns:repeat(1,1fr);">
+<a class="link" title="ANR问题总结" href="/2022/07/01/android/anr-crash稳定性/ANR问题总结/"><div class="flex"><span>ANR问题总结</span></div></a>
+<a class="link" title="android12 gdb64调试进程" href="/2021/09/23/用户空间/android12%20gdb64调试进程/"><div class="flex"><span>android12 gdb64调试进程</span></div></a>
+<a class="link" title="60s定位内核性能瓶颈" href="/2020/09/13/内核观测/性能稳定性/60s定位内核性能瓶颈/"><div class="flex"><span>60s定位内核性能瓶颈</span></div></a>
+<a class="link" title="关于preempt_count的思考" href="/2020/09/21/进程管理/关于preempt_count的思考/"><div class="flex"><span>关于preempt_count的思考</span></div></a></div></div></widget>
+</div>
+
+</div></aside><div class="l_main" id="main">
+
+
+
+
+
+<div class="article banner top">
+  <div class="content">
+    <div class="top bread-nav footnote"><div class="left"><div class="flex-row" id="breadcrumb"><a class="cap breadcrumb" href="/">主页</a>
+<span class="sep"></span><a class="cap breadcrumb" href="/">文章</a><span class="sep"></span><a class="cap breadcrumb-link" href="/categories/shell%E8%84%9A%E6%9C%AC/">shell脚本</a></div>
+<div class="flex-row" id="post-meta"><span class="text created">发布于：<time datetime="2020-09-12T19:00:00.000Z">2020-09-12</time></span><span class="sep updated"></span><span class="text updated">更新于：<time datetime="2026-05-14T03:56:22.507Z">2026-05-14</time></span></div></div></div>
+    
+    <div class="bottom only-title">
+      
+      <div class="text-area">
+        <h1 class="text title"><span>那些经常忘记的shell命令</span></h1>
+        
+      </div>
+    </div>
+    
+  </div>
+  </div><article class="md-text content"><p>总有那么几条经常使用，但有比较难记住的命令，做个记录。</p>
+<ol>
+<li>ln 创建连接</li>
+</ol>
+<p>ln 创建 软链接</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">ln -s   实际文件&#x2F;目录          软链接文件&#x2F;目录</span><br><span class="line">ln -s &#x2F;usr&#x2F;sbin&#x2F;trace-bpfcc &#x2F;usr&#x2F;bin&#x2F;trace</span><br></pre></td></tr></table></figure>
+
+<p>ln 创建 硬链接</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">ln   实际文件          硬链接文件 &#x2F;&#x2F;目录无法使用硬链接</span><br><span class="line">ln  &#x2F;usr&#x2F;sbin&#x2F;trace-bpfcc &#x2F;usr&#x2F;bin&#x2F;trace</span><br></pre></td></tr></table></figure>
+
+
+
+<ol start="2">
+<li>tar</li>
+</ol>
+<p>解压 tar.gz 文件      // extrat – 提取</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">tar -zxvf file.tar.gz</span><br></pre></td></tr></table></figure>
+
+<p>压缩 文件、文件夹      // create  – 创建</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">tar -zcvf file.tar.gz  .&#x2F;file</span><br></pre></td></tr></table></figure>
+
+
+<ol start="3">
+<li>zip</li>
+</ol>
+<p>zip 解压 aaa.zip文件</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">unzip aaa.zip</span><br></pre></td></tr></table></figure>
+
+<p>zip 压缩文件夹</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">zip -r aaa.zip .&#x2F;aaa</span><br></pre></td></tr></table></figure>
+
+<p>zip 压缩多个文件</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">zip -r aaa.zip .&#x2F;aaa .&#x2F;bbb</span><br></pre></td></tr></table></figure>
+
+
+
+
+<ol start="4">
+<li>scp 本地 &lt;–&gt; 远程 互传文件</li>
+</ol>
+<p>从 ubuntu@xxx:222 获取 <code>/home/ubuntu/.vscode-server/data/Machine/settings.json</code> 文件，且保存为 <code>/tmp/settings.json</code></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">scp -P  222 ubuntu@xxx:&#x2F;home&#x2F;ubuntu&#x2F;.vscode-server&#x2F;data&#x2F;Machine&#x2F;settings.json &#x2F;tmp&#x2F;settings.json</span><br></pre></td></tr></table></figure>
+
+<p>将本地的 elfutils-0.144.tar.bz2 文件传输到 <code>ubuntu@xxxx:/home/ubuntu/</code> 目录下</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">scp -P  222  .&#x2F;elfutils-0.144.tar.bz2 ubuntu@xxxx:&#x2F;home&#x2F;ubuntu&#x2F;</span><br></pre></td></tr></table></figure>
+<p>可以参考<a target="_blank" rel="noopener" href="https://www.cnblogs.com/bignode/articles/9241333.html">scp 命令介绍</a></p>
+<p>这样还是必须输入密码的，可以使用 <code>sshpass</code> 来免密码传输</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sshpass -p hjkl scp -P  222  .&#x2F;elfutils-0.144.tar.bz2 ubuntu@xxxx:&#x2F;home&#x2F;ubuntu&#x2F;</span><br></pre></td></tr></table></figure>
+
+
+<ol start="5">
+<li>ubuntu 截图工具</li>
+</ol>
+<p>安装</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo apt-get install flameshot</span><br></pre></td></tr></table></figure>
+
+<p>使用</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">flameshot gui</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace&#x2F;linux-stable# cat ~&#x2F;.zshrc| tail -n 1</span><br><span class="line">alias shot&#x3D;&quot;flameshot gui&quot;</span><br><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace&#x2F;linux-stable# shot</span><br></pre></td></tr></table></figure>
+
+
+
+
+
+<ol start="6">
+<li>编译linux kernel 前准备工作</li>
+</ol>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo apt install git fakeroot build-essential ncurses-dev xz-utils libssl-dev bc flex libelf-dev bison clang gcc-aarch64-linux-gnu</span><br></pre></td></tr></table></figure>
+
+
+
+
+
+<ol start="7">
+<li>dd 快速生成大文件<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">Inspiron-5548@130ubuntu: ~# dd if&#x3D;&#x2F;dev&#x2F;zero of&#x3D;haha bs&#x3D;1M count&#x3D;100</span><br><span class="line">记录了100+0 的读入</span><br><span class="line">记录了100+0 的写出</span><br><span class="line">104857600 bytes (105 MB, 100 MiB) copied, 0.294862 s, 356 MB&#x2F;s</span><br><span class="line">Inspiron-5548@ubuntu: ~#</span><br></pre></td></tr></table></figure>
+
+
+</li>
+</ol>
+<ol start="8">
+<li>rsync<br>为啥我需要 rsync来同步文件目录呢？</li>
+</ol>
+<p>我hexo_blog是部署在 tencent上的，其实本地公司、家里个人电脑也部署了一份，github gitee上也备份了。<br>但是如果依赖手动去同步：</p>
+<ol>
+<li>在哪个 linux机器上修改了之后及时发布到github,且及时备份到gitee</li>
+<li>到新的机器上修改之前，需要先 <code>git pull origin master</code> 将本地，或者服务器上 blog更新到最新</li>
+<li>开始修改，修改完成 –&gt; 1</li>
+</ol>
+<p>然后我发现我这个场景 rsync 并不能很好解决。。<br>如果是 一个服务器 和 备份服务器之间 数据同步 可以使用这样的方式。。<br>突然想到，在新安装一台 linux主机 虚拟机 的时候，可以使用 rsync 来同步，减少 home 目录下文件搞来稿去的 事情。。</p>
+<p>远程目录同步到本地</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">rsync -avz  49.235.41.28:&#x2F;home&#x2F;ubuntu&#x2F;workspace&#x2F;hexo_blog &#x2F;home&#x2F;ubuntu&#x2F;workspace&#x2F;</span><br></pre></td></tr></table></figure>
+
+<p>本地目录同步到远程</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">rsync -avz &#x2F;home&#x2F;ubuntu&#x2F;workspace&#x2F;  49.235.41.28:&#x2F;home&#x2F;ubuntu&#x2F;workspace&#x2F;hexo_blog</span><br></pre></td></tr></table></figure>
+
+<p><a target="_blank" rel="noopener" href="http://einverne.github.io/post/2017/07/rsync-introduction.html">rsync 命令</a></p>
+<ol start="9">
+<li>samba 相关</li>
+</ol>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">net Z: 192.168.1.103???</span><br></pre></td></tr></table></figure>
+
+<p>安装配置samba</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">#!&#x2F;bin&#x2F;bash</span><br><span class="line">sudo -S apt install samba samba-common-bin -y</span><br><span class="line">echo -e &quot;[samba]\ncomment &#x3D; samba\npath &#x3D; &#x2F;home&#x2F;ubuntu&#x2F;workspace\npublic &#x3D; yes\nwritable &#x3D; yes\ncreate mask &#x3D; 0644\ndirectory mask &#x3D; 0755\nforceuser &#x3D; ubuntu\nforcegroup &#x3D; ubuntu&quot; | sudo -i tee -a &#x2F;etc&#x2F;samba&#x2F;smb.conf;</span><br><span class="line">sudo -S systemctl enable smbd</span><br><span class="line">sudo -S service smbd restart</span><br></pre></td></tr></table></figure>
+
+
+<ol start="10">
+<li>wine 使用</li>
+</ol>
+<p>工作上可能需要使用通讯会议这样的软件，或者是临时使用source insight，但这些又都没有linux版<br>本，要么使用wine来模拟windows api实现，要么使用windows虚拟机。</p>
+<p>这里使用wine:<br>安装 <code>wine</code></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">sudo apt install wine</span><br><span class="line">sudo apt install winetricks</span><br></pre></td></tr></table></figure>
+
+<p>安装 <code>软件</code></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo apt install winetricks</span><br></pre></td></tr></table></figure>
+<p>进去选择资源管理器，初始化一下~/.wine 目录，然后直接安装</p>
+<p>使用 <code>软件</code></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace# tail ~&#x2F;.zshrc  -n 2</span><br><span class="line">alias shot&#x3D;&quot;flameshot gui&quot;</span><br><span class="line">alias wemeet&#x3D;&quot;wine &#x2F;home&#x2F;ubuntu&#x2F;.wine&#x2F;drive_c&#x2F;Program\ Files\ \(x86\)&#x2F;Tencent&#x2F;WeMeet&#x2F;wemeetapp.exe&quot;</span><br><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace# wemeet</span><br></pre></td></tr></table></figure>
+
+
+<ol start="11">
+<li>查询常见函数</li>
+</ol>
+<p>apropos</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace&#x2F;kernel_debug_tools# apropos pid</span><br><span class="line">acpid (8)            - Advanced Configuration and Power Interface event daemon</span><br><span class="line">biosnoop-bpfcc (8)   - Trace block device I&#x2F;O and print details incl. issuing PID.</span><br><span class="line">getpid (2)           - get process identification</span><br><span class="line">getppid (2)          - get process identification</span><br><span class="line">git (1)              - the stupid content tracker</span><br><span class="line">pid_namespaces (7)   - overview of Linux PID namespaces</span><br><span class="line">pidfd_open (2)       - obtain a file descriptor that refers to a process</span><br><span class="line">pidfd_send_signal (2) - send a signal to a process specified by a file descriptor</span><br><span class="line">pidof (8)            - find the process ID of a running program.</span><br><span class="line">pidpersec-bpfcc (8)  - Count new processes (via fork()). Uses Linux eBPF&#x2F;bcc.</span><br><span class="line">pidpersec.bt (8)     - Count new processes (via fork()). Uses bpftrace&#x2F;eBPF.</span><br><span class="line">waitpid (2)          - wait for process to change state</span><br><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace&#x2F;kernel_debug_tools#</span><br></pre></td></tr></table></figure>
+
+<ol start="12">
+<li>查找常见软件包<br><code>sudo apt-cache search </code></li>
+</ol>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace&#x2F;kernel_debug_tools# sudo apt-cache search qemu | grep arm</span><br><span class="line">qemu-efi-arm - UEFI firmware for 32-bit ARM virtual machines</span><br><span class="line">qemu-system-arm - QEMU full system emulation binaries (arm)</span><br><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace&#x2F;kernel_debug_tools# sudo apt-cache search qemu | grep aarch64</span><br><span class="line">qemu-efi-aarch64 - UEFI firmware for 64-bit ARM virtual machines</span><br><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace&#x2F;kernel_debug_tools#</span><br></pre></td></tr></table></figure>
+
+
+
+<ol start="13">
+<li><p>make 相关<br>指定 <code>gcc</code> version，和 忽略 <code>warning</code>.</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">make CC&#x3D;gcc-7 CFLAGS&#x3D;&quot;-Wno-error&quot;</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>ubuntu-21 安装低版本 gcc<br>在 ubuntu-21 上需要编译 linux-3.4 版本代码，需要安装 gcc-5<br>但是在ubuntu-21 上，没有提供 gcc-5的官方源，<br>这时候 可以将 ubuntu-16 的源添加到 <code>/etc/apt/source.list</code> 中</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">ubuntu@zeku_server:~&#x2F;workspace&#x2F;linux $ sudo apt-cache policy gcc-5</span><br><span class="line">gcc-5:</span><br><span class="line">  已安装：5.4.0-6ubuntu1~16.04.12</span><br><span class="line">  候选： 5.4.0-6ubuntu1~16.04.12</span><br><span class="line">  版本列表：</span><br><span class="line"> *** 5.4.0-6ubuntu1~16.04.12 500</span><br><span class="line">        500 https:&#x2F;&#x2F;mirrors.tuna.tsinghua.edu.cn&#x2F;ubuntu xenial-updates&#x2F;main amd64 Packages</span><br><span class="line">        500 https:&#x2F;&#x2F;mirrors.tuna.tsinghua.edu.cn&#x2F;ubuntu xenial-security&#x2F;main amd64 Packages</span><br><span class="line">        100 &#x2F;var&#x2F;lib&#x2F;dpkg&#x2F;status</span><br><span class="line">     5.3.1-14ubuntu2 500</span><br><span class="line">        500 https:&#x2F;&#x2F;mirrors.tuna.tsinghua.edu.cn&#x2F;ubuntu xenial&#x2F;main amd64 Packages</span><br><span class="line">ubuntu@zeku_server:~&#x2F;workspace&#x2F;linux $</span><br></pre></td></tr></table></figure>
+<p>参考<a target="_blank" rel="noopener" href="https://blog.csdn.net/CharlieVV/article/details/111242143">Ubuntu高版本如何安装低版本GCC (以Ubuntu 20安装GCC5为例)</a></p>
+</li>
+<li><p>sed 命令<br><code>sed</code> <code>grep</code> <code>awk</code> 被称为linux三剑客，足以说明其强大的字符文本处理能力。<br>a. 删除 ‘str1 str2’ 的特定行(这个在处理 kernel config文件时候很有用)</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">ubuntu@~: $ cat .config | grep &quot;CONFIG_INLINE_SPIN_UNLOCK_IRQ&#x3D;y&quot;</span><br><span class="line">CONFIG_INLINE_SPIN_UNLOCK_IRQ&#x3D;y</span><br><span class="line">ubuntu@~: $</span><br><span class="line">ubuntu@~: $ sed -i &#39;&#x2F;CONFIG_INLINE_SPIN_UNLOCK_IRQ&#x3D;y&#x2F;d&#39; .config</span><br><span class="line">ubuntu@~: $ cat .config | grep &quot;CONFIG_INLINE_SPIN_UNLOCK_IRQ&#x3D;y&quot;</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<p>b. l</p>
+<ol start="15">
+<li>grep 命令<br>a. 最常见的<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@1ubuntu: ~&#x2F;workspace&#x2F;hexo_blog# grep &quot;asdfasdf&quot; . -nr</span><br><span class="line">.&#x2F;source&#x2F;file.md:224:asdfasdf_</span><br><span class="line">.&#x2F;source&#x2F;file.md:239:asdfasdf</span><br><span class="line">tencent_clould@ubuntu: ~&#x2F;workspace&#x2F;hexo_blog#</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<p>b. <code>-w</code> 全词匹配</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: ~&#x2F;workspace&#x2F;hexo_blog# grep &quot;asdfasdf&quot; . -nr -w</span><br><span class="line">.&#x2F;source&#x2F;file.md:239:asdfasdf</span><br><span class="line">tencent_clould@ubuntu: ~&#x2F;workspace&#x2F;hexo_blog#</span><br></pre></td></tr></table></figure>
+
+<p>c. <code>-A 3</code> <code>-B 3</code>  <code>-C 3</code><br>显示前后几行：<br>加上查找到的后三行  加上查找前三行   加上查找的前后三行</p>
+<p>d. 正则表达式</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">grep  -E &#39;migrate.*a.out|sched_switch.*a.out|sugov_next_freq|START|END&#39;</span><br></pre></td></tr></table></figure>
+
+
+<ol start="16">
+<li>awk 命令<br>在 下面这一段字符串总找出 关键数字。<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">Big task executing for 3s...</span><br><span class="line">Changing to small task...</span><br><span class="line">Time incorrectly scheduled on small when task was big: 80561 usec (2% of big task CPU time)</span><br><span class="line">Time incorrectly scheduled on big when task was small, after downmigration: 53 usec (0% of small task CPU time)</span><br><span class="line">Downmigration latency: 72232 usec</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<p>awk 将shell中参数传递到 awk表达式中</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">FILE_NAME&#x3D;&#x2F;tmp&#x2F;1234.txt</span><br><span class="line">lines&#x3D;&#96;awk &#39;&#123;print NR&#125;&#39;  $FILE_NAME | tail -n1&#96;</span><br><span class="line">echo &quot;lines : $lines&quot;</span><br><span class="line"></span><br><span class="line"># 循环遍历</span><br><span class="line">for i in $(seq 1 $lines);</span><br><span class="line">do</span><br><span class="line">        val&#x3D;&#96;awk -v i&#x3D;&quot;$i&quot; &#39;NR&#x3D;&#x3D;i &#123;print $1&#125;&#39; $FILE_NAME&#96;</span><br><span class="line">        # awk -v i&#x3D;&quot;$i&quot; &#39;NR&#x3D;&#x3D;i &#123;print $1&#125;&#39; $FILE_NAME</span><br><span class="line">        echo &quot;val&#x3D; $val&quot;</span><br><span class="line">done</span><br></pre></td></tr></table></figure>
+<p>可以使用 <code>awk -v i=&quot;$i&quot;</code> 来传参。</p>
+<p>awk 传参到shell数组</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">#!&#x2F;bin&#x2F;bash</span><br><span class="line"></span><br><span class="line">FILE_NAME&#x3D;&#x2F;tmp&#x2F;1234.txt</span><br><span class="line">lines&#x3D;&#96;awk &#39;&#123;print NR&#125;&#39;  $FILE_NAME | tail -n1&#96;</span><br><span class="line">echo &quot;lines : $lines&quot;</span><br><span class="line"></span><br><span class="line"># 循环遍历</span><br><span class="line">for i in $(seq 1 $lines);</span><br><span class="line">do</span><br><span class="line">        val[$i]&#x3D;&#96;awk -v i&#x3D;&quot;$i&quot; &#39;NR&#x3D;&#x3D;i &#123;print $1&#125;&#39; $FILE_NAME&#96;</span><br><span class="line">        # awk -v i&#x3D;&quot;$i&quot; &#39;NR&#x3D;&#x3D;i &#123;print $1&#125;&#39; $FILE_NAME</span><br><span class="line">        # echo &quot;val&#x3D; $val&quot;</span><br><span class="line">done</span><br><span class="line"></span><br><span class="line">for i in $(seq 1 $lines);</span><br><span class="line">do</span><br><span class="line">        echo &quot;val[$i]&#x3D; $&#123;val[$i]&#125;&quot;</span><br><span class="line">done</span><br></pre></td></tr></table></figure>
+
+
+<ol start="17">
+<li>inline<br>linux 代码中会经常使用到 <code>inline</code>的技巧，使得少一次函数调用，代码原地展开，<br>但是有时候 <code>gcc</code> 编译器会 ‘智能’的给我们 inline一些我们不想 inline的函数，所以<br>有什么部分可以让编译器知道我们不想 inline 某些函数呢？</li>
+</ol>
+<p>添加 <code>noinline</code> 关键字</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">static void noinline create_oops(void)</span><br><span class="line">&#123;</span><br><span class="line">	*(int *)0 &#x3D; 0;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ol start="18">
+<li>mount<br>重新挂载某一个目录，并改变大小</li>
+</ol>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">mount -o 128M -o remount &#x2F;tmp</span><br></pre></td></tr></table></figure>
+
+
+<ol start="19">
+<li>ubuntu shell 切换 wifi<br>切换wifi<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">sudo nmcli connection up Su</span><br><span class="line">sudo nmcli connection up ChinaNet-5mrv</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<p>连接wifi</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo nmcli dev wifi connect ChinaNet-5mrv password ejgaefpq</span><br></pre></td></tr></table></figure>
+
+<ol start="21">
+<li><p>ubuntu cmd 测试网络速度</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">amd_server@130ubuntu: ~&#x2F;workspace# sudo apt install speedtest-cli</span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace#</span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace# speedtest-cli</span><br><span class="line">Retrieving speedtest.net configuration...</span><br><span class="line">Testing from China Telecom Shanghai (101.228.28.85)...</span><br><span class="line">Retrieving speedtest.net server list...</span><br><span class="line">Selecting best server based on ping...</span><br><span class="line">Hosted by China Telecom (Shanghai) [21.59 km]: 8.567 ms</span><br><span class="line">Testing download speed................................................................................</span><br><span class="line">Download: 19.08 Mbit&#x2F;s</span><br><span class="line">Testing upload speed......................................................................................................</span><br><span class="line">Upload: 22.78 Mbit&#x2F;s</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>局域网内部两台ubuntu 之间测网速<br>两台机器都需要安装<code>iperf</code></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo apt install iperf</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<p>测速<br>server</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">amd_server@ubuntu: ~&#x2F;workspace# iperf -s</span><br><span class="line">------------------------------------------------------------</span><br><span class="line">Server listening on TCP port 5001</span><br><span class="line">TCP window size:  128 KByte (default)</span><br><span class="line">------------------------------------------------------------</span><br></pre></td></tr></table></figure>
+
+<p>client<br>udp测速</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">h@ubuntu:~&#x2F;rlk$ iperf -u -c 192.168.1.17 -b 1000M</span><br><span class="line">------------------------------------------------------------</span><br><span class="line">Client connecting to 192.168.1.17, UDP port 5001</span><br><span class="line">Sending 1470 byte datagrams, IPG target: 11.22 us (kalman adjust)</span><br><span class="line">UDP buffer size:  208 KByte (default)</span><br><span class="line">------------------------------------------------------------</span><br><span class="line">[  3] local 192.168.47.128 port 42228 connected with 192.168.1.17 port 5001</span><br><span class="line">[  3] WARNING: did not receive ack of last datagram after 10 tries.</span><br><span class="line">[ ID] Interval       Transfer     Bandwidth</span><br><span class="line">[  3]  0.0-10.0 sec   584 MBytes   490 Mbits&#x2F;sec</span><br><span class="line">[  3] Sent 416552 datagrams</span><br><span class="line">sh@ubuntu:~&#x2F;rlk$</span><br></pre></td></tr></table></figure>
+
+<p>tcp测速</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">sh@ubuntu:~&#x2F;rlk$ iperf  -c 192.168.1.17 -b 1000M</span><br><span class="line">------------------------------------------------------------</span><br><span class="line">Client connecting to 192.168.1.17, TCP port 5001</span><br><span class="line">TCP window size:  204 KByte (default)</span><br><span class="line">------------------------------------------------------------</span><br><span class="line">[  3] local 192.168.47.128 port 46822 connected with 192.168.1.17 port 5001</span><br><span class="line">[ ID] Interval       Transfer     Bandwidth</span><br><span class="line">[  3]  0.0-10.2 sec  22.8 MBytes  18.7 Mbits&#x2F;sec</span><br></pre></td></tr></table></figure>
+<p>明显<code>tcp</code> 测速结果比 <code>udp</code>测速的慢了好多</p>
+<ol start="23">
+<li>shell 命令连续执行</li>
+</ol>
+<p><code>&amp;&amp;</code> 连续执行多条命令，前面执行成功，后面才能继续执行</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">amd_server@127ubuntu: ~&#x2F;workspace# ls &amp;&amp; echo</span><br><span class="line">benos  data  jenkins_workspace  just_for_git  kernel_debug_tools  linux-stable  mails  nps  share  tmp  vscode</span><br><span class="line"></span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace# ls asdasd &amp;&amp; echo</span><br><span class="line">ls: cannot access &#39;asdasd&#39;: No such file or directory</span><br><span class="line">amd_server@2ubuntu: ~&#x2F;workspace#</span><br></pre></td></tr></table></figure>
+
+<p><code>||</code> 前一条命令执行失败，后面命令才能继续执行</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">amd_server@ubuntu: ~&#x2F;workspace# ls  || echo &quot;hjkl&quot;</span><br><span class="line">benos  data  jenkins_workspace  just_for_git  kernel_debug_tools  linux-stable  mails  nps  share  tmp  vscode</span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace#</span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace#</span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace# ls asdasd || echo &quot;hjkl&quot;</span><br><span class="line">ls: cannot access &#39;asdasd&#39;: No such file or directory</span><br><span class="line">hjkl</span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace#</span><br></pre></td></tr></table></figure>
+
+<p><code>;</code>顺序执行一系列命令，后一个命令不管前一条命令执行是否成功都需要执行</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">amd_server@2ubuntu: ~&#x2F;workspace# ls asdasd &amp;&amp; echo &quot;hjkl&quot;</span><br><span class="line">ls: cannot access &#39;asdasd&#39;: No such file or directory</span><br><span class="line">amd_server@2ubuntu: ~&#x2F;workspace#</span><br><span class="line">amd_server@2ubuntu: ~&#x2F;workspace#</span><br><span class="line">amd_server@2ubuntu: ~&#x2F;workspace# ls asdasd ; echo &quot;hjkl&quot;</span><br><span class="line">ls: cannot access &#39;asdasd&#39;: No such file or directory</span><br><span class="line">hjkl</span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace#</span><br></pre></td></tr></table></figure>
+
+<p><code>&amp;</code>后台执行</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">amd_server@ubuntu: ~&#x2F;workspace# ls asdasd &amp;</span><br><span class="line">[1] 75103</span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace# ls: cannot access &#39;asdasd&#39;: No such file or directory</span><br><span class="line"></span><br><span class="line">[1]  + 75103 exit 2     ls --color&#x3D;tty asdasd</span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace#</span><br></pre></td></tr></table></figure>
+
+<ol start="24">
+<li>切换 shell 为 zsh<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">sh@amd_server:~&#x2F;workspace&#x2F;diagnose-tools $ cat &#x2F;etc&#x2F;shells</span><br><span class="line"># &#x2F;etc&#x2F;shells: valid login shells</span><br><span class="line">&#x2F;bin&#x2F;sh</span><br><span class="line">&#x2F;bin&#x2F;bash</span><br><span class="line">&#x2F;usr&#x2F;bin&#x2F;bash</span><br><span class="line">&#x2F;bin&#x2F;rbash</span><br><span class="line">&#x2F;usr&#x2F;bin&#x2F;rbash</span><br><span class="line">&#x2F;bin&#x2F;dash</span><br><span class="line">&#x2F;usr&#x2F;bin&#x2F;dash</span><br><span class="line">&#x2F;usr&#x2F;bin&#x2F;tmux</span><br><span class="line">&#x2F;bin&#x2F;zsh</span><br><span class="line">&#x2F;usr&#x2F;bin&#x2F;zsh</span><br><span class="line">sh@amd_server:~&#x2F;workspace&#x2F;diagnose-tools $ chsh -s &#x2F;bin&#x2F;zsh</span><br><span class="line">Password:</span><br><span class="line">sh@amd_server:~&#x2F;workspace&#x2F;diagnose-tools $</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<p>安装 o-my-zsh</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sh -c &quot;$(wget -O- https:&#x2F;&#x2F;raw.githubusercontent.com&#x2F;ohmyzsh&#x2F;ohmyzsh&#x2F;master&#x2F;tools&#x2F;install.sh)&quot;</span><br></pre></td></tr></table></figure>
+
+<ol start="24">
+<li>生成、应用patch<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">git diff &gt; &#x2F;tmp&#x2F;123.patch</span><br><span class="line">git apply &#x2F;tmp&#x2F;123.patch</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">git format-patch HEAD^</span><br><span class="line">git am 001-xxx.patch</span><br></pre></td></tr></table></figure>
+
+<ol start="25">
+<li><p>解压 vmlinuz 到 vmlinux</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">Inspiron-5548@1ubuntu: &#x2F;boot# sudo touch vmlinux</span><br><span class="line">Inspiron-5548@ubuntu: &#x2F;boot# sudo chmod 777 vmlinux</span><br><span class="line">Inspiron-5548@ubuntu: &#x2F;boot# sudo od -t x1 -A d vmlinuz | grep &quot;1f 8b 08 00&quot;</span><br><span class="line">0016800 8d 80 00 02 00 00 ff e0 1f 8b 08 00 00 00 00 00</span><br><span class="line">^C</span><br><span class="line">Inspiron-5548@130ubuntu: &#x2F;boot# 0016800+8</span><br><span class="line">zsh: command not found: 0016800+8</span><br><span class="line">Inspiron-5548@127ubuntu: &#x2F;boot# sudo dd if&#x3D;vmlinuz bs&#x3D;1 skip&#x3D;0016808 | zcat &gt;  vmlinux</span><br><span class="line">记录了9699832+0 的读入</span><br><span class="line">记录了9699832+0 的写出</span><br><span class="line">9699832 bytes (9.7 MB, 9.3 MiB) copied, 19.7819 s, 490 kB&#x2F;s</span><br><span class="line"></span><br><span class="line">gzip: stdin: decompression OK, trailing garbage ignored</span><br><span class="line">Inspiron-5548@2ubuntu: &#x2F;boot#</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>insmod failed</p>
+</li>
+</ol>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">stable_kernel@1kernel: &#x2F;tmp&#x2F;share&#x2F;test_modules&#x2F;resource_leak&#x2F;kmemleak# sudo insmod kmemleak.ko</span><br><span class="line">[   42.674738] kmemleak: module is already loaded</span><br><span class="line">insmod: ERROR: could not insert module kmemleak.ko: Invalid parameters</span><br><span class="line">stable_kernel@1kernel: &#x2F;tmp&#x2F;share&#x2F;test_modules&#x2F;resource_leak&#x2F;kmemleak#</span><br><span class="line">stable_kernel@1kernel: &#x2F;tmp&#x2F;share&#x2F;test_modules&#x2F;resource_leak&#x2F;kmemleak# dmesg | tail -n 3</span><br><span class="line">[   33.897197] rfkill: input handler disabled</span><br><span class="line">[   42.674217] kmemleak: loading out-of-tree module taints kernel.</span><br><span class="line">[   42.674738] kmemleak: module is already loaded</span><br></pre></td></tr></table></figure>
+<p>原因是 kernel 已经安装了一个 <code>built-in</code> 的 kmemleak 模块。</p>
+<ol start="27">
+<li>adb 脚本相关<br>等待 adb 设备上线<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">adb wait-for-device</span><br></pre></td></tr></table></figure>
+
+
+</li>
+</ol>
+<ol start="28">
+<li><p>bat脚本相关<br>延时5s</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">timeout 5</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>stress 使用<br><code>stress --help</code></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line">amd_server@ubuntu: ~&#x2F;workspace&#x2F;linux-stable# stress --help</span><br><span class="line">&#96;stress&#39; imposes certain types of compute stress on your system</span><br><span class="line"></span><br><span class="line">Usage: stress [OPTION [ARG]] ...</span><br><span class="line"> -?, --help         show this help statement</span><br><span class="line">     --version      show version statement</span><br><span class="line"> -v, --verbose      be verbose</span><br><span class="line"> -q, --quiet        be quiet</span><br><span class="line"> -n, --dry-run      show what would have been done</span><br><span class="line"> -t, --timeout N    timeout after N seconds</span><br><span class="line">     --backoff N    wait factor of N microseconds before work starts</span><br><span class="line"> -c, --cpu N        spawn N workers spinning on sqrt()</span><br><span class="line"> -i, --io N         spawn N workers spinning on sync()</span><br><span class="line"> -m, --vm N         spawn N workers spinning on malloc()&#x2F;free()</span><br><span class="line">     --vm-bytes B   malloc B bytes per vm worker (default is 256MB)</span><br><span class="line">     --vm-stride B  touch a byte every B bytes (default is 4096)</span><br><span class="line">     --vm-hang N    sleep N secs before free (default none, 0 is inf)</span><br><span class="line">     --vm-keep      redirty memory instead of freeing and reallocating</span><br><span class="line"> -d, --hdd N        spawn N workers spinning on write()&#x2F;unlink()</span><br><span class="line">     --hdd-bytes B  write B bytes per hdd worker (default is 1GB)</span><br><span class="line"></span><br><span class="line">Example: stress --cpu 8 --io 4 --vm 2 --vm-bytes 128M --timeout 10s</span><br><span class="line"></span><br><span class="line">Note: Numbers may be suffixed with s,m,h,d,y (time) or B,K,M,G (size).</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<p><code>stress -c 4</code> – 对 <code>cpu</code> 进行压力测试<br><code>stress -m 2</code> – 对 <code>memory</code> 进行压力测试，两个进程，每个进程默认占用 <code>256MB</code> 内存，一直进行<code>malloc free</code>操作，所以cpu也很高<br><code>stress -m 3 --vm-bytes 300M</code> – 对 <code>memory</code> 进行压力测试，三个进程，每个进程占用 <code>300MB</code> 内存，一直进行<code>malloc free</code>操作，所以cpu也很高<br><code>stress -m 3 --vm-bytes 300M --vm-hang 3</code> – 对 <code>memory</code> 进行压力测试，三个进程，每个进程占用 <code>300MB</code> 内存，因为hang 住，就是不会一直分配内存，所以cpu占用很少</p>
+<ol start="30">
+<li><p>扩大swap分区<br>主要是笔记本只有4G内存，开两个vscode之后一直内存回收，swap设置小了之后会触发剧烈的pagein pageout，所以扩大一点。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">root@ubuntu-Inspiron-5548:&#x2F;# swapoff -a</span><br><span class="line">root@ubuntu-Inspiron-5548:&#x2F;#</span><br><span class="line">root@ubuntu-Inspiron-5548:&#x2F;# sudo dd if&#x3D;&#x2F;dev&#x2F;zero of&#x3D;swapfile bs&#x3D;4M count&#x3D;1024</span><br><span class="line">记录了1024+0 的读入</span><br><span class="line">记录了1024+0 的写出</span><br><span class="line">4294967296 bytes (4.3 GB, 4.0 GiB) copied, 10.1046 s, 425 MB&#x2F;s</span><br><span class="line">root@ubuntu-Inspiron-5548:&#x2F;#</span><br><span class="line">root@ubuntu-Inspiron-5548:&#x2F;# sudo mkswap -f swapfile</span><br><span class="line">正在设置交换空间版本 1，大小 &#x3D; 4 GiB (4294963200  个字节)</span><br><span class="line">无标签， UUID&#x3D;78564906-a685-4965-a8b8-e967feb23a0f</span><br><span class="line">root@ubuntu-Inspiron-5548:&#x2F;# swap</span><br><span class="line">swapin.bt  swaplabel  swapoff    swapon</span><br><span class="line">root@ubuntu-Inspiron-5548:&#x2F;# swapo</span><br><span class="line">swapoff  swapon</span><br><span class="line">root@ubuntu-Inspiron-5548:&#x2F;# swapon</span><br><span class="line">root@ubuntu-Inspiron-5548:&#x2F;# swapon -a</span><br><span class="line">root@ubuntu-Inspiron-5548:&#x2F;#</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>查看 线程优先级</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">amd_server@130ubuntu: ~&#x2F;workspace&#x2F;share&#x2F;test_modules&#x2F;scheduler&#x2F;userspace api&#x2F;nice# .&#x2F;a.out 20</span><br><span class="line">now nice is 20, ret &#x3D; 19</span><br><span class="line">^C</span><br><span class="line">amd_server@130ubuntu: ~&#x2F;workspace&#x2F;share&#x2F;test_modules&#x2F;scheduler&#x2F;userspace api&#x2F;nice# .&#x2F;a.out 0</span><br><span class="line">now nice is 0, ret &#x3D; 0</span><br><span class="line">amd_server@130ubuntu: ~&#x2F;workspace&#x2F;share&#x2F;test_modules&#x2F;scheduler&#x2F;userspace api&#x2F;nice# sudo .&#x2F;a.out -12</span><br><span class="line">now nice is -12, ret &#x3D; -12</span><br><span class="line">^C</span><br><span class="line">amd_server@130ubuntu: ~&#x2F;workspace&#x2F;share&#x2F;test_modules&#x2F;scheduler&#x2F;userspace api&#x2F;nice#</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">amd_server@ubuntu: ~&#x2F;workspace# ps -el  | grep a.out</span><br><span class="line">0 S  1000 1760035 1690956  0  99  19 -   625 hrtime pts&#x2F;4    00:00:00 a.out</span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace# ps -el  | grep a.out</span><br><span class="line">0 S  1000 1760082 1690956  0  80   0 -   625 hrtime pts&#x2F;4    00:00:00 a.out</span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace# ps -el  | grep a.out</span><br><span class="line">4 S     0 1761864 1761863  0  68 -12 -   624 -      pts&#x2F;4    00:00:00 a.out</span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace#</span><br></pre></td></tr></table></figure>
+
+<p>只有 root 用户才可以使用 -x 的 nice值。<br>参考<a target="_blank" rel="noopener" href="https://www.cnblogs.com/cute/archive/2011/11/08/2241258.html">Linux C语言库函数参考 — nice</a><br>参考<a href="">a.out 代码</a></p>
+<ol start="32">
+<li>改变运行中线程的优先级<br>先 <code>sleep</code><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">amd_server@130ubuntu: ~&#x2F;workspace&#x2F;share&#x2F;test_modules&#x2F;scheduler&#x2F;userspace api# sleep 100</span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace&#x2F;share&#x2F;test_modules&#x2F;scheduler&#x2F;userspace api#</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<p>使用 renice 改变线程优先级</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line">amd_server@ubuntu: ~&#x2F;workspace# ps -el  | grep sleep</span><br><span class="line">0 S  1000 1763468 1206623  0  80   0 -  2790 hrtime ?        00:00:00 sleep</span><br><span class="line">0 S  1000 1763647 1690956  0  80   0 -  2791 hrtime pts&#x2F;4    00:00:00 sleep</span><br><span class="line">amd_server@1ubuntu: ~&#x2F;workspace# renice -n 13 -p 2791</span><br><span class="line">amd_server@130ubuntu: ~&#x2F;workspace# ps -aux  | grep sleep</span><br><span class="line">ubuntu   1763468  0.0  0.0  11160   520 ?        S    18:11   0:00 sleep 180</span><br><span class="line">ubuntu   1763647  0.0  0.0  11164   588 pts&#x2F;4    S+   18:12   0:00 sleep 100</span><br><span class="line">ubuntu   1763805  0.0  0.0  12120   728 pts&#x2F;5    S+   18:13   0:00 grep --color&#x3D;auto --exclude-dir&#x3D;.bzr --exclude-dir&#x3D;CVS --exclude-dir&#x3D;.git --exclude-dir&#x3D;.hg --exclude-dir&#x3D;.svn --exclude-dir&#x3D;.idea --exclude-dir&#x3D;.tox sleep</span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace#</span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace#</span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace# renice -n 13 -p 1763647</span><br><span class="line">1763647 (process ID) old priority 0, new priority 13</span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace# ps -aux  | grep sleep</span><br><span class="line">ubuntu   1763468  0.0  0.0  11160   520 ?        S    18:11   0:00 sleep 180</span><br><span class="line">ubuntu   1763647  0.0  0.0  11164   588 pts&#x2F;4    SN+  18:12   0:00 sleep 100</span><br><span class="line">ubuntu   1763883  0.0  0.0  12120   660 pts&#x2F;5    S+   18:14   0:00 grep --color&#x3D;auto --exclude-dir&#x3D;.bzr --exclude-dir&#x3D;CVS --exclude-dir&#x3D;.git --exclude-dir&#x3D;.hg --exclude-dir&#x3D;.svn --exclude-dir&#x3D;.idea --exclude-dir&#x3D;.tox sleep</span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace#</span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace#</span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace#</span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace# ps -el  | grep sleep</span><br><span class="line">0 S  1000 1763468 1206623  0  80   0 -  2790 hrtime ?        00:00:00 sleep</span><br><span class="line">0 S  1000 1763647 1690956  0  93  13 -  2791 hrtime pts&#x2F;4    00:00:00 sleep</span><br><span class="line">amd_server@ubuntu: ~&#x2F;workspace#</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<ol start="33">
+<li>一行循环执行某个命令</li>
+</ol>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">for i in $(seq 1 20000); do   ; done</span><br><span class="line">for i in $(seq 1 20000); do cat &#x2F;proc&#x2F;28703&#x2F;sched | grep effective ; done</span><br><span class="line"></span><br><span class="line">for i in $(seq 1 20000); do echo $i; done</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<ol start="34">
+<li>快速git clone 大项目</li>
+</ol>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">git clone git:&#x2F;&#x2F;git.kernel.org&#x2F;pub&#x2F;scm&#x2F;linux&#x2F;kernel&#x2F;git&#x2F;stable&#x2F;linux.git --depth 1</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">for i in $(seq 1 200); do echo $i; done</span><br></pre></td></tr></table></figure>
+
+<p>然后 <code>git fetch --unshallow</code> 整个项目即可</p>
+<p>clone 指定分支</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">git clone https:&#x2F;&#x2F;android.googlesource.com&#x2F;kernel&#x2F;common -b android13-5.15-2022-11</span><br></pre></td></tr></table></figure>
+
+<ol start="35">
+<li>tuna 开源 mirror的linux仓库地址<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">mainline: git clone https:&#x2F;&#x2F;mirrors.tuna.tsinghua.edu.cn&#x2F;git&#x2F;linux.git</span><br><span class="line">stable:   git clone https:&#x2F;&#x2F;mirrors.tuna.tsinghua.edu.cn&#x2F;git&#x2F;linux-stable.git</span><br><span class="line">next:     git clone https:&#x2F;&#x2F;mirrors.tuna.tsinghua.edu.cn&#x2F;git&#x2F;linux-next.git</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<p>kernel.org官方源</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">amd_server@ubuntu: ~&#x2F;workspace&#x2F;stable# git remote -vv</span><br><span class="line">kernel  git:&#x2F;&#x2F;git.kernel.org&#x2F;pub&#x2F;scm&#x2F;linux&#x2F;kernel&#x2F;git&#x2F;torvalds&#x2F;linux.git (fetch)</span><br><span class="line">kernel  git:&#x2F;&#x2F;git.kernel.org&#x2F;pub&#x2F;scm&#x2F;linux&#x2F;kernel&#x2F;git&#x2F;torvalds&#x2F;linux.git (push)</span><br><span class="line">stable  git:&#x2F;&#x2F;git.kernel.org&#x2F;pub&#x2F;scm&#x2F;linux&#x2F;kernel&#x2F;git&#x2F;stable&#x2F;linux.git (fetch)</span><br><span class="line">stable  git:&#x2F;&#x2F;git.kernel.org&#x2F;pub&#x2F;scm&#x2F;linux&#x2F;kernel&#x2F;git&#x2F;stable&#x2F;linux.git (push)</span><br></pre></td></tr></table></figure>
+
+
+<ol start="36">
+<li><p>如何快速 clone 一个较大仓库</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">git clone --depth&#x3D;1 xxx</span><br><span class="line">git fetch --unshallow</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>vim 安装插件</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">:PlugInstall</span><br></pre></td></tr></table></figure>
+
+
+</li>
+</ol>
+<ol start="38">
+<li>查看线程调度策略<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">ps -eLfc | grep FF</span><br><span class="line">ps -eLfc | grep RR</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<p>具体定义如下</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">class scheduling class of the process.  (alias policy, cls).  Field&#39;s possible values are:</span><br><span class="line">    -   not reported</span><br><span class="line">    TS  SCHED_OTHER</span><br><span class="line">    FF  SCHED_FIFO</span><br><span class="line">    RR  SCHED_RR</span><br><span class="line">    B   SCHED_BATCH</span><br><span class="line">    ISO SCHED_ISO</span><br><span class="line">    IDL SCHED_IDLE</span><br><span class="line">    DLN SCHED_DEADLINE</span><br><span class="line">    ?   unknown value</span><br></pre></td></tr></table></figure>
+
+
+<ol start="39">
+<li><p>给cpu定频率</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">cpufreq-set:</span><br><span class="line">DESCRIPTION</span><br><span class="line">cpufreq-set allows you to modify cpufreq settings without having to type e.g. &quot;&#x2F;sys&#x2F;devices&#x2F;system&#x2F;cpu&#x2F;cpu0&#x2F;cpufreq&#x2F;scaling_set_speed&quot; all the time.</span><br><span class="line"></span><br><span class="line">OPTIONS</span><br><span class="line">-c --cpu &lt;CPU&gt;</span><br><span class="line">number of CPU where cpufreq settings shall be modified.</span><br><span class="line">-d --min &lt;FREQ&gt;</span><br><span class="line">new minimum CPU frequency the governor may select.</span><br><span class="line">-u --max &lt;FREQ&gt;</span><br><span class="line">new maximum CPU frequency the governor may select.</span><br><span class="line">-g --governor &lt;GOV&gt;</span><br><span class="line">new cpufreq governor.</span><br><span class="line">-f --freq &lt;FREQ&gt;</span><br><span class="line">specific frequency to be set. Requires userspace governor to be available and loaded.</span><br><span class="line">-h --help</span><br><span class="line">Prints out the help screen.</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>git log<br><code>git log</code> 十分强大，目前一个工作是查看 Q &amp; M的 kernel代码改了那些东西，用起来这个更是十分有必要</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">1. git log -S</span><br><span class="line"></span><br><span class="line">2. git log -L :func_name:file</span><br><span class="line">git log -L :select_task_rq:kernel&#x2F;sched&#x2F;core.c</span><br><span class="line"></span><br><span class="line">3. git log -Lline_num:file</span><br><span class="line">git log -L2825,+2:kernel&#x2F;sched&#x2F;core.c</span><br><span class="line"></span><br><span class="line">4. git log master..feature : 包含在 feature分支，但是不在master分支上的patch</span><br><span class="line">5. git log --no-merges : 过滤掉merge的patch</span><br><span class="line">6. git log commit1 commit2 : commit1--commit2之间的patch</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<p>我需要监控 两个commit之间的patch，但是我只关注 <code>kernel/sched/</code> 目录下文件的修改，改如何将这些commits找出来？<br>这里我写了一个<a target="_blank" rel="noopener" href="https://gitee.com/shshshsh/find_releated_commits">python脚本</a>来实现。</p>
+<ol start="41">
+<li>git branch<br>a. 检查哪些分支包含某个 <code>commit id</code><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><span class="line">ubuntu@zeku_server:~&#x2F;workspace&#x2F;msm-5.4 $ git branch -a --contains f556cd74a7ea038c67812b0d9b5d971d03da5372</span><br><span class="line">  msm-5.4.r5</span><br><span class="line">  remotes&#x2F;origin&#x2F;LA.AU.0.2.0.r4.1</span><br><span class="line">  remotes&#x2F;origin&#x2F;LV.AU.0.2.0.r1</span><br><span class="line">  remotes&#x2F;origin&#x2F;kernel.lnx.5.4.r1-rel</span><br><span class="line">  remotes&#x2F;origin&#x2F;kernel.lnx.5.4.r3-rel</span><br><span class="line">  remotes&#x2F;origin&#x2F;kernel.lnx.5.4.r6-rel</span><br><span class="line">  remotes&#x2F;origin&#x2F;kernel.lnx.5.4.r7-rel</span><br><span class="line">  remotes&#x2F;origin&#x2F;kernel.lnx.5.4.r9-rel</span><br><span class="line">  remotes&#x2F;origin&#x2F;msm-5.4.r2</span><br><span class="line">  remotes&#x2F;origin&#x2F;msm-5.4.r5</span><br><span class="line">ubuntu@zeku_server:~&#x2F;workspace&#x2F;msm-5.4 $ git branch -r --contains f556cd74a7ea038c67812b0d9b5d971d03da5372</span><br><span class="line">  origin&#x2F;LA.AU.0.2.0.r4.1</span><br><span class="line">  origin&#x2F;LV.AU.0.2.0.r1</span><br><span class="line">  origin&#x2F;kernel.lnx.5.4.r1-rel</span><br><span class="line">  origin&#x2F;kernel.lnx.5.4.r3-rel</span><br><span class="line">  origin&#x2F;kernel.lnx.5.4.r6-rel</span><br><span class="line">  origin&#x2F;kernel.lnx.5.4.r7-rel</span><br><span class="line">  origin&#x2F;kernel.lnx.5.4.r9-rel</span><br><span class="line">  origin&#x2F;msm-5.4.r2</span><br><span class="line">  origin&#x2F;msm-5.4.r5</span><br><span class="line">ubuntu@zeku_server:~&#x2F;workspace&#x2F;msm-5.4 $ git branch  --contains f556cd74a7ea038c67812b0d9b5d971d03da5372</span><br><span class="line">  msm-5.4.r5</span><br><span class="line">ubuntu@zeku_server:~&#x2F;workspace&#x2F;msm-5.4 $ git branch msm-5.4.r5  --contains f556cd74a7ea038c67812b0d9b5d971d03da5372</span><br><span class="line">  msm-5.4.r5</span><br><span class="line">ubuntu@zeku_server:~&#x2F;workspace&#x2F;msm-5.4 $ git branch android11-5.4  --contains f556cd74a7ea038c67812b0d9b5d971d03da5372</span><br><span class="line">ubuntu@zeku_server:~&#x2F;workspace&#x2F;msm-5.4 $</span><br></pre></td></tr></table></figure>
+
+
+
+</li>
+</ol>
+<ol start="42">
+<li><p>git show<br>a. 查看某个 commit是哪个版本引入的</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">ubuntu@zeku_server:~&#x2F;workspace&#x2F;linux $ git show e6223a3b19421e3a8df1352d21fd0d71093f44ae:Makefile</span><br><span class="line">VERSION &#x3D; 2</span><br><span class="line">PATCHLEVEL &#x3D; 6</span><br><span class="line">SUBLEVEL &#x3D; 36</span><br><span class="line">EXTRAVERSION &#x3D;</span><br><span class="line">NAME &#x3D; Flesh-Eating Bats with Fangs</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>随机提取一个commit来生成patch</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">git format-patch HEAD^ : 生成patch</span><br><span class="line">git format-patch -1 commit-id : 生成这个 commit-id 的patch。</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>gcc -E预编译 .c文件</p>
+</li>
+<li><p>gcc 生成汇编 文件</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">gcc -S 123.c</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>gcc 生成 汇编和 C文件 对照</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">gcc -Wa,-adlhn 123.c</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>检查commits是否有<code>Functional change</code></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line">add helper func for util_avg and runnable_avg calc when entity</span><br><span class="line">enqueue and dequeue. No functional change.</span><br><span class="line"></span><br><span class="line">without this change:</span><br><span class="line">size vmlinux</span><br><span class="line">   text	   data	    bss	    dec	    hex	filename</span><br><span class="line">19889268	6632812	2429160	28951240	1b9c2c8	vmlinux</span><br><span class="line">size kernel&#x2F;sched&#x2F;fair.o</span><br><span class="line">   text	   data	    bss	    dec	    hex	filename</span><br><span class="line">  40044	   1569	     96	  41709	   a2ed	kernel&#x2F;sched&#x2F;fair.o</span><br><span class="line">ubuntu@zeku_server:~&#x2F;workspace&#x2F;linux-stable $</span><br><span class="line"></span><br><span class="line">with this change:</span><br><span class="line">size vmlinux</span><br><span class="line">   text	   data	    bss	    dec	    hex	filename</span><br><span class="line">19889268	6632812	2429160	28951240	1b9c2c8	vmlinux</span><br><span class="line">size kernel&#x2F;sched&#x2F;fair.o</span><br><span class="line">   text	   data	    bss	    dec	    hex	filename</span><br><span class="line">  40044	   1569	     96	  41709	   a2ed	kernel&#x2F;sched&#x2F;fair.o</span><br></pre></td></tr></table></figure>
+<p>参考<a target="_blank" rel="noopener" href="https://lkml.org/lkml/2021/4/22/297">lkml 邮件</a></p>
+</li>
+</ol>
+<ol>
+<li><p>编译出现<code>error, forbidden warning:</code> 编译错误</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">两种解决办法</span><br><span class="line">这是因为编译的时候,由于你的代码不符合标准,比如类型转换的时候,你没有强制转化(比如将int型赋值给char型,需要强制转换)或者定义了某些变量或者函数却没有使用.这些都会出现警告,而警告将会被看做错误来处理.</span><br><span class="line">1. 修改自己的代码,将出现的警告全部解决掉.该强制转换的强制转化,该删掉定义了未使用的变量函数删掉或者注释掉.</span><br><span class="line">2. 修改scripts&#x2F;gcc-wrapper.py将interpret_warning(line)注释掉,这样它就不会将警告当成错误处理了</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>qemu 邮件列表 <code>qemu-discuss@nongnu.org</code></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">KVM开发者邮件列表是：kvm@vger.kernel.org</span><br><span class="line">KVM内核部分以及QEMU中与KVM相关部分的讨论都会在这里讨论。</span><br><span class="line">订阅方法：向majordomo@vger.kernel.org发送一封以”subscribe kvm”为正文的邮件。</span><br><span class="line"></span><br><span class="line">QEMU开发者邮件列表是：qemu-devel@nongnu.org</span><br><span class="line">QEMU普通用户讨论的邮件列表是：qemu-discuss@nongnu.org</span><br><span class="line"></span><br><span class="line">KVM的IRC频道：在irc.freenode.net服务器上的#kvm频道</span><br><span class="line"></span><br><span class="line">QEMU的IRC频道：在irc.oftc.net服务器上的#qemu频道</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>android ltp 编译 test eas.</p>
+</li>
+</ol>
+<p>动态编译</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">.&#x2F;configure CC&#x3D;aarch64-linux-gnu-gcc --build&#x3D;x86_64-pc-linux-gnu --target&#x3D;aarch64-linux --host&#x3D;aarch64-linux</span><br><span class="line"></span><br><span class="line">make -j10</span><br></pre></td></tr></table></figure>
+
+
+<p>然后静态编译</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">aarch64-linux-gnu-gcc -static -g -O2 -fno-strict-aliasing -pipe -Wall -W -Wold-style-definition  -I..&#x2F;..&#x2F;..&#x2F;..&#x2F;include -I..&#x2F;..&#x2F;..&#x2F;..&#x2F;include -I..&#x2F;..&#x2F;..&#x2F;..&#x2F;include&#x2F;old&#x2F;  -c -o eas_big_to_small.o eas_big_to_small.c</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">aarch64-linux-gnu-gcc -static  -L..&#x2F;..&#x2F;..&#x2F;..&#x2F;lib  eas_big_to_small.o trace_parse.o util.o   -lltp -lpthread -o eas_big_to_small</span><br></pre></td></tr></table></figure>
+
+
+<ol start="48">
+<li>sched_feat 怎么动态修改？<br>a. 直接在板子上修改文件节点，只对当前测试有效 <code>/sys/kernel/debug/sched_features</code>，<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">venus:&#x2F;data&#x2F;local&#x2F;tmp&#x2F;eas # cat &#x2F;sys&#x2F;kernel&#x2F;debug&#x2F;sched_features</span><br><span class="line">GENTLE_FAIR_SLEEPERS START_DEBIT NO_NEXT_BUDDY LAST_BUDDY CACHE_HOT_BUDDY WAKEUP_PREEMPTION NO_HRTICK NO_DOUBLE_TICK NONTASK_CAPACITY NO_TTWU_QUEUE NO_SIS_AVG_CPU S</span><br><span class="line">IS_PROP NO_WARN_DOUBLE_CLOCK RT_PUSH_IPI RT_RUNTIME_SHARE NO_LB_MIN ATTACH_AGE_LOAD WA_IDLE WA_WEIGHT WA_BIAS NO_UTIL_EST NO_SUGOV_RT_MAX_FREQ</span><br><span class="line">venus:&#x2F;data&#x2F;local&#x2F;tmp&#x2F;eas #</span><br><span class="line">venus:&#x2F;data&#x2F;local&#x2F;tmp&#x2F;eas #</span><br><span class="line">venus:&#x2F;data&#x2F;local&#x2F;tmp&#x2F;eas # echo UTIL_EST &gt; &#x2F;sys&#x2F;kernel&#x2F;debug&#x2F;sched_features</span><br><span class="line">venus:&#x2F;data&#x2F;local&#x2F;tmp&#x2F;eas #</span><br><span class="line">venus:&#x2F;data&#x2F;local&#x2F;tmp&#x2F;eas #</span><br><span class="line">venus:&#x2F;data&#x2F;local&#x2F;tmp&#x2F;eas # cat &#x2F;sys&#x2F;kernel&#x2F;debug&#x2F;sched_features</span><br><span class="line">GENTLE_FAIR_SLEEPERS START_DEBIT NO_NEXT_BUDDY LAST_BUDDY CACHE_HOT_BUDDY WAKEUP_PREEMPTION NO_HRTICK NO_DOUBLE_TICK NONTASK_CAPACITY NO_TTWU_QUEUE NO_SIS_AVG_CPU S</span><br><span class="line">IS_PROP NO_WARN_DOUBLE_CLOCK RT_PUSH_IPI RT_RUNTIME_SHARE NO_LB_MIN ATTACH_AGE_LOAD WA_IDLE WA_WEIGHT WA_BIAS UTIL_EST NO_SUGOV_RT_MAX_FREQ</span><br><span class="line">venus:&#x2F;data&#x2F;local&#x2F;tmp&#x2F;eas #</span><br><span class="line">venus:&#x2F;data&#x2F;local&#x2F;tmp&#x2F;eas #</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<p>b. 直接修改源文件，这样编译生效<br>直接修改 <code>kernel/sched/features.h</code> 文件中的 true or false。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">SCHED_FEAT(RT_RUNTIME_SHARE, true)</span><br><span class="line">SCHED_FEAT(LB_MIN, false)</span><br><span class="line">SCHED_FEAT(ATTACH_AGE_LOAD, true)</span><br><span class="line"></span><br><span class="line">SCHED_FEAT(WA_IDLE, true)</span><br><span class="line">SCHED_FEAT(WA_WEIGHT, true)</span><br><span class="line">SCHED_FEAT(WA_BIAS, true)</span><br><span class="line"></span><br><span class="line">&#x2F;*</span><br><span class="line"> * UtilEstimation. Use estimated CPU utilization.</span><br><span class="line"> *&#x2F;</span><br><span class="line">SCHED_FEAT(UTIL_EST, true)</span><br></pre></td></tr></table></figure>
+
+
+
+<ol start="50">
+<li><p>shell 参数个数</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">if [ $# -eq 0 ];then</span><br><span class="line">     echo &quot;zero param...&quot;</span><br><span class="line">elif [ $# -eq 1 ];then</span><br><span class="line">     echo &quot;one param...&quot;</span><br><span class="line">else</span><br><span class="line">     echo &quot;more than one param...&quot;</span><br><span class="line">fi</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>shell 参数值比较</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">if [ &quot;$1&quot; &#x3D;&#x3D; &quot;start&quot; ];then   </span><br><span class="line">     echo &quot;do start&quot;</span><br><span class="line">elif [ &quot;$1&quot; &#x3D;&#x3D; &quot;stop&quot; ];then</span><br><span class="line">     echo &quot;do stop&quot;</span><br><span class="line">else</span><br><span class="line">     echo &quot;Please make sure the positon variable is start or stop.&quot;</span><br><span class="line">fi</span><br></pre></td></tr></table></figure>
+
+
+</li>
+</ol>
+<ol start="52">
+<li>shell 捕获 <code>Ctrl + C</code><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">#!&#x2F;bin&#x2F;bash</span><br><span class="line"></span><br><span class="line">trap &#39;onCtrlC&#39; INT</span><br><span class="line">function onCtrlC () &#123;</span><br><span class="line">    echo &#39;Ctrl+C is captured&#39;</span><br><span class="line">    exit 0</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">while true; do</span><br><span class="line">    echo &#39;I am working!&#39;</span><br><span class="line">     sleep 10</span><br><span class="line">done</span><br></pre></td></tr></table></figure>
+
+
+</li>
+</ol>
+<ol start="53">
+<li>systrace 支持<br>抓取到 systrace之后，还需要直观的显示出来，可以在 <code>https://ui.perfetto.dev/#!/</code> 看到，<a target="_blank" rel="noopener" href="https://ui.perfetto.dev/#!/">点击跳转</a></li>
+</ol>
+<ol start="54">
+<li>offline 某个 cpu</li>
+</ol>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">ubuntu@ubuntu:&#x2F;sys&#x2F;devices&#x2F;system&#x2F;cpu&#x2F;cpu0$ cat &#x2F;sys&#x2F;devices&#x2F;system&#x2F;cpu&#x2F;cpu0&#x2F;online</span><br><span class="line">1</span><br><span class="line">ubuntu@ubuntu:&#x2F;sys&#x2F;devices&#x2F;system&#x2F;cpu&#x2F;cpu0$ cat &#x2F;sys&#x2F;devices&#x2F;system&#x2F;cpu&#x2F;online</span><br><span class="line">0-3</span><br><span class="line">ubuntu@ubuntu:&#x2F;sys&#x2F;devices&#x2F;system&#x2F;cpu&#x2F;cpu0$ cat &#x2F;sys&#x2F;devices&#x2F;system&#x2F;cpu&#x2F;offline</span><br><span class="line"></span><br><span class="line">ubuntu@ubuntu:&#x2F;sys&#x2F;devices&#x2F;system&#x2F;cpu&#x2F;cpu0$ sudo su</span><br><span class="line">root@ubuntu:&#x2F;sys&#x2F;devices&#x2F;system&#x2F;cpu&#x2F;cpu0# echo 0 &gt;&gt; &#x2F;sys&#x2F;devices&#x2F;system&#x2F;cpu&#x2F;cpu0&#x2F;online</span><br><span class="line">root@ubuntu:&#x2F;sys&#x2F;devices&#x2F;system&#x2F;cpu&#x2F;cpu0# cat  &#x2F;sys&#x2F;devices&#x2F;system&#x2F;cpu&#x2F;cpu0&#x2F;online</span><br><span class="line">0</span><br><span class="line">root@ubuntu:&#x2F;sys&#x2F;devices&#x2F;system&#x2F;cpu&#x2F;cpu0# cat echo 0 &gt;&gt; &#x2F;sys&#x2F;devices&#x2F;system&#x2F;cpu&#x2F;online</span><br><span class="line">bash: &#x2F;sys&#x2F;devices&#x2F;system&#x2F;cpu&#x2F;online: Permission denied</span><br><span class="line">root@ubuntu:&#x2F;sys&#x2F;devices&#x2F;system&#x2F;cpu&#x2F;cpu0# cat &#x2F;sys&#x2F;devices&#x2F;system&#x2F;cpu&#x2F;online</span><br><span class="line">1-3</span><br><span class="line">root@ubuntu:&#x2F;sys&#x2F;devices&#x2F;system&#x2F;cpu&#x2F;cpu0# cat &#x2F;sys&#x2F;devices&#x2F;system&#x2F;cpu&#x2F;offline</span><br><span class="line">0</span><br><span class="line">root@ubuntu:&#x2F;sys&#x2F;devices&#x2F;system&#x2F;cpu&#x2F;cpu0#</span><br></pre></td></tr></table></figure>
+
+<ol start="55">
+<li><p>wsl2 限制内存, cpu使用<br>文件位置 <code>D:\Users\50001309</code></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">ubuntu@wsl:&#x2F;mnt&#x2F;d&#x2F;Users&#x2F;50001309 $ cat .wslconfig</span><br><span class="line">[wsl2]</span><br><span class="line">processors&#x3D;3</span><br><span class="line">memory&#x3D;3GB</span><br><span class="line">swap&#x3D;3GB</span><br><span class="line">localhostForwarding&#x3D;true</span><br><span class="line">ubuntu@wsl:&#x2F;mnt&#x2F;d&#x2F;Users&#x2F;50001309 $</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>vscode remote-ssh 频繁断开原因<br>win10 自带 openssh 与 vscode不兼容，需要修改环境变量，直接使用 git自带的ssh.</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">https:&#x2F;&#x2F;blog.csdn.net&#x2F;jyhongjax&#x2F;article&#x2F;details&#x2F;106075493#fromHistory</span><br></pre></td></tr></table></figure>
+
+
+</li>
+</ol>
+<ol start="58">
+<li>解压 <code>patch.gz</code><br>a. 删除源文件，得到解压后的文件<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">ubuntu@zeku_server:~&#x2F;workspace&#x2F;linux&#x2F;tmp_out $</span><br><span class="line">ubuntu@zeku_server:~&#x2F;workspace&#x2F;linux&#x2F;tmp_out $ ls</span><br><span class="line">include  Makefile  patch-5.12-rc3-rt3.patch.gz  scripts  source</span><br><span class="line">ubuntu@zeku_server:~&#x2F;workspace&#x2F;linux&#x2F;tmp_out $ gunzip -d patch-5.12-rc3-rt3.patch.gz</span><br><span class="line">ubuntu@zeku_server:~&#x2F;workspace&#x2F;linux&#x2F;tmp_out $ ls</span><br><span class="line">include  Makefile  patch-5.12-rc3-rt3.patch  scripts  source</span><br><span class="line">ubuntu@zeku_server:~&#x2F;workspace&#x2F;linux&#x2F;tmp_out $</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<p>b. 保留源文件，得到解压后的文件</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">ubuntu@zeku_server:~&#x2F;workspace&#x2F;linux&#x2F;tmp_out $ gunzip -cd patch-5.12-rc3-rt3.patch.gz &gt; patch.txt</span><br><span class="line">ubuntu@zeku_server:~&#x2F;workspace&#x2F;linux&#x2F;tmp_out $</span><br></pre></td></tr></table></figure>
+
+
+<ol start="59">
+<li>解压 <code>patches.xx.tar.gz</code><br>a. 解压<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">ubuntu@zeku_server:~&#x2F;workspace&#x2F;linux&#x2F;tmp_out $ ls</span><br><span class="line">include  Makefile  patches-5.12-rc3-rt3.tar.gz  scripts  source</span><br><span class="line">ubuntu@zeku_server:~&#x2F;workspace&#x2F;linux&#x2F;tmp_out $ tar -zxvf patches-5.12-rc3-rt3.tar.gz</span><br><span class="line">patches&#x2F;</span><br><span class="line">patches&#x2F;0001-kthread-Move-prio-affinite-change-into-the-newly-cre.patch</span><br><span class="line">patches&#x2F;0001-locking-rtmutex-Remove-cruft.patch</span><br><span class="line">patches&#x2F;0001-mm-sl-au-b-Change-list_lock-to-raw_spinlock_t.patch</span><br><span class="line">...</span><br><span class="line">ubuntu@zeku_server:~&#x2F;workspace&#x2F;linux&#x2F;tmp_out $ ls patches&#x2F;</span><br><span class="line"> 0001-kthread-Move-prio-affinite-change-into-the-newly-cre.patch   0019-tick-sched-Prevent-false-positive-softirq-pending-wa.patch         mm-memcontrol-Disable-preemption-in-__mod_memcg_lruv.patch</span><br><span class="line"> 0001-locking-rtmutex-Remove-cruft.patch                           0020-kdb-only-use-atomic-consoles-for-output-mirroring.patch            mm-memcontrol-do_not_disable_irq.patch</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<p>b. 使用</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"></span><br></pre></td></tr></table></figure>
+
+
+<ol start="60">
+<li><p>给 kernel 打上 <code>rt patch</code></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br></pre></td><td class="code"><pre><span class="line">ubuntu@zeku_server:~&#x2F;workspace&#x2F;linux&#x2F;tmp_out $ wget http:&#x2F;&#x2F;cdn.kernel.org&#x2F;pub&#x2F;linux&#x2F;kernel&#x2F;projects&#x2F;rt&#x2F;5.12&#x2F;patch-5.12-rc3-rt3.patch.gz</span><br><span class="line">--2021-05-25 10:24:37--  http:&#x2F;&#x2F;cdn.kernel.org&#x2F;pub&#x2F;linux&#x2F;kernel&#x2F;projects&#x2F;rt&#x2F;5.12&#x2F;patch-5.12-rc3-rt3.patch.gz</span><br><span class="line">Resolving cdn.kernel.org (cdn.kernel.org)... 151.101.1.176, 151.101.129.176, 151.101.65.176, ...</span><br><span class="line">Connecting to cdn.kernel.org (cdn.kernel.org)|151.101.1.176|:80... connected.</span><br><span class="line">HTTP request sent, awaiting response... 200 OK</span><br><span class="line">Length: 135397 (132K) [application&#x2F;x-gzip]</span><br><span class="line">Saving to: ‘patch-5.12-rc3-rt3.patch.gz’</span><br><span class="line"></span><br><span class="line">patch-5.12-rc3-rt3.patch.gz                        100%[&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&gt;] 132.22K   384KB&#x2F;s    in 0.3s</span><br><span class="line"></span><br><span class="line">2021-05-25 10:24:38 (384 KB&#x2F;s) - ‘patch-5.12-rc3-rt3.patch.gz’ saved [135397&#x2F;135397]</span><br><span class="line"></span><br><span class="line">ubuntu@zeku_server:~&#x2F;workspace&#x2F;linux&#x2F;tmp_out $ gunzip -d patch-5.12-rc3-rt3.patch.gz</span><br><span class="line">ubuntu@zeku_server:~&#x2F;workspace&#x2F;linux&#x2F;tmp_out $ ls</span><br><span class="line">include  Makefile  patch-5.12-rc3-rt3.patch  scripts  source</span><br><span class="line">ubuntu@zeku_server:~&#x2F;workspace&#x2F;linux&#x2F;tmp_out $</span><br><span class="line">ubuntu@zeku_server:~&#x2F;workspace&#x2F;linux&#x2F;tmp_out $ cd ..</span><br><span class="line">ubuntu@zeku_server:~&#x2F;workspace&#x2F;linux $ patch -p1 &lt; .&#x2F;tmp_out&#x2F;patch-5.12-rc3-rt3.patch</span><br><span class="line">patching file arch&#x2F;alpha&#x2F;include&#x2F;asm&#x2F;spinlock_types.h</span><br><span class="line">patching file arch&#x2F;arm&#x2F;Kconfig</span><br><span class="line">patching file arch&#x2F;arm&#x2F;include&#x2F;asm&#x2F;spinlock_types.h</span><br><span class="line">patching file arch&#x2F;arm&#x2F;include&#x2F;asm&#x2F;thread_info.h</span><br><span class="line">patching file arch&#x2F;arm&#x2F;kernel&#x2F;asm-offsets.c</span><br><span class="line">patching file arch&#x2F;arm&#x2F;kernel&#x2F;entry-armv.S</span><br><span class="line">patching file arch&#x2F;arm&#x2F;kernel&#x2F;signal.c</span><br><span class="line">......</span><br><span class="line">ubuntu@zeku_server:~&#x2F;workspace&#x2F;linux $ git st</span><br><span class="line">On branch 5.12-rc3</span><br><span class="line">Changes not staged for commit:</span><br><span class="line">  (use &quot;git add&#x2F;rm &lt;file&gt;...&quot; to update what will be committed)</span><br><span class="line">  (use &quot;git restore &lt;file&gt;...&quot; to discard changes in working directory)</span><br><span class="line">	modified:   arch&#x2F;alpha&#x2F;include&#x2F;asm&#x2F;spinlock_types.h</span><br><span class="line">	modified:   arch&#x2F;arm&#x2F;Kconfig</span><br><span class="line">	modified:   arch&#x2F;arm&#x2F;include&#x2F;asm&#x2F;spinlock_types.h</span><br><span class="line">	modified:   arch&#x2F;arm&#x2F;include&#x2F;asm&#x2F;thread_info.h</span><br><span class="line">	modified:   arch&#x2F;arm&#x2F;kernel&#x2F;asm-offsets.c</span><br><span class="line">	modified:   arch&#x2F;arm&#x2F;kernel&#x2F;entry-armv.S</span><br><span class="line">	modified:   arch&#x2F;arm&#x2F;kernel&#x2F;signal.c</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>MIPS DMIPS MFLOPS<br>MIPS: <code>Million Instructions Per Second</code>，每秒处理的百万级的机器语言指令数。<br>DMIPS：<code>Dhrystone Million Instructions Per Second</code>，整数运算测试程序 每秒处理的百万级的机器语言指令数<br>MFLOPS：<code>A benchmark which attemps to estimate a system&#39;s floating-point &quot;MFLOPS&quot; rating for specific FADD, FSUB, FMUL and FDIV instruction mixes.</code>，是一种基于浮点运算的CPU测试程序，当然，这种测试的结果也以 MFLOPS来加以表示，代表了CPU处理浮点运算的能力。</p>
+</li>
+</ol>
+<ol start="62">
+<li>jenkins 升级<br>tuna mirror<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">https:&#x2F;&#x2F;mirrors.tuna.tsinghua.edu.cn&#x2F;jenkins&#x2F;war-stable&#x2F;2.277.4&#x2F;jenkins.war</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<p>如何升级</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">下载提示的 jenkins.war 包，上传到服务器</span><br><span class="line">查看 jenkins.war 的目录，比如是：&#x2F;usr&#x2F;share&#x2F;jenkins&#x2F;jenkins.war，可用如下命令查看：</span><br><span class="line"></span><br><span class="line">ps aux | grep jenkins</span><br><span class="line">备份初始的 jenkins.war 包：cp &#x2F;usr&#x2F;share&#x2F;jenkins&#x2F;jenkins.war jenkins.war.bak</span><br><span class="line">停止服务：&#x2F;etc&#x2F;init.d&#x2F;jenkins stop</span><br><span class="line">替换新的 war 包后，启动服务：&#x2F;etc&#x2F;init.d&#x2F;jenkins start</span><br></pre></td></tr></table></figure>
+
+<ol start="63">
+<li><p>各种版本 gcc 下载<br>wget 相应地址</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">https:&#x2F;&#x2F;ftp.gnu.org&#x2F;gnu&#x2F;gcc&#x2F;gcc-4.8.5&#x2F;</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>linux 源文件编译成为 汇编文件</p>
+</li>
+</ol>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">make kernel&#x2F;sched&#x2F;core.lst V&#x3D;1</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">(base) ubuntu@zeku_server:~&#x2F;workspace&#x2F;linux $ ls kernel&#x2F;sched&#x2F;core.lst</span><br><span class="line">kernel&#x2F;sched&#x2F;core.lst</span><br></pre></td></tr></table></figure>
+
+<ol start="65">
+<li>公司服务器安装 软件<br>一般公司服务器都会预装很多软件，需要使用的时候只需要 module load即可</li>
+</ol>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">module load vs_code</span><br><span class="line">module unload vs_code</span><br><span class="line">module av</span><br></pre></td></tr></table></figure>
+
+
+<ol start="66">
+<li>Ubuntu启用Cgroups V2<br>首先确定 当前系统是默认启用的是 cgroup v1 还是 v2，<br>可以通过 <code>/sys/fs/cgroup/cgroup.controllers</code> 文件确认，<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">ubuntu@zeku_server:~ $ cat &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cgroup.controllers</span><br><span class="line">cat: &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cgroup.controllers: 没有那个文件或目录</span><br></pre></td></tr></table></figure>
+说明 此时还是 cgroup v1</li>
+</ol>
+<p>可以更新 grub文件，在启动的时候 给 kernel 传参，使得默认使用 cgroup v2。<br>在<code>/etc/default/grub</code> 文件中，在 <code>GRUB_CMDLINE_LINUX</code> 中<br>添加 <code>systemd.unified_cgroup_hierarchy=1</code>；<br>然后<code>sudo update-grub</code> 更新 grub文件，reboot之后，系统将默认使用 cgroup v2.</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">ubuntu@zeku_server:~ $ cat &#x2F;sys&#x2F;fs&#x2F;cgroup&#x2F;cgroup.controllers</span><br><span class="line">cpuset cpu io memory pids rdma</span><br></pre></td></tr></table></figure>
+<p>这是系统默认使用 cgroup v2的样子</p>
+<p>也可以通过<code>mount</code> 看：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">ubuntu@zeku_server:~ $ mount | grep cgroup</span><br><span class="line">cgroup2 on &#x2F;sys&#x2F;fs&#x2F;cgroup type cgroup2 (rw,nosuid,nodev,noexec,relatime,nsdelegate)</span><br><span class="line">ubuntu@zeku_server:~ $</span><br></pre></td></tr></table></figure>
+
+<p>其中<br>GRUB_CMDLINE_LINUX_DEFAULT 仅在正常引导时才有效（恢复模式不适用）<br>GRUB_CMDLINE_LINUX 总是有效的</p>
+<ol start="67">
+<li>ubuntu 升级<br>查看当前版本<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">ubuntu@zeku_server:&#x2F;etc $ lsb_release -a</span><br><span class="line">No LSB modules are available.</span><br><span class="line">Distributor ID:	Ubuntu</span><br><span class="line">Description:	Ubuntu 20.10</span><br><span class="line">Release:	20.10</span><br><span class="line">Codename:	groovy</span><br><span class="line">ubuntu@zeku_server:&#x2F;etc $ uname -a</span><br><span class="line">Linux ubuntu-HP-ProDesk-680-G4-MT 5.8.0-59-generic #66-Ubuntu SMP Thu Jun 17 00:46:01 UTC 2021 x86_64 x86_64 x86_64 GNU&#x2F;Linux</span><br><span class="line">ubuntu@zeku_server:&#x2F;etc $ sudo do-release-upgrade</span><br><span class="line">正在检查新版 Ubuntu</span><br><span class="line">请在升级前安装您的发行版所有可用更新。</span><br><span class="line">ubuntu@zeku_server:&#x2F;etc $</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<p>如果想升级到非lts版本，需要修改 <code>lts</code> 到 <code>normal</code></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo sed -i &#39;s&#x2F;lts&#x2F;normal&#x2F;g&#39; &#x2F;etc&#x2F;update-manager&#x2F;release-upgrades</span><br></pre></td></tr></table></figure>
+
+<p>最后执行升级即可</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo do-release-upgrade</span><br></pre></td></tr></table></figure>
+
+<p>升级成功之后查看</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">ubuntu@zeku_server:~ $  lsb_release -a</span><br><span class="line">No LSB modules are available.</span><br><span class="line">Distributor ID:	Ubuntu</span><br><span class="line">Description:	Ubuntu 21.04</span><br><span class="line">Release:	21.04</span><br><span class="line">Codename:	hirsute</span><br><span class="line">ubuntu@zeku_server:~ $ uname -a</span><br><span class="line">Linux ubuntu-HP-ProDesk-680-G4-MT 5.11.0-22-generic #23-Ubuntu SMP Thu Jun 17 00:34:23 UTC 2021 x86_64 x86_64 x86_64 GNU&#x2F;Linux</span><br><span class="line">ubuntu@zeku_server:~ $</span><br><span class="line">ubuntu@zeku_server:~ $ sudo do-release-upgrade</span><br><span class="line">正在检查新版 Ubuntu</span><br><span class="line">There is no development version of an LTS available.</span><br><span class="line">To upgrade to the latest non-LTS development release</span><br><span class="line">set Prompt&#x3D;normal in &#x2F;etc&#x2F;update-manager&#x2F;release-upgrades.</span><br><span class="line">ubuntu@zeku_server:~ $</span><br></pre></td></tr></table></figure>
+
+<p>强制升级</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo do-release-upgrade -d</span><br></pre></td></tr></table></figure>
+
+<ol start="68">
+<li><p>删除多余 ubuntu old kernel image</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">1973  sudo dpkg --get-selections |grep linux</span><br><span class="line">1974  sudo dpkg --purge linux-image-5.4.0-77-generic</span><br><span class="line">1975  sudo dpkg --purge linux-modules-extra-5.4.0-77-generic</span><br><span class="line">1976  sudo dpkg --purge linux-image-5.4.0-77-generic</span><br><span class="line">1977  sudo dpkg --purge linux-image-5.8.0-59-generic</span><br><span class="line">1978  sudo dpkg --purge linux-modules-extra-5.8.0-59-generic</span><br><span class="line">1979  sudo dpkg --purge linux-image-5.8.0-59-generic</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>linux selftests怎么运行？<br>编译</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">make -C tools&#x2F;testing&#x2F;selftests</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<p>运行所有测试项</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">make -C tools&#x2F;testing&#x2F;selftests run_tests</span><br></pre></td></tr></table></figure>
+
+<p>运行单个测试项</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">make -C tools&#x2F;testing&#x2F;selftests TARGETS&#x3D;ptrace run_test</span><br></pre></td></tr></table></figure>
+<p>参考<a target="_blank" rel="noopener" href="https://blog.csdn.net/qq_22418329/article/details/109514029">Linux Kernel Selftests</a><br>参考<a target="_blank" rel="noopener" href="https://www.kernel.org/doc/html/latest/dev-tools/kselftest.html">Doc文档</a></p>
+<ol start="70">
+<li>ubuntu bootchart 安装使用<br>安装<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo apt install systemd-bootchart</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<p>使用 需要在 kernel 启动参数加上 <code>init=/lib/systemd/systemd-bootchart</code>，然后在<code>/run/log</code> 目录下，每次启动会生成一张 svg 的矢量图，可以分析出 boot阶段 cpu, io 的使用情况，酌情优化。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">stable_kernel@kernel: &#x2F;run&#x2F;log# pwd</span><br><span class="line">&#x2F;run&#x2F;log</span><br><span class="line">stable_kernel@kernel: &#x2F;run&#x2F;log# ls</span><br><span class="line">bootchart-20210721-1917.svg  journal</span><br><span class="line">stable_kernel@kernel: &#x2F;run&#x2F;log#</span><br></pre></td></tr></table></figure>
+
+<p>参考<a target="_blank" rel="noopener" href="https://wiki.archlinux.org/title/Improving_performance/Boot_process#Analyzing_the_boot_process">ARCH-LINUX-WIKI-Improving performance/Boot process</a></p>
+<ol start="71">
+<li>ubuntu 配置 smba 服务器</li>
+</ol>
+<ul>
+<li><p>server<br>安装软件包</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo apt-get install samba smbclient cifs-utils</span><br></pre></td></tr></table></figure>
+<p><code>sudo vim /etc/samba/smb.conf</code><br>在global下的workgroup=WORKGROUP下面添加一句：<br><code>security = user</code><br>最后一行添加：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">[zeku_smba]</span><br><span class="line">   comment &#x3D; sharefolder</span><br><span class="line">   path &#x3D; &#x2F;tmp&#x2F;server</span><br><span class="line">   valid users &#x3D; zeku_smba</span><br><span class="line">   browseable &#x3D; yes</span><br><span class="line">   read only &#x3D; yes</span><br><span class="line">   create mask &#x3D; 0777</span><br><span class="line">   directory mask &#x3D; 0777</span><br><span class="line">   public &#x3D; yes</span><br><span class="line">   writable &#x3D; yes</span><br><span class="line">   available &#x3D; yes</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>client<br>wsl 上 安装 软件包</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo apt-get install smbclient cifs-utils</span><br></pre></td></tr></table></figure>
+<p>挂载 目录</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo mount -t cifs -o username&#x3D;zeku_smba &#x2F;&#x2F;10.122.7.199&#x2F;zeku_smba &#x2F;tmp&#x2F;server&#x2F;</span><br></pre></td></tr></table></figure>
+</li>
+</ul>
+<ol start="72">
+<li>_GNU_SOURCE<br>_GNU_SOURCE 有两种使用方法</li>
+</ol>
+<ul>
+<li>在包含头文件前 加上 <code>#define _GNU_SOURCE</code></li>
+<li>在链接编译的时候，加上<code>-D_GNU_SOURCE</code> 选项<br>这样会降低可移植性</li>
+</ul>
+<p>参考<a target="_blank" rel="noopener" href="https://stackoverflow.com/questions/5582211/what-does-define-gnu-source-imply">_GNU_SOURCE有啥用</a></p>
+<ol start="73">
+<li>ubuntu sudo 免密码</li>
+</ol>
+<ul>
+<li>sudo chmod 744 /etc/sudoers</li>
+<li>sudo vi /etc/sudoers, 最后一行添加 <code>rlk ALL=(ALL) NOPASSWD:ALL</code></li>
+<li>sudo chmod 400 /etc/sudoers, 然后即刻生效</li>
+</ul>
+<ol start="74">
+<li>a</li>
+<li>a</li>
+<li>a</li>
+<li>a vmbox 虚拟机？</li>
+</ol>
+<ol start="77">
+<li>linux发行版本如何选择？<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">个人使用的话，</span><br><span class="line">有信仰选 Debian，</span><br><span class="line">追求新特性选 Fedora，</span><br><span class="line">爱好瞎折腾 arch 、gentoo，</span><br><span class="line">新手 Ubuntu，</span><br><span class="line">想用 Windows 软件 deepin，</span><br><span class="line">喜欢 kde 界面、或想在命令行下用 gui 配置选 suse，</span><br><span class="line">安全 Linux 小白选 kali，</span><br><span class="line">你问我 CentOS 怎样？它早该进坟墓了，倒是 CentOS stream 还凑合</span><br></pre></td></tr></table></figure>
+参考<a target="_blank" rel="noopener" href="https://www.v2ex.com/t/734996">V2EX</a><br>安装 fedora 33发现已经是 5.10.22了，果然是与mainline最近的版本。</li>
+</ol>
+<ol>
+<li>手动编译安装qemu</li>
+</ol>
+<p>发现卸载qemu-system-aarch64，然后重新安装，就已经支持了 raspi4了，可能是 ubuntu官方源自己适配的吧。。<br><code>ubuntu  安装  qemu-system</code></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo apt install qemu-system</span><br></pre></td></tr></table></figure>
+
+<p><code>ubuntu  卸载  qemu-system</code></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo apt auto-remove qemu-system</span><br></pre></td></tr></table></figure>
+
+<p><code>手动编译安装 qemu</code></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">1. sudo apt-get install git libglib2.0-dev libfdt-dev libpixman-1-dev zlib1g-dev</span><br><span class="line">2. sudo apt install ninja-build</span><br><span class="line">3. .&#x2F;configure --target-list&#x3D;aarch64-softmmu --enable-debug-info --enable-trace-backends&#x3D;simple --prefix&#x3D;&#x2F;usr&#x2F;local</span><br><span class="line">4. make -j4</span><br><span class="line">5. make install</span><br></pre></td></tr></table></figure>
+<p>vscode qemu 调试 raspi4b 参考<br><a target="_blank" rel="noopener" href="https://blog.csdn.net/qq_17593855/article/details/134699186">https://blog.csdn.net/qq_17593855/article/details/134699186</a></p>
+<ol start="98">
+<li>linux下pdf阅读器<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">1. chorme 直接打开</span><br><span class="line">2. ubuntu自带的</span><br><span class="line">3. FoxitReader</span><br><span class="line">4. wps</span><br></pre></td></tr></table></figure>
+
+
+</li>
+</ol>
+<ol start="99">
+<li>ubuntu cmd 更新 vscode<br>方法一:<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">wget https:&#x2F;&#x2F;vscode-update.azurewebsites.net&#x2F;latest&#x2F;linux-deb-x64&#x2F;stable -O &#x2F;tmp&#x2F;code_latest_amd64.deb</span><br><span class="line"></span><br><span class="line">sudo dpkg -i &#x2F;tmp&#x2F;code_latest_amd64.deb</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<p>方法二:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">sudo apt update</span><br><span class="line">sudo apt install code</span><br></pre></td></tr></table></figure>
+<p>会自动下载最新版本 code，然后解压覆盖掉老版本，避免每次手动从网页端下载。</p>
+<ol start="100">
+<li>shell 脚本检查</li>
+</ol>
+<ul>
+<li><p>安装</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo apt install shellcheck</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>检查</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">shellcheck yourscript</span><br></pre></td></tr></table></figure>
+
+</li>
+</ul>
+<p>代码参考<a target="_blank" rel="noopener" href="https://github.com/koalaman/shellcheck">github</a><br>使用参考<a target="_blank" rel="noopener" href="https://www.cnblogs.com/zqb-all/p/10054594.html">博客</a></p>
+<ol start="101">
+<li><p>控制 <code>/var/log/journal</code> 目录大小</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">journalctl --vacuum-size&#x3D;100M</span><br></pre></td></tr></table></figure>
+</li>
+<li><p><code>/var/log/btmp</code> 文件太大<br>参考<a target="_blank" rel="noopener" href="https://serverfault.com/questions/119299/my-var-log-btmp-file-is-huge-what-should-i-do">btmp</a><br>This means people are trying to brute-force your passwords (common on any public-facing server).<br>就是有人在尝试暴力破解你的机器密码，<br>Linux用户登录信息放在三个文件中：</p>
+</li>
+</ol>
+<ul>
+<li>/var/run/utmp：记录当前正在登录系统的用户信息，默认由who和w记录当前登录用户的信息，uptime记录系统启动时间；</li>
+<li>/var/log/wtmp：记录当前正在登录和历史登录系统的用户信息，默认由last命令查看；</li>
+<li>/var/log/btmp：记录失败的登录尝试信息，默认由lastb命令查看。</li>
+</ul>
+<ol start="103">
+<li>jenkins 启动失败<br>jenkins 自身运行的log存放在 <code>/var/log/jenkins</code> 中<br>可以查看其中log，来确定具体什么原因<br>其中有个原因是 8080 端口被其他进程占用了<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><span class="line">2022-01-07 08:37:26.217+0000 [id&#x3D;1]     SEVERE  winstone.Logger#logInternal: Container startup failed</span><br><span class="line">java.net.BindException: Address already in use</span><br><span class="line">        at sun.nio.ch.Net.bind0(Native Method)</span><br><span class="line">        at sun.nio.ch.Net.bind(Net.java:461)</span><br><span class="line">        at sun.nio.ch.Net.bind(Net.java:453)</span><br><span class="line">        at sun.nio.ch.ServerSocketChannelImpl.bind(ServerSocketChannelImpl.java:222)</span><br><span class="line">        at sun.nio.ch.ServerSocketAdaptor.bind(ServerSocketAdaptor.java:85)</span><br><span class="line">        at org.eclipse.jetty.server.ServerConnector.openAcceptChannel(ServerConnector.java:345)</span><br><span class="line">Caused: java.io.IOException: Failed to bind to 0.0.0.0&#x2F;0.0.0.0:8080</span><br><span class="line">        at org.eclipse.jetty.server.ServerConnector.openAcceptChannel(ServerConnector.java:349)</span><br><span class="line">        at org.eclipse.jetty.server.ServerConnector.open(ServerConnector.java:310)</span><br><span class="line">        at org.eclipse.jetty.server.AbstractNetworkConnector.doStart(AbstractNetworkConnector.java:80)</span><br><span class="line">        at org.eclipse.jetty.server.ServerConnector.doStart(ServerConnector.java:234)</span><br><span class="line">        at org.eclipse.jetty.util.component.AbstractLifeCycle.start(AbstractLifeCycle.java:72)</span><br><span class="line">        at org.eclipse.jetty.server.Server.doStart(Server.java:386)</span><br><span class="line">        at org.eclipse.jetty.util.component.AbstractLifeCycle.start(AbstractLifeCycle.java:72)</span><br><span class="line">        at winstone.Launcher.&lt;init&gt;(Launcher.java:182)</span><br><span class="line">Caused: java.io.IOException: Failed to start Jetty</span><br><span class="line">        at winstone.Launcher.&lt;init&gt;(Launcher.java:184)</span><br><span class="line">        at winstone.Launcher.main(Launcher.java:355)</span><br><span class="line">        at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)</span><br><span class="line">        at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:62)</span><br><span class="line">        at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)</span><br><span class="line">        at java.lang.reflect.Method.invoke(Method.java:498)</span><br><span class="line">        at Main._main(Main.java:375)</span><br><span class="line">        at Main.main(Main.java:151)</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+
+</li>
+</ol>
+<p>查看是哪个进程将 端口占用了</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line">VM-0-11-ubuntu# netstat -tnlp</span><br><span class="line">Active Internet connections (only servers)</span><br><span class="line">Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID&#x2F;Program name</span><br><span class="line">tcp        0      0 127.0.0.1:43265         0.0.0.0:*               LISTEN      2595&#x2F;node</span><br><span class="line">tcp        0      0 0.0.0.0:111             0.0.0.0:*               LISTEN      1&#x2F;init</span><br><span class="line">tcp        0      0 0.0.0.0:80              0.0.0.0:*               LISTEN      985&#x2F;nginx: master p</span><br><span class="line">tcp        0      0 0.0.0.0:6000            0.0.0.0:*               LISTEN      944&#x2F;sshd: &#x2F;usr&#x2F;sbin</span><br><span class="line">tcp        0      0 192.168.122.1:53        0.0.0.0:*               LISTEN      1712&#x2F;dnsmasq</span><br><span class="line">tcp        0      0 10.0.3.1:53             0.0.0.0:*               LISTEN      1111&#x2F;dnsmasq</span><br><span class="line">tcp        0      0 0.0.0.0:21              0.0.0.0:*               LISTEN      862&#x2F;vsftpd</span><br><span class="line">tcp        0      0 127.0.0.53:53           0.0.0.0:*               LISTEN      781&#x2F;systemd-resolve</span><br><span class="line">tcp        0      0 127.0.0.1:38551         0.0.0.0:*               LISTEN      860&#x2F;containerd</span><br><span class="line">tcp        0      0 0.0.0.0:25              0.0.0.0:*               LISTEN      2367&#x2F;master</span><br><span class="line">tcp        0      0 127.0.0.1:6010          0.0.0.0:*               LISTEN      2974&#x2F;sshd: ubuntu@p</span><br><span class="line">tcp6       0      0 :::12865                :::*                    LISTEN      955&#x2F;netserver</span><br><span class="line">tcp6       0      0 :::111                  :::*                    LISTEN      1&#x2F;init</span><br><span class="line">tcp6       0      0 :::8080                 :::*                    LISTEN      10483&#x2F;java</span><br><span class="line">tcp6       0      0 :::80                   :::*                    LISTEN      985&#x2F;nginx: master p</span><br><span class="line">tcp6       0      0 :::25                   :::*                    LISTEN      2367&#x2F;master</span><br><span class="line">VM-0-11-ubuntu# ps -aux | grep 10483</span><br><span class="line">tomcat     10483 20.1  6.1 2411244 125152 ?      Ssl  16:44   0:08 &#x2F;usr&#x2F;lib&#x2F;jvm&#x2F;java-8-openjdk-amd64&#x2F;bin&#x2F;java -Djava.util.logging.config.file&#x3D;&#x2F;var&#x2F;lib&#x2F;tomcat9&#x2F;conf&#x2F;logging.properties -Djava.util.logging.manager&#x3D;org.apache.juli.ClassLoaderLogManager -Djava.awt.headless&#x3D;true -Djdk.tls.ephemeralDHKeySize&#x3D;2048 -Djava.protocol.handler.pkgs&#x3D;org.apache.catalina.webresources -Dorg.apache.catalina.security.SecurityListener.UMASK&#x3D;0027 -Dignore.endorsed.dirs&#x3D; -classpath &#x2F;usr&#x2F;share&#x2F;tomcat9&#x2F;bin&#x2F;bootstrap.jar:&#x2F;usr&#x2F;share&#x2F;tomcat9&#x2F;bin&#x2F;tomcat-juli.jar -Dcatalina.base&#x3D;&#x2F;var&#x2F;lib&#x2F;tomcat9 -Dcatalina.home&#x3D;&#x2F;usr&#x2F;share&#x2F;tomcat9 -Djava.io.tmpdir&#x3D;&#x2F;tmp org.apache.catalina.startup.Bootstrap start</span><br><span class="line">root       10690  0.0  0.0   6300   672 pts&#x2F;3    S+   16:44   0:00 grep 10483</span><br></pre></td></tr></table></figure>
+<p>最后将他干掉就好了</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">3045  2022-01-07 16:37:22 sudo service jenkins restart</span><br><span class="line">3046  2022-01-07 16:37:26 sudo service jenkins status</span><br><span class="line">3062  2022-01-07 16:42:38 sudo service tomcat stop</span><br></pre></td></tr></table></figure>
+
+<p>EBLEBUWTMOXNVAMC</p>
+<p>比较方便的是</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">lsof -i:80</span><br></pre></td></tr></table></figure>
+
+<ol start="104">
+<li>单独编译内核某个文件<br>前提 ./out 目录下 .config文件存在</li>
+</ol>
+<p>编译成为 .s文件</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">makeARCH&#x3D;arm64 CROSS_COMPILE&#x3D;&#x2F;usr&#x2F;bin&#x2F;aarch64-linux-gnu- kernel&#x2F;sched&#x2F;core_ctl.s O&#x3D;.&#x2F;out&#x2F;</span><br></pre></td></tr></table></figure>
+
+
+<p>编译成为 .o文件, 还可以使用 objdump 来查看 函数的反汇编，在一些场景的优化下比较重要</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">make ARCH&#x3D;arm64 CROSS_COMPILE&#x3D;&#x2F;usr&#x2F;bin&#x2F;aarch64-linux-gnu- kernel&#x2F;sched&#x2F;core_ctl.o O&#x3D;.&#x2F;out&#x2F;</span><br><span class="line">objdump -d kernel&#x2F;sched&#x2F;core_ctl.o</span><br></pre></td></tr></table></figure>
+
+<p>说到优化，就必须要说 内核的 gcc 编译优化等级了，在 Makefile 中</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">ifdef CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE</span><br><span class="line">KBUILD_CFLAGS +&#x3D; -O2</span><br><span class="line">else ifdef CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE_O3</span><br><span class="line">KBUILD_CFLAGS +&#x3D; -O3</span><br><span class="line">else ifdef CONFIG_CC_OPTIMIZE_FOR_SIZE</span><br><span class="line">KBUILD_CFLAGS +&#x3D; -Os</span><br><span class="line">endif</span><br></pre></td></tr></table></figure>
+<p>如果需要改 优化等级，直接在这里 hard code 修改为 <code>-O0</code> or <code>-O1</code> or <code>-O2</code></p>
+<ol start="105">
+<li>各个手机厂商开源的手机镜像<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line">三星：</span><br><span class="line">https:&#x2F;&#x2F;opensource.samsung.com&#x2F;projects</span><br><span class="line"></span><br><span class="line">小米:</span><br><span class="line">device tree:  https:&#x2F;&#x2F;github.com&#x2F;MiCode&#x2F;kernel_devicetree&#x2F;tree&#x2F;umi-q-oss</span><br><span class="line">kernel: https:&#x2F;&#x2F;github.com&#x2F;MiCode&#x2F;Xiaomi_Kernel_OpenSource</span><br><span class="line"></span><br><span class="line">华为:</span><br><span class="line">https:&#x2F;&#x2F;consumer.huawei.com&#x2F;en&#x2F;opensource&#x2F;detail&#x2F;?siteCode&#x3D;worldwide&amp;productCode&#x3D;Smartphones&amp;fileType&#x3D;openSourceSoftware&amp;pageSize&#x3D;10&amp;curPage&#x3D;1</span><br><span class="line"></span><br><span class="line">oppo:</span><br><span class="line">https:&#x2F;&#x2F;github.com&#x2F;oppo-source&#x2F;FindX2</span><br><span class="line"></span><br><span class="line">vivo:</span><br><span class="line">https:&#x2F;&#x2F;opensource.vivo.com&#x2F;Project</span><br><span class="line"></span><br><span class="line">Qcom codeaurora:</span><br><span class="line">https:&#x2F;&#x2F;www.codeaurora.org&#x2F;</span><br><span class="line">https:&#x2F;&#x2F;source.codeaurora.org&#x2F;quic&#x2F;la&#x2F;kernel&#x2F;common&#x2F;</span><br><span class="line"></span><br><span class="line">MTK fpsgo 代码</span><br><span class="line">https:&#x2F;&#x2F;github.com&#x2F;oppo-source&#x2F;android_kernel_oppo_mt6833&#x2F;tree&#x2F;oppo&#x2F;mt6833_s_12.1_oppo_k10_5g&#x2F;drivers&#x2F;misc&#x2F;mediatek&#x2F;performance&#x2F;fpsgo_v3</span><br></pre></td></tr></table></figure>
+
+
+</li>
+</ol>
+<p>Oplus:<br><a target="_blank" rel="noopener" href="https://github.com/OnePlusOSS">https://github.com/OnePlusOSS</a></p>
+<ol start="107">
+<li><p>博客</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">https:&#x2F;&#x2F;xinqiu.gitbooks.io&#x2F;linux-inside-zh&#x2F;content&#x2F;SyncPrim&#x2F;linux-sync-6.html</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>ubuntu删除旧版本内核image<br>查看机器安装过哪些版本image</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">ubuntu@zeku_server:&#x2F;usr&#x2F;sbin $ dpkg -l | grep linux-image-</span><br><span class="line">ii  linux-image-5.11.0-22-generic              5.11.0-22.23                               amd64        Signed kernel image generic</span><br><span class="line">ii  linux-image-5.11.0-25-generic              5.11.0-25.27                               amd64        Signed kernel image generic</span><br><span class="line">ii  linux-image-5.11.0-38-generic              5.11.0-38.42                               amd64        Signed kernel image generic</span><br><span class="line">ii  linux-image-5.13.0-20-generic              5.13.0-20.20                               amd64        Signed kernel image generic</span><br><span class="line">ii  linux-image-5.13.0-21-generic              5.13.0-21.21                               amd64        Signed kernel image generic</span><br><span class="line">ii  linux-image-5.13.0-22-generic              5.13.0-22.22                               amd64        Signed kernel image generic</span><br><span class="line">iU  linux-image-5.13.0-27-generic              5.13.0-27.29                               amd64        Signed kernel image generic</span><br><span class="line">rc  linux-image-5.4.0-71-generic               5.4.0-71.79                                amd64        Signed kernel image generic</span><br><span class="line">rc  linux-image-5.4.0-72-generic               5.4.0-72.80                                amd64        Signed kernel image generic</span><br><span class="line">iU  linux-image-generic                        5.13.0.27.37                               amd64        Generic Linux kernel image</span><br><span class="line">ubuntu@zeku_server:&#x2F;usr&#x2F;sbin $</span><br></pre></td></tr></table></figure>
+<p>rc表示软件包已经删除（Removed），但配置文件（Config-files）还在．ii表示已经安装（Installed）．<br>可以用</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo apt-get purge linux-image-5.13.0-21-generic</span><br></pre></td></tr></table></figure>
+<p>删除已经安装的image</p>
+</li>
+<li><p>linux &amp;&amp; windows拆分合并大文件<br>windows需要</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">split trace.html -b 40m &amp;&amp; tail -10 trace.html  &gt; tail.html &amp;&amp; cat xaa tail.html &gt; new.html</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>安卓过滤前台进程</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">logcat -b events | grep on_resume</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<p>安卓过滤前台进程之后，logcat退出，不阻塞当前shell</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">logcat -d -b events | grep on_resume</span><br></pre></td></tr></table></figure>
+
+
+<ol start="111">
+<li><p>安卓logcat 过滤某个tag的log</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">logcat *:S powerhal-libperfmgr</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>安卓批量安装apk</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"># 使用应用宝下载apk，它可以保存apk文件</span><br><span class="line">&#x2F;sdcard&#x2F;Android&#x2F;data&#x2F;com.tencent.android.qqdownloader&#x2F;files&#x2F;tassistant&#x2F;apk&#x2F;</span><br><span class="line"></span><br><span class="line"># 先压缩再pull</span><br><span class="line">adb shell &quot;tar -jcvf &#x2F;sdcard&#x2F;Android&#x2F;data&#x2F;com.tencent.android.qqdownloader&#x2F;files&#x2F;tassistant&#x2F;apk.tar.gz &#x2F;sdcard&#x2F;Android&#x2F;data&#x2F;com.tencent.android.qqdownloader&#x2F;files&#x2F;tassistant&#x2F;apk&quot;</span><br><span class="line">adb pull &#x2F;&#x2F;sdcard&#x2F;Android&#x2F;data&#x2F;com.tencent.android.qqdownloader&#x2F;files&#x2F;tassistant&#x2F;apk.tar.gz .&#x2F;</span><br><span class="line"></span><br><span class="line"># 直接 pull</span><br><span class="line">adb shell &quot;tar -jcvf &#x2F;sdcard&#x2F;Android&#x2F;data&#x2F;com.tencent.android.qqdownloader&#x2F;files&#x2F;tassistant&#x2F;apk</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"># 遍历目录安装</span><br><span class="line">for i in &#96;ls .&#x2F;&#96;; do</span><br><span class="line">  adb install -r &quot;$&#123;i&#125;&quot;</span><br><span class="line">done</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+</li>
+<li><p>echo 不换行</p>
+</li>
+</ol>
+<p><code>echo -n &quot;abc&quot; &amp;&amp; echo adf</code></p>
+<ol start="114">
+<li>如何在 hexo markdown 文件中插入图片</li>
+</ol>
+<p><a target="_blank" rel="noopener" href="https://iworld2u.com/2020/03/02/How-to-insert-images-in-hexo/">方法</a></p>
+<p>使用MarkDown中<code>![](/images/image.jpg)</code>的方式访问使用</p>
+<ol start="115">
+<li><p>CONFIG_COMPAT 含义</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">CONFIG_COMPAT －－－－－是否支持64 bit kernel上运行32bit 的application</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>System V 信号量 和 POSIX 信号量区别</p>
+</li>
+</ol>
+<p>System V它最初由AT&amp;T开发，曾经也被称为AT&amp;T System V，是Unix操作系统众多版本中的一支。在1983年第一次发布，一共发行了4个System V的主要版本，System V Release4，或者称为SVR4，是最成功的版本，该版本有些风格成为一些UNIX共同特性的源头，如下表格的初始化脚本/etc/init.d。用来控制系统的启动和关闭。<br>System v信号量测试基于内核的，它放在内核里面，要使用System V信号量需要进入内核态，所以在多线程编程中一般不建议使用System V信号量，因为线程相对于进程是轻量级的，从操作系统的调度开销角度看，如果使用System V信号量会使得每次调用都要进入内核态，丧失了线程的轻量优势。当我们讨论“System v信号量”时，所指的是计数信号量集。</p>
+<p>Posix是Portable Operating System Interface(可移植性操作系统接口)的简称，是一个电气与电子工程学会即IEEE开发的一系列标准，目的是为运行在不同操作系统的应用程序提供统一的接口，实现者是不同的操作系统内核。<br>Posix信号量是基于内存的，即信号量值是放在共享内存中的，它使与文件系统中的路径名对应的名字来标识。当我们谈论“Posix 信号量”时，所指的是单个计数信号量。在Linux操作系统中，Posix信号量(共享内存、消息队列)可以通过ipcs命令查看。Posix信号量多用于进程间通信。</p>
+<p>参考<a target="_blank" rel="noopener" href="https://blog.csdn.net/qq_29344757/article/details/78657874">Unix/Linux的System V、BSD、Posix概念</a></p>
+<ol start="117">
+<li>代码覆盖率统计方法<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">1. 在gcc编译代码时增加参数gcov</span><br><span class="line">2. 使用gtest写ut用例，构造不同的参数，争取跑到函数中每个分支</span><br><span class="line">3. 使用gcov还原代码执行过程，生成代码执行分析文件.html</span><br></pre></td></tr></table></figure>
+
+
+
+</li>
+</ol>
+<ol start="118">
+<li>下载 <code>pixel6 kernel</code> 代码<br>a. <a target="_blank" rel="noopener" href="https://source.android.com/setup/build/building-kernels#fromHistory">https://source.android.com/setup/build/building-kernels#fromHistory</a><br>按照这个源来，但是 实际需要 切换源。</li>
+</ol>
+<p>b. <a target="_blank" rel="noopener" href="https://mirrors.tuna.tsinghua.edu.cn/help/AOSP/">https://mirrors.tuna.tsinghua.edu.cn/help/AOSP/</a> 这是清华的 源</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">注意: 本镜像是 AOSP 镜像，Android SDK因版权原因，我们不能提供镜像服务。</span><br><span class="line"></span><br><span class="line">可访问 https:&#x2F;&#x2F;cs.android.com 或 https:&#x2F;&#x2F;github.com&#x2F;aosp-mirror 在线搜索及浏览 AOSP 源码。</span><br><span class="line"></span><br><span class="line">参考 Google 教程 https:&#x2F;&#x2F;source.android.com&#x2F;setup&#x2F;build&#x2F;downloading， 将 https:&#x2F;&#x2F;android.googlesource.com&#x2F; 全部使用 https:&#x2F;&#x2F;mirrors.tuna.tsinghua.edu.cn&#x2F;git&#x2F;AOSP&#x2F; 代替即可。</span><br></pre></td></tr></table></figure>
+
+<p>实际命令</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">repo init -u https:&#x2F;&#x2F;mirrors.tuna.tsinghua.edu.cn&#x2F;git&#x2F;AOSP&#x2F;kernel&#x2F;manifest -b android-gs-raviole-5.10-android12L</span><br></pre></td></tr></table></figure>
+
+<p>需要注意环境变量</p>
+<ol start="119">
+<li>.repo 文件非常大</li>
+</ol>
+<p>在 .repo 目录下执行</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">先查看</span><br><span class="line">find . -name &quot;*pack&quot; -type f |xargs -I &#123;&#125; du -s &#123;&#125;|sort -k 1 -n|tail -10|awk &#39;&#123;print $2&#125;&#39;| xargs rm</span><br><span class="line"></span><br><span class="line">再删除</span><br><span class="line">find . -name &quot;*pack&quot; -type f |xargs -I &#123;&#125; du -s &#123;&#125;|sort -k 1 -n|tail -10|awk &#39;&#123;print $2&#125;&#39;| xargs rm</span><br></pre></td></tr></table></figure>
+
+
+<p>参考<a target="_blank" rel="noopener" href="https://blog.csdn.net/linglaoli/article/details/80083877">删除repo中大文件</a></p>
+<ol start="120">
+<li>arm training 培训地址</li>
+</ol>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">https:&#x2F;&#x2F;arm.fuseuniversal.com&#x2F;learning&#x2F;plans</span><br></pre></td></tr></table></figure>
+
+
+
+
+<ol start="121">
+<li>docker root权限 和 共享文件夹</li>
+</ol>
+<p>docker</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">docker run -it --privileged -v &#x2F;var&#x2F;lib&#x2F;jenkins&#x2F;workspace&#x2F;tmp:&#x2F;BiscuitOS&#x2F;tmp&#x2F; --name my_biscuitos biscuitos-docker:latest</span><br></pre></td></tr></table></figure>
+
+
+
+<ol start="122">
+<li>减少 aarch64 ubuntu image大小</li>
+</ol>
+<ol start="123">
+<li>ubuntu 启动时间优化<br>在使用 arm64 ubuntu debug kernel 过程中我遇到了 由于ubuntu 启动服务过多，导致ubuntu 从开机进入shell 需要 <code>90s</code> 的尴尬事情。<br>后面为了提高效率 将很多服务进行 stop，我们这里进行的优化主要是 systemd 启动服务的时间。</li>
+</ol>
+<ul>
+<li><p>首先查看所有服务耗时</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">systemd-analyze blame</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>将耗时过长的服务，且不影响我们debug的服务进行 disable，永久停用</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">systemctl disable</span><br></pre></td></tr></table></figure>
+
+
+</li>
+</ul>
+<ol start="124">
+<li>youtube 双字幕<br>看youtube 视频可以使用 <code>YouTube™ 双字幕</code> 这个插件，有自带翻译功能。<br>chrome 也有一个自带的 实时字幕功能， 通过 <code>chrome://settings/accessibility</code> 就可以关闭打开。</li>
+</ol>
+<ol start="125">
+<li>CSV/TSV/PSV 格式</li>
+</ol>
+<ol start="126">
+<li>vscode 查询一串 hex 字符串 的string 内容<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Hex Util</span><br></pre></td></tr></table></figure>
+
+
+
+</li>
+</ol>
+<ol start="127">
+<li>gdb无法单步调试</li>
+</ol>
+<p>使用gdb调试单步程序时如果打印提示“single stepping until exit from function xxx,which has no line number information”，可能的原因有两个：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">1 编译源文件时没有加-g选项；(二进制炸弹 遇到了)</span><br><span class="line"></span><br><span class="line">2 gcc与gdb版本不兼容，通常是由于手工对gcc程序进行了升级，导致现有gdb程序版本过旧，比如gcc升级到4.8版本，gdb仍为旧的7.2版本。此时需要下载新版gdb源码包(7.8版本可行)，手工升级gdb。</span><br></pre></td></tr></table></figure>
+
+<ol start="128">
+<li>google 浏览器插件<br>值得装的是</li>
+</ol>
+<ul>
+<li><code>uBlacklist</code>: 直接屏蔽一个网站，我是把 csdn.net给屏蔽了</li>
+<li><code>YouTube™ 双字幕</code>: youtube 视频翻译</li>
+<li><code>Adblock Plus - 免费的广告拦截器</code>:  拦截广告</li>
+<li><code>Vimium</code>: vim操作</li>
+</ul>
+<ol start="129">
+<li>shell 函数捕捉 <code>ctrl + c</code><br>trap 是 shell 提供的一个 信号函数<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">trap &#39;rm $JENKINS_RUNNING_FILE; exit 1&#39; INT</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<p><code>trap -l</code> 可以列出总共的 <code>SIGNAL</code></p>
+<ol start="130">
+<li>在我的 jenkins 编译平台上经常会出现<br><code>.config:129:warning: symbol value &#39;m&#39; invalid for SCHED_CORE</code> warning。<br>这种 warning 主要是由于默认的 <code>.config</code> 中设置为了<code>m</code>,<br>但是 CONFIG_SCHED_CORE 只能配置为 y or n, 并不支持配置为 m<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">CONFIG_SCHED_CORE&#x3D;m</span><br></pre></td></tr></table></figure>
+改为<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">CONFIG_SCHED_CORE is not set</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<p>就不会报错了</p>
+<p>在 <code>kernel/Kconfig.preempt</code> 文件中</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">config SCHED_CORE</span><br><span class="line">	bool &quot;Core Scheduling for SMT&quot;</span><br></pre></td></tr></table></figure>
+
+
+<ol start="131">
+<li>host主机上 docker 不用 sudo权限就能看大部分文件<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo chmod 777 &#x2F;var&#x2F;run&#x2F;docker.sock</span><br></pre></td></tr></table></figure>
+
+
+</li>
+</ol>
+<ol start="132">
+<li>biscuitos 的 docker构建<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">wget https:&#x2F;&#x2F;raw.githubusercontent.com&#x2F;BiscuitOS&#x2F;BiscuitOS&#x2F;Stable_long&#x2F;scripts&#x2F;Docker&#x2F;build.sh</span><br><span class="line">chmod 777 build.sh &amp;&amp; .&#x2F;build.sh</span><br></pre></td></tr></table></figure>
+
+
+
+
+</li>
+</ol>
+<ol start="133">
+<li>qemu 虚拟机和host主机共享文件<br>a. 9p 网络文件系统方案</li>
+</ol>
+<p>b. 共享挂载磁盘方案<br><a target="_blank" rel="noopener" href="https://blog.csdn.net/u011164819/article/details/121539326">https://blog.csdn.net/u011164819/article/details/121539326</a></p>
+<ol start="134">
+<li><p>ubuntu-base 构建最小qemu系统<br>通过 <code>ubuntu-base</code> 来构建</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">http:&#x2F;&#x2F;cdimage.ubuntu.com&#x2F;ubuntu-base&#x2F;releases&#x2F;jammy&#x2F;release&#x2F;</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>last_kmsg 实现</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">mv last_kmsg.5  last_kmsg.6</span><br><span class="line">mv last_kmsg.4  last_kmsg.5</span><br><span class="line">mv last_kmsg.3  last_kmsg.4</span><br><span class="line">mv last_kmsg.2  last_kmsg.3</span><br><span class="line">mv last_kmsg.1  last_kmsg.2</span><br><span class="line">mv last_kmsg    last_kmsg.1</span><br><span class="line"></span><br><span class="line">dmesg &gt; &#x2F;tmp&#x2F;log&#x2F;kmsg</span><br></pre></td></tr></table></figure>
+
+
+</li>
+</ol>
+<ol start="136">
+<li><p>kthread 设置cpu 亲和性</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">void kthread_bind(struct task_struct *p, unsigned int cpu);</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>gdb-multiarch debug vmlinux 设置源码(source code) 目录</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">dir ~&#x2F;Documents&#x2F;glibc-2.28&#x2F;build</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>新建的docker image如何限制资源</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo docker run -it --privileged --name my_ubuntu_01  --cpus&#x3D;2  -m 1024M ubuntu:latest &#x2F;bin&#x2F;bash</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>查看 某个函数的调用栈</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo bpftrace -e &#39;kprobe:wakeup_softirqd &#123; @[kstack] &#x3D; count(); &#125;&#39;</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>如何回复一个和自己无关的社区邮件<br>在这个网址找到一个patch</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">https:&#x2F;&#x2F;lore.kernel.org&#x2F;all&#x2F;164733306005.16921.3541059674681362392.tip-bot2@tip-bot2&#x2F;</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<p>其中写明了如何回复这个邮件</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">git send-email \</span><br><span class="line">    --in-reply-to&#x3D;164733306005.16921.3541059674681362392.tip-bot2@tip-bot2 \</span><br><span class="line">    --to&#x3D;tip-bot2@linutronix.de \</span><br><span class="line">    --cc&#x3D;linux-kernel@vger.kernel.org \</span><br><span class="line">    --cc&#x3D;linux-tip-commits@vger.kernel.org \</span><br><span class="line">    --cc&#x3D;mingo@kernel.org \</span><br><span class="line">    --cc&#x3D;peterz@infradead.org \</span><br><span class="line">    --cc&#x3D;x86@kernel.org \</span><br><span class="line">    --subject&#x3D;&#39;Re: [tip: sched&#x2F;core] sched&#x2F;headers: Introduce kernel&#x2F;sched&#x2F;build_utility.c and build multiple .c files there&#39; \</span><br><span class="line">    &#x2F;path&#x2F;to&#x2F;YOUR_REPLY</span><br></pre></td></tr></table></figure>
+
+<p>新发送一个邮件</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">git send-email &#x2F;home&#x2F;ubuntu&#x2F;workspace&#x2F;kvmtool&#x2F;0001-update_headers.sh-Remove-arm-architecture.patch --to&#x3D;sh_def@163.com</span><br></pre></td></tr></table></figure>
+
+<ol start="141">
+<li>zeku qemu 虚拟机密码<br>x86<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">rlk:123</span><br><span class="line">ubuntu:hjkl</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<p>arm64</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">rlk:123</span><br><span class="line">ubuntu:hjkl</span><br></pre></td></tr></table></figure>
+
+<ol start="142">
+<li><p>/sys/kernel/debug 目录是空的</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">mount -t debugfs debugfs &#x2F;sys&#x2F;kernel&#x2F;debug</span><br><span class="line">mkdir &#x2F;sys&#x2F;kernel&#x2F;debug&#x2F;tracing</span><br><span class="line">mount -t tracefs tracefs &#x2F;sys&#x2F;kernel&#x2F;debug&#x2F;tracing</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>adb 常用命令<br><code>https://www.jianshu.com/p/0693b841c83b</code></p>
+</li>
+</ol>
+<ol start="143">
+<li>PS1 定制<br><a target="_blank" rel="noopener" href="https://scriptim.github.io/bash-prompt-generator/">https://scriptim.github.io/bash-prompt-generator/</a></li>
+</ol>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">function parse_root() &#123;</span><br><span class="line">        echo &#96;pwd&#96; | sed &#39;s?&#x2F;remote&#x2F;swg&#x2F;users&#x2F;hsu&#x2F;?~&#x2F;?&#39;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">PS1&#x3D;&#39;\[\e[0;38;5;215m\][\[\e[0;1;4;38;5;173m\]$(git branch 2&gt;&#x2F;dev&#x2F;null | grep &#39;&quot;&#39;&quot;&#39;^*&#39;&quot;&#39;&quot;&#39; | colrm 1 2)\[\e[0;38;5;215m\]]\[\e[0m\] \[\e[0;1;38;5;76m\]\t\[\e[0m\] hsu\[\e[0m\]@\[\e[0m\]zeku \[\e[0;1;2m\]&#96;parse_root&#96;\[\e[0m\] \[\e[0;38;5;160m\]$\[\e[0m\] \[\e[0m\]&#39;</span><br></pre></td></tr></table></figure>
+
+<ol start="144">
+<li><p>大小核简称</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">silver: 小核</span><br><span class="line">gold: 大核</span><br><span class="line">prime: 超大核</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>adeb<br>adeb又名androdeb，旨在Android手机上搭建了一个基于adb shell命令行的debian操作系统环境，使我们能够直接在Android下运行主流Linux的命令行工具，更加快捷有效地对Android系统进行tracing、debugging、editing … 基于adeb，我们可以利用传统Linux下强大的eBPF相关工具，轻松应对各种kernel诊断及分析。</p>
+</li>
+</ol>
+<p><a target="_blank" rel="noopener" href="https://github.com/joelagnel/adeb">https://github.com/joelagnel/adeb</a><br><a target="_blank" rel="noopener" href="https://android.googlesource.com/platform/external/adeb/">https://android.googlesource.com/platform/external/adeb/</a></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">git clone https:&#x2F;&#x2F;github.com&#x2F;joelagnel&#x2F;adeb</span><br><span class="line">cd adeb</span><br><span class="line">sudo ln -s $(pwd)&#x2F;adeb &#x2F;usr&#x2F;bin&#x2F;adeb</span><br><span class="line">adb root</span><br><span class="line">adeb prepare</span><br><span class="line">adeb prepare --full</span><br><span class="line">adeb shell</span><br></pre></td></tr></table></figure>
+
+<p>进到 adeb 中去之后</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">apt update</span><br><span class="line">apt upgrade</span><br><span class="line">apt install bpftrace</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+
+
+<ol start="146">
+<li>guestfish kvm 管理工具<br>在宿主机和kvm虚拟机中实现文件传输，类似 docker与宿主机之间<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"></span><br></pre></td></tr></table></figure>
+
+
+</li>
+</ol>
+<ol start="147">
+<li>通过 inode 找到 filename<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">find  -inum 9787 2&gt; &#x2F;dev&#x2F;null</span><br></pre></td></tr></table></figure>
+
+
+</li>
+</ol>
+<ol start="148">
+<li>查看系统中线程数量<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">top -H</span><br></pre></td></tr></table></figure>
+内核栈大小:<br>KernelStack = thread_num * 16kb</li>
+</ol>
+<ol start="149">
+<li>bpftrace 不能使用，缺少 symbols<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo apt-get install bpftrace-dbgsym</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<p>参考<a target="_blank" rel="noopener" href="https://zhuanlan.zhihu.com/p/576186351">为 Ubuntu (22.04, jammy) 添加系统调试信息</a></p>
+<ol start="150">
+<li>中断栈、内核栈、用户栈 是否独立<br>用户栈都是独立的，与内核栈相独立<br>arm32: 内核栈与中断栈是一起的<br>arm64：内核栈与中断栈相独立<br>x86：内核栈与中断栈相独立</li>
+</ol>
+<p>如何获取 <code>中断栈</code> 信息？<br><code>arch/arm64/include/asm/stacktrace.h</code> 中</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">stackinfo_get_irq();</span><br><span class="line">stackinfo_get_task();</span><br></pre></td></tr></table></figure>
+
+
+
+<ol start="150">
+<li>在中断中为什么不能睡眠 or 调度<br>中断上下文中 current 指向被中断的进程，但是current和当前中断上下文无任何关系。<br>如果在中断上下文中 进行睡眠或者调度，那么在执行完其他进程之后，cpu无法返回中断现场，<br>会导致当前处理的中断有问题，然后后续中断栈被浪费掉几个栈帧。</li>
+</ol>
+<ol start="151">
+<li><p>linux 小版本发布 release note<br>地址在：<br><a target="_blank" rel="noopener" href="https://kernelnewbies.org/Linux_6.1">https://kernelnewbies.org/Linux_6.1</a><br>每个版本在后面添加 banben号</p>
+</li>
+<li><p>树莓派版本区别</p>
+</li>
+</ol>
+<ol start="153">
+<li>armv8 qemu smp 裸机启动<br>github： <a target="_blank" rel="noopener" href="https://github.com/duanev/pgdb/tree/fdefdbe043dff15fe1069daf6852ea417bed6415/examples/qemu/aarch64/smp">https://github.com/duanev/pgdb/tree/fdefdbe043dff15fe1069daf6852ea417bed6415/examples/qemu/aarch64/smp</a></li>
+</ol>
+<ol start="154">
+<li>crontab 支持定时任务<br>crontab -e 来修改 用户的 crontab 文件<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">30 5 * * * stress -c 1</span><br></pre></td></tr></table></figure>
+每天早上凌晨 5：30 执行 stress -c 1</li>
+</ol>
+<ol start="155">
+<li>rootfs 格式与 cpio.gz 格式区别</li>
+</ol>
+<p>rootfs打包、修改： 需要root权限，然后mount到一个目录，做修改，然后umount。<br>cpio.gz 打包修改：不需要root权限，直有 cpio tools 做修改。</p>
+<ol start="156">
+<li><p>git status 显示中文乱码</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">git config --global core.quotepath false</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>好的博客推荐</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">+ https:&#x2F;&#x2F;wangzhou.github.io&#x2F;Linux%E9%80%8F%E6%98%8E%E5%A4%A7%E9%A1%B5-THP-%E5%88%86%E6%9E%90&#x2F;</span><br><span class="line">+ https:&#x2F;&#x2F;github.com&#x2F;GaoleiBai&#x2F;linux-learning&#x2F;tree&#x2F;master  --各个驱动开发笔记</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>ubuntu安装调试符号<br>参考<a target="_blank" rel="noopener" href="https://www.cnblogs.com/pengdonglin137/articles/16295482.html">给ubuntu安装调试符号（符号表）和源码</a></p>
+</li>
+</ol>
+<p><a target="_blank" rel="noopener" href="https://launchpad.net/ubuntu/oracular/+search?text=6.11.0-9-generic-dbgsym">https://launchpad.net/ubuntu/oracular/+search?text=6.11.0-9-generic-dbgsym</a></p>
+</article>
+<div class="article-footer">
+    <section id="license">
+      <div class="header"><span>许可协议</span></div>
+      <div class="body"><p>本文采用 <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">署名-非商业性使用-相同方式共享 4.0 国际</a> 许可协议，转载请注明出处。</p>
+</div>
+    </section>
+    
+
+</div>
+
+<div class="related-wrap" id="read-next"><section class="body"><div class="item" id="prev"><div class="note">较新文章</div><a href="/2020/09/13/%E5%86%85%E6%A0%B8%E8%A7%82%E6%B5%8B/%E6%80%A7%E8%83%BD%E7%A8%B3%E5%AE%9A%E6%80%A7/60s%E5%AE%9A%E4%BD%8D%E5%86%85%E6%A0%B8%E6%80%A7%E8%83%BD%E7%93%B6%E9%A2%88/">60s定位内核性能瓶颈</a></div><div class="item" id="next"><div class="note">较早文章</div><a href="/2020/09/12/%E7%94%A8%E6%88%B7%E7%A9%BA%E9%97%B4/vdso/">vdso</a></div></section></div>
+
+
+
+
+
+
+<footer class="page-footer footnote"><hr><div class="text"><p>本站由 <a href="/">Su Hui</a> 使用 <a target="_blank" rel="noopener" href="https://github.com/xaoxuu/hexo-theme-stellar/tree/1.33.1">Stellar 1.33.1</a> 主题创建。<br>本博客所有文章除特别声明外，均采用 <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> 许可协议，转载请注明出处。</p>
+</div></footer>
+<div class="main-mask" onclick="sidebar.dismiss()"></div></div><aside class="l_right">
+</aside><div class='float-panel'>
+  <button type='button' style='display:none' class='laptop-only rightbar-toggle mobile' onclick='sidebar.rightbar()'>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h11m-11 6h11m-11 6h11M4 6h1v4m-1 0h2m0 8H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>
+  </button>
+  <button type='button' style='display:none' class='mobile-only leftbar-toggle mobile' onclick='sidebar.leftbar()'>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 11c0-3.771 0-5.657 1.172-6.828C4.343 3 6.229 3 10 3h4c3.771 0 5.657 0 6.828 1.172C22 5.343 22 7.229 22 11v2c0 3.771 0 5.657-1.172 6.828C19.657 21 17.771 21 14 21h-4c-3.771 0-5.657 0-6.828-1.172C2 18.657 2 16.771 2 13z"/><path id="sep" stroke-linecap="round" d="M5.5 10h6m-5 4h4m4.5 7V3"/></g></svg>
+  </button>
+</div>
+</div><div class="scripts">
+
+
+<script type="text/javascript">
+  window.canonical = {"originalHost":null,"officialHosts":["localhost"],"encoded":""};
+  const ctx = {
+    date_suffix: {
+      just: `刚刚`,
+      min: `分钟前`,
+      hour: `小时前`,
+      day: `天前`,
+    },
+    root : `/`,
+    tag_plugins: {
+      chat: Object.assign({"api":"https://siteinfo.listentothewind.cn/api/v1"}),
+    }
+  };
+
+  // required plugins (only load if needs)
+  if (`local_search`) {
+    ctx.search = {};
+    ctx.search.service = `local_search`;
+    if (ctx.search.service == 'local_search') {
+      let service_obj = Object.assign({}, `{"field":"all","path":"/search.json","content":true,"skip_search":null,"sort":"-date"}`);
+      ctx.search[ctx.search.service] = service_obj;
+    }
+  }
+  const def = {
+    avatar: `https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/avatar/round/3442075.svg`,
+    cover: `https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/cover/76b86c0226ffd.svg`,
+    loading: `https://api.iconify.design/eos-icons:three-dots-loading.svg?color=%231cd0fd`,
+  };
+  const deps = {
+    jquery: `https://gcore.jsdelivr.net/npm/jquery@3.7/dist/jquery.min.js`,
+    marked: `https://gcore.jsdelivr.net/npm/marked@13.0/lib/marked.umd.min.js`,
+    lazyload: `/%5Bobject%20Object%5D`
+  }
+  
+
+</script>
+
+<script type="text/javascript">
+  
+  function RunItem() {
+    this.list = []; // 存放回调函数
+    this.start = () => {
+      for (var i = 0; i < this.list.length; i++) {
+        this.list[i].run();
+      }
+    };
+    this.push = (fn, name, setRequestAnimationFrame = true) => {
+      let myfn = fn
+      if (setRequestAnimationFrame) {
+        myfn = () => {
+          utils.requestAnimationFrame(fn)
+        }
+      }
+      var f = new Item(myfn, name);
+      this.list.push(f);
+    };
+    this.remove = (name) => {
+      for (let index = 0; index < this.list.length; index++) {
+        const e = this.list[index];
+        if (e.name == name) {
+          this.list.splice(index, 1);
+        }
+      }
+    }
+    // 构造一个可以run的对象
+    function Item(fn, name) {
+      // 函数名称
+      this.name = name || fn.name;
+      // run方法
+      this.run = () => {
+        try {
+          fn()
+        } catch (error) {
+          console.log(error);
+        }
+      };
+    }
+  }
+
+  const utils = {
+    // 懒加载 css https://github.com/filamentgroup/loadCSS
+    css: (href, before, media, attributes) => {
+      var doc = window.document;
+      var ss = doc.createElement("link");
+      var ref;
+      if (before) {
+        ref = before;
+      } else {
+        var refs = (doc.body || doc.getElementsByTagName("head")[0]).childNodes;
+        ref = refs[refs.length - 1];
+      }
+      var sheets = doc.styleSheets;
+      if (attributes) {
+        for (var attributeName in attributes) {
+          if (attributes.hasOwnProperty(attributeName)) {
+            ss.setAttribute(attributeName, attributes[attributeName]);
+          }
+        }
+      }
+      ss.rel = "stylesheet";
+      ss.href = href;
+      ss.media = "only x";
+      function ready(cb) {
+        if (doc.body) {
+          return cb();
+        }
+        setTimeout(function () {
+          ready(cb);
+        });
+      }
+      ready(function () {
+        ref.parentNode.insertBefore(ss, before ? ref : ref.nextSibling);
+      });
+      var onloadcssdefined = function (cb) {
+        var resolvedHref = ss.href;
+        var i = sheets.length;
+        while (i--) {
+          if (sheets[i].href === resolvedHref) {
+            return cb();
+          }
+        }
+        setTimeout(function () {
+          onloadcssdefined(cb);
+        });
+      };
+      function loadCB() {
+        if (ss.addEventListener) {
+          ss.removeEventListener("load", loadCB);
+        }
+        ss.media = media || "all";
+      }
+      if (ss.addEventListener) {
+        ss.addEventListener("load", loadCB);
+      }
+      ss.onloadcssdefined = onloadcssdefined;
+      onloadcssdefined(loadCB);
+      return ss;
+    },
+
+    js: (src, opt) => new Promise((resolve, reject) => {
+      var script = document.createElement('script');
+      if (src.startsWith('/')) {
+        src = ctx.root + src.substring(1);
+      }
+      script.src = src;
+      if (opt) {
+        for (let key of Object.keys(opt)) {
+          script[key] = opt[key]
+        }
+      } else {
+        // 默认异步，如果需要同步，第二个参数传入 {} 即可
+        script.async = true
+      }
+      script.onerror = reject
+      script.onload = script.onreadystatechange = function () {
+        const loadState = this.readyState
+        if (loadState && loadState !== 'loaded' && loadState !== 'complete') return
+        script.onload = script.onreadystatechange = null
+        resolve()
+      }
+      document.head.appendChild(script)
+    }),
+
+    jq: (fn) => {
+      if (typeof jQuery === 'undefined') {
+        utils.js(deps.jquery).then(fn)
+      } else {
+        fn()
+      }
+    },
+
+    onLoading: (el) => {
+      if (el) {
+        $(el).append('<div class="loading-wrap"><svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" stroke-opacity=".3" d="M12 3C16.9706 3 21 7.02944 21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="1.3s" values="60;0"/></path><path stroke-dasharray="15" stroke-dashoffset="15" d="M12 3C16.9706 3 21 7.02944 21 12"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.3s" values="15;0"/><animateTransform attributeName="transform" dur="1.5s" repeatCount="indefinite" type="rotate" values="0 12 12;360 12 12"/></path></g></svg></div>');
+      }
+    },
+    onLoadSuccess: (el) => {
+      if (el) {
+        $(el).find('.loading-wrap').remove();
+      }
+    },
+    onLoadFailure: (el) => {
+      if (el) {
+        $(el).find('.loading-wrap svg').remove();
+        $(el).find('.loading-wrap').append('<svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" d="M12 3L21 20H3L12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.5s" values="60;0"/></path><path stroke-dasharray="6" stroke-dashoffset="6" d="M12 10V14"><animate fill="freeze" attributeName="stroke-dashoffset" begin="0.6s" dur="0.2s" values="6;0"/></path></g><circle cx="12" cy="17" r="1" fill="currentColor" fill-opacity="0"><animate fill="freeze" attributeName="fill-opacity" begin="0.8s" dur="0.4s" values="0;1"/></circle></svg>');
+        $(el).find('.loading-wrap').addClass('error');
+      }
+    },
+    request: (el, url, callback, onFailure) => {
+      const maxRetry = 3;
+      let retryCount = 0;
+
+      return new Promise((resolve, reject) => {
+        const load = () => {
+          utils.onLoading?.(el);
+
+          let timedOut = false;
+          const timeout = setTimeout(() => {
+            timedOut = true;
+            console.warn('[request] 超时:', url);
+
+            if (++retryCount >= maxRetry) {
+              utils.onLoadFailure?.(el);
+              onFailure?.();
+              reject('请求超时');
+            } else {
+              setTimeout(load, 1000);
+            }
+          }, 5000);
+
+          fetch(url).then(resp => {
+            if (timedOut) return;
+            clearTimeout(timeout);
+
+            if (!resp.ok) throw new Error('响应失败');
+            return resp;
+          }).then(data => {
+            if (timedOut) return;
+            utils.onLoadSuccess?.(el);
+            callback(data);
+            resolve(data);
+          }).catch(err => {
+            clearTimeout(timeout);
+            console.warn('[request] 错误:', err);
+
+            if (++retryCount >= maxRetry) {
+              utils.onLoadFailure?.(el);
+              onFailure?.();
+              reject(err);
+            } else {
+              setTimeout(load, 1000);
+            }
+          });
+        };
+
+        load();
+      });
+    },
+    requestWithoutLoading: (url, options = {}, maxRetry = 2, timeout = 5000) => {
+      return new Promise((resolve, reject) => {
+        let retryCount = 0;
+
+        const tryRequest = () => {
+          let timedOut = false;
+          const timer = setTimeout(() => {
+            timedOut = true;
+            if (++retryCount > maxRetry) reject('timeout');
+            else tryRequest();
+          }, timeout);
+
+          fetch(url, options)
+            .then(resp => {
+              clearTimeout(timer);
+              if (!resp.ok) throw new Error('bad response');
+              resolve(resp);
+            })
+            .catch(err => {
+              clearTimeout(timer);
+              if (++retryCount > maxRetry) reject(err);
+              else setTimeout(tryRequest, 500);
+            });
+        };
+
+        tryRequest();
+      });
+    },
+    /********************** requestAnimationFrame ********************************/
+    // 1、requestAnimationFrame 会把每一帧中的所有 DOM 操作集中起来，在一次重绘或回流中就完成，并且重绘或回流的时间间隔紧紧跟随浏览器的刷新频率，一般来说，这个频率为每秒60帧。
+    // 2、在隐藏或不可见的元素中，requestAnimationFrame 将不会进行重绘或回流，这当然就意味着更少的的 cpu，gpu 和内存使用量。
+    requestAnimationFrame: (fn) => {
+      if (!window.requestAnimationFrame) {
+        window.requestAnimationFrame = window.requestAnimationFrame || window.mozRequestAnimationFrame || window.webkitRequestAnimationFrame;
+      }
+      window.requestAnimationFrame(fn)
+    },
+    dark: {},
+  };
+
+  // utils.dark.mode 当前模式 dark or light
+  // utils.dark.toggle() 暗黑模式触发器
+  // utils.dark.push(callBack[,"callBackName"]) 传入触发器回调函数
+  utils.dark.method = {
+    toggle: new RunItem(),
+  };
+  utils.dark = Object.assign(utils.dark, {
+    push: utils.dark.method.toggle.push,
+  });
+</script>
+<script>
+  const sidebar = {
+    leftbar: () => {
+      if (l_body) {
+        l_body.toggleAttribute('leftbar');
+        l_body.removeAttribute('rightbar');
+      }
+    },
+    rightbar: () => {
+      if (l_body) {
+        l_body.toggleAttribute('rightbar');
+        l_body.removeAttribute('leftbar');
+      }
+    },
+    dismiss: () => {
+      if (l_body) {
+        l_body.removeAttribute('leftbar');
+        l_body.removeAttribute('rightbar');
+      }
+    },
+    toggleTOC: () => {
+      document.querySelector('#data-toc').classList.toggle('collapse');
+    }
+  }
+</script>
+<script type="text/javascript">
+  (() => {
+    const tagSwitchers = document.querySelectorAll('.tag-subtree.parent-tag > a > .tag-switcher-wrapper')
+    for (const tagSwitcher of tagSwitchers) {
+      tagSwitcher.addEventListener('click', (e) => {
+        const parent = e.target.closest('.tag-subtree.parent-tag')
+        parent.classList.toggle('expanded')
+        e.preventDefault()
+      })
+    }
+
+    // Get active tag from query string, then activate it.
+    const urlParams = new URLSearchParams(window.location.search)
+    const activeTag = urlParams.get('tag')
+    if (activeTag) {
+      let tag = document.querySelector(`.tag-subtree[data-tag="${activeTag}"]`)
+      if (tag) {
+        tag.querySelector('a').classList.add('active')
+        
+        while (tag) {
+          tag.classList.add('expanded')
+          tag = tag.parentElement.closest('.tag-subtree.parent-tag')
+        }
+      }
+    }
+  })()
+</script>
+
+<script async src="https://gcore.jsdelivr.net/npm/vanilla-lazyload@19.1/dist/lazyload.min.js"></script>
+<script>
+  // https://www.npmjs.com/package/vanilla-lazyload
+  // Set the options globally
+  // to make LazyLoad self-initialize
+  window.lazyLoadOptions = {
+    elements_selector: ".lazy",
+    callback_loaded: (el) => {
+      el.classList.add('loaded');
+      const wrapper = el.closest('.lazy-box');
+      const icon = wrapper?.querySelector('.lazy-icon');
+      if (icon) icon.remove();
+    }
+  };
+  // Listen to the initialization event
+  // and get the instance of LazyLoad
+  window.addEventListener(
+    "LazyLoad::Initialized",
+    function (event) {
+      window.lazyLoadInstance = event.detail.instance;
+    },
+    false
+  );
+  document.addEventListener('DOMContentLoaded', function () {
+    window.lazyLoadInstance?.update();
+  });
+
+  window.wrapLazyloadImages = (container) => {
+    if (typeof container === 'string') {
+      container = document.querySelector(container);
+    }
+    if (!container) return;
+    
+    const images = container.querySelectorAll('img');
+    images.forEach((img) => {
+      if (img.classList.contains('lazy')) return;
+
+      const src = img.getAttribute('src');
+      if (!src) return;
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'lazy-box';
+
+      const newImg = img.cloneNode();
+      newImg.removeAttribute('src');
+      newImg.setAttribute('data-src', src);
+      newImg.classList.add('lazy');
+
+      const icon = document.createElement('div');
+      icon.className = 'lazy-icon';
+      if (def.loading) {
+        icon.style.backgroundImage = `url("${def.loading}")`;
+      }
+
+      wrapper.appendChild(newImg);
+      wrapper.appendChild(icon);
+
+      img.replaceWith(wrapper);
+    });
+
+    // 通知 LazyLoad 更新
+    if (window.lazyLoadInstance?.update) {
+      window.lazyLoadInstance.update();
+    }
+  }
+  
+</script>
+
+<!-- required -->
+<script src="/js/main.js?v=1.33.1" defer></script>
+
+<script type="text/javascript">
+  const applyTheme = (theme) => {
+    if (theme === 'auto') {
+      document.documentElement.removeAttribute('data-theme')
+    } else {
+      document.documentElement.setAttribute('data-theme', theme)
+    }
+
+    // applyThemeToGiscus(theme)
+  }
+
+  // FIXME: 这会导致无法使用 preferred_color_scheme 以外的主题
+  const applyThemeToGiscus = (theme) => {
+    // theme = theme === 'auto' ? 'preferred_color_scheme' : theme
+    const cmt = document.getElementById('giscus')
+    if (cmt) {
+      // This works before giscus load.
+      cmt.setAttribute('data-theme', theme)
+    }
+
+    const iframe = document.querySelector('#comments > section.giscus > iframe')
+    if (iframe) {
+      // This works after giscus loaded.
+      const src = iframe.src
+      const newSrc = src.replace(/theme=[\w]+/, `theme=${theme}`)
+      iframe.src = newSrc
+    }
+  }
+
+  const switchTheme = () => {
+    // light -> dark -> auto -> light -> ...
+    const currentTheme = document.documentElement.getAttribute('data-theme')
+    let newTheme;
+    switch (currentTheme) {
+      case 'light':
+        newTheme = 'dark'
+        break
+      case 'dark':
+        newTheme = 'auto'
+        break
+      default:
+        newTheme = 'light'
+    }
+    applyTheme(newTheme)
+    window.localStorage.setItem('Stellar.theme', newTheme)
+    utils.dark.mode = newTheme === 'auto' ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : newTheme;
+    utils.dark.method.toggle.start();
+
+    const messages = {
+      light: `切换到浅色模式`,
+      dark: `切换到深色模式`,
+      auto: `切换到跟随系统配色`,
+    }
+    hud?.toast?.(messages[newTheme])
+  }
+
+  (() => {
+    // Apply user's preferred theme, if any.
+    const theme = window.localStorage.getItem('Stellar.theme')
+    if (theme !== null) {
+      applyTheme(theme)
+    } else {
+      utils.dark.mode = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    utils.dark.method.toggle.start();
+  })()
+</script>
+
+
+<!-- optional -->
+
+
+
+<script defer>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    ctx.services = Object.assign({}, JSON.parse(`{"mdrender":{"js":"/js/services/mdrender.js"},"siteinfo":{"js":"/js/services/siteinfo.js","api":null},"ghinfo":{"js":"/js/services/ghinfo.js"},"rating":{"js":"/js/services/rating.js","api":"https://star-vote.xaox.cc/api/rating"},"vote":{"js":"/js/services/vote.js","api":"https://star-vote.xaox.cc/api/vote"},"sites":{"js":"/js/services/sites.js"},"friends":{"js":"/js/services/friends.js"},"friends_and_posts":{"js":"/js/services/friends_and_posts.js"},"timeline":{"js":"/js/services/timeline.js"},"fcircle":{"js":"/js/services/fcircle.js"},"weibo":{"js":"/js/services/weibo.js"},"memos":{"js":"/js/services/memos.js"},"voice":{"js":"/js/plugins/voice.js"},"video":{"js":"/js/plugins/video.js"},"download-file":{"js":"/js/plugins/download-file.js"},"twikoo":{"js":"/js/services/twikoo_latest_comment.js"},"waline":{"js":"/js/services/waline_latest_comment.js"},"artalk":{"js":"/js/services/artalk_latest_comment.js"},"giscus":{"js":"/js/services/giscus_latest_comment.js"},"contributors":{"edit_this_page":{"_posts/":null,"wiki/stellar/":"https://github.com/xaoxuu/hexo-theme-stellar-docs/blob/main/"},"js":"/js/services/contributors.js"}}`));
+    for (let id of Object.keys(ctx.services)) {
+      const js = ctx.services[id].js;
+      if (id == 'siteinfo') {
+        ctx.cardlinks = document.querySelectorAll('a.link-card[cardlink]');
+        if (ctx.cardlinks?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            setCardLink(ctx.cardlinks);
+          });
+        }
+      } else if (id == 'voice') {
+        ctx.voiceAudios = document.querySelectorAll('.voice>audio');
+        if (ctx.voiceAudios?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            createVoiceDom(ctx.voiceAudios);
+          });
+        }
+      } else if (id == 'video') {
+        ctx.videos = document.querySelectorAll('.video>video');
+        if (ctx.videos?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            videoEvents(ctx.videos);
+          });
+        }
+      } else if (id == 'download-file') {
+        ctx.files = document.querySelectorAll('.file');
+        if (ctx.files?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            downloadFileEvent(ctx.files);
+          });
+        }
+      } else {
+        const els = document.getElementsByClassName(`ds-${id}`);
+        if (els?.length > 0) {
+          utils.jq(() => {
+            if (id == 'timeline' || 'memos' || 'marked') {
+              utils.js(deps.marked).then(function () {
+                utils.js(js, { defer: true });
+              });
+            } else {
+              utils.js(js, { defer: true });
+            }
+          });
+        }
+      }
+    }
+
+    // chat iphone time
+    let phoneTimes = document.querySelectorAll('.chat .status-bar .time');
+
+    if (phoneTimes.length > 0) {
+      NowTime();
+      var date = new Date();
+      var sec = date.getSeconds();
+      var firstAdjustInterval = setInterval(firstAdjustTime, 1000 * (60 - sec));
+    }
+
+    function firstAdjustTime() {
+      NowTime();
+      clearInterval(firstAdjustInterval);
+      setInterval(NowTime, 1000 * 60);
+    }
+
+    function NowTime() {
+      for (let i = 0; i < phoneTimes.length; ++i) {
+        var timeSpan = phoneTimes[i];
+        var date = new Date();
+        var hour = date.getHours();
+        var min = date.getMinutes();
+        timeSpan.innerHTML = check(hour) + ":" + check(min);
+      }
+    };
+
+    function check(val) {
+      if (val < 10) {
+        return ("0" + val);
+      }
+      return (val);
+    }
+
+    // chat quote
+    const chat_quote_obverser = new IntersectionObserver((entries, observer) => {
+      entries.filter((entry) => { return entry.isIntersecting }).sort((a, b) => a.intersectionRect.y !== b.intersectionRect.y ? a.intersectionRect.y - b.intersectionRect.y : a.intersectionRect.x - b.intersectionRect.x).forEach((entry, index) => {
+          observer.unobserve(entry.target);
+          setTimeout(() => {
+            entry.target.classList.add('quote-blink');
+            setTimeout(() => {
+              entry.target.classList.remove('quote-blink');
+            }, 1000);
+          }, Math.max(100, 16) * (index + 1));
+        });
+    });
+
+    var chatQuotes = document.querySelectorAll(".chat .talk .quote");
+    chatQuotes.forEach((quote) => {
+      quote.addEventListener('click', function () {
+        var chatCellDom = document.getElementById("quote-" + quote.getAttribute("quotedCellTag"));
+        if (chatCellDom) {
+          var chatDiv = chatCellDom.parentElement;
+          var mid = chatDiv.clientHeight / 2;
+          var offsetTop = chatCellDom.offsetTop;
+          if (offsetTop > mid - chatCellDom.clientHeight / 2) {
+            chatDiv.scrollTo({
+              top: chatCellDom.offsetTop - mid + chatCellDom.clientHeight / 2,
+              behavior: "smooth"
+            });
+          } else {
+            chatDiv.scrollTo({
+              top: 0,
+              behavior: "smooth"
+            });
+          }
+          chat_quote_obverser.observe(chatCellDom);
+        }
+      });
+    });
+  });
+</script>
+
+<script>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    ctx.search = {
+      path: `/search.json`,
+    }
+    utils.js('/js/search/local-search.js', { defer: true });
+  });
+</script><script>
+  window.FPConfig = {
+    delay: 0,
+    ignoreKeywords: [],
+    maxRPS: 5,
+    hoverDelay: 25
+  };
+</script>
+<script defer src="https://gcore.jsdelivr.net/npm/flying-pages@2/flying-pages.min.js"></script><script>
+  ctx.fancybox = {
+    selector: `.timenode p>img`,
+    css: `https://gcore.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css`,
+    js: `https://gcore.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js`
+  };
+  var selector = '[data-fancybox]:not(.error), .with-fancybox .atk-content img:not([atk-emoticon])';
+  if (ctx.fancybox.selector) {
+    selector += `, ${ctx.fancybox.selector}`
+  }
+  var needFancybox = document.querySelectorAll(selector).length !== 0;
+  if (!needFancybox) {
+    const memos = document.getElementsByClassName('ds-memos');
+    if (memos != undefined && memos.length > 0) {
+      needFancybox = true;
+    }
+    const fancybox = document.getElementsByClassName('with-fancybox');
+    if (fancybox != undefined && fancybox.length > 0) {
+      needFancybox = true;
+    }
+  }
+  if (needFancybox) {
+    utils.css(ctx.fancybox.css);
+    utils.js(ctx.fancybox.js, { defer: true }).then(function () {
+      Fancybox.bind(selector, {
+        hideScrollbar: false,
+        Thumbs: {
+          autoStart: false,
+        },
+        caption: (fancybox, slide) => {
+          return slide.triggerEl.alt || slide.triggerEl.dataset.caption || null
+        }
+      });
+    })
+  }
+</script>
+<script>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    const swiper_api = document.getElementById('swiper-api');
+    if (swiper_api != undefined) {
+      utils.css(`https://unpkg.com/swiper@10.3/swiper-bundle.min.css`);
+      utils.js(`https://unpkg.com/swiper@10.3/swiper-bundle.min.js`, { defer: true }).then(function () {
+        const effect = swiper_api.getAttribute('effect') || '';
+        var swiper = new Swiper('.swiper#swiper-api', {
+          slidesPerView: 'auto',
+          spaceBetween: 8,
+          centeredSlides: true,
+          effect: effect,
+          rewind: true,
+          pagination: {
+            el: '.swiper-pagination',
+            clickable: true,
+          },
+          navigation: {
+            nextEl: '.swiper-button-next',
+            prevEl: '.swiper-button-prev',
+          },
+        });
+      })
+    }
+  });
+</script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    window.codeElements = document.querySelectorAll('.code');
+    if (window.codeElements.length > 0) {
+      ctx.copycode = {
+        default_text: `Copy`,
+        success_text: `Copied`,
+        toast: `复制成功`,
+      };
+      utils.js('/js/plugins/copycode.js');
+    }
+  });
+</script>
+
+
+<!-- inject -->
+
+</div></body></html>

@@ -1,0 +1,933 @@
+
+<!DOCTYPE html><html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="hexo-theme" content="https://github.com/xaoxuu/hexo-theme-stellar/tree/1.33.1" theme-name="Stellar" theme-version="1.33.1">
+  
+  
+  <meta name="generator" content="Hexo 5.1.1">
+  <meta http-equiv='x-dns-prefetch-control' content='on' />
+  
+  <meta name="renderer" content="webkit">
+  <meta name="force-rendering" content="webkit">
+  <meta http-equiv="X-UA-Compatible" content="IE=Edge,chrome=1">
+  <meta name="HandheldFriendly" content="True" >
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000">
+  <meta name="theme-color" content="#f9fafb">
+  <title>pelt - liulangren Blog</title>
+
+  
+    <meta name="description" content="参考wowo文章 WHY?为了让调度器更加的聪明，我们总是希望系统满足最大吞吐量同时又最大限度的降低功耗。虽然可能有些矛盾，但是现实总是这样。PELT算法是Linux 3.8合入的，那么在此之前，我们存在什么问题才引入PELT算法呢？在Linux 3.8之前，CFS以每个运行队列（runqueue，简称rq）为基础跟踪负载。但是这种方法，我们无法确定当前负载的来源。同时，即使工作负载相对稳定的情况">
+<meta property="og:type" content="article">
+<meta property="og:title" content="pelt">
+<meta property="og:url" content="https://liulangrenaaa.github.io/2021/04/24/schedule/pelt/">
+<meta property="og:site_name" content="liulangren Blog">
+<meta property="og:description" content="参考wowo文章 WHY?为了让调度器更加的聪明，我们总是希望系统满足最大吞吐量同时又最大限度的降低功耗。虽然可能有些矛盾，但是现实总是这样。PELT算法是Linux 3.8合入的，那么在此之前，我们存在什么问题才引入PELT算法呢？在Linux 3.8之前，CFS以每个运行队列（runqueue，简称rq）为基础跟踪负载。但是这种方法，我们无法确定当前负载的来源。同时，即使工作负载相对稳定的情况">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://liulangrenaaa.github.io/images/icons/image.png">
+<meta property="article:published_time" content="2021-04-24T19:00:00.000Z">
+<meta property="article:modified_time" content="2026-05-14T03:56:22.505Z">
+<meta property="article:author" content="Su Hui">
+<meta property="article:tag" content="进程调度">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://liulangrenaaa.github.io/images/icons/image.png">
+  
+  
+  
+  <meta name="keywords" content="进程调度">
+
+  <!-- feed -->
+  
+
+  <link rel="stylesheet" href="/css/main.css?v=1.33.1">
+
+
+  
+    <link rel="shortcut icon" href="/images/icons/image.png">
+  
+
+  
+
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"Su Hui","sameAs":[],"image":"/images/icons/image.png"},"dateCreated":"2021-04-24T19:00:00+00:00","dateModified":"2026-05-14T03:56:22+00:00","datePublished":"2021-04-24T19:00:00+00:00","description":"","headline":"pelt","mainEntityOfPage":{"@type":"WebPage","@id":"https://liulangrenaaa.github.io/2021/04/24/schedule/pelt/"},"publisher":{"@type":"Organization","name":"Su Hui","sameAs":[],"image":"/images/icons/image.png","logo":{"@type":"ImageObject","url":"/images/icons/image.png"}},"url":"https://liulangrenaaa.github.io/2021/04/24/schedule/pelt/","keywords":"进程调度","image":[]}</script>
+  
+</head>
+<body>
+
+<div class="l_body content" id="start" layout="post" type="tech" ><aside class="l_left"><div class="sidebg"></div><div class="leftbar-container">
+
+
+<header class="header"><div class="logo-wrap"><a class="avatar" href="/about/"><div class="bg" style="opacity:0;background-image:url(https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/avatar/round/rainbow64@3x.webp);"></div><img no-lazy class="avatar" src="/images/icons/image.png" onerror="javascript:this.classList.add('error');this.src='https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/image/2659360.svg';"></a><a class="title" href="/"><div class="main">liulangren Blog</div></a></div></header>
+
+<div class="nav-area">
+
+<nav class="menu dis-select"></nav>
+</div>
+<div class="widgets">
+<div class="search-wrapper" id="search-wrapper"><form class="search-form"><a class="search-button" onclick="document.getElementById(&quot;search-input&quot;).focus();"><svg t="1705074644177" viewBox="0 0 1025 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="1560" width="200" height="200"><path d="M1008.839137 935.96571L792.364903 719.491476a56.783488 56.783488 0 0 0-80.152866 0 358.53545 358.53545 0 1 1 100.857314-335.166073 362.840335 362.840335 0 0 1-3.689902 170.145468 51.248635 51.248635 0 1 0 99.217358 26.444296 462.057693 462.057693 0 1 0-158.255785 242.303546l185.930047 185.725053a51.248635 51.248635 0 0 0 72.568068 0 51.248635 51.248635 0 0 0 0-72.978056z" p-id="1561"></path><path d="M616.479587 615.969233a50.428657 50.428657 0 0 0-61.498362-5.534852 174.655348 174.655348 0 0 1-177.525271 3.484907 49.403684 49.403684 0 0 0-58.833433 6.76482l-3.074918 2.869923a49.403684 49.403684 0 0 0 8.609771 78.10292 277.767601 277.767601 0 0 0 286.992355-5.739847 49.403684 49.403684 0 0 0 8.404776-76.667958z" p-id="1562"></path></svg></a><input type="text" class="search-input" id="search-input" placeholder="站内搜索"></form><div id="search-result"></div><div class="search-no-result">没有找到内容！</div></div>
+
+<widget class="widget-wrapper linklist"><div class="widget-header dis-select"><span class="name">核心专题</span></div><div class="widget-body fs14">
+<div class="linklist left" style="grid-template-columns:repeat(1,1fr);">
+<a class="link" title="framework基础" href="/categories/android/framework基础/"><div class="flex"><span>framework基础</span></div></a>
+<a class="link" title="app启动与生命周期" href="/categories/android/app启动与生命周期/"><div class="flex"><span>app启动与生命周期</span></div></a>
+<a class="link" title="wms窗口系统" href="/categories/android/wms窗口系统/"><div class="flex"><span>wms窗口系统</span></div></a>
+<a class="link" title="input输入系统" href="/categories/android/input输入系统/"><div class="flex"><span>input输入系统</span></div></a>
+<a class="link" title="binder与系统服务" href="/categories/android/binder与系统服务/"><div class="flex"><span>binder与系统服务</span></div></a>
+<a class="link" title="graphics图形系统" href="/categories/android/graphics图形系统/"><div class="flex"><span>graphics图形系统</span></div></a>
+<a class="link" title="anr-crash稳定性" href="/categories/android/anr-crash稳定性/"><div class="flex"><span>anr-crash稳定性</span></div></a>
+<a class="link" title="debug-trace工具链" href="/categories/android/debug-trace工具链/"><div class="flex"><span>debug-trace工具链</span></div></a>
+<a class="link" title="性能稳定性" href="/tags/性能稳定性/"><div class="flex"><span>性能稳定性</span></div></a>
+<a class="link" title="Linux 调度" href="/categories/linux-kernel/linux-schedule/"><div class="flex"><span>Linux 调度</span></div></a></div></div></widget>
+
+<widget class="widget-wrapper linklist"><div class="widget-header dis-select"><span class="name">精选文章</span></div><div class="widget-body fs14">
+<div class="linklist left" style="grid-template-columns:repeat(1,1fr);">
+<a class="link" title="ANR问题总结" href="/2022/07/01/android/anr-crash稳定性/ANR问题总结/"><div class="flex"><span>ANR问题总结</span></div></a>
+<a class="link" title="android12 gdb64调试进程" href="/2021/09/23/用户空间/android12%20gdb64调试进程/"><div class="flex"><span>android12 gdb64调试进程</span></div></a>
+<a class="link" title="60s定位内核性能瓶颈" href="/2020/09/13/内核观测/性能稳定性/60s定位内核性能瓶颈/"><div class="flex"><span>60s定位内核性能瓶颈</span></div></a>
+<a class="link" title="关于preempt_count的思考" href="/2020/09/21/进程管理/关于preempt_count的思考/"><div class="flex"><span>关于preempt_count的思考</span></div></a></div></div></widget>
+</div>
+
+</div></aside><div class="l_main" id="main">
+
+
+
+
+
+<div class="article banner top">
+  <div class="content">
+    <div class="top bread-nav footnote"><div class="left"><div class="flex-row" id="breadcrumb"><a class="cap breadcrumb" href="/">主页</a>
+<span class="sep"></span><a class="cap breadcrumb" href="/">文章</a><span class="sep"></span><a class="cap breadcrumb-link" href="/categories/linux%E5%86%85%E6%A0%B8/">linux内核</a></div>
+<div class="flex-row" id="post-meta"><span class="text created">发布于：<time datetime="2021-04-24T19:00:00.000Z">2021-04-24</time></span><span class="sep updated"></span><span class="text updated">更新于：<time datetime="2026-05-14T03:56:22.505Z">2026-05-14</time></span></div></div></div>
+    
+    <div class="bottom only-title">
+      
+      <div class="text-area">
+        <h1 class="text title"><span>pelt</span></h1>
+        
+      </div>
+    </div>
+    
+  </div>
+  </div><article class="md-text content"><p>参考<a target="_blank" rel="noopener" href="http://www.wowotech.net/process_management/450.html">wowo文章</a></p>
+<h2 id="WHY"><a href="#WHY" class="headerlink" title="WHY?"></a>WHY?</h2><p>为了让调度器更加的聪明，我们总是希望系统满足最大吞吐量同时又最大限度的降低功耗。虽然可能有些矛盾，但是现实总是这样。PELT算法是Linux 3.8合入的，那么在此之前，我们存在什么问题才引入PELT算法呢？在Linux 3.8之前，CFS以每个运行队列（runqueue，简称rq）为基础跟踪负载。但是这种方法，我们无法确定当前负载的来源。同时，即使工作负载相对稳定的情况下，在rq级别跟踪负载，其值也会产生很大变化。为了解决以上的问题，PELT算法会跟踪每个调度实体（per-scheduling entity）的负载情况。</p>
+<h2 id="HOW"><a href="#HOW" class="headerlink" title="HOW?"></a>HOW?</h2><p>为了做到Per-entity的负载跟踪，时间（物理时间，不是虚拟时间）被分成了1024us的序列，在每一个1024us的周期中，一个entity对系统负载的贡献可以根据该实体处于runnable状态（正在CPU上运行或者等待cpu调度运行）的时间进行计算。</p>
+<p>如果在该周期内，runnable的时间是x，那么对系统负载的贡献就是（x/1024）。当然，一个实体在一个计算周期内的负载可能会超过1024us，这是因为我们会累积在过去周期中的负载，当然，对于过去的负载我们在计算的时候需要乘一个衰减因子。如果我们让Li表示在周期pi中该调度实体的对系统负载贡献，那么一个调度实体对系统负荷的总贡献可以表示为：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">L &#x3D; L0 + L1 * y + L2 * y2 + L3 * y3 + ... + Ln * yn</span><br><span class="line"></span><br><span class="line">其中：y32 &#x3D; 0.5, y &#x3D; 0.97857206</span><br></pre></td></tr></table></figure>
+
+<p>如果有一个task，从第一次加入rq后开始一直运行4096us后一直睡眠，那么在1023us、2047us、3071us、4095us、5119us、6143us、7167us和8191us时间的每一个时刻负载贡献分别是多少呢？<br>        /<br>        |<br>       1|———————–|<br>        |                       |<br>       0|                       |——————————————<br>——————————————————————————-&gt;<br>                |       |       |       |       |       |       |       |<br>              1023    2047    4095    5119    7167    8191</p>
+<p>可以计算：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">L0 &#x3D; 1023 * y0 &#x3D; 1023</span><br><span class="line">L1 &#x3D; 1023 * y0 + 1024 * y1 &#x3D; 1023 + (L0 + 1) * y &#x3D; 2025</span><br><span class="line">L2 &#x3D; 1023 * y0 + 1024 * y1 + 1024 * y2 &#x3D; 1023 + (L1 + 1) * y1 &#x3D; 3005</span><br><span class="line">......</span><br></pre></td></tr></table></figure>
+
+<p>可以得到：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Ln &#x3D; Load(This)  + Ln-1 * y &#x3D;  当前周期负载 + 上一周期负载 * 衰减系数y</span><br></pre></td></tr></table></figure>
+
+<p>需要经常计算 Ln-1 * y的值，但是内核并不是 简单计算  Ln-1 * y，也可能需要计算<br>Ln-m * ym，kernel中使用decay_laod()函数。<br>为了提高精度和计算速度，采用乘法  和 位移算法进行计算，输入是:</p>
+<ol>
+<li>val: 前n个负载计算周期的负载</li>
+<li>n: 衰减n个周期之后的实际负载<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">decay_load(val, n) &#x3D; val * yn &#x3D; (val * yn) * (232 &gt;&gt;32)</span><br><span class="line">                              &#x3D; val * (yn * 232) &gt;&gt;  32</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<p>可以看到 yn * 232的值其实是固定的（n确定的情况下是一个数组）<br><code>runnable_avg_yN_inv[n] = yn*232, n &gt; 0 &amp;&amp; n &lt; 32</code><br>kernel中使用了一个数组来保存这些值：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">static const u32 runnable_avg_yN_inv[] &#x3D; &#123;</span><br><span class="line">	0xffffffff, 0xfa83b2da, 0xf5257d14, 0xefe4b99a, 0xeac0c6e6, 0xe5b906e6,</span><br><span class="line">	0xe0ccdeeb, 0xdbfbb796, 0xd744fcc9, 0xd2a81d91, 0xce248c14, 0xc9b9bd85,</span><br><span class="line">	0xc5672a10, 0xc12c4cc9, 0xbd08a39e, 0xb8fbaf46, 0xb504f333, 0xb123f581,</span><br><span class="line">	0xad583ee9, 0xa9a15ab4, 0xa5fed6a9, 0xa2704302, 0x9ef5325f, 0x9b8d39b9,</span><br><span class="line">	0x9837f050, 0x94f4efa8, 0x91c3d373, 0x8ea4398a, 0x8b95c1e3, 0x88980e80,</span><br><span class="line">	0x85aac367, 0x82cd8698,</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<p>下面是<code>decay_load</code>实际代码：</p>
+<ol>
+<li>如果衰减周期大于 <code>LOAD_AVG_PERIOD * 63</code>，那么我们认为<code>LOAD_AVG_PERIOD * 63</code>之前的负载val对现在的贡献是 0</li>
+<li>如果<code>n &gt;= 32</code>，由于 <code>runnable_avg_yN_inv</code> 只包含了y31的值，所以 必须将n 归一化到 <code>&lt; 32</code>，每归一化一次，负载贡献就减半 (val = val &gt;&gt; 1)</li>
+<li>最后衰减的负载是 <code>val * runnable_avg_yN_inv[local_n] &gt;&gt; 32</code><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line">&#x2F;*</span><br><span class="line"> * Approximate:</span><br><span class="line"> *   val * y^n,    where y^32 ~&#x3D; 0.5 (~1 scheduling period)</span><br><span class="line"> *&#x2F;</span><br><span class="line">static u64 decay_load(u64 val, u64 n)</span><br><span class="line">&#123;</span><br><span class="line">	unsigned int local_n;</span><br><span class="line"></span><br><span class="line">	if (unlikely(n &gt; LOAD_AVG_PERIOD * 63))</span><br><span class="line">		return 0;</span><br><span class="line"></span><br><span class="line">	&#x2F;* after bounds checking we can collapse to 32-bit *&#x2F;</span><br><span class="line">	local_n &#x3D; n;</span><br><span class="line"></span><br><span class="line">	&#x2F;*</span><br><span class="line">	 * As y^PERIOD &#x3D; 1&#x2F;2, we can combine</span><br><span class="line">	 *    y^n &#x3D; 1&#x2F;2^(n&#x2F;PERIOD) * y^(n%PERIOD)</span><br><span class="line">	 * With a look-up table which covers y^n (n&lt;PERIOD)</span><br><span class="line">	 *</span><br><span class="line">	 * To achieve constant time decay_load.</span><br><span class="line">	 *&#x2F;</span><br><span class="line">	if (unlikely(local_n &gt;&#x3D; LOAD_AVG_PERIOD)) &#123;</span><br><span class="line">		val &gt;&gt;&#x3D; local_n &#x2F; LOAD_AVG_PERIOD;</span><br><span class="line">		local_n %&#x3D; LOAD_AVG_PERIOD;</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	val &#x3D; mul_u64_u32_shr(val, runnable_avg_yN_inv[local_n], 32);</span><br><span class="line">	return val;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<h2 id="负载信息如何记录？"><a href="#负载信息如何记录？" class="headerlink" title="负载信息如何记录？"></a>负载信息如何记录？</h2><p>首先负载计算是相对于<code>调度实体se 和  就绪队列rq</code>的：<br>对于 <code>struct sched_entity</code>  <code>struct cfs_rq</code> <code>struct rq</code> 结构来说都内嵌了 <code>struct sched_avg</code> 结构。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br></pre></td><td class="code"><pre><span class="line">struct sched_avg &#123;</span><br><span class="line">	u64				last_update_time; &#x2F;&#x2F; 上一次负载更新的时间</span><br><span class="line">	u64				load_sum; &#x2F;&#x2F; running + runnable 的负载</span><br><span class="line">	u64				runnable_load_sum;&#x2F;&#x2F; 姑且等于 load_sum</span><br><span class="line">	u32				util_sum; &#x2F;&#x2F; running 的负载</span><br><span class="line">	u32				period_contrib;</span><br><span class="line">	unsigned long			load_avg; &#x2F;&#x2F; running + runnable 的平均负载</span><br><span class="line">	unsigned long			runnable_load_avg; &#x2F;&#x2F; 姑且等于 load_avg</span><br><span class="line">	unsigned long			util_avg; &#x2F;&#x2F; running 的平均负载</span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line">struct sched_entity &#123;</span><br><span class="line">      	struct load_weight		load;</span><br><span class="line">	unsigned long			runnable_weight;</span><br><span class="line">#ifdef CONFIG_SMP</span><br><span class="line">	&#x2F;*</span><br><span class="line">	 * Per entity load average tracking.</span><br><span class="line">	 *</span><br><span class="line">	 * Put into separate cache line so it does not</span><br><span class="line">	 * collide with read-mostly values above.</span><br><span class="line">	 *&#x2F;</span><br><span class="line">	struct sched_avg		avg;</span><br><span class="line">#endif</span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line">struct cfs_rq &#123;</span><br><span class="line">	struct load_weight	load;</span><br><span class="line">	unsigned long		runnable_weight;</span><br><span class="line">#ifdef CONFIG_SMP</span><br><span class="line">	&#x2F;*</span><br><span class="line">	 * CFS load tracking</span><br><span class="line">	 *&#x2F;</span><br><span class="line">	struct sched_avg	avg;</span><br><span class="line">#ifndef CONFIG_64BIT</span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line">struct rq &#123;</span><br><span class="line">	&#x2F;* runqueue lock: *&#x2F;</span><br><span class="line">	raw_spinlock_t		lock;</span><br><span class="line"></span><br><span class="line">	&#x2F;*</span><br><span class="line">	 * nr_running and cpu_load should be in the same cacheline because</span><br><span class="line">	 * remote CPUs use both these fields when doing load calculation.</span><br><span class="line">	 *&#x2F;</span><br><span class="line">	unsigned int		nr_running;</span><br><span class="line">	struct sched_avg	avg_rt;</span><br><span class="line">	struct sched_avg	avg_dl;</span><br><span class="line">#ifdef CONFIG_HAVE_SCHED_AVG_IRQ</span><br><span class="line">	struct sched_avg	avg_irq;</span><br><span class="line">#endif</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+
+<p>通过init可以更清楚知道他们含义，如果<code>se</code>是：</p>
+<ol>
+<li><code>task</code>，那么 runnable_load_avg = load_avg 都和 se的权重相等</li>
+<li><code>group se</code>，runnable_load_avg = load_avg = 0，也反映了此时<code>group se</code>还没有任何任务。<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line">void init_entity_runnable_average(struct sched_entity *se)</span><br><span class="line">&#123;</span><br><span class="line">	struct sched_avg *sa &#x3D; &amp;se-&gt;avg;</span><br><span class="line"></span><br><span class="line">	memset(sa, 0, sizeof(*sa));</span><br><span class="line"></span><br><span class="line">	&#x2F;*</span><br><span class="line">	 * Tasks are initialized with full load to be seen as heavy tasks until</span><br><span class="line">	 * they get a chance to stabilize to their real load level.</span><br><span class="line">	 * Group entities are initialized with zero load to reflect the fact that</span><br><span class="line">	 * nothing has been attached to the task group yet.</span><br><span class="line">	 *&#x2F;</span><br><span class="line">	if (entity_is_task(se))</span><br><span class="line">		sa-&gt;runnable_load_avg &#x3D; sa-&gt;load_avg &#x3D; scale_load_down(se-&gt;load.weight);</span><br><span class="line"></span><br><span class="line">	se-&gt;runnable_weight &#x3D; se-&gt;load.weight;</span><br><span class="line"></span><br><span class="line">	&#x2F;* when this task enqueue&#39;ed, it will contribute to its cfs_rq&#39;s load_avg *&#x2F;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+</li>
+</ol>
+<h2 id="那么如何计算当前se的负载？"><a href="#那么如何计算当前se的负载？" class="headerlink" title="那么如何计算当前se的负载？"></a>那么如何计算当前se的负载？</h2><p>假设一个task从0时刻一直开始运行，在1022us时刻负载是多少？<br>由于还没有之前运行周期可以凑满1024us 一个衰减周期，所以负载是1022，<br>又运行了10us之后负载应该如何计算？</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">L  &#x3D; (10 - (1024 - 1022)) +(1024 - 1022 + 1022)y</span><br><span class="line">   &#x3D; (10 -2) + (1022 + 2) * y1</span><br><span class="line">   &#x3D; 8 +  1024 *  y1</span><br></pre></td></tr></table></figure>
+
+<p>假设上一时刻负载贡献是u，经历d时间后的负载贡献如何计算呢？根据上面的例子，我们可以把时间d分成3和部分：<br>d1是离当前时间最远（不完整的）period 的剩余部分，d2 是完整period时间，而d3是（不完整的）当前 period 的剩余部分。<br>假设时间d是经过p个周期（d=d1+d2+d3, p=1+d2/1024）。d1，d2，d3 的示意图如下：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">      d1          d2           d3</span><br><span class="line">      ^           ^            ^</span><br><span class="line">      |           |            |</span><br><span class="line">    |&lt;-&gt;|&lt;-----------------&gt;|&lt;---&gt;|</span><br><span class="line">|---x---|------| ... |------|-----x (now)</span><br><span class="line">    |</span><br><span class="line">   u时刻</span><br><span class="line"></span><br><span class="line">u&#39;  &#x3D; (u + d1) y^p + 1024 * (y^1 + y^2 + ...  + y^p-1) + d3 * y^0</span><br><span class="line">                           p-1</span><br><span class="line">    &#x3D; (u + d1) y^p + 1024 \Sum y^n + d3 y^0</span><br><span class="line">                           n&#x3D;1</span><br><span class="line"></span><br><span class="line">    &#x3D; u y^p +                                 ---&gt; Step1</span><br><span class="line">                     p-1</span><br><span class="line">    &#x3D; d1 y^p + 1024 \Sum y^n + d3 y^0         ---&gt; Step2</span><br><span class="line">                     n&#x3D;1</span><br></pre></td></tr></table></figure>
+
+
+<p>kernel中是用 <code>accumulate_sum()</code> 实现这个当前时刻负载计算的</p>
+<ol>
+<li>period_contrib记录的是上次更新负载不足1024us周期的时间。delta是经过的时间，为了计算经过的周期个数需要加上period_contrib，然后整除1024。</li>
+<li>计算周期个数</li>
+<li>调用decay_load()函数计算公式中的step1部分</li>
+<li>__accumulate_pelt_segments()负责计算公式step2部分</li>
+<li>更新period_contrib为本次不足1024us部分<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br></pre></td><td class="code"><pre><span class="line">static u32 __accumulate_pelt_segments(u64 periods, u32 d1, u32 d3)</span><br><span class="line">&#123;</span><br><span class="line">	u32 c1, c2, c3 &#x3D; d3; &#x2F;* y^0 &#x3D;&#x3D; 1 *&#x2F;</span><br><span class="line"></span><br><span class="line">	&#x2F;*</span><br><span class="line">	 * c1 &#x3D; d1 y^p</span><br><span class="line">	 *&#x2F;</span><br><span class="line">	c1 &#x3D; decay_load((u64)d1, periods);</span><br><span class="line"></span><br><span class="line">	&#x2F;*</span><br><span class="line">	 *            p-1</span><br><span class="line">	 * c2 &#x3D; 1024 \Sum y^n</span><br><span class="line">	 *            n&#x3D;1</span><br><span class="line">	 *</span><br><span class="line">	 *              inf        inf</span><br><span class="line">	 *    &#x3D; 1024 ( \Sum y^n - \Sum y^n - y^0 )</span><br><span class="line">	 *              n&#x3D;0        n&#x3D;p</span><br><span class="line">	 *&#x2F;</span><br><span class="line">	c2 &#x3D; LOAD_AVG_MAX - decay_load(LOAD_AVG_MAX, periods) - 1024;</span><br><span class="line"></span><br><span class="line">	return c1 + c2 + c3;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">&#x2F;*</span><br><span class="line"> * Accumulate the three separate parts of the sum; d1 the remainder</span><br><span class="line"> * of the last (incomplete) period, d2 the span of full periods and d3</span><br><span class="line"> * the remainder of the (incomplete) current period.</span><br><span class="line"> *</span><br><span class="line"> *           d1          d2           d3</span><br><span class="line"> *           ^           ^            ^</span><br><span class="line"> *           |           |            |</span><br><span class="line"> *         |&lt;-&gt;|&lt;-----------------&gt;|&lt;---&gt;|</span><br><span class="line"> * ... |---x---|------| ... |------|-----x (now)</span><br><span class="line"> *</span><br><span class="line"> *                           p-1</span><br><span class="line"> * u&#39; &#x3D; (u + d1) y^p + 1024 \Sum y^n + d3 y^0</span><br><span class="line"> *                           n&#x3D;1</span><br><span class="line"> *</span><br><span class="line"> *    &#x3D; u y^p +					(Step 1)</span><br><span class="line"> *</span><br><span class="line"> *                     p-1</span><br><span class="line"> *      d1 y^p + 1024 \Sum y^n + d3 y^0		(Step 2)</span><br><span class="line"> *                     n&#x3D;1</span><br><span class="line"> *&#x2F;</span><br><span class="line">static __always_inline u32</span><br><span class="line">accumulate_sum(u64 delta, struct sched_avg *sa,</span><br><span class="line">	       unsigned long load, unsigned long runnable, int running)</span><br><span class="line">&#123;</span><br><span class="line">	u32 contrib &#x3D; (u32)delta; &#x2F;* p &#x3D;&#x3D; 0 -&gt; delta &lt; 1024 *&#x2F;</span><br><span class="line">	u64 periods;</span><br><span class="line"></span><br><span class="line">	delta +&#x3D; sa-&gt;period_contrib;</span><br><span class="line">	periods &#x3D; delta &#x2F; 1024; &#x2F;* A period is 1024us (~1ms) *&#x2F;</span><br><span class="line"></span><br><span class="line">	&#x2F;*</span><br><span class="line">	 * Step 1: decay old *_sum if we crossed period boundaries.</span><br><span class="line">	 *&#x2F;</span><br><span class="line">	if (periods) &#123;</span><br><span class="line">		sa-&gt;load_sum &#x3D; decay_load(sa-&gt;load_sum, periods);</span><br><span class="line">		sa-&gt;runnable_load_sum &#x3D;</span><br><span class="line">			decay_load(sa-&gt;runnable_load_sum, periods);</span><br><span class="line">		sa-&gt;util_sum &#x3D; decay_load((u64)(sa-&gt;util_sum), periods);</span><br><span class="line"></span><br><span class="line">		&#x2F;*</span><br><span class="line">		 * Step 2</span><br><span class="line">		 *&#x2F;</span><br><span class="line">		delta %&#x3D; 1024;</span><br><span class="line">		contrib &#x3D; __accumulate_pelt_segments(periods,</span><br><span class="line">				1024 - sa-&gt;period_contrib, delta);</span><br><span class="line">	&#125;</span><br><span class="line">	sa-&gt;period_contrib &#x3D; delta;</span><br><span class="line"></span><br><span class="line">	if (load)</span><br><span class="line">		sa-&gt;load_sum +&#x3D; load * contrib;</span><br><span class="line">	if (runnable)</span><br><span class="line">		sa-&gt;runnable_load_sum +&#x3D; runnable * contrib;</span><br><span class="line">	if (running)</span><br><span class="line">		sa-&gt;util_sum +&#x3D; contrib &lt;&lt; SCHED_CAPACITY_SHIFT;</span><br><span class="line"></span><br><span class="line">	return periods;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+
+
+
+</li>
+</ol>
+<p>其中 <code>___update_load_sum()</code> 函数 计算的都是<em>sum</em>负载总和，函数返回值是</p>
+<ol>
+<li>0，如果和上次更新时间之间 没有 经历过一次完整的period</li>
+<li>1，如果和上次更新时间之间 经历过一次完整的period</li>
+</ol>
+<p>如果经历过一个 <code>full period</code>之后，就需要更新 <code>load_avg</code>。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line">static __always_inline void</span><br><span class="line">___update_load_avg(struct sched_avg *sa, unsigned long load, unsigned long runnable)</span><br><span class="line">&#123;</span><br><span class="line">	u32 divider &#x3D; LOAD_AVG_MAX - 1024 + sa-&gt;period_contrib;</span><br><span class="line"></span><br><span class="line">	&#x2F;*</span><br><span class="line">	 * Step 2: update *_avg.</span><br><span class="line">	 *&#x2F;</span><br><span class="line">	sa-&gt;load_avg &#x3D; div_u64(load * sa-&gt;load_sum, divider);</span><br><span class="line">	sa-&gt;runnable_load_avg &#x3D;	div_u64(runnable * sa-&gt;runnable_load_sum, divider);</span><br><span class="line">	WRITE_ONCE(sa-&gt;util_avg, sa-&gt;util_sum &#x2F; divider);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">int __update_load_avg_se(u64 now, struct cfs_rq *cfs_rq, struct sched_entity *se)</span><br><span class="line">&#123;</span><br><span class="line">	if (___update_load_sum(now, &amp;se-&gt;avg, !!se-&gt;on_rq, !!se-&gt;on_rq,</span><br><span class="line">				cfs_rq-&gt;curr &#x3D;&#x3D; se)) &#123;</span><br><span class="line"></span><br><span class="line">		___update_load_avg(&amp;se-&gt;avg, se_weight(se), se_runnable(se));</span><br><span class="line">		cfs_se_util_change(&amp;se-&gt;avg);</span><br><span class="line">		trace_pelt_se_tp(se);</span><br><span class="line">		return 1;</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	return 0;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<pre><code>                      |&lt;--1024--&gt;|</code></pre>
+<p>|———————————————|—|——|<br>                          |-|-|<br>                      period_contrib</p>
+<p>divider = LOAD_AVG_MAX - (1024 - period_contrib)<br>    = LOAD_AVG_MAX - 1024 + period_contrib</p>
+<p>可以大概理解：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">load_avg &#x3D; load_weight * (load_sum &#x2F;  time_sum)</span><br><span class="line">util_avg &#x3D; util_sum &#x2F; time_sum</span><br></pre></td></tr></table></figure>
+
+
+<p>当一个task一直运行，负载足够高时，可以认为</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">load_sum &#x3D;&#x3D;  time_sum</span><br><span class="line">util_sum &#x3D;&#x3D; time_sum</span><br><span class="line">load_avg &#x3D; load_weight</span><br><span class="line">util_avg &#x3D; 1</span><br></pre></td></tr></table></figure>
+
+<h2 id="如何计算当前cfs-rq的负载"><a href="#如何计算当前cfs-rq的负载" class="headerlink" title="如何计算当前cfs_rq的负载"></a>如何计算当前cfs_rq的负载</h2><p>我们跟踪<code>se</code>的负载，更多的想更精确的知道每时每刻 <code>rq</code>上有负载变化，从而对scheduler的行为作出指导。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br></pre></td><td class="code"><pre><span class="line">int __update_load_avg_cfs_rq(u64 now, struct cfs_rq *cfs_rq)</span><br><span class="line">&#123;</span><br><span class="line">	if (___update_load_sum(now, &amp;cfs_rq-&gt;avg,</span><br><span class="line">				scale_load_down(cfs_rq-&gt;load.weight),</span><br><span class="line">				scale_load_down(cfs_rq-&gt;runnable_weight),</span><br><span class="line">				cfs_rq-&gt;curr !&#x3D; NULL)) &#123;</span><br><span class="line"></span><br><span class="line">		___update_load_avg(&amp;cfs_rq-&gt;avg, 1, 1);</span><br><span class="line">		trace_pelt_cfs_tp(cfs_rq);</span><br><span class="line">		return 1;</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	return 0;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">&#x2F;**</span><br><span class="line"> * update_cfs_rq_load_avg - update the cfs_rq&#39;s load&#x2F;util averages</span><br><span class="line"> * @now: current time, as per cfs_rq_clock_pelt()</span><br><span class="line"> * @cfs_rq: cfs_rq to update</span><br><span class="line"> *</span><br><span class="line"> * The cfs_rq avg is the direct sum of all its entities (blocked and runnable)</span><br><span class="line"> * avg. The immediate corollary is that all (fair) tasks must be attached, see</span><br><span class="line"> * post_init_entity_util_avg().</span><br><span class="line"> *</span><br><span class="line"> * cfs_rq-&gt;avg is used for task_h_load() and update_cfs_share() for example.</span><br><span class="line"> *</span><br><span class="line"> * Returns true if the load decayed or we removed load.</span><br><span class="line"> *</span><br><span class="line"> * Since both these conditions indicate a changed cfs_rq-&gt;avg.load we should</span><br><span class="line"> * call update_tg_load_avg() when this function returns true.</span><br><span class="line"> *&#x2F;</span><br><span class="line"> &#x2F;*</span><br><span class="line"> * cfs_rq avg 是 cfs_rq中所有 entities 的 sum。</span><br><span class="line"> * 返回值：1 如果 有线程被移出这个 cfs_rq 或者经过了一个衰减周期</span><br><span class="line"> *        0</span><br><span class="line"> *&#x2F;</span><br><span class="line">static inline int</span><br><span class="line">update_cfs_rq_load_avg(u64 now, struct cfs_rq *cfs_rq)</span><br><span class="line">&#123;</span><br><span class="line">	unsigned long removed_load &#x3D; 0, removed_util &#x3D; 0, removed_runnable_sum &#x3D; 0;</span><br><span class="line">	struct sched_avg *sa &#x3D; &amp;cfs_rq-&gt;avg;</span><br><span class="line">	int decayed &#x3D; 0;</span><br><span class="line"></span><br><span class="line">	if (cfs_rq-&gt;removed.nr) &#123;</span><br><span class="line">		unsigned long r;</span><br><span class="line">		u32 divider &#x3D; LOAD_AVG_MAX - 1024 + sa-&gt;period_contrib;</span><br><span class="line"></span><br><span class="line">		raw_spin_lock(&amp;cfs_rq-&gt;removed.lock);</span><br><span class="line">		swap(cfs_rq-&gt;removed.util_avg, removed_util);</span><br><span class="line">		swap(cfs_rq-&gt;removed.load_avg, removed_load);</span><br><span class="line">		swap(cfs_rq-&gt;removed.runnable_sum, removed_runnable_sum);</span><br><span class="line">		cfs_rq-&gt;removed.nr &#x3D; 0;</span><br><span class="line">		raw_spin_unlock(&amp;cfs_rq-&gt;removed.lock);</span><br><span class="line"></span><br><span class="line">		r &#x3D; removed_load;</span><br><span class="line">		sub_positive(&amp;sa-&gt;load_avg, r);</span><br><span class="line">		sub_positive(&amp;sa-&gt;load_sum, r * divider);</span><br><span class="line"></span><br><span class="line">		r &#x3D; removed_util;</span><br><span class="line">		sub_positive(&amp;sa-&gt;util_avg, r);</span><br><span class="line">		sub_positive(&amp;sa-&gt;util_sum, r * divider);</span><br><span class="line"></span><br><span class="line">		add_tg_cfs_propagate(cfs_rq, -(long)removed_runnable_sum);</span><br><span class="line"></span><br><span class="line">		decayed &#x3D; 1;</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	decayed |&#x3D; __update_load_avg_cfs_rq(now, cfs_rq);</span><br><span class="line"></span><br><span class="line">#ifndef CONFIG_64BIT</span><br><span class="line">	smp_wmb();</span><br><span class="line">	cfs_rq-&gt;load_last_update_time_copy &#x3D; sa-&gt;last_update_time;</span><br><span class="line">#endif</span><br><span class="line"></span><br><span class="line">	return decayed;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure></article>
+<div class="article-footer">
+    <section id="license">
+      <div class="header"><span>许可协议</span></div>
+      <div class="body"><p>本文采用 <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">署名-非商业性使用-相同方式共享 4.0 国际</a> 许可协议，转载请注明出处。</p>
+</div>
+    </section>
+    
+
+</div>
+
+<div class="related-wrap" id="read-next"><section class="body"><div class="item" id="prev"><div class="note">较新文章</div><a href="/2021/04/28/schedule/Qcom%20kernel/walt/">walt</a></div><div class="item" id="next"><div class="note">较早文章</div><a href="/2021/04/21/schedule/ipi_sched/">ipi_sched</a></div></section></div>
+
+
+
+
+
+
+<footer class="page-footer footnote"><hr><div class="text"><p>本站由 <a href="/">Su Hui</a> 使用 <a target="_blank" rel="noopener" href="https://github.com/xaoxuu/hexo-theme-stellar/tree/1.33.1">Stellar 1.33.1</a> 主题创建。<br>本博客所有文章除特别声明外，均采用 <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> 许可协议，转载请注明出处。</p>
+</div></footer>
+<div class="main-mask" onclick="sidebar.dismiss()"></div></div><aside class="l_right">
+<div class="widgets">
+
+
+
+<widget class="widget-wrapper toc" id="data-toc" collapse="false"><div class="widget-header dis-select"><span class="name">本文目录</span><a class="cap-action" onclick="sidebar.toggleTOC()" ><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h11m-11 6h11m-11 6h11M4 6h1v4m-1 0h2m0 8H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg></a></div><div class="widget-body"><ol class="toc"><li class="toc-item toc-level-2"><a class="toc-link" href="#WHY"><span class="toc-text">WHY?</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#HOW"><span class="toc-text">HOW?</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E8%B4%9F%E8%BD%BD%E4%BF%A1%E6%81%AF%E5%A6%82%E4%BD%95%E8%AE%B0%E5%BD%95%EF%BC%9F"><span class="toc-text">负载信息如何记录？</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E9%82%A3%E4%B9%88%E5%A6%82%E4%BD%95%E8%AE%A1%E7%AE%97%E5%BD%93%E5%89%8Dse%E7%9A%84%E8%B4%9F%E8%BD%BD%EF%BC%9F"><span class="toc-text">那么如何计算当前se的负载？</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%A6%82%E4%BD%95%E8%AE%A1%E7%AE%97%E5%BD%93%E5%89%8Dcfs-rq%E7%9A%84%E8%B4%9F%E8%BD%BD"><span class="toc-text">如何计算当前cfs_rq的负载</span></a></li></ol></div><div class="widget-footer"><a class="top" onclick="util.scrollTop()"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><!-- Icon from Solar by 480 Design - https://creativecommons.org/licenses/by/4.0/ --><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><path stroke-linejoin="round" d="m9 15.5l3-3l3 3m-6-4l3-3l3 3"/><path d="M7 3.338A9.95 9.95 0 0 1 12 2c5.523 0 10 4.477 10 10s-4.477 10-10 10S2 17.523 2 12c0-1.821.487-3.53 1.338-5"/></g></svg><span>回到顶部</span></a></div></widget>
+</div></aside><div class='float-panel'>
+  <button type='button' style='display:none' class='laptop-only rightbar-toggle mobile' onclick='sidebar.rightbar()'>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h11m-11 6h11m-11 6h11M4 6h1v4m-1 0h2m0 8H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>
+  </button>
+  <button type='button' style='display:none' class='mobile-only leftbar-toggle mobile' onclick='sidebar.leftbar()'>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 11c0-3.771 0-5.657 1.172-6.828C4.343 3 6.229 3 10 3h4c3.771 0 5.657 0 6.828 1.172C22 5.343 22 7.229 22 11v2c0 3.771 0 5.657-1.172 6.828C19.657 21 17.771 21 14 21h-4c-3.771 0-5.657 0-6.828-1.172C2 18.657 2 16.771 2 13z"/><path id="sep" stroke-linecap="round" d="M5.5 10h6m-5 4h4m4.5 7V3"/></g></svg>
+  </button>
+</div>
+</div><div class="scripts">
+
+
+<script type="text/javascript">
+  window.canonical = {"originalHost":null,"officialHosts":["localhost"],"encoded":""};
+  const ctx = {
+    date_suffix: {
+      just: `刚刚`,
+      min: `分钟前`,
+      hour: `小时前`,
+      day: `天前`,
+    },
+    root : `/`,
+    tag_plugins: {
+      chat: Object.assign({"api":"https://siteinfo.listentothewind.cn/api/v1"}),
+    }
+  };
+
+  // required plugins (only load if needs)
+  if (`local_search`) {
+    ctx.search = {};
+    ctx.search.service = `local_search`;
+    if (ctx.search.service == 'local_search') {
+      let service_obj = Object.assign({}, `{"field":"all","path":"/search.json","content":true,"skip_search":null,"sort":"-date"}`);
+      ctx.search[ctx.search.service] = service_obj;
+    }
+  }
+  const def = {
+    avatar: `https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/avatar/round/3442075.svg`,
+    cover: `https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/cover/76b86c0226ffd.svg`,
+    loading: `https://api.iconify.design/eos-icons:three-dots-loading.svg?color=%231cd0fd`,
+  };
+  const deps = {
+    jquery: `https://gcore.jsdelivr.net/npm/jquery@3.7/dist/jquery.min.js`,
+    marked: `https://gcore.jsdelivr.net/npm/marked@13.0/lib/marked.umd.min.js`,
+    lazyload: `/%5Bobject%20Object%5D`
+  }
+  
+
+</script>
+
+<script type="text/javascript">
+  
+  function RunItem() {
+    this.list = []; // 存放回调函数
+    this.start = () => {
+      for (var i = 0; i < this.list.length; i++) {
+        this.list[i].run();
+      }
+    };
+    this.push = (fn, name, setRequestAnimationFrame = true) => {
+      let myfn = fn
+      if (setRequestAnimationFrame) {
+        myfn = () => {
+          utils.requestAnimationFrame(fn)
+        }
+      }
+      var f = new Item(myfn, name);
+      this.list.push(f);
+    };
+    this.remove = (name) => {
+      for (let index = 0; index < this.list.length; index++) {
+        const e = this.list[index];
+        if (e.name == name) {
+          this.list.splice(index, 1);
+        }
+      }
+    }
+    // 构造一个可以run的对象
+    function Item(fn, name) {
+      // 函数名称
+      this.name = name || fn.name;
+      // run方法
+      this.run = () => {
+        try {
+          fn()
+        } catch (error) {
+          console.log(error);
+        }
+      };
+    }
+  }
+
+  const utils = {
+    // 懒加载 css https://github.com/filamentgroup/loadCSS
+    css: (href, before, media, attributes) => {
+      var doc = window.document;
+      var ss = doc.createElement("link");
+      var ref;
+      if (before) {
+        ref = before;
+      } else {
+        var refs = (doc.body || doc.getElementsByTagName("head")[0]).childNodes;
+        ref = refs[refs.length - 1];
+      }
+      var sheets = doc.styleSheets;
+      if (attributes) {
+        for (var attributeName in attributes) {
+          if (attributes.hasOwnProperty(attributeName)) {
+            ss.setAttribute(attributeName, attributes[attributeName]);
+          }
+        }
+      }
+      ss.rel = "stylesheet";
+      ss.href = href;
+      ss.media = "only x";
+      function ready(cb) {
+        if (doc.body) {
+          return cb();
+        }
+        setTimeout(function () {
+          ready(cb);
+        });
+      }
+      ready(function () {
+        ref.parentNode.insertBefore(ss, before ? ref : ref.nextSibling);
+      });
+      var onloadcssdefined = function (cb) {
+        var resolvedHref = ss.href;
+        var i = sheets.length;
+        while (i--) {
+          if (sheets[i].href === resolvedHref) {
+            return cb();
+          }
+        }
+        setTimeout(function () {
+          onloadcssdefined(cb);
+        });
+      };
+      function loadCB() {
+        if (ss.addEventListener) {
+          ss.removeEventListener("load", loadCB);
+        }
+        ss.media = media || "all";
+      }
+      if (ss.addEventListener) {
+        ss.addEventListener("load", loadCB);
+      }
+      ss.onloadcssdefined = onloadcssdefined;
+      onloadcssdefined(loadCB);
+      return ss;
+    },
+
+    js: (src, opt) => new Promise((resolve, reject) => {
+      var script = document.createElement('script');
+      if (src.startsWith('/')) {
+        src = ctx.root + src.substring(1);
+      }
+      script.src = src;
+      if (opt) {
+        for (let key of Object.keys(opt)) {
+          script[key] = opt[key]
+        }
+      } else {
+        // 默认异步，如果需要同步，第二个参数传入 {} 即可
+        script.async = true
+      }
+      script.onerror = reject
+      script.onload = script.onreadystatechange = function () {
+        const loadState = this.readyState
+        if (loadState && loadState !== 'loaded' && loadState !== 'complete') return
+        script.onload = script.onreadystatechange = null
+        resolve()
+      }
+      document.head.appendChild(script)
+    }),
+
+    jq: (fn) => {
+      if (typeof jQuery === 'undefined') {
+        utils.js(deps.jquery).then(fn)
+      } else {
+        fn()
+      }
+    },
+
+    onLoading: (el) => {
+      if (el) {
+        $(el).append('<div class="loading-wrap"><svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" stroke-opacity=".3" d="M12 3C16.9706 3 21 7.02944 21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="1.3s" values="60;0"/></path><path stroke-dasharray="15" stroke-dashoffset="15" d="M12 3C16.9706 3 21 7.02944 21 12"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.3s" values="15;0"/><animateTransform attributeName="transform" dur="1.5s" repeatCount="indefinite" type="rotate" values="0 12 12;360 12 12"/></path></g></svg></div>');
+      }
+    },
+    onLoadSuccess: (el) => {
+      if (el) {
+        $(el).find('.loading-wrap').remove();
+      }
+    },
+    onLoadFailure: (el) => {
+      if (el) {
+        $(el).find('.loading-wrap svg').remove();
+        $(el).find('.loading-wrap').append('<svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" d="M12 3L21 20H3L12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.5s" values="60;0"/></path><path stroke-dasharray="6" stroke-dashoffset="6" d="M12 10V14"><animate fill="freeze" attributeName="stroke-dashoffset" begin="0.6s" dur="0.2s" values="6;0"/></path></g><circle cx="12" cy="17" r="1" fill="currentColor" fill-opacity="0"><animate fill="freeze" attributeName="fill-opacity" begin="0.8s" dur="0.4s" values="0;1"/></circle></svg>');
+        $(el).find('.loading-wrap').addClass('error');
+      }
+    },
+    request: (el, url, callback, onFailure) => {
+      const maxRetry = 3;
+      let retryCount = 0;
+
+      return new Promise((resolve, reject) => {
+        const load = () => {
+          utils.onLoading?.(el);
+
+          let timedOut = false;
+          const timeout = setTimeout(() => {
+            timedOut = true;
+            console.warn('[request] 超时:', url);
+
+            if (++retryCount >= maxRetry) {
+              utils.onLoadFailure?.(el);
+              onFailure?.();
+              reject('请求超时');
+            } else {
+              setTimeout(load, 1000);
+            }
+          }, 5000);
+
+          fetch(url).then(resp => {
+            if (timedOut) return;
+            clearTimeout(timeout);
+
+            if (!resp.ok) throw new Error('响应失败');
+            return resp;
+          }).then(data => {
+            if (timedOut) return;
+            utils.onLoadSuccess?.(el);
+            callback(data);
+            resolve(data);
+          }).catch(err => {
+            clearTimeout(timeout);
+            console.warn('[request] 错误:', err);
+
+            if (++retryCount >= maxRetry) {
+              utils.onLoadFailure?.(el);
+              onFailure?.();
+              reject(err);
+            } else {
+              setTimeout(load, 1000);
+            }
+          });
+        };
+
+        load();
+      });
+    },
+    requestWithoutLoading: (url, options = {}, maxRetry = 2, timeout = 5000) => {
+      return new Promise((resolve, reject) => {
+        let retryCount = 0;
+
+        const tryRequest = () => {
+          let timedOut = false;
+          const timer = setTimeout(() => {
+            timedOut = true;
+            if (++retryCount > maxRetry) reject('timeout');
+            else tryRequest();
+          }, timeout);
+
+          fetch(url, options)
+            .then(resp => {
+              clearTimeout(timer);
+              if (!resp.ok) throw new Error('bad response');
+              resolve(resp);
+            })
+            .catch(err => {
+              clearTimeout(timer);
+              if (++retryCount > maxRetry) reject(err);
+              else setTimeout(tryRequest, 500);
+            });
+        };
+
+        tryRequest();
+      });
+    },
+    /********************** requestAnimationFrame ********************************/
+    // 1、requestAnimationFrame 会把每一帧中的所有 DOM 操作集中起来，在一次重绘或回流中就完成，并且重绘或回流的时间间隔紧紧跟随浏览器的刷新频率，一般来说，这个频率为每秒60帧。
+    // 2、在隐藏或不可见的元素中，requestAnimationFrame 将不会进行重绘或回流，这当然就意味着更少的的 cpu，gpu 和内存使用量。
+    requestAnimationFrame: (fn) => {
+      if (!window.requestAnimationFrame) {
+        window.requestAnimationFrame = window.requestAnimationFrame || window.mozRequestAnimationFrame || window.webkitRequestAnimationFrame;
+      }
+      window.requestAnimationFrame(fn)
+    },
+    dark: {},
+  };
+
+  // utils.dark.mode 当前模式 dark or light
+  // utils.dark.toggle() 暗黑模式触发器
+  // utils.dark.push(callBack[,"callBackName"]) 传入触发器回调函数
+  utils.dark.method = {
+    toggle: new RunItem(),
+  };
+  utils.dark = Object.assign(utils.dark, {
+    push: utils.dark.method.toggle.push,
+  });
+</script>
+<script>
+  const sidebar = {
+    leftbar: () => {
+      if (l_body) {
+        l_body.toggleAttribute('leftbar');
+        l_body.removeAttribute('rightbar');
+      }
+    },
+    rightbar: () => {
+      if (l_body) {
+        l_body.toggleAttribute('rightbar');
+        l_body.removeAttribute('leftbar');
+      }
+    },
+    dismiss: () => {
+      if (l_body) {
+        l_body.removeAttribute('leftbar');
+        l_body.removeAttribute('rightbar');
+      }
+    },
+    toggleTOC: () => {
+      document.querySelector('#data-toc').classList.toggle('collapse');
+    }
+  }
+</script>
+<script type="text/javascript">
+  (() => {
+    const tagSwitchers = document.querySelectorAll('.tag-subtree.parent-tag > a > .tag-switcher-wrapper')
+    for (const tagSwitcher of tagSwitchers) {
+      tagSwitcher.addEventListener('click', (e) => {
+        const parent = e.target.closest('.tag-subtree.parent-tag')
+        parent.classList.toggle('expanded')
+        e.preventDefault()
+      })
+    }
+
+    // Get active tag from query string, then activate it.
+    const urlParams = new URLSearchParams(window.location.search)
+    const activeTag = urlParams.get('tag')
+    if (activeTag) {
+      let tag = document.querySelector(`.tag-subtree[data-tag="${activeTag}"]`)
+      if (tag) {
+        tag.querySelector('a').classList.add('active')
+        
+        while (tag) {
+          tag.classList.add('expanded')
+          tag = tag.parentElement.closest('.tag-subtree.parent-tag')
+        }
+      }
+    }
+  })()
+</script>
+
+<script async src="https://gcore.jsdelivr.net/npm/vanilla-lazyload@19.1/dist/lazyload.min.js"></script>
+<script>
+  // https://www.npmjs.com/package/vanilla-lazyload
+  // Set the options globally
+  // to make LazyLoad self-initialize
+  window.lazyLoadOptions = {
+    elements_selector: ".lazy",
+    callback_loaded: (el) => {
+      el.classList.add('loaded');
+      const wrapper = el.closest('.lazy-box');
+      const icon = wrapper?.querySelector('.lazy-icon');
+      if (icon) icon.remove();
+    }
+  };
+  // Listen to the initialization event
+  // and get the instance of LazyLoad
+  window.addEventListener(
+    "LazyLoad::Initialized",
+    function (event) {
+      window.lazyLoadInstance = event.detail.instance;
+    },
+    false
+  );
+  document.addEventListener('DOMContentLoaded', function () {
+    window.lazyLoadInstance?.update();
+  });
+
+  window.wrapLazyloadImages = (container) => {
+    if (typeof container === 'string') {
+      container = document.querySelector(container);
+    }
+    if (!container) return;
+    
+    const images = container.querySelectorAll('img');
+    images.forEach((img) => {
+      if (img.classList.contains('lazy')) return;
+
+      const src = img.getAttribute('src');
+      if (!src) return;
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'lazy-box';
+
+      const newImg = img.cloneNode();
+      newImg.removeAttribute('src');
+      newImg.setAttribute('data-src', src);
+      newImg.classList.add('lazy');
+
+      const icon = document.createElement('div');
+      icon.className = 'lazy-icon';
+      if (def.loading) {
+        icon.style.backgroundImage = `url("${def.loading}")`;
+      }
+
+      wrapper.appendChild(newImg);
+      wrapper.appendChild(icon);
+
+      img.replaceWith(wrapper);
+    });
+
+    // 通知 LazyLoad 更新
+    if (window.lazyLoadInstance?.update) {
+      window.lazyLoadInstance.update();
+    }
+  }
+  
+</script>
+
+<!-- required -->
+<script src="/js/main.js?v=1.33.1" defer></script>
+
+<script type="text/javascript">
+  const applyTheme = (theme) => {
+    if (theme === 'auto') {
+      document.documentElement.removeAttribute('data-theme')
+    } else {
+      document.documentElement.setAttribute('data-theme', theme)
+    }
+
+    // applyThemeToGiscus(theme)
+  }
+
+  // FIXME: 这会导致无法使用 preferred_color_scheme 以外的主题
+  const applyThemeToGiscus = (theme) => {
+    // theme = theme === 'auto' ? 'preferred_color_scheme' : theme
+    const cmt = document.getElementById('giscus')
+    if (cmt) {
+      // This works before giscus load.
+      cmt.setAttribute('data-theme', theme)
+    }
+
+    const iframe = document.querySelector('#comments > section.giscus > iframe')
+    if (iframe) {
+      // This works after giscus loaded.
+      const src = iframe.src
+      const newSrc = src.replace(/theme=[\w]+/, `theme=${theme}`)
+      iframe.src = newSrc
+    }
+  }
+
+  const switchTheme = () => {
+    // light -> dark -> auto -> light -> ...
+    const currentTheme = document.documentElement.getAttribute('data-theme')
+    let newTheme;
+    switch (currentTheme) {
+      case 'light':
+        newTheme = 'dark'
+        break
+      case 'dark':
+        newTheme = 'auto'
+        break
+      default:
+        newTheme = 'light'
+    }
+    applyTheme(newTheme)
+    window.localStorage.setItem('Stellar.theme', newTheme)
+    utils.dark.mode = newTheme === 'auto' ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : newTheme;
+    utils.dark.method.toggle.start();
+
+    const messages = {
+      light: `切换到浅色模式`,
+      dark: `切换到深色模式`,
+      auto: `切换到跟随系统配色`,
+    }
+    hud?.toast?.(messages[newTheme])
+  }
+
+  (() => {
+    // Apply user's preferred theme, if any.
+    const theme = window.localStorage.getItem('Stellar.theme')
+    if (theme !== null) {
+      applyTheme(theme)
+    } else {
+      utils.dark.mode = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    utils.dark.method.toggle.start();
+  })()
+</script>
+
+
+<!-- optional -->
+
+
+
+<script defer>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    ctx.services = Object.assign({}, JSON.parse(`{"mdrender":{"js":"/js/services/mdrender.js"},"siteinfo":{"js":"/js/services/siteinfo.js","api":null},"ghinfo":{"js":"/js/services/ghinfo.js"},"rating":{"js":"/js/services/rating.js","api":"https://star-vote.xaox.cc/api/rating"},"vote":{"js":"/js/services/vote.js","api":"https://star-vote.xaox.cc/api/vote"},"sites":{"js":"/js/services/sites.js"},"friends":{"js":"/js/services/friends.js"},"friends_and_posts":{"js":"/js/services/friends_and_posts.js"},"timeline":{"js":"/js/services/timeline.js"},"fcircle":{"js":"/js/services/fcircle.js"},"weibo":{"js":"/js/services/weibo.js"},"memos":{"js":"/js/services/memos.js"},"voice":{"js":"/js/plugins/voice.js"},"video":{"js":"/js/plugins/video.js"},"download-file":{"js":"/js/plugins/download-file.js"},"twikoo":{"js":"/js/services/twikoo_latest_comment.js"},"waline":{"js":"/js/services/waline_latest_comment.js"},"artalk":{"js":"/js/services/artalk_latest_comment.js"},"giscus":{"js":"/js/services/giscus_latest_comment.js"},"contributors":{"edit_this_page":{"_posts/":null,"wiki/stellar/":"https://github.com/xaoxuu/hexo-theme-stellar-docs/blob/main/"},"js":"/js/services/contributors.js"}}`));
+    for (let id of Object.keys(ctx.services)) {
+      const js = ctx.services[id].js;
+      if (id == 'siteinfo') {
+        ctx.cardlinks = document.querySelectorAll('a.link-card[cardlink]');
+        if (ctx.cardlinks?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            setCardLink(ctx.cardlinks);
+          });
+        }
+      } else if (id == 'voice') {
+        ctx.voiceAudios = document.querySelectorAll('.voice>audio');
+        if (ctx.voiceAudios?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            createVoiceDom(ctx.voiceAudios);
+          });
+        }
+      } else if (id == 'video') {
+        ctx.videos = document.querySelectorAll('.video>video');
+        if (ctx.videos?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            videoEvents(ctx.videos);
+          });
+        }
+      } else if (id == 'download-file') {
+        ctx.files = document.querySelectorAll('.file');
+        if (ctx.files?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            downloadFileEvent(ctx.files);
+          });
+        }
+      } else {
+        const els = document.getElementsByClassName(`ds-${id}`);
+        if (els?.length > 0) {
+          utils.jq(() => {
+            if (id == 'timeline' || 'memos' || 'marked') {
+              utils.js(deps.marked).then(function () {
+                utils.js(js, { defer: true });
+              });
+            } else {
+              utils.js(js, { defer: true });
+            }
+          });
+        }
+      }
+    }
+
+    // chat iphone time
+    let phoneTimes = document.querySelectorAll('.chat .status-bar .time');
+
+    if (phoneTimes.length > 0) {
+      NowTime();
+      var date = new Date();
+      var sec = date.getSeconds();
+      var firstAdjustInterval = setInterval(firstAdjustTime, 1000 * (60 - sec));
+    }
+
+    function firstAdjustTime() {
+      NowTime();
+      clearInterval(firstAdjustInterval);
+      setInterval(NowTime, 1000 * 60);
+    }
+
+    function NowTime() {
+      for (let i = 0; i < phoneTimes.length; ++i) {
+        var timeSpan = phoneTimes[i];
+        var date = new Date();
+        var hour = date.getHours();
+        var min = date.getMinutes();
+        timeSpan.innerHTML = check(hour) + ":" + check(min);
+      }
+    };
+
+    function check(val) {
+      if (val < 10) {
+        return ("0" + val);
+      }
+      return (val);
+    }
+
+    // chat quote
+    const chat_quote_obverser = new IntersectionObserver((entries, observer) => {
+      entries.filter((entry) => { return entry.isIntersecting }).sort((a, b) => a.intersectionRect.y !== b.intersectionRect.y ? a.intersectionRect.y - b.intersectionRect.y : a.intersectionRect.x - b.intersectionRect.x).forEach((entry, index) => {
+          observer.unobserve(entry.target);
+          setTimeout(() => {
+            entry.target.classList.add('quote-blink');
+            setTimeout(() => {
+              entry.target.classList.remove('quote-blink');
+            }, 1000);
+          }, Math.max(100, 16) * (index + 1));
+        });
+    });
+
+    var chatQuotes = document.querySelectorAll(".chat .talk .quote");
+    chatQuotes.forEach((quote) => {
+      quote.addEventListener('click', function () {
+        var chatCellDom = document.getElementById("quote-" + quote.getAttribute("quotedCellTag"));
+        if (chatCellDom) {
+          var chatDiv = chatCellDom.parentElement;
+          var mid = chatDiv.clientHeight / 2;
+          var offsetTop = chatCellDom.offsetTop;
+          if (offsetTop > mid - chatCellDom.clientHeight / 2) {
+            chatDiv.scrollTo({
+              top: chatCellDom.offsetTop - mid + chatCellDom.clientHeight / 2,
+              behavior: "smooth"
+            });
+          } else {
+            chatDiv.scrollTo({
+              top: 0,
+              behavior: "smooth"
+            });
+          }
+          chat_quote_obverser.observe(chatCellDom);
+        }
+      });
+    });
+  });
+</script>
+
+<script>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    ctx.search = {
+      path: `/search.json`,
+    }
+    utils.js('/js/search/local-search.js', { defer: true });
+  });
+</script><script>
+  window.FPConfig = {
+    delay: 0,
+    ignoreKeywords: [],
+    maxRPS: 5,
+    hoverDelay: 25
+  };
+</script>
+<script defer src="https://gcore.jsdelivr.net/npm/flying-pages@2/flying-pages.min.js"></script><script>
+  ctx.fancybox = {
+    selector: `.timenode p>img`,
+    css: `https://gcore.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css`,
+    js: `https://gcore.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js`
+  };
+  var selector = '[data-fancybox]:not(.error), .with-fancybox .atk-content img:not([atk-emoticon])';
+  if (ctx.fancybox.selector) {
+    selector += `, ${ctx.fancybox.selector}`
+  }
+  var needFancybox = document.querySelectorAll(selector).length !== 0;
+  if (!needFancybox) {
+    const memos = document.getElementsByClassName('ds-memos');
+    if (memos != undefined && memos.length > 0) {
+      needFancybox = true;
+    }
+    const fancybox = document.getElementsByClassName('with-fancybox');
+    if (fancybox != undefined && fancybox.length > 0) {
+      needFancybox = true;
+    }
+  }
+  if (needFancybox) {
+    utils.css(ctx.fancybox.css);
+    utils.js(ctx.fancybox.js, { defer: true }).then(function () {
+      Fancybox.bind(selector, {
+        hideScrollbar: false,
+        Thumbs: {
+          autoStart: false,
+        },
+        caption: (fancybox, slide) => {
+          return slide.triggerEl.alt || slide.triggerEl.dataset.caption || null
+        }
+      });
+    })
+  }
+</script>
+<script>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    const swiper_api = document.getElementById('swiper-api');
+    if (swiper_api != undefined) {
+      utils.css(`https://unpkg.com/swiper@10.3/swiper-bundle.min.css`);
+      utils.js(`https://unpkg.com/swiper@10.3/swiper-bundle.min.js`, { defer: true }).then(function () {
+        const effect = swiper_api.getAttribute('effect') || '';
+        var swiper = new Swiper('.swiper#swiper-api', {
+          slidesPerView: 'auto',
+          spaceBetween: 8,
+          centeredSlides: true,
+          effect: effect,
+          rewind: true,
+          pagination: {
+            el: '.swiper-pagination',
+            clickable: true,
+          },
+          navigation: {
+            nextEl: '.swiper-button-next',
+            prevEl: '.swiper-button-prev',
+          },
+        });
+      })
+    }
+  });
+</script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    window.codeElements = document.querySelectorAll('.code');
+    if (window.codeElements.length > 0) {
+      ctx.copycode = {
+        default_text: `Copy`,
+        success_text: `Copied`,
+        toast: `复制成功`,
+      };
+      utils.js('/js/plugins/copycode.js');
+    }
+  });
+</script>
+
+
+<!-- inject -->
+
+</div></body></html>

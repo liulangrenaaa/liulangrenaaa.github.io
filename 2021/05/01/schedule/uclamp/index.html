@@ -1,0 +1,906 @@
+
+<!DOCTYPE html><html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="hexo-theme" content="https://github.com/xaoxuu/hexo-theme-stellar/tree/1.33.1" theme-name="Stellar" theme-version="1.33.1">
+  
+  
+  <meta name="generator" content="Hexo 5.1.1">
+  <meta http-equiv='x-dns-prefetch-control' content='on' />
+  
+  <meta name="renderer" content="webkit">
+  <meta name="force-rendering" content="webkit">
+  <meta http-equiv="X-UA-Compatible" content="IE=Edge,chrome=1">
+  <meta name="HandheldFriendly" content="True" >
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000">
+  <meta name="theme-color" content="#f9fafb">
+  <title>uclamp - liulangren Blog</title>
+
+  
+    <meta name="description" content="WHAT?uclamp(utilzation clamp) 是说 任务 cpu使用率夹钳，主要是 userspace 对 scheduler的一些hint。  比如某个 task 对用户体验有直接的影响，此 task至少需要 20%cpu，那么计算 cpu使用率，select_rq的时候，必须考虑此task的 minimum “requested”，然后选择 rq 和 freq。 比如某个低优先级">
+<meta property="og:type" content="article">
+<meta property="og:title" content="uclamp">
+<meta property="og:url" content="https://liulangrenaaa.github.io/2021/05/01/schedule/uclamp/">
+<meta property="og:site_name" content="liulangren Blog">
+<meta property="og:description" content="WHAT?uclamp(utilzation clamp) 是说 任务 cpu使用率夹钳，主要是 userspace 对 scheduler的一些hint。  比如某个 task 对用户体验有直接的影响，此 task至少需要 20%cpu，那么计算 cpu使用率，select_rq的时候，必须考虑此task的 minimum “requested”，然后选择 rq 和 freq。 比如某个低优先级">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://liulangrenaaa.github.io/images/icons/image.png">
+<meta property="article:published_time" content="2021-05-01T19:00:00.000Z">
+<meta property="article:modified_time" content="2026-05-14T03:56:22.505Z">
+<meta property="article:author" content="Su Hui">
+<meta property="article:tag" content="linux kernel">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://liulangrenaaa.github.io/images/icons/image.png">
+  
+  
+  
+  <meta name="keywords" content="linux kernel">
+
+  <!-- feed -->
+  
+
+  <link rel="stylesheet" href="/css/main.css?v=1.33.1">
+
+
+  
+    <link rel="shortcut icon" href="/images/icons/image.png">
+  
+
+  
+
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"Su Hui","sameAs":[],"image":"/images/icons/image.png"},"dateCreated":"2021-05-01T19:00:00+00:00","dateModified":"2026-05-14T03:56:22+00:00","datePublished":"2021-05-01T19:00:00+00:00","description":"","headline":"uclamp","mainEntityOfPage":{"@type":"WebPage","@id":"https://liulangrenaaa.github.io/2021/05/01/schedule/uclamp/"},"publisher":{"@type":"Organization","name":"Su Hui","sameAs":[],"image":"/images/icons/image.png","logo":{"@type":"ImageObject","url":"/images/icons/image.png"}},"url":"https://liulangrenaaa.github.io/2021/05/01/schedule/uclamp/","keywords":"linux kernel","image":[]}</script>
+  
+</head>
+<body>
+
+<div class="l_body content" id="start" layout="post" type="tech" ><aside class="l_left"><div class="sidebg"></div><div class="leftbar-container">
+
+
+<header class="header"><div class="logo-wrap"><a class="avatar" href="/about/"><div class="bg" style="opacity:0;background-image:url(https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/avatar/round/rainbow64@3x.webp);"></div><img no-lazy class="avatar" src="/images/icons/image.png" onerror="javascript:this.classList.add('error');this.src='https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/image/2659360.svg';"></a><a class="title" href="/"><div class="main">liulangren Blog</div></a></div></header>
+
+<div class="nav-area">
+
+<nav class="menu dis-select"></nav>
+</div>
+<div class="widgets">
+<div class="search-wrapper" id="search-wrapper"><form class="search-form"><a class="search-button" onclick="document.getElementById(&quot;search-input&quot;).focus();"><svg t="1705074644177" viewBox="0 0 1025 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="1560" width="200" height="200"><path d="M1008.839137 935.96571L792.364903 719.491476a56.783488 56.783488 0 0 0-80.152866 0 358.53545 358.53545 0 1 1 100.857314-335.166073 362.840335 362.840335 0 0 1-3.689902 170.145468 51.248635 51.248635 0 1 0 99.217358 26.444296 462.057693 462.057693 0 1 0-158.255785 242.303546l185.930047 185.725053a51.248635 51.248635 0 0 0 72.568068 0 51.248635 51.248635 0 0 0 0-72.978056z" p-id="1561"></path><path d="M616.479587 615.969233a50.428657 50.428657 0 0 0-61.498362-5.534852 174.655348 174.655348 0 0 1-177.525271 3.484907 49.403684 49.403684 0 0 0-58.833433 6.76482l-3.074918 2.869923a49.403684 49.403684 0 0 0 8.609771 78.10292 277.767601 277.767601 0 0 0 286.992355-5.739847 49.403684 49.403684 0 0 0 8.404776-76.667958z" p-id="1562"></path></svg></a><input type="text" class="search-input" id="search-input" placeholder="站内搜索"></form><div id="search-result"></div><div class="search-no-result">没有找到内容！</div></div>
+
+<widget class="widget-wrapper linklist"><div class="widget-header dis-select"><span class="name">核心专题</span></div><div class="widget-body fs14">
+<div class="linklist left" style="grid-template-columns:repeat(1,1fr);">
+<a class="link" title="framework基础" href="/categories/android/framework基础/"><div class="flex"><span>framework基础</span></div></a>
+<a class="link" title="app启动与生命周期" href="/categories/android/app启动与生命周期/"><div class="flex"><span>app启动与生命周期</span></div></a>
+<a class="link" title="wms窗口系统" href="/categories/android/wms窗口系统/"><div class="flex"><span>wms窗口系统</span></div></a>
+<a class="link" title="input输入系统" href="/categories/android/input输入系统/"><div class="flex"><span>input输入系统</span></div></a>
+<a class="link" title="binder与系统服务" href="/categories/android/binder与系统服务/"><div class="flex"><span>binder与系统服务</span></div></a>
+<a class="link" title="graphics图形系统" href="/categories/android/graphics图形系统/"><div class="flex"><span>graphics图形系统</span></div></a>
+<a class="link" title="anr-crash稳定性" href="/categories/android/anr-crash稳定性/"><div class="flex"><span>anr-crash稳定性</span></div></a>
+<a class="link" title="debug-trace工具链" href="/categories/android/debug-trace工具链/"><div class="flex"><span>debug-trace工具链</span></div></a>
+<a class="link" title="性能稳定性" href="/tags/性能稳定性/"><div class="flex"><span>性能稳定性</span></div></a>
+<a class="link" title="Linux 调度" href="/categories/linux-kernel/linux-schedule/"><div class="flex"><span>Linux 调度</span></div></a></div></div></widget>
+
+<widget class="widget-wrapper linklist"><div class="widget-header dis-select"><span class="name">精选文章</span></div><div class="widget-body fs14">
+<div class="linklist left" style="grid-template-columns:repeat(1,1fr);">
+<a class="link" title="ANR问题总结" href="/2022/07/01/android/anr-crash稳定性/ANR问题总结/"><div class="flex"><span>ANR问题总结</span></div></a>
+<a class="link" title="android12 gdb64调试进程" href="/2021/09/23/用户空间/android12%20gdb64调试进程/"><div class="flex"><span>android12 gdb64调试进程</span></div></a>
+<a class="link" title="60s定位内核性能瓶颈" href="/2020/09/13/内核观测/性能稳定性/60s定位内核性能瓶颈/"><div class="flex"><span>60s定位内核性能瓶颈</span></div></a>
+<a class="link" title="关于preempt_count的思考" href="/2020/09/21/进程管理/关于preempt_count的思考/"><div class="flex"><span>关于preempt_count的思考</span></div></a></div></div></widget>
+</div>
+
+</div></aside><div class="l_main" id="main">
+
+
+
+
+
+<div class="article banner top">
+  <div class="content">
+    <div class="top bread-nav footnote"><div class="left"><div class="flex-row" id="breadcrumb"><a class="cap breadcrumb" href="/">主页</a>
+<span class="sep"></span><a class="cap breadcrumb" href="/">文章</a><span class="sep"></span><a class="cap breadcrumb-link" href="/categories/linux-kernel/">linux kernel</a> <span class="sep"></span> <a class="cap breadcrumb-link" href="/categories/linux-kernel/linux-schedule/">linux schedule</a></div>
+<div class="flex-row" id="post-meta"><span class="text created">发布于：<time datetime="2021-05-01T19:00:00.000Z">2021-05-01</time></span><span class="sep updated"></span><span class="text updated">更新于：<time datetime="2026-05-14T03:56:22.505Z">2026-05-14</time></span></div></div></div>
+    
+    <div class="bottom only-title">
+      
+      <div class="text-area">
+        <h1 class="text title"><span>uclamp</span></h1>
+        
+      </div>
+    </div>
+    
+  </div>
+  </div><article class="md-text content"><h2 id="WHAT"><a href="#WHAT" class="headerlink" title="WHAT?"></a>WHAT?</h2><p>uclamp(utilzation clamp) 是说 任务 cpu使用率夹钳，主要是 userspace 对 scheduler的一些hint。</p>
+<ol>
+<li>比如某个 task 对用户体验有直接的影响，此 task至少需要 20%cpu，那么计算 cpu使用率，select_rq的时候，必须考虑此task的 minimum “requested”，然后选择 <code>rq</code> 和 <code>freq</code>。</li>
+<li>比如某个低优先级的 task 对用户体验没有影响，此 task最多需要 60%cpu（60% &lt; 1024），那么计算 cpu使用率，select_rq的时候，必须考虑此task的 maximum “requested”，然后选择 <code>rq</code> 和<code>freq</code>。</li>
+</ol>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">sched&#x2F;cpufreq, sched&#x2F;uclamp: Add clamps for FAIR and RT tasks</span><br><span class="line"></span><br><span class="line">    Each time a frequency update is required via schedutil, a frequency is</span><br><span class="line">    selected to (possibly) satisfy the utilization reported by each</span><br><span class="line">    scheduling class and irqs. However, when utilization clamping is in use,</span><br><span class="line">    the frequency selection should consider userspace utilization clamping</span><br><span class="line">    hints.  This will allow, for example, to:</span><br><span class="line"></span><br><span class="line">     - boost tasks which are directly affecting the user experience</span><br><span class="line">       by running them at least at a minimum &quot;requested&quot; frequency</span><br><span class="line"></span><br><span class="line">     - cap low priority tasks not directly affecting the user experience</span><br><span class="line">       by running them only up to a maximum &quot;allowed&quot; frequency</span><br></pre></td></tr></table></figure>
+
+<p>在uapi 的头文件<code>include/uapi/linux/sched/types.h</code>中</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"> @sched_util_min	represents the minimum utilization</span><br><span class="line"> @sched_util_max	represents the maximum utilization</span><br><span class="line"></span><br><span class="line">Utilization is a value in the range [0..SCHED_CAPACITY_SCALE]. It</span><br><span class="line">represents the percentage of CPU time used by a task when running at the</span><br><span class="line">maximum frequency on the highest capacity CPU of the system. For example, a</span><br><span class="line">20% utilization task is a task running for 2ms every 10ms at maximum</span><br><span class="line">frequency.</span><br><span class="line"></span><br><span class="line">A task with a min utilization value bigger than 0 is more likely scheduled</span><br><span class="line">on a CPU with a capacity big enough to fit the specified value.</span><br><span class="line">A task with a max utilization value smaller than 1024 is more likely</span><br><span class="line">scheduled on a CPU with no more capacity than the specified value.</span><br></pre></td></tr></table></figure>
+
+<p>uclamp 的min..max 指的都是最大 freq下 的cpu使用率， 20%使用率 说的是在最大频率下，task 每10ms需要运行2ms。</p>
+<h2 id="data-structure"><a href="#data-structure" class="headerlink" title="data structure"></a>data structure</h2><p>uclamp 分为<code>per sched_entity</code> 和 <code>per rq</code> 两种，分别使用 <code>struct uclamp_se</code>  <code>struct uclamp_rq</code>来描述。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line">struct uclamp_se &#123;</span><br><span class="line">	unsigned int value		: bits_per(SCHED_CAPACITY_SCALE);</span><br><span class="line">	unsigned int bucket_id		: bits_per(UCLAMP_BUCKETS);</span><br><span class="line">	unsigned int active		: 1;</span><br><span class="line">	unsigned int user_defined	: 1;</span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line">struct uclamp_rq &#123;</span><br><span class="line">	unsigned int value;</span><br><span class="line">	struct uclamp_bucket bucket[UCLAMP_BUCKETS];</span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line">struct rq &#123;</span><br><span class="line">	&#x2F;* runqueue lock: *&#x2F;</span><br><span class="line">	raw_spinlock_t		lock;</span><br><span class="line">#ifdef CONFIG_UCLAMP_TASK</span><br><span class="line">	&#x2F;* Utilization clamp values based on CPU&#39;s RUNNABLE tasks *&#x2F;</span><br><span class="line">	struct uclamp_rq	uclamp[UCLAMP_CNT] ____cacheline_aligned;</span><br><span class="line">	unsigned int		uclamp_flags;</span><br><span class="line">#define UCLAMP_FLAG_IDLE 0x01</span><br><span class="line">#endif</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>per sched entity</code> 又分为两种，一种是 <code>per task</code>，一种是 <code>per task group</code>。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line">struct task_struct &#123;</span><br><span class="line">        ......</span><br><span class="line">#ifdef CONFIG_UCLAMP_TASK</span><br><span class="line">	&#x2F;* Clamp values requested for a scheduling entity *&#x2F;</span><br><span class="line">	struct uclamp_se		uclamp_req[UCLAMP_CNT];</span><br><span class="line">	&#x2F;* Effective clamp values used for a scheduling entity *&#x2F;</span><br><span class="line">	struct uclamp_se		uclamp[UCLAMP_CNT];</span><br><span class="line">#endif</span><br><span class="line">        ......</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">struct task_group &#123;</span><br><span class="line">	struct cgroup_subsys_state css;</span><br><span class="line">#ifdef CONFIG_UCLAMP_TASK_GROUP</span><br><span class="line">	&#x2F;* The two decimal precision [%] value requested from user-space *&#x2F;</span><br><span class="line">	unsigned int		uclamp_pct[UCLAMP_CNT];</span><br><span class="line">	&#x2F;* Clamp values requested for a task group *&#x2F;</span><br><span class="line">	struct uclamp_se	uclamp_req[UCLAMP_CNT];</span><br><span class="line">	&#x2F;* Effective clamp values used for a task group *&#x2F;</span><br><span class="line">	struct uclamp_se	uclamp[UCLAMP_CNT];</span><br><span class="line">#endif</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+
+<h2 id="api"><a href="#api" class="headerlink" title="api"></a>api</h2><h3 id="init"><a href="#init" class="headerlink" title="init"></a>init</h3><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line">static void __init init_uclamp(void)</span><br><span class="line">&#123;</span><br><span class="line">	struct uclamp_se uc_max &#x3D; &#123;&#125;;</span><br><span class="line">	enum uclamp_id clamp_id;</span><br><span class="line">	int cpu;</span><br><span class="line"></span><br><span class="line">	mutex_init(&amp;uclamp_mutex);</span><br><span class="line"></span><br><span class="line">	for_each_possible_cpu(cpu)</span><br><span class="line">		init_uclamp_rq(cpu_rq(cpu));</span><br><span class="line"></span><br><span class="line">	for_each_clamp_id(clamp_id) &#123;</span><br><span class="line">		uclamp_se_set(&amp;init_task.uclamp_req[clamp_id],</span><br><span class="line">			      uclamp_none(clamp_id), false);</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	&#x2F;* System defaults allow max clamp values for both indexes *&#x2F;</span><br><span class="line">	uclamp_se_set(&amp;uc_max, uclamp_none(UCLAMP_MAX), false);</span><br><span class="line">	for_each_clamp_id(clamp_id) &#123;</span><br><span class="line">		uclamp_default[clamp_id] &#x3D; uc_max;</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+<h3 id="kernel-api"><a href="#kernel-api" class="headerlink" title="kernel api"></a>kernel api</h3><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br></pre></td><td class="code"><pre><span class="line">static inline void uclamp_rq_inc(struct rq *rq, struct task_struct *p) &#123; &#125;</span><br><span class="line">static inline void uclamp_rq_dec(struct rq *rq, struct task_struct *p) &#123; &#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">static inline void enqueue_task(struct rq *rq, struct task_struct *p, int flags)</span><br><span class="line">&#123;</span><br><span class="line">	if (!(flags &amp; ENQUEUE_NOCLOCK))</span><br><span class="line">		update_rq_clock(rq);</span><br><span class="line"></span><br><span class="line">	if (!(flags &amp; ENQUEUE_RESTORE)) &#123;</span><br><span class="line">		sched_info_queued(rq, p);</span><br><span class="line">		psi_enqueue(p, flags &amp; ENQUEUE_WAKEUP);</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	uclamp_rq_inc(rq, p);</span><br><span class="line">	p-&gt;sched_class-&gt;enqueue_task(rq, p, flags);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">static inline void dequeue_task(struct rq *rq, struct task_struct *p, int flags)</span><br><span class="line">&#123;</span><br><span class="line">	if (!(flags &amp; DEQUEUE_NOCLOCK))</span><br><span class="line">		update_rq_clock(rq);</span><br><span class="line"></span><br><span class="line">	if (!(flags &amp; DEQUEUE_SAVE)) &#123;</span><br><span class="line">		sched_info_dequeued(rq, p);</span><br><span class="line">		psi_dequeue(p, flags &amp; DEQUEUE_SLEEP);</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	uclamp_rq_dec(rq, p);</span><br><span class="line">	p-&gt;sched_class-&gt;dequeue_task(rq, p, flags);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>在 <code>enqueue_task</code> <code>dequeue_task</code> 中会 根据 此task是否 开启 uclamp来更改 <code>rq</code>的统计的<code>uclamp_rq</code> 数据。</p>
+<p><img src="/images/image.jpg"></p>
+<h3 id="user-api"><a href="#user-api" class="headerlink" title="user api"></a>user api</h3><p>uclamp 在 <code>userspace</code> 提供了三类接口</p>
+<ul>
+<li>全局uclamp接口 <code>/proc/sys/kernel/sched_util_clamp_min</code> <code>/proc/sys/kernel/sched_util_clamp_max</code></li>
+<li>cgroup based API <code>cpu.uclamp.max</code> <code>cpu.uclamp.min</code></li>
+<li>per-task API</li>
+</ul>
+<p>一般全局uclamp接口都是设置为 min-1024 max-1024。<br>cgroup 接口一般只会限制最大使用率<br>per-task的情况较为复杂，以pixel6为例：</p>
+<p>在pixel6搭载的Android 12中，google去除了<code>schedtue</code> <code>sched boost</code>等机制，pixel6 且采用了双X1架构的芯片，没有使用walt算法。为了尽量提升用户流畅性体验，所以对uclamp较为依赖。</p>
+<p>kernel space对外提供的接口是 <code>sched_setattr</code>, android 框架层对他做了封装<a target="_blank" rel="noopener" href="https://cs.android.com/android/platform/superproject/+/master:hardware/google/pixel/power-libperfmgr/aidl/PowerHintSession.cpp;bpv=1;bpt=1;l=181?q=sched_setattr">setUclamp</a></p>
+<p>在 <code>pixel6</code> 中使用 uclamp的场景大概分为以下几类:</p>
+<ul>
+<li>应用启动</li>
+<li>滑动boost</li>
+<li>top-app</li>
+</ul>
+<p>首先是应用启动，应用启动往往需要创建多个线程，读取很多资源。所以在应用冷启动时刻，除了将所有cpu的频率固定在最高频之外，还将应用的 <code>UI_thread</code> <code>Render_thread</code> <code>hwui_task0</code> <code>hwui_task1</code> uclamp直接设置为 512，这样会使得这几个重载线程在启动时刻就跑在超大核心上，减少应用冷启动时间。</p>
+<p>滑动场景，由于滑动场景有较多复杂的动画，<code>UI_thread</code> <code>Render_thread</code> <code>hwui_task0</code> <code>hwui_task1</code>的负载较重，如果不及时上超大核，有丢帧的风险，所以滑动场景也是将这几个task的uclamp_min 设置为 512，来保证可以上超大核。</p>
+<h3 id="根据场景设置"><a href="#根据场景设置" class="headerlink" title="根据场景设置"></a>根据场景设置</h3><p>在 pixel6 中，从代码中看 有 <a target="_blank" rel="noopener" href="https://cs.android.com/android/platform/superproject/+/master:device/google/gs101/powerhint.json;l=120?q=ta_uclamp_min">powerhint.json</a> 这个文件。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">&#123;</span><br><span class="line">  &quot;Name&quot;: &quot;TAUClampBoost&quot;,</span><br><span class="line">  &quot;Path&quot;: &quot;&#x2F;sys&#x2F;kernel&#x2F;vendor_sched&#x2F;ta_uclamp_min&quot;,</span><br><span class="line">  &quot;Values&quot;: [</span><br><span class="line">    &quot;553&quot;,</span><br><span class="line">    &quot;1&quot;,</span><br><span class="line">    &quot;246&quot;,</span><br><span class="line">    &quot;185&quot;,</span><br><span class="line">    &quot;123&quot;,</span><br><span class="line">    &quot;62&quot;</span><br><span class="line">  ],</span><br><span class="line">  &quot;DefaultIndex&quot;: 1,</span><br><span class="line">  &quot;ResetOnInit&quot;: true</span><br><span class="line">&#125;,</span><br></pre></td></tr></table></figure>
+<p>这个文件将 <code>ta_uclamp_min</code> 重命名为 <code>TAUClampBoost</code>，然后根据 不同场景来设置不同 的val。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br></pre></td><td class="code"><pre><span class="line">&#123;</span><br><span class="line">  &quot;PowerHint&quot;: &quot;LAUNCH&quot;,</span><br><span class="line">  &quot;Node&quot;: &quot;TAUClampBoost&quot;,</span><br><span class="line">  &quot;Duration&quot;: 5000,</span><br><span class="line">  &quot;Value&quot;: &quot;553&quot;</span><br><span class="line">&#125;,</span><br><span class="line"></span><br><span class="line">&#123;</span><br><span class="line">  &quot;PowerHint&quot;: &quot;REFRESH_120FPS&quot;,</span><br><span class="line">  &quot;Node&quot;: &quot;TAUClampBoost&quot;,</span><br><span class="line">  &quot;Duration&quot;: 0,</span><br><span class="line">  &quot;Value&quot;: &quot;185&quot;</span><br><span class="line">&#125;,</span><br><span class="line">&#123;</span><br><span class="line">  &quot;PowerHint&quot;: &quot;REFRESH_90FPS&quot;,</span><br><span class="line">  &quot;Node&quot;: &quot;TAUClampBoost&quot;,</span><br><span class="line">  &quot;Duration&quot;: 0,</span><br><span class="line">  &quot;Value&quot;: &quot;123&quot;</span><br><span class="line">&#125;,</span><br><span class="line">&#123;</span><br><span class="line">  &quot;PowerHint&quot;: &quot;REFRESH_60FPS&quot;,</span><br><span class="line">  &quot;Node&quot;: &quot;TAUClampBoost&quot;,</span><br><span class="line">  &quot;Duration&quot;: 0,</span><br><span class="line">  &quot;Value&quot;: &quot;62&quot;</span><br><span class="line">&#125;,</span><br><span class="line">&#123;</span><br><span class="line">  &quot;PowerHint&quot;: &quot;ADPF_DISABLE_TA_BOOST&quot;,</span><br><span class="line">  &quot;Node&quot;: &quot;TAUClampBoost&quot;,</span><br><span class="line">  &quot;Duration&quot;: 0,</span><br><span class="line">  &quot;Value&quot;: &quot;1&quot;</span><br><span class="line">&#125;,</span><br><span class="line">&#123;</span><br><span class="line">  &quot;PowerHint&quot;: &quot;DISABLE_TA_BOOST&quot;,</span><br><span class="line">  &quot;Node&quot;: &quot;TAUClampBoost&quot;,</span><br><span class="line">  &quot;Duration&quot;: 0,</span><br><span class="line">  &quot;Value&quot;: &quot;1&quot;</span><br><span class="line">&#125;,</span><br></pre></td></tr></table></figure>
+
+<p>boost 场景与 ta_uclamp_min 关系</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">boost 场景	boost val</span><br><span class="line">LAUCH		553</span><br><span class="line">120 FPS		185</span><br><span class="line">90 FPS		123</span><br><span class="line">60FPS		62</span><br></pre></td></tr></table></figure>
+
+<p>cpu0-7 capacity</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">cpu	capacity</span><br><span class="line">cpu0-3	124</span><br><span class="line">cpu4-5	427</span><br><span class="line">cpu6-7	1024</span><br></pre></td></tr></table></figure>
+
+<p>游戏场景，由于游戏等前台应用对响应时间较为敏感，pixel6 上android的框架层直接将 <code>ta_uclamp_min</code> 设置为 185或者更多，这样游戏进程主线程或者其他前台进程主线程就无法跑在小核心上，至少是大核起步</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">raven:&#x2F;sys&#x2F;kernel&#x2F;vendor_sched # cat ta_uclamp_min</span><br><span class="line">185</span><br><span class="line">raven:&#x2F;sys&#x2F;kernel&#x2F;vendor_sched #</span><br></pre></td></tr></table></figure>
+
+</article>
+<div class="article-footer">
+    <section id="license">
+      <div class="header"><span>许可协议</span></div>
+      <div class="body"><p>本文采用 <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">署名-非商业性使用-相同方式共享 4.0 国际</a> 许可协议，转载请注明出处。</p>
+</div>
+    </section>
+    
+
+</div>
+
+<div class="related-wrap" id="read-next"><section class="body"><div class="item" id="prev"><div class="note">较新文章</div><a href="/2021/05/19/schedule/stop_task/">stop_task</a></div><div class="item" id="next"><div class="note">较早文章</div><a href="/2021/04/30/schedule/fair/">fair</a></div></section></div>
+
+
+
+
+
+
+<footer class="page-footer footnote"><hr><div class="text"><p>本站由 <a href="/">Su Hui</a> 使用 <a target="_blank" rel="noopener" href="https://github.com/xaoxuu/hexo-theme-stellar/tree/1.33.1">Stellar 1.33.1</a> 主题创建。<br>本博客所有文章除特别声明外，均采用 <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> 许可协议，转载请注明出处。</p>
+</div></footer>
+<div class="main-mask" onclick="sidebar.dismiss()"></div></div><aside class="l_right">
+<div class="widgets">
+
+
+
+<widget class="widget-wrapper toc" id="data-toc" collapse="false"><div class="widget-header dis-select"><span class="name">本文目录</span><a class="cap-action" onclick="sidebar.toggleTOC()" ><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h11m-11 6h11m-11 6h11M4 6h1v4m-1 0h2m0 8H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg></a></div><div class="widget-body"><ol class="toc"><li class="toc-item toc-level-2"><a class="toc-link" href="#WHAT"><span class="toc-text">WHAT?</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#data-structure"><span class="toc-text">data structure</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#api"><span class="toc-text">api</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#init"><span class="toc-text">init</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#kernel-api"><span class="toc-text">kernel api</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#user-api"><span class="toc-text">user api</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%A0%B9%E6%8D%AE%E5%9C%BA%E6%99%AF%E8%AE%BE%E7%BD%AE"><span class="toc-text">根据场景设置</span></a></li></ol></li></ol></div><div class="widget-footer"><a class="top" onclick="util.scrollTop()"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><!-- Icon from Solar by 480 Design - https://creativecommons.org/licenses/by/4.0/ --><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><path stroke-linejoin="round" d="m9 15.5l3-3l3 3m-6-4l3-3l3 3"/><path d="M7 3.338A9.95 9.95 0 0 1 12 2c5.523 0 10 4.477 10 10s-4.477 10-10 10S2 17.523 2 12c0-1.821.487-3.53 1.338-5"/></g></svg><span>回到顶部</span></a></div></widget>
+</div></aside><div class='float-panel'>
+  <button type='button' style='display:none' class='laptop-only rightbar-toggle mobile' onclick='sidebar.rightbar()'>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h11m-11 6h11m-11 6h11M4 6h1v4m-1 0h2m0 8H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>
+  </button>
+  <button type='button' style='display:none' class='mobile-only leftbar-toggle mobile' onclick='sidebar.leftbar()'>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 11c0-3.771 0-5.657 1.172-6.828C4.343 3 6.229 3 10 3h4c3.771 0 5.657 0 6.828 1.172C22 5.343 22 7.229 22 11v2c0 3.771 0 5.657-1.172 6.828C19.657 21 17.771 21 14 21h-4c-3.771 0-5.657 0-6.828-1.172C2 18.657 2 16.771 2 13z"/><path id="sep" stroke-linecap="round" d="M5.5 10h6m-5 4h4m4.5 7V3"/></g></svg>
+  </button>
+</div>
+</div><div class="scripts">
+
+
+<script type="text/javascript">
+  window.canonical = {"originalHost":null,"officialHosts":["localhost"],"encoded":""};
+  const ctx = {
+    date_suffix: {
+      just: `刚刚`,
+      min: `分钟前`,
+      hour: `小时前`,
+      day: `天前`,
+    },
+    root : `/`,
+    tag_plugins: {
+      chat: Object.assign({"api":"https://siteinfo.listentothewind.cn/api/v1"}),
+    }
+  };
+
+  // required plugins (only load if needs)
+  if (`local_search`) {
+    ctx.search = {};
+    ctx.search.service = `local_search`;
+    if (ctx.search.service == 'local_search') {
+      let service_obj = Object.assign({}, `{"field":"all","path":"/search.json","content":true,"skip_search":null,"sort":"-date"}`);
+      ctx.search[ctx.search.service] = service_obj;
+    }
+  }
+  const def = {
+    avatar: `https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/avatar/round/3442075.svg`,
+    cover: `https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/cover/76b86c0226ffd.svg`,
+    loading: `https://api.iconify.design/eos-icons:three-dots-loading.svg?color=%231cd0fd`,
+  };
+  const deps = {
+    jquery: `https://gcore.jsdelivr.net/npm/jquery@3.7/dist/jquery.min.js`,
+    marked: `https://gcore.jsdelivr.net/npm/marked@13.0/lib/marked.umd.min.js`,
+    lazyload: `/%5Bobject%20Object%5D`
+  }
+  
+
+</script>
+
+<script type="text/javascript">
+  
+  function RunItem() {
+    this.list = []; // 存放回调函数
+    this.start = () => {
+      for (var i = 0; i < this.list.length; i++) {
+        this.list[i].run();
+      }
+    };
+    this.push = (fn, name, setRequestAnimationFrame = true) => {
+      let myfn = fn
+      if (setRequestAnimationFrame) {
+        myfn = () => {
+          utils.requestAnimationFrame(fn)
+        }
+      }
+      var f = new Item(myfn, name);
+      this.list.push(f);
+    };
+    this.remove = (name) => {
+      for (let index = 0; index < this.list.length; index++) {
+        const e = this.list[index];
+        if (e.name == name) {
+          this.list.splice(index, 1);
+        }
+      }
+    }
+    // 构造一个可以run的对象
+    function Item(fn, name) {
+      // 函数名称
+      this.name = name || fn.name;
+      // run方法
+      this.run = () => {
+        try {
+          fn()
+        } catch (error) {
+          console.log(error);
+        }
+      };
+    }
+  }
+
+  const utils = {
+    // 懒加载 css https://github.com/filamentgroup/loadCSS
+    css: (href, before, media, attributes) => {
+      var doc = window.document;
+      var ss = doc.createElement("link");
+      var ref;
+      if (before) {
+        ref = before;
+      } else {
+        var refs = (doc.body || doc.getElementsByTagName("head")[0]).childNodes;
+        ref = refs[refs.length - 1];
+      }
+      var sheets = doc.styleSheets;
+      if (attributes) {
+        for (var attributeName in attributes) {
+          if (attributes.hasOwnProperty(attributeName)) {
+            ss.setAttribute(attributeName, attributes[attributeName]);
+          }
+        }
+      }
+      ss.rel = "stylesheet";
+      ss.href = href;
+      ss.media = "only x";
+      function ready(cb) {
+        if (doc.body) {
+          return cb();
+        }
+        setTimeout(function () {
+          ready(cb);
+        });
+      }
+      ready(function () {
+        ref.parentNode.insertBefore(ss, before ? ref : ref.nextSibling);
+      });
+      var onloadcssdefined = function (cb) {
+        var resolvedHref = ss.href;
+        var i = sheets.length;
+        while (i--) {
+          if (sheets[i].href === resolvedHref) {
+            return cb();
+          }
+        }
+        setTimeout(function () {
+          onloadcssdefined(cb);
+        });
+      };
+      function loadCB() {
+        if (ss.addEventListener) {
+          ss.removeEventListener("load", loadCB);
+        }
+        ss.media = media || "all";
+      }
+      if (ss.addEventListener) {
+        ss.addEventListener("load", loadCB);
+      }
+      ss.onloadcssdefined = onloadcssdefined;
+      onloadcssdefined(loadCB);
+      return ss;
+    },
+
+    js: (src, opt) => new Promise((resolve, reject) => {
+      var script = document.createElement('script');
+      if (src.startsWith('/')) {
+        src = ctx.root + src.substring(1);
+      }
+      script.src = src;
+      if (opt) {
+        for (let key of Object.keys(opt)) {
+          script[key] = opt[key]
+        }
+      } else {
+        // 默认异步，如果需要同步，第二个参数传入 {} 即可
+        script.async = true
+      }
+      script.onerror = reject
+      script.onload = script.onreadystatechange = function () {
+        const loadState = this.readyState
+        if (loadState && loadState !== 'loaded' && loadState !== 'complete') return
+        script.onload = script.onreadystatechange = null
+        resolve()
+      }
+      document.head.appendChild(script)
+    }),
+
+    jq: (fn) => {
+      if (typeof jQuery === 'undefined') {
+        utils.js(deps.jquery).then(fn)
+      } else {
+        fn()
+      }
+    },
+
+    onLoading: (el) => {
+      if (el) {
+        $(el).append('<div class="loading-wrap"><svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" stroke-opacity=".3" d="M12 3C16.9706 3 21 7.02944 21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="1.3s" values="60;0"/></path><path stroke-dasharray="15" stroke-dashoffset="15" d="M12 3C16.9706 3 21 7.02944 21 12"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.3s" values="15;0"/><animateTransform attributeName="transform" dur="1.5s" repeatCount="indefinite" type="rotate" values="0 12 12;360 12 12"/></path></g></svg></div>');
+      }
+    },
+    onLoadSuccess: (el) => {
+      if (el) {
+        $(el).find('.loading-wrap').remove();
+      }
+    },
+    onLoadFailure: (el) => {
+      if (el) {
+        $(el).find('.loading-wrap svg').remove();
+        $(el).find('.loading-wrap').append('<svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" d="M12 3L21 20H3L12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.5s" values="60;0"/></path><path stroke-dasharray="6" stroke-dashoffset="6" d="M12 10V14"><animate fill="freeze" attributeName="stroke-dashoffset" begin="0.6s" dur="0.2s" values="6;0"/></path></g><circle cx="12" cy="17" r="1" fill="currentColor" fill-opacity="0"><animate fill="freeze" attributeName="fill-opacity" begin="0.8s" dur="0.4s" values="0;1"/></circle></svg>');
+        $(el).find('.loading-wrap').addClass('error');
+      }
+    },
+    request: (el, url, callback, onFailure) => {
+      const maxRetry = 3;
+      let retryCount = 0;
+
+      return new Promise((resolve, reject) => {
+        const load = () => {
+          utils.onLoading?.(el);
+
+          let timedOut = false;
+          const timeout = setTimeout(() => {
+            timedOut = true;
+            console.warn('[request] 超时:', url);
+
+            if (++retryCount >= maxRetry) {
+              utils.onLoadFailure?.(el);
+              onFailure?.();
+              reject('请求超时');
+            } else {
+              setTimeout(load, 1000);
+            }
+          }, 5000);
+
+          fetch(url).then(resp => {
+            if (timedOut) return;
+            clearTimeout(timeout);
+
+            if (!resp.ok) throw new Error('响应失败');
+            return resp;
+          }).then(data => {
+            if (timedOut) return;
+            utils.onLoadSuccess?.(el);
+            callback(data);
+            resolve(data);
+          }).catch(err => {
+            clearTimeout(timeout);
+            console.warn('[request] 错误:', err);
+
+            if (++retryCount >= maxRetry) {
+              utils.onLoadFailure?.(el);
+              onFailure?.();
+              reject(err);
+            } else {
+              setTimeout(load, 1000);
+            }
+          });
+        };
+
+        load();
+      });
+    },
+    requestWithoutLoading: (url, options = {}, maxRetry = 2, timeout = 5000) => {
+      return new Promise((resolve, reject) => {
+        let retryCount = 0;
+
+        const tryRequest = () => {
+          let timedOut = false;
+          const timer = setTimeout(() => {
+            timedOut = true;
+            if (++retryCount > maxRetry) reject('timeout');
+            else tryRequest();
+          }, timeout);
+
+          fetch(url, options)
+            .then(resp => {
+              clearTimeout(timer);
+              if (!resp.ok) throw new Error('bad response');
+              resolve(resp);
+            })
+            .catch(err => {
+              clearTimeout(timer);
+              if (++retryCount > maxRetry) reject(err);
+              else setTimeout(tryRequest, 500);
+            });
+        };
+
+        tryRequest();
+      });
+    },
+    /********************** requestAnimationFrame ********************************/
+    // 1、requestAnimationFrame 会把每一帧中的所有 DOM 操作集中起来，在一次重绘或回流中就完成，并且重绘或回流的时间间隔紧紧跟随浏览器的刷新频率，一般来说，这个频率为每秒60帧。
+    // 2、在隐藏或不可见的元素中，requestAnimationFrame 将不会进行重绘或回流，这当然就意味着更少的的 cpu，gpu 和内存使用量。
+    requestAnimationFrame: (fn) => {
+      if (!window.requestAnimationFrame) {
+        window.requestAnimationFrame = window.requestAnimationFrame || window.mozRequestAnimationFrame || window.webkitRequestAnimationFrame;
+      }
+      window.requestAnimationFrame(fn)
+    },
+    dark: {},
+  };
+
+  // utils.dark.mode 当前模式 dark or light
+  // utils.dark.toggle() 暗黑模式触发器
+  // utils.dark.push(callBack[,"callBackName"]) 传入触发器回调函数
+  utils.dark.method = {
+    toggle: new RunItem(),
+  };
+  utils.dark = Object.assign(utils.dark, {
+    push: utils.dark.method.toggle.push,
+  });
+</script>
+<script>
+  const sidebar = {
+    leftbar: () => {
+      if (l_body) {
+        l_body.toggleAttribute('leftbar');
+        l_body.removeAttribute('rightbar');
+      }
+    },
+    rightbar: () => {
+      if (l_body) {
+        l_body.toggleAttribute('rightbar');
+        l_body.removeAttribute('leftbar');
+      }
+    },
+    dismiss: () => {
+      if (l_body) {
+        l_body.removeAttribute('leftbar');
+        l_body.removeAttribute('rightbar');
+      }
+    },
+    toggleTOC: () => {
+      document.querySelector('#data-toc').classList.toggle('collapse');
+    }
+  }
+</script>
+<script type="text/javascript">
+  (() => {
+    const tagSwitchers = document.querySelectorAll('.tag-subtree.parent-tag > a > .tag-switcher-wrapper')
+    for (const tagSwitcher of tagSwitchers) {
+      tagSwitcher.addEventListener('click', (e) => {
+        const parent = e.target.closest('.tag-subtree.parent-tag')
+        parent.classList.toggle('expanded')
+        e.preventDefault()
+      })
+    }
+
+    // Get active tag from query string, then activate it.
+    const urlParams = new URLSearchParams(window.location.search)
+    const activeTag = urlParams.get('tag')
+    if (activeTag) {
+      let tag = document.querySelector(`.tag-subtree[data-tag="${activeTag}"]`)
+      if (tag) {
+        tag.querySelector('a').classList.add('active')
+        
+        while (tag) {
+          tag.classList.add('expanded')
+          tag = tag.parentElement.closest('.tag-subtree.parent-tag')
+        }
+      }
+    }
+  })()
+</script>
+
+<script async src="https://gcore.jsdelivr.net/npm/vanilla-lazyload@19.1/dist/lazyload.min.js"></script>
+<script>
+  // https://www.npmjs.com/package/vanilla-lazyload
+  // Set the options globally
+  // to make LazyLoad self-initialize
+  window.lazyLoadOptions = {
+    elements_selector: ".lazy",
+    callback_loaded: (el) => {
+      el.classList.add('loaded');
+      const wrapper = el.closest('.lazy-box');
+      const icon = wrapper?.querySelector('.lazy-icon');
+      if (icon) icon.remove();
+    }
+  };
+  // Listen to the initialization event
+  // and get the instance of LazyLoad
+  window.addEventListener(
+    "LazyLoad::Initialized",
+    function (event) {
+      window.lazyLoadInstance = event.detail.instance;
+    },
+    false
+  );
+  document.addEventListener('DOMContentLoaded', function () {
+    window.lazyLoadInstance?.update();
+  });
+
+  window.wrapLazyloadImages = (container) => {
+    if (typeof container === 'string') {
+      container = document.querySelector(container);
+    }
+    if (!container) return;
+    
+    const images = container.querySelectorAll('img');
+    images.forEach((img) => {
+      if (img.classList.contains('lazy')) return;
+
+      const src = img.getAttribute('src');
+      if (!src) return;
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'lazy-box';
+
+      const newImg = img.cloneNode();
+      newImg.removeAttribute('src');
+      newImg.setAttribute('data-src', src);
+      newImg.classList.add('lazy');
+
+      const icon = document.createElement('div');
+      icon.className = 'lazy-icon';
+      if (def.loading) {
+        icon.style.backgroundImage = `url("${def.loading}")`;
+      }
+
+      wrapper.appendChild(newImg);
+      wrapper.appendChild(icon);
+
+      img.replaceWith(wrapper);
+    });
+
+    // 通知 LazyLoad 更新
+    if (window.lazyLoadInstance?.update) {
+      window.lazyLoadInstance.update();
+    }
+  }
+  
+</script>
+
+<!-- required -->
+<script src="/js/main.js?v=1.33.1" defer></script>
+
+<script type="text/javascript">
+  const applyTheme = (theme) => {
+    if (theme === 'auto') {
+      document.documentElement.removeAttribute('data-theme')
+    } else {
+      document.documentElement.setAttribute('data-theme', theme)
+    }
+
+    // applyThemeToGiscus(theme)
+  }
+
+  // FIXME: 这会导致无法使用 preferred_color_scheme 以外的主题
+  const applyThemeToGiscus = (theme) => {
+    // theme = theme === 'auto' ? 'preferred_color_scheme' : theme
+    const cmt = document.getElementById('giscus')
+    if (cmt) {
+      // This works before giscus load.
+      cmt.setAttribute('data-theme', theme)
+    }
+
+    const iframe = document.querySelector('#comments > section.giscus > iframe')
+    if (iframe) {
+      // This works after giscus loaded.
+      const src = iframe.src
+      const newSrc = src.replace(/theme=[\w]+/, `theme=${theme}`)
+      iframe.src = newSrc
+    }
+  }
+
+  const switchTheme = () => {
+    // light -> dark -> auto -> light -> ...
+    const currentTheme = document.documentElement.getAttribute('data-theme')
+    let newTheme;
+    switch (currentTheme) {
+      case 'light':
+        newTheme = 'dark'
+        break
+      case 'dark':
+        newTheme = 'auto'
+        break
+      default:
+        newTheme = 'light'
+    }
+    applyTheme(newTheme)
+    window.localStorage.setItem('Stellar.theme', newTheme)
+    utils.dark.mode = newTheme === 'auto' ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : newTheme;
+    utils.dark.method.toggle.start();
+
+    const messages = {
+      light: `切换到浅色模式`,
+      dark: `切换到深色模式`,
+      auto: `切换到跟随系统配色`,
+    }
+    hud?.toast?.(messages[newTheme])
+  }
+
+  (() => {
+    // Apply user's preferred theme, if any.
+    const theme = window.localStorage.getItem('Stellar.theme')
+    if (theme !== null) {
+      applyTheme(theme)
+    } else {
+      utils.dark.mode = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    utils.dark.method.toggle.start();
+  })()
+</script>
+
+
+<!-- optional -->
+
+
+
+<script defer>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    ctx.services = Object.assign({}, JSON.parse(`{"mdrender":{"js":"/js/services/mdrender.js"},"siteinfo":{"js":"/js/services/siteinfo.js","api":null},"ghinfo":{"js":"/js/services/ghinfo.js"},"rating":{"js":"/js/services/rating.js","api":"https://star-vote.xaox.cc/api/rating"},"vote":{"js":"/js/services/vote.js","api":"https://star-vote.xaox.cc/api/vote"},"sites":{"js":"/js/services/sites.js"},"friends":{"js":"/js/services/friends.js"},"friends_and_posts":{"js":"/js/services/friends_and_posts.js"},"timeline":{"js":"/js/services/timeline.js"},"fcircle":{"js":"/js/services/fcircle.js"},"weibo":{"js":"/js/services/weibo.js"},"memos":{"js":"/js/services/memos.js"},"voice":{"js":"/js/plugins/voice.js"},"video":{"js":"/js/plugins/video.js"},"download-file":{"js":"/js/plugins/download-file.js"},"twikoo":{"js":"/js/services/twikoo_latest_comment.js"},"waline":{"js":"/js/services/waline_latest_comment.js"},"artalk":{"js":"/js/services/artalk_latest_comment.js"},"giscus":{"js":"/js/services/giscus_latest_comment.js"},"contributors":{"edit_this_page":{"_posts/":null,"wiki/stellar/":"https://github.com/xaoxuu/hexo-theme-stellar-docs/blob/main/"},"js":"/js/services/contributors.js"}}`));
+    for (let id of Object.keys(ctx.services)) {
+      const js = ctx.services[id].js;
+      if (id == 'siteinfo') {
+        ctx.cardlinks = document.querySelectorAll('a.link-card[cardlink]');
+        if (ctx.cardlinks?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            setCardLink(ctx.cardlinks);
+          });
+        }
+      } else if (id == 'voice') {
+        ctx.voiceAudios = document.querySelectorAll('.voice>audio');
+        if (ctx.voiceAudios?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            createVoiceDom(ctx.voiceAudios);
+          });
+        }
+      } else if (id == 'video') {
+        ctx.videos = document.querySelectorAll('.video>video');
+        if (ctx.videos?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            videoEvents(ctx.videos);
+          });
+        }
+      } else if (id == 'download-file') {
+        ctx.files = document.querySelectorAll('.file');
+        if (ctx.files?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            downloadFileEvent(ctx.files);
+          });
+        }
+      } else {
+        const els = document.getElementsByClassName(`ds-${id}`);
+        if (els?.length > 0) {
+          utils.jq(() => {
+            if (id == 'timeline' || 'memos' || 'marked') {
+              utils.js(deps.marked).then(function () {
+                utils.js(js, { defer: true });
+              });
+            } else {
+              utils.js(js, { defer: true });
+            }
+          });
+        }
+      }
+    }
+
+    // chat iphone time
+    let phoneTimes = document.querySelectorAll('.chat .status-bar .time');
+
+    if (phoneTimes.length > 0) {
+      NowTime();
+      var date = new Date();
+      var sec = date.getSeconds();
+      var firstAdjustInterval = setInterval(firstAdjustTime, 1000 * (60 - sec));
+    }
+
+    function firstAdjustTime() {
+      NowTime();
+      clearInterval(firstAdjustInterval);
+      setInterval(NowTime, 1000 * 60);
+    }
+
+    function NowTime() {
+      for (let i = 0; i < phoneTimes.length; ++i) {
+        var timeSpan = phoneTimes[i];
+        var date = new Date();
+        var hour = date.getHours();
+        var min = date.getMinutes();
+        timeSpan.innerHTML = check(hour) + ":" + check(min);
+      }
+    };
+
+    function check(val) {
+      if (val < 10) {
+        return ("0" + val);
+      }
+      return (val);
+    }
+
+    // chat quote
+    const chat_quote_obverser = new IntersectionObserver((entries, observer) => {
+      entries.filter((entry) => { return entry.isIntersecting }).sort((a, b) => a.intersectionRect.y !== b.intersectionRect.y ? a.intersectionRect.y - b.intersectionRect.y : a.intersectionRect.x - b.intersectionRect.x).forEach((entry, index) => {
+          observer.unobserve(entry.target);
+          setTimeout(() => {
+            entry.target.classList.add('quote-blink');
+            setTimeout(() => {
+              entry.target.classList.remove('quote-blink');
+            }, 1000);
+          }, Math.max(100, 16) * (index + 1));
+        });
+    });
+
+    var chatQuotes = document.querySelectorAll(".chat .talk .quote");
+    chatQuotes.forEach((quote) => {
+      quote.addEventListener('click', function () {
+        var chatCellDom = document.getElementById("quote-" + quote.getAttribute("quotedCellTag"));
+        if (chatCellDom) {
+          var chatDiv = chatCellDom.parentElement;
+          var mid = chatDiv.clientHeight / 2;
+          var offsetTop = chatCellDom.offsetTop;
+          if (offsetTop > mid - chatCellDom.clientHeight / 2) {
+            chatDiv.scrollTo({
+              top: chatCellDom.offsetTop - mid + chatCellDom.clientHeight / 2,
+              behavior: "smooth"
+            });
+          } else {
+            chatDiv.scrollTo({
+              top: 0,
+              behavior: "smooth"
+            });
+          }
+          chat_quote_obverser.observe(chatCellDom);
+        }
+      });
+    });
+  });
+</script>
+
+<script>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    ctx.search = {
+      path: `/search.json`,
+    }
+    utils.js('/js/search/local-search.js', { defer: true });
+  });
+</script><script>
+  window.FPConfig = {
+    delay: 0,
+    ignoreKeywords: [],
+    maxRPS: 5,
+    hoverDelay: 25
+  };
+</script>
+<script defer src="https://gcore.jsdelivr.net/npm/flying-pages@2/flying-pages.min.js"></script><script>
+  ctx.fancybox = {
+    selector: `.timenode p>img`,
+    css: `https://gcore.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css`,
+    js: `https://gcore.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js`
+  };
+  var selector = '[data-fancybox]:not(.error), .with-fancybox .atk-content img:not([atk-emoticon])';
+  if (ctx.fancybox.selector) {
+    selector += `, ${ctx.fancybox.selector}`
+  }
+  var needFancybox = document.querySelectorAll(selector).length !== 0;
+  if (!needFancybox) {
+    const memos = document.getElementsByClassName('ds-memos');
+    if (memos != undefined && memos.length > 0) {
+      needFancybox = true;
+    }
+    const fancybox = document.getElementsByClassName('with-fancybox');
+    if (fancybox != undefined && fancybox.length > 0) {
+      needFancybox = true;
+    }
+  }
+  if (needFancybox) {
+    utils.css(ctx.fancybox.css);
+    utils.js(ctx.fancybox.js, { defer: true }).then(function () {
+      Fancybox.bind(selector, {
+        hideScrollbar: false,
+        Thumbs: {
+          autoStart: false,
+        },
+        caption: (fancybox, slide) => {
+          return slide.triggerEl.alt || slide.triggerEl.dataset.caption || null
+        }
+      });
+    })
+  }
+</script>
+<script>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    const swiper_api = document.getElementById('swiper-api');
+    if (swiper_api != undefined) {
+      utils.css(`https://unpkg.com/swiper@10.3/swiper-bundle.min.css`);
+      utils.js(`https://unpkg.com/swiper@10.3/swiper-bundle.min.js`, { defer: true }).then(function () {
+        const effect = swiper_api.getAttribute('effect') || '';
+        var swiper = new Swiper('.swiper#swiper-api', {
+          slidesPerView: 'auto',
+          spaceBetween: 8,
+          centeredSlides: true,
+          effect: effect,
+          rewind: true,
+          pagination: {
+            el: '.swiper-pagination',
+            clickable: true,
+          },
+          navigation: {
+            nextEl: '.swiper-button-next',
+            prevEl: '.swiper-button-prev',
+          },
+        });
+      })
+    }
+  });
+</script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    window.codeElements = document.querySelectorAll('.code');
+    if (window.codeElements.length > 0) {
+      ctx.copycode = {
+        default_text: `Copy`,
+        success_text: `Copied`,
+        toast: `复制成功`,
+      };
+      utils.js('/js/plugins/copycode.js');
+    }
+  });
+</script>
+
+
+<!-- inject -->
+
+</div></body></html>

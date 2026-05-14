@@ -1,0 +1,943 @@
+
+<!DOCTYPE html><html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="hexo-theme" content="https://github.com/xaoxuu/hexo-theme-stellar/tree/1.33.1" theme-name="Stellar" theme-version="1.33.1">
+  
+  
+  <meta name="generator" content="Hexo 5.1.1">
+  <meta http-equiv='x-dns-prefetch-control' content='on' />
+  
+  <meta name="renderer" content="webkit">
+  <meta name="force-rendering" content="webkit">
+  <meta http-equiv="X-UA-Compatible" content="IE=Edge,chrome=1">
+  <meta name="HandheldFriendly" content="True" >
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000">
+  <meta name="theme-color" content="#f9fafb">
+  <title>perf基本使用 - liulangren Blog</title>
+
+  
+    <meta name="description" content="arm64 版本perf编译 123cd toolsmake ARCH&#x3D;arm64 CROSS_COMPILE&#x3D;&#x2F;usr&#x2F;bin&#x2F;aarch64-linux-gnu- perf LDFLAGS+&#x3D;--staticls .&#x2F;perf&#x2F; -al | grep perf perf功能可以追踪 tracepoint sysca">
+<meta property="og:type" content="article">
+<meta property="og:title" content="perf基本使用">
+<meta property="og:url" content="https://liulangrenaaa.github.io/2021/01/28/%E5%86%85%E6%A0%B8%E8%A7%82%E6%B5%8B/perf%E7%9B%B8%E5%85%B3/perf%E5%9F%BA%E6%9C%AC%E4%BD%BF%E7%94%A8/">
+<meta property="og:site_name" content="liulangren Blog">
+<meta property="og:description" content="arm64 版本perf编译 123cd toolsmake ARCH&#x3D;arm64 CROSS_COMPILE&#x3D;&#x2F;usr&#x2F;bin&#x2F;aarch64-linux-gnu- perf LDFLAGS+&#x3D;--staticls .&#x2F;perf&#x2F; -al | grep perf perf功能可以追踪 tracepoint sysca">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://liulangrenaaa.github.io/images/icons/image.png">
+<meta property="article:published_time" content="2021-01-28T19:00:00.000Z">
+<meta property="article:modified_time" content="2026-05-14T03:56:22.506Z">
+<meta property="article:author" content="Su Hui">
+<meta property="article:tag" content="perf">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://liulangrenaaa.github.io/images/icons/image.png">
+  
+  
+  
+  <meta name="keywords" content="perf">
+
+  <!-- feed -->
+  
+
+  <link rel="stylesheet" href="/css/main.css?v=1.33.1">
+
+
+  
+    <link rel="shortcut icon" href="/images/icons/image.png">
+  
+
+  
+
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"Su Hui","sameAs":[],"image":"/images/icons/image.png"},"dateCreated":"2021-01-28T19:00:00+00:00","dateModified":"2026-05-14T03:56:22+00:00","datePublished":"2021-01-28T19:00:00+00:00","description":"","headline":"perf基本使用","mainEntityOfPage":{"@type":"WebPage","@id":"https://liulangrenaaa.github.io/2021/01/28/%E5%86%85%E6%A0%B8%E8%A7%82%E6%B5%8B/perf%E7%9B%B8%E5%85%B3/perf%E5%9F%BA%E6%9C%AC%E4%BD%BF%E7%94%A8/"},"publisher":{"@type":"Organization","name":"Su Hui","sameAs":[],"image":"/images/icons/image.png","logo":{"@type":"ImageObject","url":"/images/icons/image.png"}},"url":"https://liulangrenaaa.github.io/2021/01/28/%E5%86%85%E6%A0%B8%E8%A7%82%E6%B5%8B/perf%E7%9B%B8%E5%85%B3/perf%E5%9F%BA%E6%9C%AC%E4%BD%BF%E7%94%A8/","keywords":"perf","image":[]}</script>
+  
+</head>
+<body>
+
+<div class="l_body content" id="start" layout="post" type="tech" ><aside class="l_left"><div class="sidebg"></div><div class="leftbar-container">
+
+
+<header class="header"><div class="logo-wrap"><a class="avatar" href="/about/"><div class="bg" style="opacity:0;background-image:url(https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/avatar/round/rainbow64@3x.webp);"></div><img no-lazy class="avatar" src="/images/icons/image.png" onerror="javascript:this.classList.add('error');this.src='https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/image/2659360.svg';"></a><a class="title" href="/"><div class="main">liulangren Blog</div></a></div></header>
+
+<div class="nav-area">
+
+<nav class="menu dis-select"></nav>
+</div>
+<div class="widgets">
+<div class="search-wrapper" id="search-wrapper"><form class="search-form"><a class="search-button" onclick="document.getElementById(&quot;search-input&quot;).focus();"><svg t="1705074644177" viewBox="0 0 1025 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="1560" width="200" height="200"><path d="M1008.839137 935.96571L792.364903 719.491476a56.783488 56.783488 0 0 0-80.152866 0 358.53545 358.53545 0 1 1 100.857314-335.166073 362.840335 362.840335 0 0 1-3.689902 170.145468 51.248635 51.248635 0 1 0 99.217358 26.444296 462.057693 462.057693 0 1 0-158.255785 242.303546l185.930047 185.725053a51.248635 51.248635 0 0 0 72.568068 0 51.248635 51.248635 0 0 0 0-72.978056z" p-id="1561"></path><path d="M616.479587 615.969233a50.428657 50.428657 0 0 0-61.498362-5.534852 174.655348 174.655348 0 0 1-177.525271 3.484907 49.403684 49.403684 0 0 0-58.833433 6.76482l-3.074918 2.869923a49.403684 49.403684 0 0 0 8.609771 78.10292 277.767601 277.767601 0 0 0 286.992355-5.739847 49.403684 49.403684 0 0 0 8.404776-76.667958z" p-id="1562"></path></svg></a><input type="text" class="search-input" id="search-input" placeholder="站内搜索"></form><div id="search-result"></div><div class="search-no-result">没有找到内容！</div></div>
+
+<widget class="widget-wrapper linklist"><div class="widget-header dis-select"><span class="name">核心专题</span></div><div class="widget-body fs14">
+<div class="linklist left" style="grid-template-columns:repeat(1,1fr);">
+<a class="link" title="framework基础" href="/categories/android/framework基础/"><div class="flex"><span>framework基础</span></div></a>
+<a class="link" title="app启动与生命周期" href="/categories/android/app启动与生命周期/"><div class="flex"><span>app启动与生命周期</span></div></a>
+<a class="link" title="wms窗口系统" href="/categories/android/wms窗口系统/"><div class="flex"><span>wms窗口系统</span></div></a>
+<a class="link" title="input输入系统" href="/categories/android/input输入系统/"><div class="flex"><span>input输入系统</span></div></a>
+<a class="link" title="binder与系统服务" href="/categories/android/binder与系统服务/"><div class="flex"><span>binder与系统服务</span></div></a>
+<a class="link" title="graphics图形系统" href="/categories/android/graphics图形系统/"><div class="flex"><span>graphics图形系统</span></div></a>
+<a class="link" title="anr-crash稳定性" href="/categories/android/anr-crash稳定性/"><div class="flex"><span>anr-crash稳定性</span></div></a>
+<a class="link" title="debug-trace工具链" href="/categories/android/debug-trace工具链/"><div class="flex"><span>debug-trace工具链</span></div></a>
+<a class="link" title="性能稳定性" href="/tags/性能稳定性/"><div class="flex"><span>性能稳定性</span></div></a>
+<a class="link" title="Linux 调度" href="/categories/linux-kernel/linux-schedule/"><div class="flex"><span>Linux 调度</span></div></a></div></div></widget>
+
+<widget class="widget-wrapper linklist"><div class="widget-header dis-select"><span class="name">精选文章</span></div><div class="widget-body fs14">
+<div class="linklist left" style="grid-template-columns:repeat(1,1fr);">
+<a class="link" title="ANR问题总结" href="/2022/07/01/android/anr-crash稳定性/ANR问题总结/"><div class="flex"><span>ANR问题总结</span></div></a>
+<a class="link" title="android12 gdb64调试进程" href="/2021/09/23/用户空间/android12%20gdb64调试进程/"><div class="flex"><span>android12 gdb64调试进程</span></div></a>
+<a class="link" title="60s定位内核性能瓶颈" href="/2020/09/13/内核观测/性能稳定性/60s定位内核性能瓶颈/"><div class="flex"><span>60s定位内核性能瓶颈</span></div></a>
+<a class="link" title="关于preempt_count的思考" href="/2020/09/21/进程管理/关于preempt_count的思考/"><div class="flex"><span>关于preempt_count的思考</span></div></a></div></div></widget>
+</div>
+
+</div></aside><div class="l_main" id="main">
+
+
+
+
+
+<div class="article banner top">
+  <div class="content">
+    <div class="top bread-nav footnote"><div class="left"><div class="flex-row" id="breadcrumb"><a class="cap breadcrumb" href="/">主页</a>
+<span class="sep"></span><a class="cap breadcrumb" href="/">文章</a><span class="sep"></span><a class="cap breadcrumb-link" href="/categories/kernel-debug/">kernel debug</a></div>
+<div class="flex-row" id="post-meta"><span class="text created">发布于：<time datetime="2021-01-28T19:00:00.000Z">2021-01-28</time></span><span class="sep updated"></span><span class="text updated">更新于：<time datetime="2026-05-14T03:56:22.506Z">2026-05-14</time></span></div></div></div>
+    
+    <div class="bottom only-title">
+      
+      <div class="text-area">
+        <h1 class="text title"><span>perf基本使用</span></h1>
+        
+      </div>
+    </div>
+    
+  </div>
+  </div><article class="md-text content"><p>arm64 版本perf编译</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">cd tools</span><br><span class="line">make ARCH&#x3D;arm64 CROSS_COMPILE&#x3D;&#x2F;usr&#x2F;bin&#x2F;aarch64-linux-gnu- perf LDFLAGS+&#x3D;--static</span><br><span class="line">ls .&#x2F;perf&#x2F; -al | grep perf</span><br></pre></td></tr></table></figure>
+<h2 id="perf功能"><a href="#perf功能" class="headerlink" title="perf功能"></a>perf功能</h2><p>可以追踪 <code>tracepoint</code> <code>syscall</code> <code>kprobes</code></p>
+<h3 id="perf支持的-events"><a href="#perf支持的-events" class="headerlink" title="perf支持的 events"></a>perf支持的 events</h3><p>知道系统支持那些events，对遇到问题之后怎么分析十分有帮助。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">perf list [--no-desc] [--long-desc]</span><br><span class="line">        [hw|sw|cache|tracepoint|pmu|sdt|metric|metricgroup|event_glob]</span><br></pre></td></tr></table></figure>
+
+<p>看看支持的 <code>tracepoint</code></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace# sudo perf list tracepoint | wc -l</span><br><span class="line">2591</span><br><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace# sudo perf list tracepoint | grep &quot;sched:&quot;</span><br><span class="line">  sched:sched_kthread_stop                           [Tracepoint event]</span><br><span class="line">  sched:sched_kthread_stop_ret                       [Tracepoint event]</span><br><span class="line">  sched:sched_migrate_task                           [Tracepoint event]</span><br><span class="line">  sched:sched_move_numa                              [Tracepoint event]</span><br><span class="line">  sched:sched_pi_setprio                             [Tracepoint event]</span><br><span class="line">  sched:sched_process_exec                           [Tracepoint event]</span><br></pre></td></tr></table></figure>
+
+<p>看看支持的 <code>hw</code></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace# sudo perf list hw</span><br><span class="line">List of pre-defined events (to be used in -e):</span><br><span class="line">  branch-instructions OR branches                    [Hardware event]</span><br><span class="line">  branch-misses                                      [Hardware event]</span><br><span class="line">  bus-cycles                                         [Hardware event]</span><br><span class="line">  cache-misses                                       [Hardware event]</span><br><span class="line">  cache-references                                   [Hardware event]</span><br><span class="line">  cpu-cycles OR cycles                               [Hardware event]</span><br><span class="line">  instructions                                       [Hardware event]</span><br><span class="line">  ref-cycles                                         [Hardware event]</span><br></pre></td></tr></table></figure>
+
+
+
+<h3 id="perf支持的选项"><a href="#perf支持的选项" class="headerlink" title="perf支持的选项"></a>perf支持的选项</h3><p><code>-e</code> 事件选择器<br><code>-p</code> 只跟踪制定线程<br><code>-P</code> 采样周期，就是一共采样多久？<br><code>-F</code> 频率，就是1s之内记录多少次<br><code>-g</code> call_graph，打开调用栈追踪，火焰图就是利用的此特性<br><code>-a</code> 从所有cpu搜集数据<br><code>-D</code> 频率，就是1s之内记录多少次<br><code>-G</code> 只采用 <code>cgroup</code> name内的信息<br><code>-C</code> 指定CPU的数据</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line">root@ubuntu-Inspiron-5548:&#x2F;home&#x2F;ubuntu&#x2F;workspace# perf record  -e&quot;sched:*&quot;</span><br><span class="line">^C[ perf record: Woken up 0 times to write data ]</span><br><span class="line">[ perf record: Captured and wrote 1.503 MB perf.data (41 samples) ]</span><br><span class="line">root@ubuntu-Inspiron-5548:&#x2F;home&#x2F;ubuntu&#x2F;workspace# perf script</span><br><span class="line">            perf 61734 [000] 203358.640055:          sched:sched_stat_runtime: comm&#x3D;perf pid&#x3D;61734 runtime&#x3D;168226 [ns] vruntime&#x3D;27117216697&gt;</span><br><span class="line">            perf 61734 [000] 203358.640059:                sched:sched_waking: comm&#x3D;migration&#x2F;0 pid&#x3D;12 prio&#x3D;0 target_cpu&#x3D;000</span><br><span class="line">            perf 61734 [000] 203358.640060:                sched:sched_wakeup: comm&#x3D;migration&#x2F;0 pid&#x3D;12 prio&#x3D;0 target_cpu&#x3D;000</span><br><span class="line">            perf 61734 [000] 203358.640061:          sched:sched_stat_runtime: comm&#x3D;perf pid&#x3D;61734 runtime&#x3D;6351 [ns] vruntime&#x3D;271172173327 &gt;</span><br><span class="line">            perf 61734 [000] 203358.640063:                sched:sched_switch: prev_comm&#x3D;perf prev_pid&#x3D;61734 prev_prio&#x3D;120 prev_state&#x3D;R+ &#x3D;&#x3D;&gt;</span><br><span class="line">     migration&#x2F;0    12 [000] 203358.640066:          sched:sched_migrate_task: comm&#x3D;perf pid&#x3D;61734 prio&#x3D;120 orig_cpu&#x3D;0 dest_cpu&#x3D;1</span><br><span class="line">     migration&#x2F;0    12 [000] 203358.640069: sched:sched_wake_idle_without_ipi: cpu&#x3D;1</span><br><span class="line">root@ubuntu-Inspiron-5548:&#x2F;home&#x2F;ubuntu&#x2F;workspace# perf report</span><br><span class="line">Available samples</span><br><span class="line">0 sched:sched_kthread_stop                                                                                                                 ◆</span><br><span class="line">0 sched:sched_kthread_stop_ret                                                                                                             ▒</span><br><span class="line">5 sched:sched_waking                                                                                                                       ▒</span><br><span class="line">5 sched:sched_wakeup                                                                                                                       ▒</span><br><span class="line">0 sched:sched_wakeup_new                                                                                                                   ▒</span><br><span class="line">13 sched:sched_switch                                                                                                                      ▒</span><br><span class="line">4 sched:sched_migrate_task                                                                                                                 ▒</span><br><span class="line">0 sched:sched_process_free</span><br></pre></td></tr></table></figure>
+
+
+<h2 id="perf-sched的支持"><a href="#perf-sched的支持" class="headerlink" title="perf sched的支持"></a>perf sched的支持</h2><p>可以用 <code>sudo perf sched</code> 看看perf sched的支持行为</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">Inspiron-5548@1ubuntu: ~&#x2F;workspace# sudo perf sched</span><br><span class="line"> Usage: perf sched [&lt;options&gt;] &#123;record|latency|map|replay|script|timehist&#125;</span><br><span class="line">    -D, --dump-raw-trace  dump raw trace in ASCII</span><br><span class="line">    -f, --force           don&#39;t complain, do it</span><br><span class="line">    -i, --input &lt;file&gt;    input file name</span><br><span class="line">    -v, --verbose         be more verbose (show symbol address, etc)</span><br></pre></td></tr></table></figure>
+
+
+<p>首先需要 <code>perf sched record</code></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">Inspiron-5548@141ubuntu: ~&#x2F;workspace# sudo perf sched record</span><br><span class="line">^C[ perf record: Woken up 1 times to write data ]</span><br><span class="line">[ perf record: Captured and wrote 1.924 MB perf.data (4820 samples) ]</span><br><span class="line"></span><br><span class="line">Inspiron-5548@130ubuntu: ~&#x2F;workspace#</span><br></pre></td></tr></table></figure>
+<p>后续可以使用 <code>latency</code>  <code>map</code>  <code>replay</code>  <code>script</code> <code>timehist</code> 去分析</p>
+<h3 id="调度延迟"><a href="#调度延迟" class="headerlink" title="调度延迟"></a>调度延迟</h3><p>如果想分析调度延迟，可以制定按照进程还是线程来分析，也可以按照 <code>sudo perf sched latency --sort max</code> 找到最大调度延迟的task.</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace# sudo perf sched latency --help</span><br><span class="line"> Usage: perf sched latency [&lt;options&gt;]</span><br><span class="line">    -C, --CPU &lt;n&gt;         CPU to profile on</span><br><span class="line">    -p, --pids            latency stats per pid instead of per comm</span><br><span class="line">    -s, --sort &lt;key[,key2...]&gt;</span><br><span class="line">                          sort by key(s): runtime, switch, avg, max</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">Inspiron-5548@129ubuntu: ~&#x2F;workspace# sudo perf sched latency --sort max</span><br><span class="line"></span><br><span class="line"> -----------------------------------------------------------------------------------------------------------------</span><br><span class="line">  Task                  |   Runtime ms  | Switches | Average delay ms | Maximum delay ms | Maximum delay at       |</span><br><span class="line"> -----------------------------------------------------------------------------------------------------------------</span><br><span class="line">  ibus-extension-:44142 |      0.053 ms |        1 | avg:    0.788 ms | max:    0.788 ms | max at: 189462.300642 s</span><br><span class="line">  ibus-x11:44144        |      0.054 ms |        1 | avg:    0.743 ms | max:    0.743 ms | max at: 189462.300589 s</span><br><span class="line">  kworker&#x2F;3:1-eve:48187 |      2.245 ms |      107 | avg:    0.024 ms | max:    0.666 ms | max at: 189459.728139 s</span><br><span class="line">  chrome:(4)            |     50.852 ms |      127 | avg:    0.021 ms | max:    0.645 ms | max at: 189462.300483 s</span><br><span class="line">  JS Helper:(4)         |      2.367 ms |       25 | avg:    0.046 ms | max:    0.626 ms | max at: 189462.300654 s</span><br><span class="line">  gsd-wacom:42110       |      0.063 ms |        1 | avg:    0.481 ms | max:    0.481 ms | max at: 189462.300409 s</span><br><span class="line">  kworker&#x2F;0:1-eve:48272 |      5.959 ms |       95 | avg:    0.024 ms | max:    0.456 ms | max at: 189462.343798 s</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">Inspiron-5548@130ubuntu: ~&#x2F;workspace# sudo perf sched latency --sort switch</span><br><span class="line"> -----------------------------------------------------------------------------------------------------------------</span><br><span class="line">  Task                  |   Runtime ms  | Switches | Average delay ms | Maximum delay ms | Maximum delay at       |</span><br><span class="line"> -----------------------------------------------------------------------------------------------------------------</span><br><span class="line">  kworker&#x2F;1:1-eve:44912 |      5.260 ms |      166 | avg:    0.019 ms | max:    0.141 ms | max at: 189461.969262 s</span><br><span class="line">  chrome:(4)            |     50.852 ms |      127 | avg:    0.021 ms | max:    0.645 ms | max at: 189462.300483 s</span><br><span class="line">  kworker&#x2F;3:1-eve:48187 |      2.245 ms |      107 | avg:    0.024 ms | max:    0.666 ms | max at: 189459.728139 s</span><br><span class="line">  kworker&#x2F;0:1-eve:48272 |      5.959 ms |       95 | avg:    0.024 ms | max:    0.456 ms | max at: 189462.343798 s</span><br></pre></td></tr></table></figure>
+
+<h3 id="调度行为详细分析"><a href="#调度行为详细分析" class="headerlink" title="调度行为详细分析"></a>调度行为详细分析</h3><p>可以使用 <code>sudo perf sched script</code> 具体分析 线程何时 wakeup，何时 switch 等信息</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line">Inspiron-5548@141ubuntu: ~&#x2F;workspace# sudo perf sched script</span><br><span class="line">            perf 50314 [000] 189458.979541: sched:sched_stat_runtime: comm&#x3D;perf pid&#x3D;50314 runtime&#x3D;41043 [ns] vruntime&#x3D;46286470740 [ns]</span><br><span class="line">            perf 50314 [000] 189458.979545:       sched:sched_wakeup: comm&#x3D;migration&#x2F;0 pid&#x3D;12 prio&#x3D;0 target_cpu&#x3D;000</span><br><span class="line">            perf 50314 [000] 189458.979546: sched:sched_stat_runtime: comm&#x3D;perf pid&#x3D;50314 runtime&#x3D;4675 [ns] vruntime&#x3D;46286475415 [ns]</span><br><span class="line">            perf 50314 [000] 189458.979547:       sched:sched_switch: prev_comm&#x3D;perf prev_pid&#x3D;50314 prev_prio&#x3D;120 prev_state&#x3D;R+ &#x3D;&#x3D;&gt; next_co&gt;</span><br><span class="line">     migration&#x2F;0    12 [000] 189458.979551: sched:sched_migrate_task: comm&#x3D;perf pid&#x3D;50314 prio&#x3D;120 orig_cpu&#x3D;0 dest_cpu&#x3D;1</span><br><span class="line">     migration&#x2F;0    12 [000] 189458.979570:       sched:sched_switch: prev_comm&#x3D;migration&#x2F;0 prev_pid&#x3D;12 prev_prio&#x3D;0 prev_state&#x3D;S &#x3D;&#x3D;&gt; next_c&gt;</span><br><span class="line">         swapper     0 [001] 189459.531154:       sched:sched_switch: prev_comm&#x3D;swapper&#x2F;1 prev_pid&#x3D;0 prev_prio&#x3D;120 prev_state&#x3D;R &#x3D;&#x3D;&gt; next_co&gt;</span><br><span class="line">          chrome 44220 [001] 189459.531182: sched:sched_stat_runtime: comm&#x3D;chrome pid&#x3D;44220 runtime&#x3D;33768 [ns] vruntime&#x3D;358082171091 [ns]</span><br><span class="line">          chrome 44220 [001] 189459.531184:       sched:sched_switch: prev_comm&#x3D;chrome prev_pid&#x3D;44220 prev_prio&#x3D;120 prev_state&#x3D;S &#x3D;&#x3D;&gt; next_c&gt;</span><br><span class="line">            Xorg 41740 [002] 189459.531198:       sched:sched_wakeup: comm&#x3D;chrome pid&#x3D;44220 prio&#x3D;120 target_cpu&#x3D;001</span><br><span class="line">         swapper     0 [001] 189459.531202:       sched:sched_switch: prev_comm&#x3D;swapper&#x2F;1 prev_pid&#x3D;0 prev_prio&#x3D;120 prev_state&#x3D;R &#x3D;&#x3D;&gt; next_co&gt;</span><br><span class="line">            Xorg 41740 [002] 189459.531231: sched:sched_stat_runtime: comm&#x3D;Xorg pid&#x3D;41740 runtime&#x3D;566128 [ns] vruntime&#x3D;22634838876 [ns]</span><br><span class="line">            Xorg 41740 [002] 189459.531234:       sched:sched_switch: prev_comm&#x3D;Xorg prev_pid&#x3D;41740 prev_prio&#x3D;120 prev_state&#x3D;S &#x3D;&#x3D;&gt; next_com&gt;</span><br><span class="line">          chrome 44220 [001] 189459.531296: sched:sched_stat_runtime: comm&#x3D;chrome pid&#x3D;44220 runtime&#x3D;98522 [ns] vruntime&#x3D;358082269613 [ns]</span><br><span class="line">          chrome 44220 [001] 189459.531299:       sched:sched_switch: prev_comm&#x3D;chrome prev_pid&#x3D;44220 prev_prio&#x3D;120 prev_state&#x3D;S &#x3D;&#x3D;&gt; next_c&gt;</span><br><span class="line">         swapper     0 [001] 189459.537012:       sched:sched_wakeup: comm&#x3D;kworker&#x2F;1:1 pid&#x3D;44912 prio&#x3D;120 target_cpu&#x3D;001</span><br><span class="line">         swapper     0 [001] 189459.537019:       sched:sched_switch: prev_comm&#x3D;swapper&#x2F;1 prev_pid&#x3D;0 prev_prio&#x3D;120 prev_state&#x3D;R &#x3D;&#x3D;&gt; next_co&gt;</span><br><span class="line">         swapper     0 [000] 189459.537022:       sched:sched_wakeup: comm&#x3D;kworker&#x2F;0:1 pid&#x3D;48272 prio&#x3D;120 target_cpu&#x3D;000</span><br></pre></td></tr></table></figure>
+
+<h3 id="调度延迟可能原因"><a href="#调度延迟可能原因" class="headerlink" title="调度延迟可能原因"></a>调度延迟可能原因</h3><ol>
+<li><p>唤醒线程的 <code>target cpu</code> 上正在运行的线程的 <code>vruntime</code>与 唤醒线程的 <code>vruntime</code> 差值较小，导致调度器，认为不能切换。</p>
+</li>
+<li><p>唤醒线程的 <code>target cpu</code> 上当前正在运行的线程已运行的时间还小于最小运行时间（sched_min_granularity_ns），为防止切换太频繁，所以调度器认为u不能切换线程；</p>
+</li>
+<li><p>唤醒抢占的feature关闭，即sched_features中WAKEUP_PREEMPT特性关闭，不允许唤醒抢占</p>
+</li>
+<li><p>唤醒线程的 <code>target cpu</code> 被hard irq占用较多，导致无法进行 <code>sched_switch</code></p>
+</li>
+<li><p>唤醒线程的 <code>target cpu</code> 被 softirq占用较多（net soft_irq）。</p>
+</li>
+<li><p>唤醒线程的 <code>target cpu</code>， cpu上唤醒的线程实在太多，唤醒的线程在 rbtree上不是最左边的线程。</p>
+</li>
+<li><p>非抢占内核上， 唤醒线程的 <code>target cpu</code> 上正在运行的线程一直处于内核态(有bug)，导致一直未退出到用户空间，所以一直不能切换？</p>
+</li>
+</ol>
+<h2 id="perf-对动态追踪的支持"><a href="#perf-对动态追踪的支持" class="headerlink" title="perf 对动态追踪的支持"></a>perf 对动态追踪的支持</h2><p>上面的<code>sudo perf list tracepoint</code> <code>sudo perf sched record</code> 都是基于 <code>static tracepoint</code>的，假如我想追踪一个函数，但是没有相关的 <code>static tracepoint</code>点，应该如何做呢？</p>
+<p>perf 提供了 <code>sudo perf probe</code> 的方法</p>
+<h3 id="动态添加删除-probe点"><a href="#动态添加删除-probe点" class="headerlink" title="动态添加删除 probe点"></a>动态添加删除 probe点</h3><p><code>sudo perf probe --add &#39;xxx&#39;</code> 添加<br><code>sudo perf probe -d &#39;xxx&#39;</code> 删除<br><code>sudo perf probe --list</code> 展示<br><code>sudo perf record -e probe:xxx -aR sleep 5</code> 采样这个 probe 5s.<br><code>sudo perf record -e probe:xxx -aR slep5 --filter &#39;yy&#39;</code> 采样这个 probe 5s，且满足yyy条件</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace# sudo perf probe --add tcp_sendmsg</span><br><span class="line">Added new event:</span><br><span class="line">  probe:tcp_sendmsg    (on tcp_sendmsg)</span><br><span class="line"></span><br><span class="line">You can now use it in all perf tools, such as:</span><br><span class="line"></span><br><span class="line">	perf record -e probe:tcp_sendmsg -aR sleep 1</span><br><span class="line"></span><br><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace# sudo perf probe --list</span><br><span class="line"></span><br><span class="line">  probe:tcp_sendmsg    (on tcp_sendmsg)</span><br><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace# sudo perf probe -d tcp_sendmsg</span><br><span class="line"></span><br><span class="line">Removed event: probe:tcp_sendmsg</span><br><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace# sudo perf probe --list</span><br><span class="line"></span><br><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace#</span><br></pre></td></tr></table></figure>
+
+
+<p><code>add</code>添加的时候也可以加上表达式，然后在<code>record</code>，在最后<code>script</code> 解析时，会自动打印</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line">Inspiron-5548@130ubuntu: ~&#x2F;workspace# sudo perf probe --add &#39;tcp_sendmsg bytes&#x3D;%cx&#39;</span><br><span class="line">Added new event:</span><br><span class="line">  probe:tcp_sendmsg    (on tcp_sendmsg with bytes&#x3D;%cx)</span><br><span class="line"></span><br><span class="line">You can now use it in all perf tools, such as:</span><br><span class="line"></span><br><span class="line">	perf record -e probe:tcp_sendmsg -aR sleep 1</span><br><span class="line"></span><br><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace# sudo perf record -e probe:tcp_sendmsg -aR sleep 5</span><br><span class="line">[ perf record: Woken up 1 times to write data ]</span><br><span class="line">[ perf record: Captured and wrote 1.396 MB perf.data (10 samples) ]</span><br><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace# sudo perf script</span><br><span class="line">             ssh 59966 [001] 199745.500983: probe:tcp_sendmsg: (ffffffff8ac617a0) bytes&#x3D;0xffff970b347ee268</span><br><span class="line">            code 50459 [000] 199745.501228: probe:tcp_sendmsg: (ffffffff8ac617a0) bytes&#x3D;0xffff970b346ae910</span><br><span class="line">             ssh 59966 [001] 199746.651139: probe:tcp_sendmsg: (ffffffff8ac617a0) bytes&#x3D;0xffff970b347ee268</span><br><span class="line">            code 50459 [000] 199746.651380: probe:tcp_sendmsg: (ffffffff8ac617a0) bytes&#x3D;0xffff970b346ae910</span><br><span class="line">            code 50432 [003] 199747.361044: probe:tcp_sendmsg: (ffffffff8ac617a0) bytes&#x3D;0xffff970b346ae600</span><br><span class="line">            code 50459 [000] 199747.361322: probe:tcp_sendmsg: (ffffffff8ac617a0) bytes&#x3D;0xffff970b346ae910</span><br><span class="line">             ssh 59966 [001] 199747.361489: probe:tcp_sendmsg: (ffffffff8ac617a0) bytes&#x3D;0xffff970b347ee268</span><br><span class="line">            code 50432 [000] 199748.724615: probe:tcp_sendmsg: (ffffffff8ac617a0) bytes&#x3D;0xffff970b346ae600</span><br><span class="line">            code 50459 [001] 199748.724872: probe:tcp_sendmsg: (ffffffff8ac617a0) bytes&#x3D;0xffff970b346ae910</span><br><span class="line">             ssh 59966 [002] 199748.725028: probe:tcp_sendmsg: (ffffffff8ac617a0) bytes&#x3D;0xffff970b347ee268</span><br><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace#</span><br></pre></td></tr></table></figure>
+
+
+<p>关于%ax %bx %cx解释</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">PROBE ARGUMENT</span><br><span class="line">       Each probe argument follows below syntax.</span><br><span class="line"></span><br><span class="line">           [NAME&#x3D;]LOCALVAR|$retval|%REG|@SYMBOL[:TYPE][@user]</span><br><span class="line"></span><br><span class="line">       NAME specifies the name of this argument (optional). You can use the name of local variable, local data structure member (e.g.</span><br><span class="line">       var→field, var.field2), local array with fixed index (e.g. array[1], var→array[0], var→pointer[2]), or kprobe-tracer argument</span><br><span class="line">       format (e.g. $retval, %ax, etc). Note that the name of this argument will be set as the last member name if you specify a local</span><br><span class="line">       data structure member (e.g. field2 for var→field1.field2.) $vars and $params special arguments are also available for NAME, $vars</span><br><span class="line">       is expanded to the local variables (including function parameters) which can access at given probe point. $params is expanded to</span><br><span class="line">       only the function parameters. TYPE casts the type of this argument (optional). If omitted, perf probe automatically set the type</span><br><span class="line">       based on debuginfo (*). Currently, basic types (u8&#x2F;u16&#x2F;u32&#x2F;u64&#x2F;s8&#x2F;s16&#x2F;s32&#x2F;s64), hexadecimal integers (x&#x2F;x8&#x2F;x16&#x2F;x32&#x2F;x64),</span><br><span class="line">       signedness casting (u&#x2F;s), &quot;string&quot; and bitfield are supported. (see TYPES for detail) On x86 systems %REG is always the short</span><br><span class="line">       form of the register: for example %AX. %RAX or %EAX is not valid. &quot;@user&quot; is a special attribute which means the LOCALVAR will be</span><br><span class="line">       treated as a user-space memory. This is only valid for kprobe event.</span><br></pre></td></tr></table></figure>
+
+
+<h2 id="perf-ftrace-的使用"><a href="#perf-ftrace-的使用" class="headerlink" title="perf ftrace 的使用"></a>perf ftrace 的使用</h2><p>man 手册</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line">perf ftrace --help</span><br><span class="line">PERF-FTRACE(1)                                                             perf Manual                                                             PERF-FTRACE(1)</span><br><span class="line"></span><br><span class="line">NAME</span><br><span class="line">       perf-ftrace - simple wrapper for kernel&#39;s ftrace functionality</span><br><span class="line"></span><br><span class="line">SYNOPSIS</span><br><span class="line">       perf ftrace &lt;command&gt;</span><br><span class="line"></span><br><span class="line">DESCRIPTION</span><br><span class="line">       The perf ftrace command is a simple wrapper of kernel’s ftrace functionality. It only supports single thread tracing currently and just reads trace_pipe</span><br><span class="line">       in text and then write it to stdout.</span><br><span class="line"></span><br><span class="line">       The following options apply to perf ftrace.</span><br><span class="line"></span><br><span class="line">OPTIONS</span><br><span class="line">       -t, --tracer&#x3D;</span><br><span class="line">           Tracer to use when neither -G nor -F option is not specified: function_graph or function.</span><br><span class="line"></span><br><span class="line">       -v, --verbose&#x3D;</span><br><span class="line">           Verbosity level.</span><br><span class="line"></span><br><span class="line">       -F, --funcs</span><br><span class="line">           List available functions to trace. It accepts a pattern to only list interested functions.</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>查看有哪些函数可以用于跟踪</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">ubuntu@zeku_server:~&#x2F;workspace&#x2F;share&#x2F;test_modules $ sudo perf ftrace -F | grep vfs_read</span><br><span class="line">vfs_read</span><br><span class="line">vfs_readv</span><br><span class="line">vfs_readlink</span><br><span class="line">ubuntu@zeku_server:~&#x2F;workspace&#x2F;share&#x2F;test_modules $</span><br></pre></td></tr></table></figure>
+
+<p>用于跟踪 graph-ftrace</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br></pre></td><td class="code"><pre><span class="line">ubuntu@zeku_server:~&#x2F;workspace&#x2F;share&#x2F;test_modules $ sudo perf ftrace -a -G vfs_read</span><br><span class="line"># tracer: function_graph</span><br><span class="line">#</span><br><span class="line"># CPU  DURATION                  FUNCTION CALLS</span><br><span class="line"># |     |   |                     |   |   |   |</span><br><span class="line">  3)               |  vfs_read() &#123;</span><br><span class="line">  3)               |    rw_verify_area() &#123;</span><br><span class="line">  3)               |      security_file_permission() &#123;</span><br><span class="line">  3)               |        apparmor_file_permission() &#123;</span><br><span class="line">  3)               |          aa_file_perm() &#123;</span><br><span class="line">  3)   0.102 us    |            rcu_read_unlock_strict();</span><br><span class="line">  3)   0.321 us    |          &#125;</span><br><span class="line">  3)   0.508 us    |        &#125;</span><br><span class="line">  3)   0.095 us    |        __fsnotify_parent();</span><br><span class="line">  3)   0.900 us    |      &#125;</span><br><span class="line">  3)   1.130 us    |    &#125;</span><br><span class="line">  3)               |    new_sync_read() &#123;</span><br><span class="line">  3)               |      ext4_file_read_iter() &#123;</span><br><span class="line">  3)               |        generic_file_read_iter() &#123;</span><br><span class="line">  3)               |          generic_file_buffered_read() &#123;</span><br><span class="line">  3)               |            _cond_resched() &#123;</span><br><span class="line">  3)   0.086 us    |              rcu_all_qs();</span><br><span class="line">  3)   0.255 us    |            &#125;</span><br><span class="line">  3)               |            generic_file_buffered_read_get_pages() &#123;</span><br><span class="line">  3)               |              find_get_pages_contig() &#123;</span><br><span class="line">  3)   0.088 us    |                PageHuge();</span><br><span class="line">  3)   0.084 us    |                rcu_read_unlock_strict();</span><br><span class="line">  3)   0.566 us    |              &#125;</span><br><span class="line">  3)   0.747 us    |            &#125;</span><br><span class="line">  3)   0.191 us    |            mark_page_accessed();</span><br><span class="line">  3)               |            _cond_resched() &#123;</span><br><span class="line">  3)   0.214 us    |              rcu_all_qs();</span><br><span class="line">  3)   0.646 us    |            &#125;</span><br><span class="line">  3)               |            touch_atime() &#123;</span><br><span class="line">  3)               |              atime_needs_update() &#123;</span><br><span class="line">  3)               |                current_time() &#123;</span><br><span class="line">  3)   0.084 us    |                  ktime_get_coarse_real_ts64();</span><br><span class="line">  3)   0.266 us    |                &#125;</span><br><span class="line">  3)   0.435 us    |              &#125;</span><br><span class="line">  3)   0.607 us    |            &#125;</span><br><span class="line">  3)   3.294 us    |          &#125;</span><br><span class="line">  3)   3.486 us    |        &#125;</span><br><span class="line">  3)   3.659 us    |      &#125;</span><br><span class="line">  3)   3.873 us    |    &#125;</span><br><span class="line">  3)   0.088 us    |    __fsnotify_parent();</span><br><span class="line">  3)   5.884 us    |  &#125;</span><br><span class="line">  3)               |  vfs_read() &#123;</span><br></pre></td></tr></table></figure>
+
+
+<h2 id="perf-lock-的使用"><a href="#perf-lock-的使用" class="headerlink" title="perf lock 的使用"></a>perf lock 的使用</h2><p>为了给系统中造成一定压力，先 起10个 vm thread 分配内存</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">stable_kernel@kernel: ~&#x2F;workspace&#x2F;fs# stress --vm 10</span><br><span class="line">stress: info: [4746] dispatching hogs: 0 cpu, 0 io, 10 vm, 0 hdd</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br></pre></td><td class="code"><pre><span class="line">stable_kernel@kernel: ~&#x2F;workspace&#x2F;linux&#x2F;tools&#x2F;perf# sudo .&#x2F;perf lock record</span><br><span class="line">^C[ perf record: Woken up 0 times to write data ]</span><br><span class="line">Warning:</span><br><span class="line">Processed 301597 events and lost 4 chunks!</span><br><span class="line"></span><br><span class="line">Check IO&#x2F;CPU overload!</span><br><span class="line"></span><br><span class="line">[ perf record: Captured and wrote 30.069 MB perf.data (295337 samples) ]</span><br><span class="line"></span><br><span class="line">stable_kernel@130kernel: ~&#x2F;workspace&#x2F;linux&#x2F;tools&#x2F;perf# sudo .&#x2F;perf lock report</span><br><span class="line">               Name   acquired  contended   avg wait (ns) total wait (ns)   max wait (ns)   min wait (ns)</span><br><span class="line"></span><br><span class="line">       rcu_read_lock     884617          0               0               0               0               0</span><br><span class="line">      &amp;mm-&gt;mmap_lock       9652          0               0               0               0               0</span><br><span class="line">      &amp;mm-&gt;mmap_lock       8229          0               0               0               0               0</span><br><span class="line">      &amp;mm-&gt;mmap_lock       7863          0               0               0               0               0</span><br><span class="line">      &amp;mm-&gt;mmap_lock       7827          0               0               0               0               0</span><br><span class="line">      &amp;mm-&gt;mmap_lock       7782          0               0               0               0               0</span><br><span class="line">      &amp;mm-&gt;mmap_lock       7549          0               0               0               0               0</span><br><span class="line">      &amp;mm-&gt;mmap_lock       7364          0               0               0               0               0</span><br><span class="line">      &amp;mm-&gt;mmap_lock       6710          0               0               0               0               0</span><br><span class="line">      &amp;mm-&gt;mmap_lock       6676          0               0               0               0               0</span><br><span class="line">        &amp;xa-&gt;xa_lock       5485        171            1075          183872            4457             705</span><br><span class="line">      &amp;mm-&gt;mmap_lock       5482          0               0               0               0               0</span><br><span class="line"> hrtimer_bases.lo...       1160          0               0               0               0               0</span><br><span class="line"> hrtimer_bases.lo...       1146          0               0               0               0               0</span><br><span class="line"> hrtimer_bases.lo...       1119          0               0               0               0               0</span><br><span class="line"> hrtimer_bases.lo...       1118          0               0               0               0               0</span><br><span class="line">         &amp;zone-&gt;lock        975          6            2009           12054            3671             805</span><br><span class="line"> ptlock_ptr(page)...        966          0               0               0               0               0</span><br><span class="line"> ptlock_ptr(page)...        933          0               0               0               0               0</span><br></pre></td></tr></table></figure>
+<p>可以看到这种 <code>memory</code> 压力比较大的情况下，<code>xa-&gt;xa_lock</code> 与 <code>zone-&gt;lock</code> 的争用情况比较激烈</p>
+<ul>
+<li>Name：内核锁的名字。</li>
+<li>aquired：该锁被直接获得的次数，因为没有其它内核路径占用该锁，此时不用等待。</li>
+<li>contended：该锁等待后获得的次数，此时被其它内核路径占用，需要等待。</li>
+<li>total wait：为了获得该锁，总共的等待时间。</li>
+<li>max wait：为了获得该锁，最大的等待时间。</li>
+<li>min wait：为了获得该锁，最小的等待时间</li>
+</ul>
+<h2 id="perf-的-overhead"><a href="#perf-的-overhead" class="headerlink" title="perf 的 overhead"></a>perf 的 overhead</h2><p>为了对比明显，这里加上<code>strace</code> 对比，由于strace 会使用ptrace（2）附加到目标进程，并在系统调用期间将其停止，例如调试器。 这很猛烈，并可能导致严重的开销。为了证明这一点，下面的系统调用繁重程序是通过perf和strace本身运行的。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">root@ubuntu-Inspiron-5548:&#x2F;home&#x2F;ubuntu&#x2F;workspace# dd if&#x3D;&#x2F;dev&#x2F;zero of&#x3D;&#x2F;dev&#x2F;null bs&#x3D;512 count&#x3D;10000k</span><br><span class="line">记录了10240000+0 的读入</span><br><span class="line">记录了10240000+0 的写出</span><br><span class="line">5242880000 bytes (5.2 GB, 4.9 GiB) copied, 14.3584 s, 365 MB&#x2F;s</span><br><span class="line">root@ubuntu-Inspiron-5548:&#x2F;home&#x2F;ubuntu&#x2F;workspace# perf stat -e &#39;syscalls:sys_enter_*&#39; dd if&#x3D;&#x2F;dev&#x2F;zero of&#x3D;&#x2F;dev&#x2F;null bs&#x3D;512 count&#x3D;10000k</span><br><span class="line">记录了10240000+0 的读入</span><br><span class="line">记录了10240000+0 的写出</span><br><span class="line">5242880000 bytes (5.2 GB, 4.9 GiB) copied, 15.4485 s, 339 MB&#x2F;s</span><br><span class="line">root@ubuntu-Inspiron-5548:&#x2F;home&#x2F;ubuntu&#x2F;workspace# strace -c dd if&#x3D;&#x2F;dev&#x2F;zero of&#x3D;&#x2F;dev&#x2F;null bs&#x3D;512 count&#x3D;10000k</span><br><span class="line">	记录了10240000+0 的读入</span><br><span class="line">记录了10240000+0 的写出</span><br><span class="line">5242880000 bytes (5.2 GB, 4.9 GiB) copied, 504.601 s, 10.4 MB&#x2F;s</span><br></pre></td></tr></table></figure>
+<p>perf 慢了1MB/s大概7%，但是strace慢了36倍。。<br>与 <code>strace</code> 这类会停止线程的debugger方式比， perf的 overhead 就显得微不足道了。</p>
+<p>参考<a target="_blank" rel="noopener" href="https://blog.yadutaf.fr/">博客</a><br>参考[perf example]](<a target="_blank" rel="noopener" href="http://www.brendangregg.com/perf.html">http://www.brendangregg.com/perf.html</a>)</p>
+</article>
+<div class="article-footer">
+    <section id="license">
+      <div class="header"><span>许可协议</span></div>
+      <div class="body"><p>本文采用 <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">署名-非商业性使用-相同方式共享 4.0 国际</a> 许可协议，转载请注明出处。</p>
+</div>
+    </section>
+    
+
+</div>
+
+<div class="related-wrap" id="read-next"><section class="body"><div class="item" id="prev"><div class="note">较新文章</div><a href="/2021/01/28/%E5%86%85%E6%A0%B8%E8%A7%82%E6%B5%8B/perf%E7%9B%B8%E5%85%B3/perf-tools/">perf-tools</a></div><div class="item" id="next"><div class="note">较早文章</div><a href="/2021/01/27/%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86/KASAN%20%E4%BD%BF%E7%94%A8/">KASAN 定位越界访问</a></div></section></div>
+
+
+
+
+
+
+<footer class="page-footer footnote"><hr><div class="text"><p>本站由 <a href="/">Su Hui</a> 使用 <a target="_blank" rel="noopener" href="https://github.com/xaoxuu/hexo-theme-stellar/tree/1.33.1">Stellar 1.33.1</a> 主题创建。<br>本博客所有文章除特别声明外，均采用 <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> 许可协议，转载请注明出处。</p>
+</div></footer>
+<div class="main-mask" onclick="sidebar.dismiss()"></div></div><aside class="l_right">
+<div class="widgets">
+
+
+
+<widget class="widget-wrapper toc" id="data-toc" collapse="false"><div class="widget-header dis-select"><span class="name">本文目录</span><a class="cap-action" onclick="sidebar.toggleTOC()" ><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h11m-11 6h11m-11 6h11M4 6h1v4m-1 0h2m0 8H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg></a></div><div class="widget-body"><ol class="toc"><li class="toc-item toc-level-2"><a class="toc-link" href="#perf%E5%8A%9F%E8%83%BD"><span class="toc-text">perf功能</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#perf%E6%94%AF%E6%8C%81%E7%9A%84-events"><span class="toc-text">perf支持的 events</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#perf%E6%94%AF%E6%8C%81%E7%9A%84%E9%80%89%E9%A1%B9"><span class="toc-text">perf支持的选项</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#perf-sched%E7%9A%84%E6%94%AF%E6%8C%81"><span class="toc-text">perf sched的支持</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E8%B0%83%E5%BA%A6%E5%BB%B6%E8%BF%9F"><span class="toc-text">调度延迟</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E8%B0%83%E5%BA%A6%E8%A1%8C%E4%B8%BA%E8%AF%A6%E7%BB%86%E5%88%86%E6%9E%90"><span class="toc-text">调度行为详细分析</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E8%B0%83%E5%BA%A6%E5%BB%B6%E8%BF%9F%E5%8F%AF%E8%83%BD%E5%8E%9F%E5%9B%A0"><span class="toc-text">调度延迟可能原因</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#perf-%E5%AF%B9%E5%8A%A8%E6%80%81%E8%BF%BD%E8%B8%AA%E7%9A%84%E6%94%AF%E6%8C%81"><span class="toc-text">perf 对动态追踪的支持</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E5%8A%A8%E6%80%81%E6%B7%BB%E5%8A%A0%E5%88%A0%E9%99%A4-probe%E7%82%B9"><span class="toc-text">动态添加删除 probe点</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#perf-ftrace-%E7%9A%84%E4%BD%BF%E7%94%A8"><span class="toc-text">perf ftrace 的使用</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#perf-lock-%E7%9A%84%E4%BD%BF%E7%94%A8"><span class="toc-text">perf lock 的使用</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#perf-%E7%9A%84-overhead"><span class="toc-text">perf 的 overhead</span></a></li></ol></div><div class="widget-footer"><a class="top" onclick="util.scrollTop()"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><!-- Icon from Solar by 480 Design - https://creativecommons.org/licenses/by/4.0/ --><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><path stroke-linejoin="round" d="m9 15.5l3-3l3 3m-6-4l3-3l3 3"/><path d="M7 3.338A9.95 9.95 0 0 1 12 2c5.523 0 10 4.477 10 10s-4.477 10-10 10S2 17.523 2 12c0-1.821.487-3.53 1.338-5"/></g></svg><span>回到顶部</span></a></div></widget>
+</div></aside><div class='float-panel'>
+  <button type='button' style='display:none' class='laptop-only rightbar-toggle mobile' onclick='sidebar.rightbar()'>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h11m-11 6h11m-11 6h11M4 6h1v4m-1 0h2m0 8H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>
+  </button>
+  <button type='button' style='display:none' class='mobile-only leftbar-toggle mobile' onclick='sidebar.leftbar()'>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 11c0-3.771 0-5.657 1.172-6.828C4.343 3 6.229 3 10 3h4c3.771 0 5.657 0 6.828 1.172C22 5.343 22 7.229 22 11v2c0 3.771 0 5.657-1.172 6.828C19.657 21 17.771 21 14 21h-4c-3.771 0-5.657 0-6.828-1.172C2 18.657 2 16.771 2 13z"/><path id="sep" stroke-linecap="round" d="M5.5 10h6m-5 4h4m4.5 7V3"/></g></svg>
+  </button>
+</div>
+</div><div class="scripts">
+
+
+<script type="text/javascript">
+  window.canonical = {"originalHost":null,"officialHosts":["localhost"],"encoded":""};
+  const ctx = {
+    date_suffix: {
+      just: `刚刚`,
+      min: `分钟前`,
+      hour: `小时前`,
+      day: `天前`,
+    },
+    root : `/`,
+    tag_plugins: {
+      chat: Object.assign({"api":"https://siteinfo.listentothewind.cn/api/v1"}),
+    }
+  };
+
+  // required plugins (only load if needs)
+  if (`local_search`) {
+    ctx.search = {};
+    ctx.search.service = `local_search`;
+    if (ctx.search.service == 'local_search') {
+      let service_obj = Object.assign({}, `{"field":"all","path":"/search.json","content":true,"skip_search":null,"sort":"-date"}`);
+      ctx.search[ctx.search.service] = service_obj;
+    }
+  }
+  const def = {
+    avatar: `https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/avatar/round/3442075.svg`,
+    cover: `https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/cover/76b86c0226ffd.svg`,
+    loading: `https://api.iconify.design/eos-icons:three-dots-loading.svg?color=%231cd0fd`,
+  };
+  const deps = {
+    jquery: `https://gcore.jsdelivr.net/npm/jquery@3.7/dist/jquery.min.js`,
+    marked: `https://gcore.jsdelivr.net/npm/marked@13.0/lib/marked.umd.min.js`,
+    lazyload: `/%5Bobject%20Object%5D`
+  }
+  
+
+</script>
+
+<script type="text/javascript">
+  
+  function RunItem() {
+    this.list = []; // 存放回调函数
+    this.start = () => {
+      for (var i = 0; i < this.list.length; i++) {
+        this.list[i].run();
+      }
+    };
+    this.push = (fn, name, setRequestAnimationFrame = true) => {
+      let myfn = fn
+      if (setRequestAnimationFrame) {
+        myfn = () => {
+          utils.requestAnimationFrame(fn)
+        }
+      }
+      var f = new Item(myfn, name);
+      this.list.push(f);
+    };
+    this.remove = (name) => {
+      for (let index = 0; index < this.list.length; index++) {
+        const e = this.list[index];
+        if (e.name == name) {
+          this.list.splice(index, 1);
+        }
+      }
+    }
+    // 构造一个可以run的对象
+    function Item(fn, name) {
+      // 函数名称
+      this.name = name || fn.name;
+      // run方法
+      this.run = () => {
+        try {
+          fn()
+        } catch (error) {
+          console.log(error);
+        }
+      };
+    }
+  }
+
+  const utils = {
+    // 懒加载 css https://github.com/filamentgroup/loadCSS
+    css: (href, before, media, attributes) => {
+      var doc = window.document;
+      var ss = doc.createElement("link");
+      var ref;
+      if (before) {
+        ref = before;
+      } else {
+        var refs = (doc.body || doc.getElementsByTagName("head")[0]).childNodes;
+        ref = refs[refs.length - 1];
+      }
+      var sheets = doc.styleSheets;
+      if (attributes) {
+        for (var attributeName in attributes) {
+          if (attributes.hasOwnProperty(attributeName)) {
+            ss.setAttribute(attributeName, attributes[attributeName]);
+          }
+        }
+      }
+      ss.rel = "stylesheet";
+      ss.href = href;
+      ss.media = "only x";
+      function ready(cb) {
+        if (doc.body) {
+          return cb();
+        }
+        setTimeout(function () {
+          ready(cb);
+        });
+      }
+      ready(function () {
+        ref.parentNode.insertBefore(ss, before ? ref : ref.nextSibling);
+      });
+      var onloadcssdefined = function (cb) {
+        var resolvedHref = ss.href;
+        var i = sheets.length;
+        while (i--) {
+          if (sheets[i].href === resolvedHref) {
+            return cb();
+          }
+        }
+        setTimeout(function () {
+          onloadcssdefined(cb);
+        });
+      };
+      function loadCB() {
+        if (ss.addEventListener) {
+          ss.removeEventListener("load", loadCB);
+        }
+        ss.media = media || "all";
+      }
+      if (ss.addEventListener) {
+        ss.addEventListener("load", loadCB);
+      }
+      ss.onloadcssdefined = onloadcssdefined;
+      onloadcssdefined(loadCB);
+      return ss;
+    },
+
+    js: (src, opt) => new Promise((resolve, reject) => {
+      var script = document.createElement('script');
+      if (src.startsWith('/')) {
+        src = ctx.root + src.substring(1);
+      }
+      script.src = src;
+      if (opt) {
+        for (let key of Object.keys(opt)) {
+          script[key] = opt[key]
+        }
+      } else {
+        // 默认异步，如果需要同步，第二个参数传入 {} 即可
+        script.async = true
+      }
+      script.onerror = reject
+      script.onload = script.onreadystatechange = function () {
+        const loadState = this.readyState
+        if (loadState && loadState !== 'loaded' && loadState !== 'complete') return
+        script.onload = script.onreadystatechange = null
+        resolve()
+      }
+      document.head.appendChild(script)
+    }),
+
+    jq: (fn) => {
+      if (typeof jQuery === 'undefined') {
+        utils.js(deps.jquery).then(fn)
+      } else {
+        fn()
+      }
+    },
+
+    onLoading: (el) => {
+      if (el) {
+        $(el).append('<div class="loading-wrap"><svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" stroke-opacity=".3" d="M12 3C16.9706 3 21 7.02944 21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="1.3s" values="60;0"/></path><path stroke-dasharray="15" stroke-dashoffset="15" d="M12 3C16.9706 3 21 7.02944 21 12"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.3s" values="15;0"/><animateTransform attributeName="transform" dur="1.5s" repeatCount="indefinite" type="rotate" values="0 12 12;360 12 12"/></path></g></svg></div>');
+      }
+    },
+    onLoadSuccess: (el) => {
+      if (el) {
+        $(el).find('.loading-wrap').remove();
+      }
+    },
+    onLoadFailure: (el) => {
+      if (el) {
+        $(el).find('.loading-wrap svg').remove();
+        $(el).find('.loading-wrap').append('<svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" d="M12 3L21 20H3L12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.5s" values="60;0"/></path><path stroke-dasharray="6" stroke-dashoffset="6" d="M12 10V14"><animate fill="freeze" attributeName="stroke-dashoffset" begin="0.6s" dur="0.2s" values="6;0"/></path></g><circle cx="12" cy="17" r="1" fill="currentColor" fill-opacity="0"><animate fill="freeze" attributeName="fill-opacity" begin="0.8s" dur="0.4s" values="0;1"/></circle></svg>');
+        $(el).find('.loading-wrap').addClass('error');
+      }
+    },
+    request: (el, url, callback, onFailure) => {
+      const maxRetry = 3;
+      let retryCount = 0;
+
+      return new Promise((resolve, reject) => {
+        const load = () => {
+          utils.onLoading?.(el);
+
+          let timedOut = false;
+          const timeout = setTimeout(() => {
+            timedOut = true;
+            console.warn('[request] 超时:', url);
+
+            if (++retryCount >= maxRetry) {
+              utils.onLoadFailure?.(el);
+              onFailure?.();
+              reject('请求超时');
+            } else {
+              setTimeout(load, 1000);
+            }
+          }, 5000);
+
+          fetch(url).then(resp => {
+            if (timedOut) return;
+            clearTimeout(timeout);
+
+            if (!resp.ok) throw new Error('响应失败');
+            return resp;
+          }).then(data => {
+            if (timedOut) return;
+            utils.onLoadSuccess?.(el);
+            callback(data);
+            resolve(data);
+          }).catch(err => {
+            clearTimeout(timeout);
+            console.warn('[request] 错误:', err);
+
+            if (++retryCount >= maxRetry) {
+              utils.onLoadFailure?.(el);
+              onFailure?.();
+              reject(err);
+            } else {
+              setTimeout(load, 1000);
+            }
+          });
+        };
+
+        load();
+      });
+    },
+    requestWithoutLoading: (url, options = {}, maxRetry = 2, timeout = 5000) => {
+      return new Promise((resolve, reject) => {
+        let retryCount = 0;
+
+        const tryRequest = () => {
+          let timedOut = false;
+          const timer = setTimeout(() => {
+            timedOut = true;
+            if (++retryCount > maxRetry) reject('timeout');
+            else tryRequest();
+          }, timeout);
+
+          fetch(url, options)
+            .then(resp => {
+              clearTimeout(timer);
+              if (!resp.ok) throw new Error('bad response');
+              resolve(resp);
+            })
+            .catch(err => {
+              clearTimeout(timer);
+              if (++retryCount > maxRetry) reject(err);
+              else setTimeout(tryRequest, 500);
+            });
+        };
+
+        tryRequest();
+      });
+    },
+    /********************** requestAnimationFrame ********************************/
+    // 1、requestAnimationFrame 会把每一帧中的所有 DOM 操作集中起来，在一次重绘或回流中就完成，并且重绘或回流的时间间隔紧紧跟随浏览器的刷新频率，一般来说，这个频率为每秒60帧。
+    // 2、在隐藏或不可见的元素中，requestAnimationFrame 将不会进行重绘或回流，这当然就意味着更少的的 cpu，gpu 和内存使用量。
+    requestAnimationFrame: (fn) => {
+      if (!window.requestAnimationFrame) {
+        window.requestAnimationFrame = window.requestAnimationFrame || window.mozRequestAnimationFrame || window.webkitRequestAnimationFrame;
+      }
+      window.requestAnimationFrame(fn)
+    },
+    dark: {},
+  };
+
+  // utils.dark.mode 当前模式 dark or light
+  // utils.dark.toggle() 暗黑模式触发器
+  // utils.dark.push(callBack[,"callBackName"]) 传入触发器回调函数
+  utils.dark.method = {
+    toggle: new RunItem(),
+  };
+  utils.dark = Object.assign(utils.dark, {
+    push: utils.dark.method.toggle.push,
+  });
+</script>
+<script>
+  const sidebar = {
+    leftbar: () => {
+      if (l_body) {
+        l_body.toggleAttribute('leftbar');
+        l_body.removeAttribute('rightbar');
+      }
+    },
+    rightbar: () => {
+      if (l_body) {
+        l_body.toggleAttribute('rightbar');
+        l_body.removeAttribute('leftbar');
+      }
+    },
+    dismiss: () => {
+      if (l_body) {
+        l_body.removeAttribute('leftbar');
+        l_body.removeAttribute('rightbar');
+      }
+    },
+    toggleTOC: () => {
+      document.querySelector('#data-toc').classList.toggle('collapse');
+    }
+  }
+</script>
+<script type="text/javascript">
+  (() => {
+    const tagSwitchers = document.querySelectorAll('.tag-subtree.parent-tag > a > .tag-switcher-wrapper')
+    for (const tagSwitcher of tagSwitchers) {
+      tagSwitcher.addEventListener('click', (e) => {
+        const parent = e.target.closest('.tag-subtree.parent-tag')
+        parent.classList.toggle('expanded')
+        e.preventDefault()
+      })
+    }
+
+    // Get active tag from query string, then activate it.
+    const urlParams = new URLSearchParams(window.location.search)
+    const activeTag = urlParams.get('tag')
+    if (activeTag) {
+      let tag = document.querySelector(`.tag-subtree[data-tag="${activeTag}"]`)
+      if (tag) {
+        tag.querySelector('a').classList.add('active')
+        
+        while (tag) {
+          tag.classList.add('expanded')
+          tag = tag.parentElement.closest('.tag-subtree.parent-tag')
+        }
+      }
+    }
+  })()
+</script>
+
+<script async src="https://gcore.jsdelivr.net/npm/vanilla-lazyload@19.1/dist/lazyload.min.js"></script>
+<script>
+  // https://www.npmjs.com/package/vanilla-lazyload
+  // Set the options globally
+  // to make LazyLoad self-initialize
+  window.lazyLoadOptions = {
+    elements_selector: ".lazy",
+    callback_loaded: (el) => {
+      el.classList.add('loaded');
+      const wrapper = el.closest('.lazy-box');
+      const icon = wrapper?.querySelector('.lazy-icon');
+      if (icon) icon.remove();
+    }
+  };
+  // Listen to the initialization event
+  // and get the instance of LazyLoad
+  window.addEventListener(
+    "LazyLoad::Initialized",
+    function (event) {
+      window.lazyLoadInstance = event.detail.instance;
+    },
+    false
+  );
+  document.addEventListener('DOMContentLoaded', function () {
+    window.lazyLoadInstance?.update();
+  });
+
+  window.wrapLazyloadImages = (container) => {
+    if (typeof container === 'string') {
+      container = document.querySelector(container);
+    }
+    if (!container) return;
+    
+    const images = container.querySelectorAll('img');
+    images.forEach((img) => {
+      if (img.classList.contains('lazy')) return;
+
+      const src = img.getAttribute('src');
+      if (!src) return;
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'lazy-box';
+
+      const newImg = img.cloneNode();
+      newImg.removeAttribute('src');
+      newImg.setAttribute('data-src', src);
+      newImg.classList.add('lazy');
+
+      const icon = document.createElement('div');
+      icon.className = 'lazy-icon';
+      if (def.loading) {
+        icon.style.backgroundImage = `url("${def.loading}")`;
+      }
+
+      wrapper.appendChild(newImg);
+      wrapper.appendChild(icon);
+
+      img.replaceWith(wrapper);
+    });
+
+    // 通知 LazyLoad 更新
+    if (window.lazyLoadInstance?.update) {
+      window.lazyLoadInstance.update();
+    }
+  }
+  
+</script>
+
+<!-- required -->
+<script src="/js/main.js?v=1.33.1" defer></script>
+
+<script type="text/javascript">
+  const applyTheme = (theme) => {
+    if (theme === 'auto') {
+      document.documentElement.removeAttribute('data-theme')
+    } else {
+      document.documentElement.setAttribute('data-theme', theme)
+    }
+
+    // applyThemeToGiscus(theme)
+  }
+
+  // FIXME: 这会导致无法使用 preferred_color_scheme 以外的主题
+  const applyThemeToGiscus = (theme) => {
+    // theme = theme === 'auto' ? 'preferred_color_scheme' : theme
+    const cmt = document.getElementById('giscus')
+    if (cmt) {
+      // This works before giscus load.
+      cmt.setAttribute('data-theme', theme)
+    }
+
+    const iframe = document.querySelector('#comments > section.giscus > iframe')
+    if (iframe) {
+      // This works after giscus loaded.
+      const src = iframe.src
+      const newSrc = src.replace(/theme=[\w]+/, `theme=${theme}`)
+      iframe.src = newSrc
+    }
+  }
+
+  const switchTheme = () => {
+    // light -> dark -> auto -> light -> ...
+    const currentTheme = document.documentElement.getAttribute('data-theme')
+    let newTheme;
+    switch (currentTheme) {
+      case 'light':
+        newTheme = 'dark'
+        break
+      case 'dark':
+        newTheme = 'auto'
+        break
+      default:
+        newTheme = 'light'
+    }
+    applyTheme(newTheme)
+    window.localStorage.setItem('Stellar.theme', newTheme)
+    utils.dark.mode = newTheme === 'auto' ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : newTheme;
+    utils.dark.method.toggle.start();
+
+    const messages = {
+      light: `切换到浅色模式`,
+      dark: `切换到深色模式`,
+      auto: `切换到跟随系统配色`,
+    }
+    hud?.toast?.(messages[newTheme])
+  }
+
+  (() => {
+    // Apply user's preferred theme, if any.
+    const theme = window.localStorage.getItem('Stellar.theme')
+    if (theme !== null) {
+      applyTheme(theme)
+    } else {
+      utils.dark.mode = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    utils.dark.method.toggle.start();
+  })()
+</script>
+
+
+<!-- optional -->
+
+
+
+<script defer>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    ctx.services = Object.assign({}, JSON.parse(`{"mdrender":{"js":"/js/services/mdrender.js"},"siteinfo":{"js":"/js/services/siteinfo.js","api":null},"ghinfo":{"js":"/js/services/ghinfo.js"},"rating":{"js":"/js/services/rating.js","api":"https://star-vote.xaox.cc/api/rating"},"vote":{"js":"/js/services/vote.js","api":"https://star-vote.xaox.cc/api/vote"},"sites":{"js":"/js/services/sites.js"},"friends":{"js":"/js/services/friends.js"},"friends_and_posts":{"js":"/js/services/friends_and_posts.js"},"timeline":{"js":"/js/services/timeline.js"},"fcircle":{"js":"/js/services/fcircle.js"},"weibo":{"js":"/js/services/weibo.js"},"memos":{"js":"/js/services/memos.js"},"voice":{"js":"/js/plugins/voice.js"},"video":{"js":"/js/plugins/video.js"},"download-file":{"js":"/js/plugins/download-file.js"},"twikoo":{"js":"/js/services/twikoo_latest_comment.js"},"waline":{"js":"/js/services/waline_latest_comment.js"},"artalk":{"js":"/js/services/artalk_latest_comment.js"},"giscus":{"js":"/js/services/giscus_latest_comment.js"},"contributors":{"edit_this_page":{"_posts/":null,"wiki/stellar/":"https://github.com/xaoxuu/hexo-theme-stellar-docs/blob/main/"},"js":"/js/services/contributors.js"}}`));
+    for (let id of Object.keys(ctx.services)) {
+      const js = ctx.services[id].js;
+      if (id == 'siteinfo') {
+        ctx.cardlinks = document.querySelectorAll('a.link-card[cardlink]');
+        if (ctx.cardlinks?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            setCardLink(ctx.cardlinks);
+          });
+        }
+      } else if (id == 'voice') {
+        ctx.voiceAudios = document.querySelectorAll('.voice>audio');
+        if (ctx.voiceAudios?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            createVoiceDom(ctx.voiceAudios);
+          });
+        }
+      } else if (id == 'video') {
+        ctx.videos = document.querySelectorAll('.video>video');
+        if (ctx.videos?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            videoEvents(ctx.videos);
+          });
+        }
+      } else if (id == 'download-file') {
+        ctx.files = document.querySelectorAll('.file');
+        if (ctx.files?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            downloadFileEvent(ctx.files);
+          });
+        }
+      } else {
+        const els = document.getElementsByClassName(`ds-${id}`);
+        if (els?.length > 0) {
+          utils.jq(() => {
+            if (id == 'timeline' || 'memos' || 'marked') {
+              utils.js(deps.marked).then(function () {
+                utils.js(js, { defer: true });
+              });
+            } else {
+              utils.js(js, { defer: true });
+            }
+          });
+        }
+      }
+    }
+
+    // chat iphone time
+    let phoneTimes = document.querySelectorAll('.chat .status-bar .time');
+
+    if (phoneTimes.length > 0) {
+      NowTime();
+      var date = new Date();
+      var sec = date.getSeconds();
+      var firstAdjustInterval = setInterval(firstAdjustTime, 1000 * (60 - sec));
+    }
+
+    function firstAdjustTime() {
+      NowTime();
+      clearInterval(firstAdjustInterval);
+      setInterval(NowTime, 1000 * 60);
+    }
+
+    function NowTime() {
+      for (let i = 0; i < phoneTimes.length; ++i) {
+        var timeSpan = phoneTimes[i];
+        var date = new Date();
+        var hour = date.getHours();
+        var min = date.getMinutes();
+        timeSpan.innerHTML = check(hour) + ":" + check(min);
+      }
+    };
+
+    function check(val) {
+      if (val < 10) {
+        return ("0" + val);
+      }
+      return (val);
+    }
+
+    // chat quote
+    const chat_quote_obverser = new IntersectionObserver((entries, observer) => {
+      entries.filter((entry) => { return entry.isIntersecting }).sort((a, b) => a.intersectionRect.y !== b.intersectionRect.y ? a.intersectionRect.y - b.intersectionRect.y : a.intersectionRect.x - b.intersectionRect.x).forEach((entry, index) => {
+          observer.unobserve(entry.target);
+          setTimeout(() => {
+            entry.target.classList.add('quote-blink');
+            setTimeout(() => {
+              entry.target.classList.remove('quote-blink');
+            }, 1000);
+          }, Math.max(100, 16) * (index + 1));
+        });
+    });
+
+    var chatQuotes = document.querySelectorAll(".chat .talk .quote");
+    chatQuotes.forEach((quote) => {
+      quote.addEventListener('click', function () {
+        var chatCellDom = document.getElementById("quote-" + quote.getAttribute("quotedCellTag"));
+        if (chatCellDom) {
+          var chatDiv = chatCellDom.parentElement;
+          var mid = chatDiv.clientHeight / 2;
+          var offsetTop = chatCellDom.offsetTop;
+          if (offsetTop > mid - chatCellDom.clientHeight / 2) {
+            chatDiv.scrollTo({
+              top: chatCellDom.offsetTop - mid + chatCellDom.clientHeight / 2,
+              behavior: "smooth"
+            });
+          } else {
+            chatDiv.scrollTo({
+              top: 0,
+              behavior: "smooth"
+            });
+          }
+          chat_quote_obverser.observe(chatCellDom);
+        }
+      });
+    });
+  });
+</script>
+
+<script>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    ctx.search = {
+      path: `/search.json`,
+    }
+    utils.js('/js/search/local-search.js', { defer: true });
+  });
+</script><script>
+  window.FPConfig = {
+    delay: 0,
+    ignoreKeywords: [],
+    maxRPS: 5,
+    hoverDelay: 25
+  };
+</script>
+<script defer src="https://gcore.jsdelivr.net/npm/flying-pages@2/flying-pages.min.js"></script><script>
+  ctx.fancybox = {
+    selector: `.timenode p>img`,
+    css: `https://gcore.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css`,
+    js: `https://gcore.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js`
+  };
+  var selector = '[data-fancybox]:not(.error), .with-fancybox .atk-content img:not([atk-emoticon])';
+  if (ctx.fancybox.selector) {
+    selector += `, ${ctx.fancybox.selector}`
+  }
+  var needFancybox = document.querySelectorAll(selector).length !== 0;
+  if (!needFancybox) {
+    const memos = document.getElementsByClassName('ds-memos');
+    if (memos != undefined && memos.length > 0) {
+      needFancybox = true;
+    }
+    const fancybox = document.getElementsByClassName('with-fancybox');
+    if (fancybox != undefined && fancybox.length > 0) {
+      needFancybox = true;
+    }
+  }
+  if (needFancybox) {
+    utils.css(ctx.fancybox.css);
+    utils.js(ctx.fancybox.js, { defer: true }).then(function () {
+      Fancybox.bind(selector, {
+        hideScrollbar: false,
+        Thumbs: {
+          autoStart: false,
+        },
+        caption: (fancybox, slide) => {
+          return slide.triggerEl.alt || slide.triggerEl.dataset.caption || null
+        }
+      });
+    })
+  }
+</script>
+<script>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    const swiper_api = document.getElementById('swiper-api');
+    if (swiper_api != undefined) {
+      utils.css(`https://unpkg.com/swiper@10.3/swiper-bundle.min.css`);
+      utils.js(`https://unpkg.com/swiper@10.3/swiper-bundle.min.js`, { defer: true }).then(function () {
+        const effect = swiper_api.getAttribute('effect') || '';
+        var swiper = new Swiper('.swiper#swiper-api', {
+          slidesPerView: 'auto',
+          spaceBetween: 8,
+          centeredSlides: true,
+          effect: effect,
+          rewind: true,
+          pagination: {
+            el: '.swiper-pagination',
+            clickable: true,
+          },
+          navigation: {
+            nextEl: '.swiper-button-next',
+            prevEl: '.swiper-button-prev',
+          },
+        });
+      })
+    }
+  });
+</script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    window.codeElements = document.querySelectorAll('.code');
+    if (window.codeElements.length > 0) {
+      ctx.copycode = {
+        default_text: `Copy`,
+        success_text: `Copied`,
+        toast: `复制成功`,
+      };
+      utils.js('/js/plugins/copycode.js');
+    }
+  });
+</script>
+
+
+<!-- inject -->
+
+</div></body></html>

@@ -1,0 +1,1098 @@
+
+<!DOCTYPE html><html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="hexo-theme" content="https://github.com/xaoxuu/hexo-theme-stellar/tree/1.33.1" theme-name="Stellar" theme-version="1.33.1">
+  
+  
+  <meta name="generator" content="Hexo 5.1.1">
+  <meta http-equiv='x-dns-prefetch-control' content='on' />
+  
+  <meta name="renderer" content="webkit">
+  <meta name="force-rendering" content="webkit">
+  <meta http-equiv="X-UA-Compatible" content="IE=Edge,chrome=1">
+  <meta name="HandheldFriendly" content="True" >
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000">
+  <meta name="theme-color" content="#f9fafb">
+  <title>Android消息机制(四)：Vsync 信号与 UI 刷新 (vsyncfd) - liulangren Blog</title>
+
+  
+    <meta name="description" content="Android消息机制(四)：Vsync 信号与 UI 刷新 (vsyncfd)前面几篇已经把两件事拆开说明了：  主线程真正睡眠&#x2F;唤醒的位置，在 Native Looper + epoll。 Input、自定义 fd 事件，并不是通过普通 Handler 消息进入主线程。  Vsync 也是同一套思路。很多人会把 UI 刷新理解成“主线程每隔 16.6ms 自己发一条消息”，但在 aosp14">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Android消息机制(四)：Vsync 信号与 UI 刷新 (vsyncfd)">
+<meta property="og:url" content="https://liulangrenaaa.github.io/2026/05/13/android/framework%E5%9F%BA%E7%A1%80/04_Android%E6%B6%88%E6%81%AF%E6%9C%BA%E5%88%B6_Vsync%E4%BF%A1%E5%8F%B7%E4%B8%8EUI%E5%88%B7%E6%96%B0/">
+<meta property="og:site_name" content="liulangren Blog">
+<meta property="og:description" content="Android消息机制(四)：Vsync 信号与 UI 刷新 (vsyncfd)前面几篇已经把两件事拆开说明了：  主线程真正睡眠&#x2F;唤醒的位置，在 Native Looper + epoll。 Input、自定义 fd 事件，并不是通过普通 Handler 消息进入主线程。  Vsync 也是同一套思路。很多人会把 UI 刷新理解成“主线程每隔 16.6ms 自己发一条消息”，但在 aosp14">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://liulangrenaaa.github.io/images/icons/image.png">
+<meta property="article:published_time" content="2026-05-13T10:15:03.000Z">
+<meta property="article:modified_time" content="2026-05-14T03:56:22.498Z">
+<meta property="article:author" content="Su Hui">
+<meta property="article:tag" content="源码分析">
+<meta property="article:tag" content="Vsync">
+<meta property="article:tag" content="Choreographer">
+<meta property="article:tag" content="同步屏障">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://liulangrenaaa.github.io/images/icons/image.png">
+  
+  
+  
+  <meta name="keywords" content="源码分析,Vsync,Choreographer,同步屏障">
+
+  <!-- feed -->
+  
+
+  <link rel="stylesheet" href="/css/main.css?v=1.33.1">
+
+
+  
+    <link rel="shortcut icon" href="/images/icons/image.png">
+  
+
+  
+
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"Su Hui","sameAs":[],"image":"/images/icons/image.png"},"dateCreated":"2026-05-13T10:15:03+00:00","dateModified":"2026-05-14T03:56:22+00:00","datePublished":"2026-05-13T10:15:03+00:00","description":"","headline":"Android消息机制(四)：Vsync 信号与 UI 刷新 (vsyncfd)","mainEntityOfPage":{"@type":"WebPage","@id":"https://liulangrenaaa.github.io/2026/05/13/android/framework%E5%9F%BA%E7%A1%80/04_Android%E6%B6%88%E6%81%AF%E6%9C%BA%E5%88%B6_Vsync%E4%BF%A1%E5%8F%B7%E4%B8%8EUI%E5%88%B7%E6%96%B0/"},"publisher":{"@type":"Organization","name":"Su Hui","sameAs":[],"image":"/images/icons/image.png","logo":{"@type":"ImageObject","url":"/images/icons/image.png"}},"url":"https://liulangrenaaa.github.io/2026/05/13/android/framework%E5%9F%BA%E7%A1%80/04_Android%E6%B6%88%E6%81%AF%E6%9C%BA%E5%88%B6_Vsync%E4%BF%A1%E5%8F%B7%E4%B8%8EUI%E5%88%B7%E6%96%B0/","keywords":"源码分析, Vsync, Choreographer, 同步屏障","image":[]}</script>
+  
+</head>
+<body>
+
+<div class="l_body content" id="start" layout="post" type="tech" ><aside class="l_left"><div class="sidebg"></div><div class="leftbar-container">
+
+
+<header class="header"><div class="logo-wrap"><a class="avatar" href="/about/"><div class="bg" style="opacity:0;background-image:url(https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/avatar/round/rainbow64@3x.webp);"></div><img no-lazy class="avatar" src="/images/icons/image.png" onerror="javascript:this.classList.add('error');this.src='https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/image/2659360.svg';"></a><a class="title" href="/"><div class="main">liulangren Blog</div></a></div></header>
+
+<div class="nav-area">
+
+<nav class="menu dis-select"></nav>
+</div>
+<div class="widgets">
+<div class="search-wrapper" id="search-wrapper"><form class="search-form"><a class="search-button" onclick="document.getElementById(&quot;search-input&quot;).focus();"><svg t="1705074644177" viewBox="0 0 1025 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="1560" width="200" height="200"><path d="M1008.839137 935.96571L792.364903 719.491476a56.783488 56.783488 0 0 0-80.152866 0 358.53545 358.53545 0 1 1 100.857314-335.166073 362.840335 362.840335 0 0 1-3.689902 170.145468 51.248635 51.248635 0 1 0 99.217358 26.444296 462.057693 462.057693 0 1 0-158.255785 242.303546l185.930047 185.725053a51.248635 51.248635 0 0 0 72.568068 0 51.248635 51.248635 0 0 0 0-72.978056z" p-id="1561"></path><path d="M616.479587 615.969233a50.428657 50.428657 0 0 0-61.498362-5.534852 174.655348 174.655348 0 0 1-177.525271 3.484907 49.403684 49.403684 0 0 0-58.833433 6.76482l-3.074918 2.869923a49.403684 49.403684 0 0 0 8.609771 78.10292 277.767601 277.767601 0 0 0 286.992355-5.739847 49.403684 49.403684 0 0 0 8.404776-76.667958z" p-id="1562"></path></svg></a><input type="text" class="search-input" id="search-input" placeholder="站内搜索"></form><div id="search-result"></div><div class="search-no-result">没有找到内容！</div></div>
+
+<widget class="widget-wrapper linklist"><div class="widget-header dis-select"><span class="name">核心专题</span></div><div class="widget-body fs14">
+<div class="linklist left" style="grid-template-columns:repeat(1,1fr);">
+<a class="link" title="framework基础" href="/categories/android/framework基础/"><div class="flex"><span>framework基础</span></div></a>
+<a class="link" title="app启动与生命周期" href="/categories/android/app启动与生命周期/"><div class="flex"><span>app启动与生命周期</span></div></a>
+<a class="link" title="wms窗口系统" href="/categories/android/wms窗口系统/"><div class="flex"><span>wms窗口系统</span></div></a>
+<a class="link" title="input输入系统" href="/categories/android/input输入系统/"><div class="flex"><span>input输入系统</span></div></a>
+<a class="link" title="binder与系统服务" href="/categories/android/binder与系统服务/"><div class="flex"><span>binder与系统服务</span></div></a>
+<a class="link" title="graphics图形系统" href="/categories/android/graphics图形系统/"><div class="flex"><span>graphics图形系统</span></div></a>
+<a class="link" title="anr-crash稳定性" href="/categories/android/anr-crash稳定性/"><div class="flex"><span>anr-crash稳定性</span></div></a>
+<a class="link" title="debug-trace工具链" href="/categories/android/debug-trace工具链/"><div class="flex"><span>debug-trace工具链</span></div></a>
+<a class="link" title="性能稳定性" href="/tags/性能稳定性/"><div class="flex"><span>性能稳定性</span></div></a>
+<a class="link" title="Linux 调度" href="/categories/linux-kernel/linux-schedule/"><div class="flex"><span>Linux 调度</span></div></a></div></div></widget>
+
+<widget class="widget-wrapper linklist"><div class="widget-header dis-select"><span class="name">精选文章</span></div><div class="widget-body fs14">
+<div class="linklist left" style="grid-template-columns:repeat(1,1fr);">
+<a class="link" title="ANR问题总结" href="/2022/07/01/android/anr-crash稳定性/ANR问题总结/"><div class="flex"><span>ANR问题总结</span></div></a>
+<a class="link" title="android12 gdb64调试进程" href="/2021/09/23/用户空间/android12%20gdb64调试进程/"><div class="flex"><span>android12 gdb64调试进程</span></div></a>
+<a class="link" title="60s定位内核性能瓶颈" href="/2020/09/13/内核观测/性能稳定性/60s定位内核性能瓶颈/"><div class="flex"><span>60s定位内核性能瓶颈</span></div></a>
+<a class="link" title="关于preempt_count的思考" href="/2020/09/21/进程管理/关于preempt_count的思考/"><div class="flex"><span>关于preempt_count的思考</span></div></a></div></div></widget>
+</div>
+
+</div></aside><div class="l_main" id="main">
+
+
+
+
+
+<div class="article banner top">
+  <div class="content">
+    <div class="top bread-nav footnote"><div class="left"><div class="flex-row" id="breadcrumb"><a class="cap breadcrumb" href="/">主页</a>
+<span class="sep"></span><a class="cap breadcrumb" href="/">文章</a><span class="sep"></span><a class="cap breadcrumb-link" href="/categories/android/">android</a> <span class="sep"></span> <a class="cap breadcrumb-link" href="/categories/android/framework%E5%9F%BA%E7%A1%80/">framework基础</a></div>
+<div class="flex-row" id="post-meta"><span class="text created">发布于：<time datetime="2026-05-13T10:15:03.000Z">2026-05-13</time></span><span class="sep updated"></span><span class="text updated">更新于：<time datetime="2026-05-14T03:56:22.498Z">2026-05-14</time></span></div></div></div>
+    
+    <div class="bottom only-title">
+      
+      <div class="text-area">
+        <h1 class="text title"><span>Android消息机制(四)：Vsync 信号与 UI 刷新 (vsyncfd)</span></h1>
+        
+      </div>
+    </div>
+    
+  </div>
+  </div><article class="md-text content"><h1 id="Android消息机制-四-：Vsync-信号与-UI-刷新-vsyncfd"><a href="#Android消息机制-四-：Vsync-信号与-UI-刷新-vsyncfd" class="headerlink" title="Android消息机制(四)：Vsync 信号与 UI 刷新 (vsyncfd)"></a>Android消息机制(四)：Vsync 信号与 UI 刷新 (vsyncfd)</h1><p>前面几篇已经把两件事拆开说明了：</p>
+<ol>
+<li>主线程真正睡眠/唤醒的位置，在 Native <code>Looper + epoll</code>。</li>
+<li><code>Input</code>、自定义 fd 事件，并不是通过普通 <code>Handler</code> 消息进入主线程。</li>
+</ol>
+<p><code>Vsync</code> 也是同一套思路。很多人会把 UI 刷新理解成“主线程每隔 16.6ms 自己发一条消息”，但在 <code>aosp14</code> 视角下，这个理解并不准确。应用并不是主动轮询时间片，而是被显示系统的节拍推着走：<strong>Vsync 到来，fd 就绪，Native Looper 醒来，Java <code>Choreographer</code> 再接管这一帧的调度。</strong></p>
+<p>所以这一篇要回答三个问题：</p>
+<ol>
+<li><code>Vsync</code> 为什么不是普通 <code>Handler</code> 消息？</li>
+<li><code>DisplayEventReceiver</code> 和 <code>Choreographer</code> 分别做什么？</li>
+<li>同步屏障为什么能让绘制相关消息“插队”？</li>
+</ol>
+<h2 id="1-先看结论"><a href="#1-先看结论" class="headerlink" title="1. 先看结论"></a>1. 先看结论</h2><p>先把最重要的结论放前面：</p>
+<ol>
+<li>UI 刷新节拍并不是主线程自己定时轮询出来的，而是由显示系统发给应用。</li>
+<li>应用主线程底层监听的是一个显示事件 fd，本文为了便于理解，统一称为 <code>vsyncfd</code>。</li>
+<li>这个 fd 被注册进 Native <code>Looper</code>，因此 Vsync 到达时本质上是一次 fd readable 事件。</li>
+<li>Native 层收到显示事件后，会桥接到 Java <code>DisplayEventReceiver</code>。</li>
+<li>Java <code>Choreographer</code> 再基于这次 Vsync 执行 <code>doFrame()</code>，按顺序调度 Input、Animation、Traversal、Commit 等阶段。</li>
+<li>为了保证绘制相关任务不要被普通同步消息堵住，<code>ViewRootImpl</code> 会配合同步屏障和异步消息来确保这一帧及时执行。</li>
+</ol>
+<p>所以站在主线程角度看，真正的第一现场不是：</p>
+<ul>
+<li>“消息队列里多了一条刷新 UI 的普通消息”</li>
+</ul>
+<p>而是：</p>
+<ul>
+<li>“显示事件 fd 就绪了，<code>epoll_wait()</code> 返回了”</li>
+</ul>
+<h2 id="2-为什么-UI-刷新必须由-Vsync-驱动"><a href="#2-为什么-UI-刷新必须由-Vsync-驱动" class="headerlink" title="2. 为什么 UI 刷新必须由 Vsync 驱动"></a>2. 为什么 UI 刷新必须由 Vsync 驱动</h2><p>如果应用自己按定时器刷新，会有两个直接问题：</p>
+<ol>
+<li>它不知道屏幕真正的显示节拍，只能“猜”一个周期。</li>
+<li>即使猜中了大概周期，也可能和屏幕扫描时机错开，导致掉帧、抖动、撕裂感更明显。</li>
+</ol>
+<p><code>Vsync</code> 的价值就在这里：</p>
+<ul>
+<li>它代表“显示系统准备开始下一帧”的节拍信号。</li>
+<li>应用收到这个信号后，再去执行这一帧的输入处理、动画推进、布局绘制。</li>
+<li>这样应用侧产出的 frame，更容易和 SurfaceFlinger / 显示管线对齐。</li>
+</ul>
+<p>可以先把整体关系理解成下面这张图：</p>
+<figure style="margin:1.25rem 0;">
+  <a href="/generated/mermaid/96d1585cdd60b212e52f77680998f9f91a85bad6.svg" data-fancybox="mermaid-diagrams" data-caption="Mermaid 图 - 图 1" style="display:block;cursor:zoom-in;">
+    <img src="/generated/mermaid/96d1585cdd60b212e52f77680998f9f91a85bad6.svg" alt="Mermaid 图 - 图 1" loading="lazy" style="display:block;width:100%;height:auto;border-radius:12px;border:1px solid rgba(15,23,42,.08);background:#fff;box-shadow:0 10px 30px rgba(15,23,42,.08);">
+  </a>
+  <figcaption style="margin-top:.5rem;font-size:.875rem;color:rgba(71,85,105,.9);text-align:center;">点击放大查看原图</figcaption>
+</figure>
+
+<p>这里最关键的一点是：<strong>应用不是自己决定“现在该不该画”，而是等显示系统通知“这一帧可以开始了”。</strong></p>
+<h2 id="3-vsyncfd-到底是什么"><a href="#3-vsyncfd-到底是什么" class="headerlink" title="3. vsyncfd 到底是什么"></a>3. <code>vsyncfd</code> 到底是什么</h2><p>严格说，<code>aosp14</code> 里并没有一个源码变量名就叫 <code>vsyncfd</code>。这里的 <code>vsyncfd</code> 是为了帮助理解，指代“应用主线程监听的那个显示事件接收 fd”。</p>
+<p>它的职责和上一篇的 <code>inputfd</code> 很像：</p>
+<ul>
+<li><code>inputfd</code>：有输入数据到了，fd 变可读。</li>
+<li><code>vsyncfd</code>：有显示事件到了，fd 变可读。</li>
+</ul>
+<p>两者的共同点是：</p>
+<ul>
+<li>都不是 Java <code>MessageQueue.mMessages</code> 里的普通消息。</li>
+<li>都先经过 Native <code>Looper</code> 的 <code>epoll</code> 监听。</li>
+<li>都是在 fd ready 之后，再桥接给 Java 上层处理。</li>
+</ul>
+<p>差别在于后续语义不同：</p>
+<ul>
+<li><code>inputfd</code> 对应的是输入分发。</li>
+<li><code>vsyncfd</code> 对应的是帧调度。</li>
+</ul>
+<h2 id="4-从-SurfaceFlinger-到-App-的-Vsync-传递路径"><a href="#4-从-SurfaceFlinger-到-App-的-Vsync-传递路径" class="headerlink" title="4. 从 SurfaceFlinger 到 App 的 Vsync 传递路径"></a>4. 从 SurfaceFlinger 到 App 的 Vsync 传递路径</h2><p>这一段如果只用文字说很容易绕，直接看时序图更清楚：</p>
+<figure style="margin:1.25rem 0;">
+  <a href="/generated/mermaid/67eeb25eea8410d0fcbe11d7a02461f3ca68d149.svg" data-fancybox="mermaid-diagrams" data-caption="Mermaid 图 - 图 2" style="display:block;cursor:zoom-in;">
+    <img src="/generated/mermaid/67eeb25eea8410d0fcbe11d7a02461f3ca68d149.svg" alt="Mermaid 图 - 图 2" loading="lazy" style="display:block;width:100%;height:auto;border-radius:12px;border:1px solid rgba(15,23,42,.08);background:#fff;box-shadow:0 10px 30px rgba(15,23,42,.08);">
+  </a>
+  <figcaption style="margin-top:.5rem;font-size:.875rem;color:rgba(71,85,105,.9);text-align:center;">点击放大查看原图</figcaption>
+</figure>
+
+<p>这条链路里有几个职责边界要分清：</p>
+<h3 id="4-1-SurfaceFlinger-负责“发节拍”"><a href="#4-1-SurfaceFlinger-负责“发节拍”" class="headerlink" title="4.1 SurfaceFlinger 负责“发节拍”"></a>4.1 SurfaceFlinger 负责“发节拍”</h3><p>它是显示系统里的核心调度者。对应用来说，最重要的不是它内部怎么生成硬件节拍，而是：</p>
+<ul>
+<li>它会把当前显示节拍转成应用可消费的显示事件。</li>
+<li>这个事件最终通过通道送到应用进程。</li>
+</ul>
+<h3 id="4-2-Native-DisplayEventReceiver-负责“接节拍”"><a href="#4-2-Native-DisplayEventReceiver-负责“接节拍”" class="headerlink" title="4.2 Native DisplayEventReceiver 负责“接节拍”"></a>4.2 Native <code>DisplayEventReceiver</code> 负责“接节拍”</h3><p>它的定位类似上一篇里的 Native 输入接收侧：</p>
+<ul>
+<li>先把显示事件 fd 注册进 Native <code>Looper</code></li>
+<li>等 fd readable</li>
+<li>读出 Vsync 事件内容</li>
+<li>再通过 JNI 往上抛给 Java</li>
+</ul>
+<p>所以 Native 层解决的是“怎么接到 Vsync”。</p>
+<h3 id="4-3-Java-Choreographer-负责“消费节拍”"><a href="#4-3-Java-Choreographer-负责“消费节拍”" class="headerlink" title="4.3 Java Choreographer 负责“消费节拍”"></a>4.3 Java <code>Choreographer</code> 负责“消费节拍”</h3><p><code>Choreographer</code> 不负责生成 Vsync，也不负责底层 fd 监听。它真正负责的是：</p>
+<ul>
+<li>收到这次 Vsync 后，确定这一帧是否要执行</li>
+<li>按固定顺序调度各类 frame callback</li>
+<li>驱动 <code>ViewRootImpl</code> 进入 <code>performTraversals()</code></li>
+</ul>
+<p>所以 Java 层解决的是“收到 Vsync 后这一帧怎么跑”。</p>
+<h2 id="5-为什么-Vsync-是“被动接收”，不是“主动轮询”"><a href="#5-为什么-Vsync-是“被动接收”，不是“主动轮询”" class="headerlink" title="5. 为什么 Vsync 是“被动接收”，不是“主动轮询”"></a>5. 为什么 Vsync 是“被动接收”，不是“主动轮询”</h2><p>这是很多人第一次看这条链路时最容易问的问题。</p>
+<p>如果用主动轮询，应用线程就得反复检查：</p>
+<ul>
+<li>到没到下一帧时间？</li>
+<li>现在该不该画？</li>
+<li>屏幕节拍是不是已经变化了？</li>
+</ul>
+<p>这样的问题有三个：</p>
+<ol>
+<li>空转浪费 CPU。</li>
+<li>定时精度和实际显示节拍未必一致。</li>
+<li>多个系统组件各自轮询，整体调度会变得更散、更难对齐。</li>
+</ol>
+<p>而走 <code>epoll + fd</code> 的被动接收方式，主线程可以做到：</p>
+<ul>
+<li>平时彻底睡下去</li>
+<li>真正有 Vsync 事件时再被唤醒</li>
+<li>输入、Vsync、Native 自定义 fd 统一复用一个事件循环</li>
+</ul>
+<p>这也是 Android 主线程模型很重要的一点：<strong>不是每类事件都重新发明一套等待机制，而是都尽量挂到同一个 <code>Looper</code> 基建上。</strong></p>
+<h2 id="6-DisplayEventReceiver-和-Choreographer-是什么关系"><a href="#6-DisplayEventReceiver-和-Choreographer-是什么关系" class="headerlink" title="6. DisplayEventReceiver 和 Choreographer 是什么关系"></a>6. <code>DisplayEventReceiver</code> 和 <code>Choreographer</code> 是什么关系</h2><p>一句话概括：</p>
+<ul>
+<li><code>DisplayEventReceiver</code> 是“Vsync 的接收器”。</li>
+<li><code>Choreographer</code> 是“这一帧的调度器”。</li>
+</ul>
+<p>两者的分工可以抽象成：</p>
+<figure style="margin:1.25rem 0;">
+  <a href="/generated/mermaid/bee3b815a06b836cb1a4b5be8660e7402d86335a.svg" data-fancybox="mermaid-diagrams" data-caption="Mermaid 图 - 图 3" style="display:block;cursor:zoom-in;">
+    <img src="/generated/mermaid/bee3b815a06b836cb1a4b5be8660e7402d86335a.svg" alt="Mermaid 图 - 图 3" loading="lazy" style="display:block;width:100%;height:auto;border-radius:12px;border:1px solid rgba(15,23,42,.08);background:#fff;box-shadow:0 10px 30px rgba(15,23,42,.08);">
+  </a>
+  <figcaption style="margin-top:.5rem;font-size:.875rem;color:rgba(71,85,105,.9);text-align:center;">点击放大查看原图</figcaption>
+</figure>
+
+<p>如果只记一个判断标准，可以这么记：</p>
+<ul>
+<li>和“怎么监听显示事件 fd”相关，优先看 <code>DisplayEventReceiver</code>。</li>
+<li>和“这一帧内部先做什么后做什么”相关，优先看 <code>Choreographer</code>。</li>
+</ul>
+<h2 id="7-doFrame-到底做了什么"><a href="#7-doFrame-到底做了什么" class="headerlink" title="7. doFrame() 到底做了什么"></a>7. <code>doFrame()</code> 到底做了什么</h2><p><code>doFrame()</code> 可以理解成“消费这一拍 Vsync，并把这一帧该做的事按顺序执行掉”。</p>
+<p>在 <code>aosp14</code> 视角下，可以先抓住它的主干阶段：</p>
+<ol>
+<li><code>CALLBACK_INPUT</code></li>
+<li><code>CALLBACK_ANIMATION</code></li>
+<li><code>CALLBACK_INSETS_ANIMATION</code></li>
+<li><code>CALLBACK_TRAVERSAL</code></li>
+<li><code>CALLBACK_COMMIT</code></li>
+</ol>
+<p>关键不是把所有常量背下来，而是理解为什么要分阶段：不同类别的工作必须在一帧内按顺序完成，避免相互打架。</p>
+<figure style="margin:1.25rem 0;">
+  <a href="/generated/mermaid/d25f53650aaf1a18a22ad5c6674598368a426797.svg" data-fancybox="mermaid-diagrams" data-caption="Mermaid 图 - 图 4" style="display:block;cursor:zoom-in;">
+    <img src="/generated/mermaid/d25f53650aaf1a18a22ad5c6674598368a426797.svg" alt="Mermaid 图 - 图 4" loading="lazy" style="display:block;width:100%;height:auto;border-radius:12px;border:1px solid rgba(15,23,42,.08);background:#fff;box-shadow:0 10px 30px rgba(15,23,42,.08);">
+  </a>
+  <figcaption style="margin-top:.5rem;font-size:.875rem;color:rgba(71,85,105,.9);text-align:center;">点击放大查看原图</figcaption>
+</figure>
+
+<p>其中最值得关注的是 <code>Traversal</code>：</p>
+<ul>
+<li><code>ViewRootImpl</code> 会在这里进入 <code>performTraversals()</code></li>
+<li>进一步触发 <code>measure</code> / <code>layout</code> / <code>draw</code></li>
+<li>最终把这一帧需要更新的 UI 内容准备出来</li>
+</ul>
+<p>所以可以把前几个阶段理解为“为绘制做准备”，把 <code>Traversal</code> 理解为“真正进入 View 树刷新”。</p>
+<h2 id="8-为什么还需要同步屏障"><a href="#8-为什么还需要同步屏障" class="headerlink" title="8. 为什么还需要同步屏障"></a>8. 为什么还需要同步屏障</h2><p>到这里还差最后一块拼图。</p>
+<p>既然已经有 Vsync 了，为什么还需要同步屏障？原因是：<strong>主线程的 Java 消息队列里，可能早就排着一堆普通同步消息。</strong> 如果不做优先级控制，那么这一帧的绘制任务完全可能被前面的普通消息堵住。</p>
+<p>举个最简单的场景：</p>
+<ol>
+<li>队列头部堆了很多普通同步消息。</li>
+<li>这时一拍新的 Vsync 到来。</li>
+<li><code>Choreographer</code> 想尽快执行本帧回调。</li>
+<li>如果还是老老实实排到队尾，那这一帧很可能直接错过。</li>
+</ol>
+<p>所以 Android 引入了同步屏障：</p>
+<ul>
+<li>屏障本身不是给你执行的消息。</li>
+<li>它只是插在消息队列里，拦住后面的同步消息继续出队。</li>
+<li>但异步消息可以越过它继续执行。</li>
+</ul>
+<p>而 <code>Choreographer</code>/<code>ViewRootImpl</code> 正是利用这一点，让和帧刷新强相关的异步消息优先跑起来。</p>
+<h2 id="9-同步屏障是怎么工作的"><a href="#9-同步屏障是怎么工作的" class="headerlink" title="9. 同步屏障是怎么工作的"></a>9. 同步屏障是怎么工作的</h2><p>可以把同步屏障理解成“临时交通管制”：</p>
+<figure style="margin:1.25rem 0;">
+  <a href="/generated/mermaid/010ac76ab6e8d1496b46b33f386a48a261324710.svg" data-fancybox="mermaid-diagrams" data-caption="Mermaid 图 - 图 5" style="display:block;cursor:zoom-in;">
+    <img src="/generated/mermaid/010ac76ab6e8d1496b46b33f386a48a261324710.svg" alt="Mermaid 图 - 图 5" loading="lazy" style="display:block;width:100%;height:auto;border-radius:12px;border:1px solid rgba(15,23,42,.08);background:#fff;box-shadow:0 10px 30px rgba(15,23,42,.08);">
+  </a>
+  <figcaption style="margin-top:.5rem;font-size:.875rem;color:rgba(71,85,105,.9);text-align:center;">点击放大查看原图</figcaption>
+</figure>
+
+<p>这意味着在屏障存在期间：</p>
+<ul>
+<li>普通同步消息会被挡住。</li>
+<li>标记为异步的消息仍然可以被取出执行。</li>
+</ul>
+<p>因此同步屏障并不是“提高所有消息优先级”，而是更精确地做到：</p>
+<ul>
+<li>暂时压住不紧急的同步工作</li>
+<li>先把当前帧最关键的异步调度跑完</li>
+</ul>
+<h2 id="10-postSyncBarrier-、异步消息、removeSyncBarrier-如何配合"><a href="#10-postSyncBarrier-、异步消息、removeSyncBarrier-如何配合" class="headerlink" title="10. postSyncBarrier()、异步消息、removeSyncBarrier() 如何配合"></a>10. <code>postSyncBarrier()</code>、异步消息、<code>removeSyncBarrier()</code> 如何配合</h2><p>这三者是一整套机制，单看任何一个都容易误解。</p>
+<h3 id="10-1-postSyncBarrier"><a href="#10-1-postSyncBarrier" class="headerlink" title="10.1 postSyncBarrier()"></a>10.1 <code>postSyncBarrier()</code></h3><p>它会在 <code>MessageQueue</code> 里插入一个屏障节点。这个节点没有可执行的 <code>target</code>，作用只是告诉队列：</p>
+<ul>
+<li>从这里开始，后面的同步消息先别过</li>
+</ul>
+<h3 id="10-2-异步消息"><a href="#10-2-异步消息" class="headerlink" title="10.2 异步消息"></a>10.2 异步消息</h3><p>异步消息的意义不是“更快一点”，而是“在屏障期间依然允许出队”。</p>
+<p><code>Choreographer</code> 依赖的内部 <code>Handler</code> 会把相关帧调度消息标记成异步，因此当屏障立起来后：</p>
+<ul>
+<li>普通同步消息被卡住</li>
+<li>帧相关异步消息还能继续执行</li>
+</ul>
+<h3 id="10-3-removeSyncBarrier"><a href="#10-3-removeSyncBarrier" class="headerlink" title="10.3 removeSyncBarrier()"></a>10.3 <code>removeSyncBarrier()</code></h3><p>一帧关键工作安排完成后，屏障不能一直留着，否则整个同步消息世界都会被饿死。因此在合适时机会把屏障移除，让消息队列恢复正常调度。</p>
+<p>这套关系可以压缩成一张图：</p>
+<figure style="margin:1.25rem 0;">
+  <a href="/generated/mermaid/66695627581ee8b14510948c83c6b26d47a0b58f.svg" data-fancybox="mermaid-diagrams" data-caption="Mermaid 图 - 图 6" style="display:block;cursor:zoom-in;">
+    <img src="/generated/mermaid/66695627581ee8b14510948c83c6b26d47a0b58f.svg" alt="Mermaid 图 - 图 6" loading="lazy" style="display:block;width:100%;height:auto;border-radius:12px;border:1px solid rgba(15,23,42,.08);background:#fff;box-shadow:0 10px 30px rgba(15,23,42,.08);">
+  </a>
+  <figcaption style="margin-top:.5rem;font-size:.875rem;color:rgba(71,85,105,.9);text-align:center;">点击放大查看原图</figcaption>
+</figure>
+
+<p>所以同步屏障真正保证的不是“这一帧一定不卡”，而是：</p>
+<ul>
+<li>在主线程已经很忙的时候</li>
+<li>给绘制相关任务争取一个合理的执行优先级</li>
+</ul>
+<h2 id="11-一帧从-Vsync-到-View-刷新的完整链路"><a href="#11-一帧从-Vsync-到-View-刷新的完整链路" class="headerlink" title="11. 一帧从 Vsync 到 View 刷新的完整链路"></a>11. 一帧从 Vsync 到 View 刷新的完整链路</h2><p>把前面的内容串起来，应用侧一帧大致就是这样：</p>
+<figure style="margin:1.25rem 0;">
+  <a href="/generated/mermaid/f270b67a10e60aed55ee3f5956a6ba6abac3d5de.svg" data-fancybox="mermaid-diagrams" data-caption="Mermaid 图 - 图 7" style="display:block;cursor:zoom-in;">
+    <img src="/generated/mermaid/f270b67a10e60aed55ee3f5956a6ba6abac3d5de.svg" alt="Mermaid 图 - 图 7" loading="lazy" style="display:block;width:100%;height:auto;border-radius:12px;border:1px solid rgba(15,23,42,.08);background:#fff;box-shadow:0 10px 30px rgba(15,23,42,.08);">
+  </a>
+  <figcaption style="margin-top:.5rem;font-size:.875rem;color:rgba(71,85,105,.9);text-align:center;">点击放大查看原图</figcaption>
+</figure>
+
+<p>只要把这条线记住，很多零碎问题都会自然顺下来：</p>
+<ul>
+<li>为什么 Vsync 不是普通 <code>Handler</code> 消息？</li>
+<li>为什么主线程既能处理 Java 消息，又能接 fd 事件？</li>
+<li>为什么绘制阶段需要同步屏障和异步消息配合？</li>
+</ul>
+<h2 id="12-这一篇要记住什么"><a href="#12-这一篇要记住什么" class="headerlink" title="12. 这一篇要记住什么"></a>12. 这一篇要记住什么</h2><p>最后收敛成 5 句话：</p>
+<ol>
+<li>Vsync 本质上是显示系统推给应用的帧节拍，不是应用自己定时轮询出来的。</li>
+<li>应用主线程监听的是显示事件 fd，因此 Vsync 先在 Native <code>Looper</code> 的 <code>epoll</code> 层被感知。</li>
+<li><code>DisplayEventReceiver</code> 负责接收和桥接 Vsync，<code>Choreographer</code> 负责消费这次 Vsync 并调度整帧工作。</li>
+<li><code>doFrame()</code> 会把一帧拆成多个阶段，<code>Traversal</code> 才是真正进入 <code>ViewRootImpl</code> 刷新 View 树的关键节点。</li>
+<li>同步屏障配合异步消息的意义，是在主线程繁忙时让这一帧的关键调度不要轻易被普通同步消息堵死。</li>
+</ol>
+<p>下一步如果继续往下挖，最自然的方向就是：</p>
+<ul>
+<li><code>ViewRootImpl.scheduleTraversals()</code> 为什么要先插同步屏障再申请 Vsync</li>
+<li><code>performTraversals()</code> 里 <code>measure/layout/draw</code> 是怎么一步步串起来的</li>
+<li>最终绘制结果又是怎么继续交给 RenderThread / Surface 去提交的</li>
+</ul>
+</article>
+<div class="article-footer">
+    <section id="license">
+      <div class="header"><span>许可协议</span></div>
+      <div class="body"><p>本文采用 <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">署名-非商业性使用-相同方式共享 4.0 国际</a> 许可协议，转载请注明出处。</p>
+</div>
+    </section>
+    
+
+</div>
+
+<div class="related-wrap" id="read-next"><section class="body"><div class="item" id="prev"><div class="note">较新文章</div><a href="/2026/05/14/filesystem/buffer_head/">2026-05-14</a></div><div class="item" id="next"><div class="note">较早文章</div><a href="/2026/05/13/android/framework%E5%9F%BA%E7%A1%80/03_Android%E6%B6%88%E6%81%AF%E6%9C%BA%E5%88%B6_Input%E7%B3%BB%E7%BB%9F%E7%9A%84fd%E9%A9%B1%E5%8A%A8/">Android消息机制(三)：Input 系统如何“白嫖” Looper (inputfd)</a></div></section></div>
+
+
+
+
+
+
+<footer class="page-footer footnote"><hr><div class="text"><p>本站由 <a href="/">Su Hui</a> 使用 <a target="_blank" rel="noopener" href="https://github.com/xaoxuu/hexo-theme-stellar/tree/1.33.1">Stellar 1.33.1</a> 主题创建。<br>本博客所有文章除特别声明外，均采用 <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> 许可协议，转载请注明出处。</p>
+</div></footer>
+<div class="main-mask" onclick="sidebar.dismiss()"></div></div><aside class="l_right">
+<div class="widgets">
+
+
+
+<widget class="widget-wrapper toc" id="data-toc" collapse="false"><div class="widget-header dis-select"><span class="name">本文目录</span><a class="cap-action" onclick="sidebar.toggleTOC()" ><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h11m-11 6h11m-11 6h11M4 6h1v4m-1 0h2m0 8H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg></a></div><div class="widget-body"><ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#Android%E6%B6%88%E6%81%AF%E6%9C%BA%E5%88%B6-%E5%9B%9B-%EF%BC%9AVsync-%E4%BF%A1%E5%8F%B7%E4%B8%8E-UI-%E5%88%B7%E6%96%B0-vsyncfd"><span class="toc-text">Android消息机制(四)：Vsync 信号与 UI 刷新 (vsyncfd)</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#1-%E5%85%88%E7%9C%8B%E7%BB%93%E8%AE%BA"><span class="toc-text">1. 先看结论</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#2-%E4%B8%BA%E4%BB%80%E4%B9%88-UI-%E5%88%B7%E6%96%B0%E5%BF%85%E9%A1%BB%E7%94%B1-Vsync-%E9%A9%B1%E5%8A%A8"><span class="toc-text">2. 为什么 UI 刷新必须由 Vsync 驱动</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#3-vsyncfd-%E5%88%B0%E5%BA%95%E6%98%AF%E4%BB%80%E4%B9%88"><span class="toc-text">3. vsyncfd 到底是什么</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#4-%E4%BB%8E-SurfaceFlinger-%E5%88%B0-App-%E7%9A%84-Vsync-%E4%BC%A0%E9%80%92%E8%B7%AF%E5%BE%84"><span class="toc-text">4. 从 SurfaceFlinger 到 App 的 Vsync 传递路径</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#4-1-SurfaceFlinger-%E8%B4%9F%E8%B4%A3%E2%80%9C%E5%8F%91%E8%8A%82%E6%8B%8D%E2%80%9D"><span class="toc-text">4.1 SurfaceFlinger 负责“发节拍”</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#4-2-Native-DisplayEventReceiver-%E8%B4%9F%E8%B4%A3%E2%80%9C%E6%8E%A5%E8%8A%82%E6%8B%8D%E2%80%9D"><span class="toc-text">4.2 Native DisplayEventReceiver 负责“接节拍”</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#4-3-Java-Choreographer-%E8%B4%9F%E8%B4%A3%E2%80%9C%E6%B6%88%E8%B4%B9%E8%8A%82%E6%8B%8D%E2%80%9D"><span class="toc-text">4.3 Java Choreographer 负责“消费节拍”</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#5-%E4%B8%BA%E4%BB%80%E4%B9%88-Vsync-%E6%98%AF%E2%80%9C%E8%A2%AB%E5%8A%A8%E6%8E%A5%E6%94%B6%E2%80%9D%EF%BC%8C%E4%B8%8D%E6%98%AF%E2%80%9C%E4%B8%BB%E5%8A%A8%E8%BD%AE%E8%AF%A2%E2%80%9D"><span class="toc-text">5. 为什么 Vsync 是“被动接收”，不是“主动轮询”</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#6-DisplayEventReceiver-%E5%92%8C-Choreographer-%E6%98%AF%E4%BB%80%E4%B9%88%E5%85%B3%E7%B3%BB"><span class="toc-text">6. DisplayEventReceiver 和 Choreographer 是什么关系</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#7-doFrame-%E5%88%B0%E5%BA%95%E5%81%9A%E4%BA%86%E4%BB%80%E4%B9%88"><span class="toc-text">7. doFrame() 到底做了什么</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#8-%E4%B8%BA%E4%BB%80%E4%B9%88%E8%BF%98%E9%9C%80%E8%A6%81%E5%90%8C%E6%AD%A5%E5%B1%8F%E9%9A%9C"><span class="toc-text">8. 为什么还需要同步屏障</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#9-%E5%90%8C%E6%AD%A5%E5%B1%8F%E9%9A%9C%E6%98%AF%E6%80%8E%E4%B9%88%E5%B7%A5%E4%BD%9C%E7%9A%84"><span class="toc-text">9. 同步屏障是怎么工作的</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#10-postSyncBarrier-%E3%80%81%E5%BC%82%E6%AD%A5%E6%B6%88%E6%81%AF%E3%80%81removeSyncBarrier-%E5%A6%82%E4%BD%95%E9%85%8D%E5%90%88"><span class="toc-text">10. postSyncBarrier()、异步消息、removeSyncBarrier() 如何配合</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#10-1-postSyncBarrier"><span class="toc-text">10.1 postSyncBarrier()</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#10-2-%E5%BC%82%E6%AD%A5%E6%B6%88%E6%81%AF"><span class="toc-text">10.2 异步消息</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#10-3-removeSyncBarrier"><span class="toc-text">10.3 removeSyncBarrier()</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#11-%E4%B8%80%E5%B8%A7%E4%BB%8E-Vsync-%E5%88%B0-View-%E5%88%B7%E6%96%B0%E7%9A%84%E5%AE%8C%E6%95%B4%E9%93%BE%E8%B7%AF"><span class="toc-text">11. 一帧从 Vsync 到 View 刷新的完整链路</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#12-%E8%BF%99%E4%B8%80%E7%AF%87%E8%A6%81%E8%AE%B0%E4%BD%8F%E4%BB%80%E4%B9%88"><span class="toc-text">12. 这一篇要记住什么</span></a></li></ol></li></ol></div><div class="widget-footer"><a class="top" onclick="util.scrollTop()"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><!-- Icon from Solar by 480 Design - https://creativecommons.org/licenses/by/4.0/ --><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><path stroke-linejoin="round" d="m9 15.5l3-3l3 3m-6-4l3-3l3 3"/><path d="M7 3.338A9.95 9.95 0 0 1 12 2c5.523 0 10 4.477 10 10s-4.477 10-10 10S2 17.523 2 12c0-1.821.487-3.53 1.338-5"/></g></svg><span>回到顶部</span></a></div></widget>
+</div></aside><div class='float-panel'>
+  <button type='button' style='display:none' class='laptop-only rightbar-toggle mobile' onclick='sidebar.rightbar()'>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h11m-11 6h11m-11 6h11M4 6h1v4m-1 0h2m0 8H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>
+  </button>
+  <button type='button' style='display:none' class='mobile-only leftbar-toggle mobile' onclick='sidebar.leftbar()'>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 11c0-3.771 0-5.657 1.172-6.828C4.343 3 6.229 3 10 3h4c3.771 0 5.657 0 6.828 1.172C22 5.343 22 7.229 22 11v2c0 3.771 0 5.657-1.172 6.828C19.657 21 17.771 21 14 21h-4c-3.771 0-5.657 0-6.828-1.172C2 18.657 2 16.771 2 13z"/><path id="sep" stroke-linecap="round" d="M5.5 10h6m-5 4h4m4.5 7V3"/></g></svg>
+  </button>
+</div>
+</div><div class="scripts">
+
+
+<script type="text/javascript">
+  window.canonical = {"originalHost":null,"officialHosts":["localhost"],"encoded":""};
+  const ctx = {
+    date_suffix: {
+      just: `刚刚`,
+      min: `分钟前`,
+      hour: `小时前`,
+      day: `天前`,
+    },
+    root : `/`,
+    tag_plugins: {
+      chat: Object.assign({"api":"https://siteinfo.listentothewind.cn/api/v1"}),
+    }
+  };
+
+  // required plugins (only load if needs)
+  if (`local_search`) {
+    ctx.search = {};
+    ctx.search.service = `local_search`;
+    if (ctx.search.service == 'local_search') {
+      let service_obj = Object.assign({}, `{"field":"all","path":"/search.json","content":true,"skip_search":null,"sort":"-date"}`);
+      ctx.search[ctx.search.service] = service_obj;
+    }
+  }
+  const def = {
+    avatar: `https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/avatar/round/3442075.svg`,
+    cover: `https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/cover/76b86c0226ffd.svg`,
+    loading: `https://api.iconify.design/eos-icons:three-dots-loading.svg?color=%231cd0fd`,
+  };
+  const deps = {
+    jquery: `https://gcore.jsdelivr.net/npm/jquery@3.7/dist/jquery.min.js`,
+    marked: `https://gcore.jsdelivr.net/npm/marked@13.0/lib/marked.umd.min.js`,
+    lazyload: `/%5Bobject%20Object%5D`
+  }
+  
+
+</script>
+
+<script type="text/javascript">
+  
+  function RunItem() {
+    this.list = []; // 存放回调函数
+    this.start = () => {
+      for (var i = 0; i < this.list.length; i++) {
+        this.list[i].run();
+      }
+    };
+    this.push = (fn, name, setRequestAnimationFrame = true) => {
+      let myfn = fn
+      if (setRequestAnimationFrame) {
+        myfn = () => {
+          utils.requestAnimationFrame(fn)
+        }
+      }
+      var f = new Item(myfn, name);
+      this.list.push(f);
+    };
+    this.remove = (name) => {
+      for (let index = 0; index < this.list.length; index++) {
+        const e = this.list[index];
+        if (e.name == name) {
+          this.list.splice(index, 1);
+        }
+      }
+    }
+    // 构造一个可以run的对象
+    function Item(fn, name) {
+      // 函数名称
+      this.name = name || fn.name;
+      // run方法
+      this.run = () => {
+        try {
+          fn()
+        } catch (error) {
+          console.log(error);
+        }
+      };
+    }
+  }
+
+  const utils = {
+    // 懒加载 css https://github.com/filamentgroup/loadCSS
+    css: (href, before, media, attributes) => {
+      var doc = window.document;
+      var ss = doc.createElement("link");
+      var ref;
+      if (before) {
+        ref = before;
+      } else {
+        var refs = (doc.body || doc.getElementsByTagName("head")[0]).childNodes;
+        ref = refs[refs.length - 1];
+      }
+      var sheets = doc.styleSheets;
+      if (attributes) {
+        for (var attributeName in attributes) {
+          if (attributes.hasOwnProperty(attributeName)) {
+            ss.setAttribute(attributeName, attributes[attributeName]);
+          }
+        }
+      }
+      ss.rel = "stylesheet";
+      ss.href = href;
+      ss.media = "only x";
+      function ready(cb) {
+        if (doc.body) {
+          return cb();
+        }
+        setTimeout(function () {
+          ready(cb);
+        });
+      }
+      ready(function () {
+        ref.parentNode.insertBefore(ss, before ? ref : ref.nextSibling);
+      });
+      var onloadcssdefined = function (cb) {
+        var resolvedHref = ss.href;
+        var i = sheets.length;
+        while (i--) {
+          if (sheets[i].href === resolvedHref) {
+            return cb();
+          }
+        }
+        setTimeout(function () {
+          onloadcssdefined(cb);
+        });
+      };
+      function loadCB() {
+        if (ss.addEventListener) {
+          ss.removeEventListener("load", loadCB);
+        }
+        ss.media = media || "all";
+      }
+      if (ss.addEventListener) {
+        ss.addEventListener("load", loadCB);
+      }
+      ss.onloadcssdefined = onloadcssdefined;
+      onloadcssdefined(loadCB);
+      return ss;
+    },
+
+    js: (src, opt) => new Promise((resolve, reject) => {
+      var script = document.createElement('script');
+      if (src.startsWith('/')) {
+        src = ctx.root + src.substring(1);
+      }
+      script.src = src;
+      if (opt) {
+        for (let key of Object.keys(opt)) {
+          script[key] = opt[key]
+        }
+      } else {
+        // 默认异步，如果需要同步，第二个参数传入 {} 即可
+        script.async = true
+      }
+      script.onerror = reject
+      script.onload = script.onreadystatechange = function () {
+        const loadState = this.readyState
+        if (loadState && loadState !== 'loaded' && loadState !== 'complete') return
+        script.onload = script.onreadystatechange = null
+        resolve()
+      }
+      document.head.appendChild(script)
+    }),
+
+    jq: (fn) => {
+      if (typeof jQuery === 'undefined') {
+        utils.js(deps.jquery).then(fn)
+      } else {
+        fn()
+      }
+    },
+
+    onLoading: (el) => {
+      if (el) {
+        $(el).append('<div class="loading-wrap"><svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" stroke-opacity=".3" d="M12 3C16.9706 3 21 7.02944 21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="1.3s" values="60;0"/></path><path stroke-dasharray="15" stroke-dashoffset="15" d="M12 3C16.9706 3 21 7.02944 21 12"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.3s" values="15;0"/><animateTransform attributeName="transform" dur="1.5s" repeatCount="indefinite" type="rotate" values="0 12 12;360 12 12"/></path></g></svg></div>');
+      }
+    },
+    onLoadSuccess: (el) => {
+      if (el) {
+        $(el).find('.loading-wrap').remove();
+      }
+    },
+    onLoadFailure: (el) => {
+      if (el) {
+        $(el).find('.loading-wrap svg').remove();
+        $(el).find('.loading-wrap').append('<svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" d="M12 3L21 20H3L12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.5s" values="60;0"/></path><path stroke-dasharray="6" stroke-dashoffset="6" d="M12 10V14"><animate fill="freeze" attributeName="stroke-dashoffset" begin="0.6s" dur="0.2s" values="6;0"/></path></g><circle cx="12" cy="17" r="1" fill="currentColor" fill-opacity="0"><animate fill="freeze" attributeName="fill-opacity" begin="0.8s" dur="0.4s" values="0;1"/></circle></svg>');
+        $(el).find('.loading-wrap').addClass('error');
+      }
+    },
+    request: (el, url, callback, onFailure) => {
+      const maxRetry = 3;
+      let retryCount = 0;
+
+      return new Promise((resolve, reject) => {
+        const load = () => {
+          utils.onLoading?.(el);
+
+          let timedOut = false;
+          const timeout = setTimeout(() => {
+            timedOut = true;
+            console.warn('[request] 超时:', url);
+
+            if (++retryCount >= maxRetry) {
+              utils.onLoadFailure?.(el);
+              onFailure?.();
+              reject('请求超时');
+            } else {
+              setTimeout(load, 1000);
+            }
+          }, 5000);
+
+          fetch(url).then(resp => {
+            if (timedOut) return;
+            clearTimeout(timeout);
+
+            if (!resp.ok) throw new Error('响应失败');
+            return resp;
+          }).then(data => {
+            if (timedOut) return;
+            utils.onLoadSuccess?.(el);
+            callback(data);
+            resolve(data);
+          }).catch(err => {
+            clearTimeout(timeout);
+            console.warn('[request] 错误:', err);
+
+            if (++retryCount >= maxRetry) {
+              utils.onLoadFailure?.(el);
+              onFailure?.();
+              reject(err);
+            } else {
+              setTimeout(load, 1000);
+            }
+          });
+        };
+
+        load();
+      });
+    },
+    requestWithoutLoading: (url, options = {}, maxRetry = 2, timeout = 5000) => {
+      return new Promise((resolve, reject) => {
+        let retryCount = 0;
+
+        const tryRequest = () => {
+          let timedOut = false;
+          const timer = setTimeout(() => {
+            timedOut = true;
+            if (++retryCount > maxRetry) reject('timeout');
+            else tryRequest();
+          }, timeout);
+
+          fetch(url, options)
+            .then(resp => {
+              clearTimeout(timer);
+              if (!resp.ok) throw new Error('bad response');
+              resolve(resp);
+            })
+            .catch(err => {
+              clearTimeout(timer);
+              if (++retryCount > maxRetry) reject(err);
+              else setTimeout(tryRequest, 500);
+            });
+        };
+
+        tryRequest();
+      });
+    },
+    /********************** requestAnimationFrame ********************************/
+    // 1、requestAnimationFrame 会把每一帧中的所有 DOM 操作集中起来，在一次重绘或回流中就完成，并且重绘或回流的时间间隔紧紧跟随浏览器的刷新频率，一般来说，这个频率为每秒60帧。
+    // 2、在隐藏或不可见的元素中，requestAnimationFrame 将不会进行重绘或回流，这当然就意味着更少的的 cpu，gpu 和内存使用量。
+    requestAnimationFrame: (fn) => {
+      if (!window.requestAnimationFrame) {
+        window.requestAnimationFrame = window.requestAnimationFrame || window.mozRequestAnimationFrame || window.webkitRequestAnimationFrame;
+      }
+      window.requestAnimationFrame(fn)
+    },
+    dark: {},
+  };
+
+  // utils.dark.mode 当前模式 dark or light
+  // utils.dark.toggle() 暗黑模式触发器
+  // utils.dark.push(callBack[,"callBackName"]) 传入触发器回调函数
+  utils.dark.method = {
+    toggle: new RunItem(),
+  };
+  utils.dark = Object.assign(utils.dark, {
+    push: utils.dark.method.toggle.push,
+  });
+</script>
+<script>
+  const sidebar = {
+    leftbar: () => {
+      if (l_body) {
+        l_body.toggleAttribute('leftbar');
+        l_body.removeAttribute('rightbar');
+      }
+    },
+    rightbar: () => {
+      if (l_body) {
+        l_body.toggleAttribute('rightbar');
+        l_body.removeAttribute('leftbar');
+      }
+    },
+    dismiss: () => {
+      if (l_body) {
+        l_body.removeAttribute('leftbar');
+        l_body.removeAttribute('rightbar');
+      }
+    },
+    toggleTOC: () => {
+      document.querySelector('#data-toc').classList.toggle('collapse');
+    }
+  }
+</script>
+<script type="text/javascript">
+  (() => {
+    const tagSwitchers = document.querySelectorAll('.tag-subtree.parent-tag > a > .tag-switcher-wrapper')
+    for (const tagSwitcher of tagSwitchers) {
+      tagSwitcher.addEventListener('click', (e) => {
+        const parent = e.target.closest('.tag-subtree.parent-tag')
+        parent.classList.toggle('expanded')
+        e.preventDefault()
+      })
+    }
+
+    // Get active tag from query string, then activate it.
+    const urlParams = new URLSearchParams(window.location.search)
+    const activeTag = urlParams.get('tag')
+    if (activeTag) {
+      let tag = document.querySelector(`.tag-subtree[data-tag="${activeTag}"]`)
+      if (tag) {
+        tag.querySelector('a').classList.add('active')
+        
+        while (tag) {
+          tag.classList.add('expanded')
+          tag = tag.parentElement.closest('.tag-subtree.parent-tag')
+        }
+      }
+    }
+  })()
+</script>
+
+<script async src="https://gcore.jsdelivr.net/npm/vanilla-lazyload@19.1/dist/lazyload.min.js"></script>
+<script>
+  // https://www.npmjs.com/package/vanilla-lazyload
+  // Set the options globally
+  // to make LazyLoad self-initialize
+  window.lazyLoadOptions = {
+    elements_selector: ".lazy",
+    callback_loaded: (el) => {
+      el.classList.add('loaded');
+      const wrapper = el.closest('.lazy-box');
+      const icon = wrapper?.querySelector('.lazy-icon');
+      if (icon) icon.remove();
+    }
+  };
+  // Listen to the initialization event
+  // and get the instance of LazyLoad
+  window.addEventListener(
+    "LazyLoad::Initialized",
+    function (event) {
+      window.lazyLoadInstance = event.detail.instance;
+    },
+    false
+  );
+  document.addEventListener('DOMContentLoaded', function () {
+    window.lazyLoadInstance?.update();
+  });
+
+  window.wrapLazyloadImages = (container) => {
+    if (typeof container === 'string') {
+      container = document.querySelector(container);
+    }
+    if (!container) return;
+    
+    const images = container.querySelectorAll('img');
+    images.forEach((img) => {
+      if (img.classList.contains('lazy')) return;
+
+      const src = img.getAttribute('src');
+      if (!src) return;
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'lazy-box';
+
+      const newImg = img.cloneNode();
+      newImg.removeAttribute('src');
+      newImg.setAttribute('data-src', src);
+      newImg.classList.add('lazy');
+
+      const icon = document.createElement('div');
+      icon.className = 'lazy-icon';
+      if (def.loading) {
+        icon.style.backgroundImage = `url("${def.loading}")`;
+      }
+
+      wrapper.appendChild(newImg);
+      wrapper.appendChild(icon);
+
+      img.replaceWith(wrapper);
+    });
+
+    // 通知 LazyLoad 更新
+    if (window.lazyLoadInstance?.update) {
+      window.lazyLoadInstance.update();
+    }
+  }
+  
+</script>
+
+<!-- required -->
+<script src="/js/main.js?v=1.33.1" defer></script>
+
+<script type="text/javascript">
+  const applyTheme = (theme) => {
+    if (theme === 'auto') {
+      document.documentElement.removeAttribute('data-theme')
+    } else {
+      document.documentElement.setAttribute('data-theme', theme)
+    }
+
+    // applyThemeToGiscus(theme)
+  }
+
+  // FIXME: 这会导致无法使用 preferred_color_scheme 以外的主题
+  const applyThemeToGiscus = (theme) => {
+    // theme = theme === 'auto' ? 'preferred_color_scheme' : theme
+    const cmt = document.getElementById('giscus')
+    if (cmt) {
+      // This works before giscus load.
+      cmt.setAttribute('data-theme', theme)
+    }
+
+    const iframe = document.querySelector('#comments > section.giscus > iframe')
+    if (iframe) {
+      // This works after giscus loaded.
+      const src = iframe.src
+      const newSrc = src.replace(/theme=[\w]+/, `theme=${theme}`)
+      iframe.src = newSrc
+    }
+  }
+
+  const switchTheme = () => {
+    // light -> dark -> auto -> light -> ...
+    const currentTheme = document.documentElement.getAttribute('data-theme')
+    let newTheme;
+    switch (currentTheme) {
+      case 'light':
+        newTheme = 'dark'
+        break
+      case 'dark':
+        newTheme = 'auto'
+        break
+      default:
+        newTheme = 'light'
+    }
+    applyTheme(newTheme)
+    window.localStorage.setItem('Stellar.theme', newTheme)
+    utils.dark.mode = newTheme === 'auto' ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : newTheme;
+    utils.dark.method.toggle.start();
+
+    const messages = {
+      light: `切换到浅色模式`,
+      dark: `切换到深色模式`,
+      auto: `切换到跟随系统配色`,
+    }
+    hud?.toast?.(messages[newTheme])
+  }
+
+  (() => {
+    // Apply user's preferred theme, if any.
+    const theme = window.localStorage.getItem('Stellar.theme')
+    if (theme !== null) {
+      applyTheme(theme)
+    } else {
+      utils.dark.mode = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    utils.dark.method.toggle.start();
+  })()
+</script>
+
+
+<!-- optional -->
+
+
+
+<script defer>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    ctx.services = Object.assign({}, JSON.parse(`{"mdrender":{"js":"/js/services/mdrender.js"},"siteinfo":{"js":"/js/services/siteinfo.js","api":null},"ghinfo":{"js":"/js/services/ghinfo.js"},"rating":{"js":"/js/services/rating.js","api":"https://star-vote.xaox.cc/api/rating"},"vote":{"js":"/js/services/vote.js","api":"https://star-vote.xaox.cc/api/vote"},"sites":{"js":"/js/services/sites.js"},"friends":{"js":"/js/services/friends.js"},"friends_and_posts":{"js":"/js/services/friends_and_posts.js"},"timeline":{"js":"/js/services/timeline.js"},"fcircle":{"js":"/js/services/fcircle.js"},"weibo":{"js":"/js/services/weibo.js"},"memos":{"js":"/js/services/memos.js"},"voice":{"js":"/js/plugins/voice.js"},"video":{"js":"/js/plugins/video.js"},"download-file":{"js":"/js/plugins/download-file.js"},"twikoo":{"js":"/js/services/twikoo_latest_comment.js"},"waline":{"js":"/js/services/waline_latest_comment.js"},"artalk":{"js":"/js/services/artalk_latest_comment.js"},"giscus":{"js":"/js/services/giscus_latest_comment.js"},"contributors":{"edit_this_page":{"_posts/":null,"wiki/stellar/":"https://github.com/xaoxuu/hexo-theme-stellar-docs/blob/main/"},"js":"/js/services/contributors.js"}}`));
+    for (let id of Object.keys(ctx.services)) {
+      const js = ctx.services[id].js;
+      if (id == 'siteinfo') {
+        ctx.cardlinks = document.querySelectorAll('a.link-card[cardlink]');
+        if (ctx.cardlinks?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            setCardLink(ctx.cardlinks);
+          });
+        }
+      } else if (id == 'voice') {
+        ctx.voiceAudios = document.querySelectorAll('.voice>audio');
+        if (ctx.voiceAudios?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            createVoiceDom(ctx.voiceAudios);
+          });
+        }
+      } else if (id == 'video') {
+        ctx.videos = document.querySelectorAll('.video>video');
+        if (ctx.videos?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            videoEvents(ctx.videos);
+          });
+        }
+      } else if (id == 'download-file') {
+        ctx.files = document.querySelectorAll('.file');
+        if (ctx.files?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            downloadFileEvent(ctx.files);
+          });
+        }
+      } else {
+        const els = document.getElementsByClassName(`ds-${id}`);
+        if (els?.length > 0) {
+          utils.jq(() => {
+            if (id == 'timeline' || 'memos' || 'marked') {
+              utils.js(deps.marked).then(function () {
+                utils.js(js, { defer: true });
+              });
+            } else {
+              utils.js(js, { defer: true });
+            }
+          });
+        }
+      }
+    }
+
+    // chat iphone time
+    let phoneTimes = document.querySelectorAll('.chat .status-bar .time');
+
+    if (phoneTimes.length > 0) {
+      NowTime();
+      var date = new Date();
+      var sec = date.getSeconds();
+      var firstAdjustInterval = setInterval(firstAdjustTime, 1000 * (60 - sec));
+    }
+
+    function firstAdjustTime() {
+      NowTime();
+      clearInterval(firstAdjustInterval);
+      setInterval(NowTime, 1000 * 60);
+    }
+
+    function NowTime() {
+      for (let i = 0; i < phoneTimes.length; ++i) {
+        var timeSpan = phoneTimes[i];
+        var date = new Date();
+        var hour = date.getHours();
+        var min = date.getMinutes();
+        timeSpan.innerHTML = check(hour) + ":" + check(min);
+      }
+    };
+
+    function check(val) {
+      if (val < 10) {
+        return ("0" + val);
+      }
+      return (val);
+    }
+
+    // chat quote
+    const chat_quote_obverser = new IntersectionObserver((entries, observer) => {
+      entries.filter((entry) => { return entry.isIntersecting }).sort((a, b) => a.intersectionRect.y !== b.intersectionRect.y ? a.intersectionRect.y - b.intersectionRect.y : a.intersectionRect.x - b.intersectionRect.x).forEach((entry, index) => {
+          observer.unobserve(entry.target);
+          setTimeout(() => {
+            entry.target.classList.add('quote-blink');
+            setTimeout(() => {
+              entry.target.classList.remove('quote-blink');
+            }, 1000);
+          }, Math.max(100, 16) * (index + 1));
+        });
+    });
+
+    var chatQuotes = document.querySelectorAll(".chat .talk .quote");
+    chatQuotes.forEach((quote) => {
+      quote.addEventListener('click', function () {
+        var chatCellDom = document.getElementById("quote-" + quote.getAttribute("quotedCellTag"));
+        if (chatCellDom) {
+          var chatDiv = chatCellDom.parentElement;
+          var mid = chatDiv.clientHeight / 2;
+          var offsetTop = chatCellDom.offsetTop;
+          if (offsetTop > mid - chatCellDom.clientHeight / 2) {
+            chatDiv.scrollTo({
+              top: chatCellDom.offsetTop - mid + chatCellDom.clientHeight / 2,
+              behavior: "smooth"
+            });
+          } else {
+            chatDiv.scrollTo({
+              top: 0,
+              behavior: "smooth"
+            });
+          }
+          chat_quote_obverser.observe(chatCellDom);
+        }
+      });
+    });
+  });
+</script>
+
+<script>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    ctx.search = {
+      path: `/search.json`,
+    }
+    utils.js('/js/search/local-search.js', { defer: true });
+  });
+</script><script>
+  window.FPConfig = {
+    delay: 0,
+    ignoreKeywords: [],
+    maxRPS: 5,
+    hoverDelay: 25
+  };
+</script>
+<script defer src="https://gcore.jsdelivr.net/npm/flying-pages@2/flying-pages.min.js"></script><script>
+  ctx.fancybox = {
+    selector: `.timenode p>img`,
+    css: `https://gcore.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css`,
+    js: `https://gcore.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js`
+  };
+  var selector = '[data-fancybox]:not(.error), .with-fancybox .atk-content img:not([atk-emoticon])';
+  if (ctx.fancybox.selector) {
+    selector += `, ${ctx.fancybox.selector}`
+  }
+  var needFancybox = document.querySelectorAll(selector).length !== 0;
+  if (!needFancybox) {
+    const memos = document.getElementsByClassName('ds-memos');
+    if (memos != undefined && memos.length > 0) {
+      needFancybox = true;
+    }
+    const fancybox = document.getElementsByClassName('with-fancybox');
+    if (fancybox != undefined && fancybox.length > 0) {
+      needFancybox = true;
+    }
+  }
+  if (needFancybox) {
+    utils.css(ctx.fancybox.css);
+    utils.js(ctx.fancybox.js, { defer: true }).then(function () {
+      Fancybox.bind(selector, {
+        hideScrollbar: false,
+        Thumbs: {
+          autoStart: false,
+        },
+        caption: (fancybox, slide) => {
+          return slide.triggerEl.alt || slide.triggerEl.dataset.caption || null
+        }
+      });
+    })
+  }
+</script>
+<script>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    const swiper_api = document.getElementById('swiper-api');
+    if (swiper_api != undefined) {
+      utils.css(`https://unpkg.com/swiper@10.3/swiper-bundle.min.css`);
+      utils.js(`https://unpkg.com/swiper@10.3/swiper-bundle.min.js`, { defer: true }).then(function () {
+        const effect = swiper_api.getAttribute('effect') || '';
+        var swiper = new Swiper('.swiper#swiper-api', {
+          slidesPerView: 'auto',
+          spaceBetween: 8,
+          centeredSlides: true,
+          effect: effect,
+          rewind: true,
+          pagination: {
+            el: '.swiper-pagination',
+            clickable: true,
+          },
+          navigation: {
+            nextEl: '.swiper-button-next',
+            prevEl: '.swiper-button-prev',
+          },
+        });
+      })
+    }
+  });
+</script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    window.codeElements = document.querySelectorAll('.code');
+    if (window.codeElements.length > 0) {
+      ctx.copycode = {
+        default_text: `Copy`,
+        success_text: `Copied`,
+        toast: `复制成功`,
+      };
+      utils.js('/js/plugins/copycode.js');
+    }
+  });
+</script>
+
+
+<!-- inject -->
+
+</div></body></html>

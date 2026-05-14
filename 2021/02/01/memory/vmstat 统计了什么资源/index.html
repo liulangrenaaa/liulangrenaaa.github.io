@@ -1,0 +1,918 @@
+
+<!DOCTYPE html><html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="hexo-theme" content="https://github.com/xaoxuu/hexo-theme-stellar/tree/1.33.1" theme-name="Stellar" theme-version="1.33.1">
+  
+  
+  <meta name="generator" content="Hexo 5.1.1">
+  <meta http-equiv='x-dns-prefetch-control' content='on' />
+  
+  <meta name="renderer" content="webkit">
+  <meta name="force-rendering" content="webkit">
+  <meta http-equiv="X-UA-Compatible" content="IE=Edge,chrome=1">
+  <meta name="HandheldFriendly" content="True" >
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000">
+  <meta name="theme-color" content="#f9fafb">
+  <title>vmstat 统计了什么资源 - liulangren Blog</title>
+
+  
+    <meta name="description" content="mm&#x2F;vmstat.c 提供了很多对内存方面的统计，在&#x2F;proc&#x2F;vmstat 上有体现。 vmstat 在不同维度上的统计先看 drain_zonestat 函数 1234567891011121314151617181920212223void drain_zonestat(struct zone *zone, struct per_cpu_pageset *pset)&amp;#123;	int i">
+<meta property="og:type" content="article">
+<meta property="og:title" content="vmstat 统计了什么资源">
+<meta property="og:url" content="https://liulangrenaaa.github.io/2021/02/01/memory/vmstat%20%E7%BB%9F%E8%AE%A1%E4%BA%86%E4%BB%80%E4%B9%88%E8%B5%84%E6%BA%90/">
+<meta property="og:site_name" content="liulangren Blog">
+<meta property="og:description" content="mm&#x2F;vmstat.c 提供了很多对内存方面的统计，在&#x2F;proc&#x2F;vmstat 上有体现。 vmstat 在不同维度上的统计先看 drain_zonestat 函数 1234567891011121314151617181920212223void drain_zonestat(struct zone *zone, struct per_cpu_pageset *pset)&amp;#123;	int i">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://liulangrenaaa.github.io/images/icons/image.png">
+<meta property="article:published_time" content="2021-02-01T19:00:40.000Z">
+<meta property="article:modified_time" content="2026-05-14T03:56:22.502Z">
+<meta property="article:author" content="Su Hui">
+<meta property="article:tag" content="vmstat">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://liulangrenaaa.github.io/images/icons/image.png">
+  
+  
+  
+  <meta name="keywords" content="vmstat">
+
+  <!-- feed -->
+  
+
+  <link rel="stylesheet" href="/css/main.css?v=1.33.1">
+
+
+  
+    <link rel="shortcut icon" href="/images/icons/image.png">
+  
+
+  
+
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"Su Hui","sameAs":[],"image":"/images/icons/image.png"},"dateCreated":"2021-02-01T19:00:40+00:00","dateModified":"2026-05-14T03:56:22+00:00","datePublished":"2021-02-01T19:00:40+00:00","description":"","headline":"vmstat 统计了什么资源","mainEntityOfPage":{"@type":"WebPage","@id":"https://liulangrenaaa.github.io/2021/02/01/memory/vmstat%20%E7%BB%9F%E8%AE%A1%E4%BA%86%E4%BB%80%E4%B9%88%E8%B5%84%E6%BA%90/"},"publisher":{"@type":"Organization","name":"Su Hui","sameAs":[],"image":"/images/icons/image.png","logo":{"@type":"ImageObject","url":"/images/icons/image.png"}},"url":"https://liulangrenaaa.github.io/2021/02/01/memory/vmstat%20%E7%BB%9F%E8%AE%A1%E4%BA%86%E4%BB%80%E4%B9%88%E8%B5%84%E6%BA%90/","keywords":"vmstat","image":[]}</script>
+  
+</head>
+<body>
+
+<div class="l_body content" id="start" layout="post" type="tech" ><aside class="l_left"><div class="sidebg"></div><div class="leftbar-container">
+
+
+<header class="header"><div class="logo-wrap"><a class="avatar" href="/about/"><div class="bg" style="opacity:0;background-image:url(https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/avatar/round/rainbow64@3x.webp);"></div><img no-lazy class="avatar" src="/images/icons/image.png" onerror="javascript:this.classList.add('error');this.src='https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/image/2659360.svg';"></a><a class="title" href="/"><div class="main">liulangren Blog</div></a></div></header>
+
+<div class="nav-area">
+
+<nav class="menu dis-select"></nav>
+</div>
+<div class="widgets">
+<div class="search-wrapper" id="search-wrapper"><form class="search-form"><a class="search-button" onclick="document.getElementById(&quot;search-input&quot;).focus();"><svg t="1705074644177" viewBox="0 0 1025 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="1560" width="200" height="200"><path d="M1008.839137 935.96571L792.364903 719.491476a56.783488 56.783488 0 0 0-80.152866 0 358.53545 358.53545 0 1 1 100.857314-335.166073 362.840335 362.840335 0 0 1-3.689902 170.145468 51.248635 51.248635 0 1 0 99.217358 26.444296 462.057693 462.057693 0 1 0-158.255785 242.303546l185.930047 185.725053a51.248635 51.248635 0 0 0 72.568068 0 51.248635 51.248635 0 0 0 0-72.978056z" p-id="1561"></path><path d="M616.479587 615.969233a50.428657 50.428657 0 0 0-61.498362-5.534852 174.655348 174.655348 0 0 1-177.525271 3.484907 49.403684 49.403684 0 0 0-58.833433 6.76482l-3.074918 2.869923a49.403684 49.403684 0 0 0 8.609771 78.10292 277.767601 277.767601 0 0 0 286.992355-5.739847 49.403684 49.403684 0 0 0 8.404776-76.667958z" p-id="1562"></path></svg></a><input type="text" class="search-input" id="search-input" placeholder="站内搜索"></form><div id="search-result"></div><div class="search-no-result">没有找到内容！</div></div>
+
+<widget class="widget-wrapper linklist"><div class="widget-header dis-select"><span class="name">核心专题</span></div><div class="widget-body fs14">
+<div class="linklist left" style="grid-template-columns:repeat(1,1fr);">
+<a class="link" title="framework基础" href="/categories/android/framework基础/"><div class="flex"><span>framework基础</span></div></a>
+<a class="link" title="app启动与生命周期" href="/categories/android/app启动与生命周期/"><div class="flex"><span>app启动与生命周期</span></div></a>
+<a class="link" title="wms窗口系统" href="/categories/android/wms窗口系统/"><div class="flex"><span>wms窗口系统</span></div></a>
+<a class="link" title="input输入系统" href="/categories/android/input输入系统/"><div class="flex"><span>input输入系统</span></div></a>
+<a class="link" title="binder与系统服务" href="/categories/android/binder与系统服务/"><div class="flex"><span>binder与系统服务</span></div></a>
+<a class="link" title="graphics图形系统" href="/categories/android/graphics图形系统/"><div class="flex"><span>graphics图形系统</span></div></a>
+<a class="link" title="anr-crash稳定性" href="/categories/android/anr-crash稳定性/"><div class="flex"><span>anr-crash稳定性</span></div></a>
+<a class="link" title="debug-trace工具链" href="/categories/android/debug-trace工具链/"><div class="flex"><span>debug-trace工具链</span></div></a>
+<a class="link" title="性能稳定性" href="/tags/性能稳定性/"><div class="flex"><span>性能稳定性</span></div></a>
+<a class="link" title="Linux 调度" href="/categories/linux-kernel/linux-schedule/"><div class="flex"><span>Linux 调度</span></div></a></div></div></widget>
+
+<widget class="widget-wrapper linklist"><div class="widget-header dis-select"><span class="name">精选文章</span></div><div class="widget-body fs14">
+<div class="linklist left" style="grid-template-columns:repeat(1,1fr);">
+<a class="link" title="ANR问题总结" href="/2022/07/01/android/anr-crash稳定性/ANR问题总结/"><div class="flex"><span>ANR问题总结</span></div></a>
+<a class="link" title="android12 gdb64调试进程" href="/2021/09/23/用户空间/android12%20gdb64调试进程/"><div class="flex"><span>android12 gdb64调试进程</span></div></a>
+<a class="link" title="60s定位内核性能瓶颈" href="/2020/09/13/内核观测/性能稳定性/60s定位内核性能瓶颈/"><div class="flex"><span>60s定位内核性能瓶颈</span></div></a>
+<a class="link" title="关于preempt_count的思考" href="/2020/09/21/进程管理/关于preempt_count的思考/"><div class="flex"><span>关于preempt_count的思考</span></div></a></div></div></widget>
+</div>
+
+</div></aside><div class="l_main" id="main">
+
+
+
+
+
+<div class="article banner top">
+  <div class="content">
+    <div class="top bread-nav footnote"><div class="left"><div class="flex-row" id="breadcrumb"><a class="cap breadcrumb" href="/">主页</a>
+<span class="sep"></span><a class="cap breadcrumb" href="/">文章</a><span class="sep"></span><a class="cap breadcrumb-link" href="/categories/linux%E5%86%85%E6%A0%B8/">linux内核</a></div>
+<div class="flex-row" id="post-meta"><span class="text created">发布于：<time datetime="2021-02-01T19:00:40.000Z">2021-02-01</time></span><span class="sep updated"></span><span class="text updated">更新于：<time datetime="2026-05-14T03:56:22.502Z">2026-05-14</time></span></div></div></div>
+    
+    <div class="bottom only-title">
+      
+      <div class="text-area">
+        <h1 class="text title"><span>vmstat 统计了什么资源</span></h1>
+        
+      </div>
+    </div>
+    
+  </div>
+  </div><article class="md-text content"><p><code>mm/vmstat.c</code> 提供了很多对内存方面的统计，在<code>/proc/vmstat</code> 上有体现。</p>
+<h2 id="vmstat-在不同维度上的统计"><a href="#vmstat-在不同维度上的统计" class="headerlink" title="vmstat 在不同维度上的统计"></a>vmstat 在不同维度上的统计</h2><p>先看 <code>drain_zonestat</code> 函数</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line">void drain_zonestat(struct zone *zone, struct per_cpu_pageset *pset)</span><br><span class="line">&#123;</span><br><span class="line">	int i;</span><br><span class="line"></span><br><span class="line">	for (i &#x3D; 0; i &lt; NR_VM_ZONE_STAT_ITEMS; i++)</span><br><span class="line">		if (pset-&gt;vm_stat_diff[i]) &#123;</span><br><span class="line">			int v &#x3D; pset-&gt;vm_stat_diff[i];</span><br><span class="line">			pset-&gt;vm_stat_diff[i] &#x3D; 0;</span><br><span class="line">			atomic_long_add(v, &amp;zone-&gt;vm_stat[i]);</span><br><span class="line">			atomic_long_add(v, &amp;vm_zone_stat[i]);</span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">#ifdef CONFIG_NUMA</span><br><span class="line">	for (i &#x3D; 0; i &lt; NR_VM_NUMA_STAT_ITEMS; i++)</span><br><span class="line">		if (pset-&gt;vm_numa_stat_diff[i]) &#123;</span><br><span class="line">			int v &#x3D; pset-&gt;vm_numa_stat_diff[i];</span><br><span class="line"></span><br><span class="line">			pset-&gt;vm_numa_stat_diff[i] &#x3D; 0;</span><br><span class="line">			atomic_long_add(v, &amp;zone-&gt;vm_numa_stat[i]);</span><br><span class="line">			atomic_long_add(v, &amp;vm_numa_stat[i]);</span><br><span class="line">		&#125;</span><br><span class="line">#endif</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>可以发现 <code>struct per_cpu_pageset-&gt;vm_stat_diff[NR_VM_ZONE_STAT_ITEMS]</code> <code>zone-&gt;vm_stat[NR_VM_ZONE_STAT_ITEMS]</code> <code>vm_zone_stat[NR_VM_ZONE_STAT_ITEMS]</code> 是不同维度上，对同一类信息的统计 – vm 虚拟内存的使用情况的监控</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">enum zone_stat_item &#123;</span><br><span class="line">	&#x2F;* First 128 byte cacheline (assuming 64 bit words) *&#x2F;</span><br><span class="line">	NR_FREE_PAGES,</span><br><span class="line">	NR_ZONE_LRU_BASE, &#x2F;* Used only for compaction and reclaim retry *&#x2F;</span><br><span class="line">	NR_ZONE_INACTIVE_ANON &#x3D; NR_ZONE_LRU_BASE,</span><br><span class="line">	NR_ZONE_ACTIVE_ANON,</span><br><span class="line">	NR_ZONE_INACTIVE_FILE,</span><br><span class="line">	NR_ZONE_ACTIVE_FILE,</span><br><span class="line">	NR_ZONE_UNEVICTABLE,</span><br><span class="line">	NR_ZONE_WRITE_PENDING,	&#x2F;* Count of dirty, writeback and unstable pages *&#x2F;</span><br><span class="line">	NR_MLOCK,		&#x2F;* mlock()ed pages found and moved off LRU *&#x2F;</span><br><span class="line">	&#x2F;* Second 128 byte cacheline *&#x2F;</span><br><span class="line">	NR_BOUNCE,</span><br><span class="line">#if IS_ENABLED(CONFIG_ZSMALLOC)</span><br><span class="line">	NR_ZSPAGES,		&#x2F;* allocated in zsmalloc *&#x2F;</span><br><span class="line">#endif</span><br><span class="line">	NR_FREE_CMA_PAGES,</span><br><span class="line">	NR_VM_ZONE_STAT_ITEMS &#125;;</span><br></pre></td></tr></table></figure>
+
+<p>对应实际系统中<code>/proc/vmstat</code>的文件</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace# cat &#x2F;proc&#x2F;vmstat | grep zone</span><br><span class="line">nr_zone_inactive_anon 6569</span><br><span class="line">nr_zone_active_anon 317170</span><br><span class="line">nr_zone_inactive_file 211371</span><br><span class="line">nr_zone_active_file 138953</span><br><span class="line">nr_zone_unevictable 84539</span><br><span class="line">nr_zone_write_pending 35</span><br><span class="line">zone_reclaim_failed 0</span><br><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace#</span><br></pre></td></tr></table></figure>
+
+<p><code>struct per_cpu_pageset-&gt;vm_numa_stat_diff[NR_VM_NUMA_STAT_ITEMS]</code> <code>zone-&gt;vm_numa_stat[NR_VM_NUMA_STAT_ITEMS]</code> <code>vm_numa_stat[NR_VM_NUMA_STAT_ITEMS]</code> 也是不同维度上，对同一类信息的统计 – numa 内存分配行为的监控</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">enum numa_stat_item &#123;</span><br><span class="line">	NUMA_HIT,		&#x2F;* allocated in intended node *&#x2F;</span><br><span class="line">	NUMA_MISS,		&#x2F;* allocated in non intended node *&#x2F;</span><br><span class="line">	NUMA_FOREIGN,		&#x2F;* was intended here, hit elsewhere *&#x2F;</span><br><span class="line">	NUMA_INTERLEAVE_HIT,	&#x2F;* interleaver preferred this zone *&#x2F;</span><br><span class="line">	NUMA_LOCAL,		&#x2F;* allocation from local node *&#x2F;</span><br><span class="line">	NUMA_OTHER,		&#x2F;* allocation from other node *&#x2F;</span><br><span class="line">	NR_VM_NUMA_STAT_ITEMS</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<p>对应实际系统中<code>/proc/vmstat</code>的文件</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace# cat &#x2F;proc&#x2F;vmstat | grep numa</span><br><span class="line">numa_hit 2605582</span><br><span class="line">numa_miss 0</span><br><span class="line">numa_foreign 0</span><br><span class="line">numa_interleave 45536</span><br><span class="line">numa_local 2605582</span><br><span class="line">numa_other 0</span><br><span class="line">numa_pte_updates 0</span><br><span class="line">numa_huge_pte_updates 0</span><br><span class="line">numa_hint_faults 0</span><br><span class="line">numa_hint_faults_local 0</span><br><span class="line">numa_pages_migrated 0</span><br><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace#</span><br></pre></td></tr></table></figure>
+
+
+<p>上面<code>/proc/vmstat</code> 是整个系统的情况，对应 <code>vm_zone_stat</code> 与 <code>vm_numa_stat</code>。</p>
+<p><code>/proc/zoneinfo</code>是 对应的是<code>zone</code> 和 <code>pcp</code>的情况，对应的是 <code>zone-&gt;vm_stat</code> 与 <code>zone-&gt;vm_numa_stat</code>， 和 <code>per_cpu_pageset-&gt;vm_stat_diff</code> 与 <code>per_cpu_pageset-&gt;vm_numa_stat_diff</code></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br></pre></td><td class="code"><pre><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace# cat &#x2F;proc&#x2F;zoneinfo</span><br><span class="line">Node 0, zone   Normal</span><br><span class="line">  pages free     9557</span><br><span class="line">        min      6807</span><br><span class="line">        low      8508</span><br><span class="line">        high     10209</span><br><span class="line">        spanned  389120</span><br><span class="line">        present  389120</span><br><span class="line">        managed  370822</span><br><span class="line">        protection: (0, 0, 0, 0, 0)</span><br><span class="line">      nr_free_pages 9557</span><br><span class="line">      nr_zone_inactive_anon 224</span><br><span class="line">      nr_zone_active_anon 114422</span><br><span class="line">      nr_zone_inactive_file 120358</span><br><span class="line">      nr_zone_active_file 58547</span><br><span class="line">      nr_zone_unevictable 7191</span><br><span class="line">      nr_zone_write_pending 3</span><br><span class="line">      nr_mlock     4</span><br><span class="line">      nr_page_table_pages 2879</span><br><span class="line">      nr_kernel_stack 8016</span><br><span class="line">      nr_bounce    0</span><br><span class="line">      nr_zspages   0</span><br><span class="line">      nr_free_cma  0</span><br><span class="line">      numa_hit     870583</span><br><span class="line">      numa_miss    0</span><br><span class="line">      numa_foreign 0</span><br><span class="line">      numa_interleave 45534</span><br><span class="line">      numa_local   870583</span><br><span class="line">      numa_other   0</span><br><span class="line">  pagesets</span><br><span class="line">    cpu: 0</span><br><span class="line">              count: 293</span><br><span class="line">              high:  378</span><br><span class="line">              batch: 63</span><br><span class="line">  vm stats threshold: 30</span><br><span class="line">    cpu: 1</span><br><span class="line">              count: 293</span><br><span class="line">              high:  378</span><br><span class="line">              batch: 63</span><br><span class="line">  vm stats threshold: 30</span><br><span class="line">    cpu: 2</span><br><span class="line">              count: 234</span><br><span class="line">              high:  378</span><br><span class="line">              batch: 63</span><br><span class="line">  vm stats threshold: 30</span><br><span class="line">    cpu: 3</span><br><span class="line">              count: 338</span><br><span class="line">              high:  378</span><br><span class="line">              batch: 63</span><br><span class="line">  vm stats threshold: 30</span><br><span class="line">  node_unreclaimable:  0</span><br><span class="line">  start_pfn:           1048576</span><br></pre></td></tr></table></figure>
+
+
+
+
+
+
+<h2 id="全局统计的数据"><a href="#全局统计的数据" class="headerlink" title="全局统计的数据"></a>全局统计的数据</h2><p>可能和上面有些许冲突</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">atomic_long_t vm_zone_stat[NR_VM_ZONE_STAT_ITEMS] __cacheline_aligned_in_smp;</span><br><span class="line">atomic_long_t vm_numa_stat[NR_VM_NUMA_STAT_ITEMS] __cacheline_aligned_in_smp;</span><br><span class="line">atomic_long_t vm_node_stat[NR_VM_NODE_STAT_ITEMS] __cacheline_aligned_in_smp;</span><br></pre></td></tr></table></figure>
+
+<p>分别是 <code>zone</code> <code>numa</code> <code>node</code> 的统计信息，<code>zone</code> <code>numa</code> 上面都已经分析了<br>这个 <code>node</code> 对应着 <code>/proc/zoneinfo</code> 开头信息</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br></pre></td><td class="code"><pre><span class="line">Inspiron-5548@ubuntu: ~&#x2F;workspace# cat &#x2F;proc&#x2F;zoneinfo</span><br><span class="line">Node 0, zone      DMA</span><br><span class="line">  per-node stats</span><br><span class="line">      nr_inactive_anon 6591</span><br><span class="line">      nr_active_anon 315599</span><br><span class="line">      nr_inactive_file 212218</span><br><span class="line">      nr_active_file 139142</span><br><span class="line">      nr_unevictable 84780</span><br><span class="line">      nr_slab_reclaimable 23493</span><br><span class="line">      nr_slab_unreclaimable 26794</span><br><span class="line">      nr_isolated_anon 0</span><br><span class="line">      nr_isolated_file 0</span><br><span class="line">      workingset_nodes 0</span><br><span class="line">      workingset_refault 0</span><br><span class="line">      workingset_activate 0</span><br><span class="line">      workingset_restore 0</span><br><span class="line">      workingset_nodereclaim 0</span><br><span class="line">      nr_anon_pages 332534</span><br><span class="line">      nr_mapped    104733</span><br><span class="line">      nr_file_pages 425795</span><br><span class="line">      nr_dirty     7</span><br><span class="line">      nr_writeback 0</span><br><span class="line">      nr_writeback_temp 0</span><br><span class="line">      nr_shmem     95530</span><br><span class="line">      nr_shmem_hugepages 0</span><br><span class="line">      nr_shmem_pmdmapped 0</span><br><span class="line">      nr_file_hugepages 0</span><br><span class="line">      nr_file_pmdmapped 0</span><br><span class="line">      nr_anon_transparent_hugepages 0</span><br><span class="line">      nr_vmscan_write 0</span><br><span class="line">      nr_vmscan_immediate_reclaim 0</span><br><span class="line">      nr_dirtied   81310</span><br><span class="line">      nr_written   72963</span><br><span class="line">      nr_kernel_misc_reclaimable 0</span><br><span class="line">      nr_foll_pin_acquired 0</span><br><span class="line">      nr_foll_pin_released 0</span><br><span class="line">  pages free     3788</span><br></pre></td></tr></table></figure>
+
+<p>与定义 也十分相符</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line">enum node_stat_item &#123;</span><br><span class="line">	NR_LRU_BASE,</span><br><span class="line">	NR_INACTIVE_ANON &#x3D; NR_LRU_BASE, &#x2F;* must match order of LRU_[IN]ACTIVE *&#x2F;</span><br><span class="line">	NR_ACTIVE_ANON,		&#x2F;*  &quot;     &quot;     &quot;   &quot;       &quot;         *&#x2F;</span><br><span class="line">	NR_INACTIVE_FILE,	&#x2F;*  &quot;     &quot;     &quot;   &quot;       &quot;         *&#x2F;</span><br><span class="line">	NR_ACTIVE_FILE,		&#x2F;*  &quot;     &quot;     &quot;   &quot;       &quot;         *&#x2F;</span><br><span class="line">	NR_UNEVICTABLE,		&#x2F;*  &quot;     &quot;     &quot;   &quot;       &quot;         *&#x2F;</span><br><span class="line">	NR_SLAB_RECLAIMABLE_B,</span><br><span class="line">	NR_SLAB_UNRECLAIMABLE_B,</span><br><span class="line">	NR_ISOLATED_ANON,	&#x2F;* Temporary isolated pages from anon lru *&#x2F;</span><br><span class="line">	NR_ISOLATED_FILE,	&#x2F;* Temporary isolated pages from file lru *&#x2F;</span><br><span class="line">	WORKINGSET_NODES,</span><br><span class="line">	WORKINGSET_REFAULT_BASE,</span><br><span class="line">	WORKINGSET_REFAULT_ANON &#x3D; WORKINGSET_REFAULT_BASE,</span><br><span class="line">	WORKINGSET_REFAULT_FILE,</span><br><span class="line">	WORKINGSET_ACTIVATE_BASE,</span><br><span class="line">	WORKINGSET_ACTIVATE_ANON &#x3D; WORKINGSET_ACTIVATE_BASE,</span><br><span class="line">	WORKINGSET_ACTIVATE_FILE,</span><br><span class="line">	WORKINGSET_RESTORE_BASE,</span><br><span class="line">	WORKINGSET_RESTORE_ANON &#x3D; WORKINGSET_RESTORE_BASE,</span><br><span class="line">	WORKINGSET_RESTORE_FILE,</span><br><span class="line">	WORKINGSET_NODERECLAIM,</span><br><span class="line">	NR_ANON_MAPPED,	&#x2F;* Mapped anonymous pages *&#x2F;</span><br><span class="line">	NR_FILE_MAPPED,	&#x2F;* pagecache pages mapped into pagetables.</span><br><span class="line">			   only modified from process context *&#x2F;</span><br><span class="line">	NR_FILE_PAGES,</span><br><span class="line">	NR_FILE_DIRTY,</span><br><span class="line">	NR_WRITEBACK,</span><br><span class="line">	NR_WRITEBACK_TEMP,	&#x2F;* Writeback using temporary buffers *&#x2F;</span><br><span class="line">	NR_SHMEM,		&#x2F;* shmem pages (included tmpfs&#x2F;GEM pages) *&#x2F;</span><br><span class="line">	NR_SHMEM_THPS,</span><br><span class="line">	NR_SHMEM_PMDMAPPED,</span><br><span class="line">	NR_FILE_THPS,</span><br><span class="line">	NR_FILE_PMDMAPPED,</span><br><span class="line">	NR_ANON_THPS,</span><br><span class="line">	NR_VMSCAN_WRITE,</span><br><span class="line">	NR_VMSCAN_IMMEDIATE,	&#x2F;* Prioritise for reclaim when writeback ends *&#x2F;</span><br><span class="line">	NR_DIRTIED,		&#x2F;* page dirtyings since bootup *&#x2F;</span><br><span class="line">	NR_WRITTEN,		&#x2F;* page writings since bootup *&#x2F;</span><br><span class="line">	NR_KERNEL_MISC_RECLAIMABLE,	&#x2F;* reclaimable non-slab kernel pages *&#x2F;</span><br><span class="line">	NR_FOLL_PIN_ACQUIRED,	&#x2F;* via: pin_user_page(), gup flag: FOLL_PIN *&#x2F;</span><br><span class="line">	NR_FOLL_PIN_RELEASED,	&#x2F;* pages returned via unpin_user_page() *&#x2F;</span><br><span class="line">	NR_KERNEL_STACK_KB,	&#x2F;* measured in KiB *&#x2F;</span><br><span class="line">#if IS_ENABLED(CONFIG_SHADOW_CALL_STACK)</span><br><span class="line">	NR_KERNEL_SCS_KB,	&#x2F;* measured in KiB *&#x2F;</span><br><span class="line">#endif</span><br><span class="line">	NR_PAGETABLE,		&#x2F;* used for pagetables *&#x2F;</span><br><span class="line">	NR_VM_NODE_STAT_ITEMS</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<p>atomic_long_t vm_zone_stat[NR_VM_ZONE_STAT_ITEMS] __cacheline_aligned_in_smp;<br>atomic_long_t vm_numa_stat[NR_VM_NUMA_STAT_ITEMS] __cacheline_aligned_in_smp;<br>atomic_long_t vm_node_stat[NR_VM_NODE_STAT_ITEMS] __cacheline_aligned_in_smp;</p>
+<p><code>vm_zone_stat</code> 主要是 统计各个zone的各种 anon file active inactive page的数量。<br><code>vm_numa_stat</code> 主要是 统计各个 node 节点上内存分配行为，是从本节点分配的，还是跨节点分配了内存。<br><code>vm_node_stat</code> 主要是 统计各个 node节点 的各种 anon file active inactive page的数量，还有各种类型 shmem dirty writeback的page数量</p>
+<h2 id="migrate-type-是来定义什么的？"><a href="#migrate-type-是来定义什么的？" class="headerlink" title="migrate type 是来定义什么的？"></a>migrate type 是来定义什么的？</h2><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">enum migratetype &#123;</span><br><span class="line">	MIGRATE_UNMOVABLE,</span><br><span class="line">	MIGRATE_MOVABLE,</span><br><span class="line">	MIGRATE_RECLAIMABLE,</span><br><span class="line">	MIGRATE_PCPTYPES,	&#x2F;* the number of types on the pcp lists *&#x2F;</span><br><span class="line">	MIGRATE_HIGHATOMIC &#x3D; MIGRATE_PCPTYPES,</span><br><span class="line">	MIGRATE_TYPES</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<p>很明显 <code>migratetype</code> 是用来定义 伙伴系统中页面的，<code>order相同</code>情况下根据是否可以 <code>移动</code>，分成了几条 list，方便了后面各种 内存迁移，内存规整。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">struct free_area &#123;</span><br><span class="line">	struct list_head	free_list[MIGRATE_TYPES];</span><br><span class="line">	unsigned long		nr_free;</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">struct zone &#123;</span><br><span class="line">    struct free_area	free_area[MAX_ORDER];</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+<h2 id="lruvec-是在哪个维度上？"><a href="#lruvec-是在哪个维度上？" class="headerlink" title="lruvec 是在哪个维度上？"></a>lruvec 是在哪个维度上？</h2><p>2016年之前 <code>lru</code> 是基于<code>zone</code>这个维度上的，现在都是基于 <code>node</code>这个维度的</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">commit 75ef7184053989118d3814c558a9af62e7376a58</span><br><span class="line">Author: Mel Gorman &lt;mgorman@techsingularity.net&gt;</span><br><span class="line">Date:   Thu Jul 28 15:45:24 2016 -0700</span><br><span class="line"></span><br><span class="line">    mm, vmstat: add infrastructure for per-node vmstats</span><br><span class="line"></span><br><span class="line">    Patchset: &quot;Move LRU page reclaim from zones to nodes v9&quot;</span><br></pre></td></tr></table></figure>
+
+<p>先看定义</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line">enum lru_list &#123;</span><br><span class="line">	LRU_INACTIVE_ANON &#x3D; LRU_BASE,</span><br><span class="line">	LRU_ACTIVE_ANON &#x3D; LRU_BASE + LRU_ACTIVE,</span><br><span class="line">	LRU_INACTIVE_FILE &#x3D; LRU_BASE + LRU_FILE,</span><br><span class="line">	LRU_ACTIVE_FILE &#x3D; LRU_BASE + LRU_FILE + LRU_ACTIVE,</span><br><span class="line">	LRU_UNEVICTABLE,</span><br><span class="line">	NR_LRU_LISTS</span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line">struct lruvec &#123;</span><br><span class="line">	struct list_head		lists[NR_LRU_LISTS];</span><br><span class="line">	&#x2F;* per lruvec lru_lock for memcg *&#x2F;</span><br><span class="line">	spinlock_t			lru_lock;</span><br><span class="line">#ifdef CONFIG_MEMCG</span><br><span class="line">	struct pglist_data *pgdat;</span><br><span class="line">#endif</span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line">typedef struct pglist_data &#123;</span><br><span class="line">	struct lruvec		__lruvec;</span><br><span class="line">&#125; pg_data_t;</span><br></pre></td></tr></table></figure>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<p>代码定义大多来自于<code>Linux 5.10</code></p>
+</article>
+<div class="article-footer">
+    <section id="license">
+      <div class="header"><span>许可协议</span></div>
+      <div class="body"><p>本文采用 <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">署名-非商业性使用-相同方式共享 4.0 国际</a> 许可协议，转载请注明出处。</p>
+</div>
+    </section>
+    
+
+</div>
+
+<div class="related-wrap" id="read-next"><section class="body"><div class="item" id="prev"><div class="note">较新文章</div><a href="/2021/02/01/filesystem/sync%20%E7%9B%B8%E5%85%B3/">sync  相关</a></div><div class="item" id="next"><div class="note">较早文章</div><a href="/2021/02/01/%E6%96%87%E4%BB%B6%E7%B3%BB%E7%BB%9F/acl/">acl</a></div></section></div>
+
+
+
+
+
+
+<footer class="page-footer footnote"><hr><div class="text"><p>本站由 <a href="/">Su Hui</a> 使用 <a target="_blank" rel="noopener" href="https://github.com/xaoxuu/hexo-theme-stellar/tree/1.33.1">Stellar 1.33.1</a> 主题创建。<br>本博客所有文章除特别声明外，均采用 <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> 许可协议，转载请注明出处。</p>
+</div></footer>
+<div class="main-mask" onclick="sidebar.dismiss()"></div></div><aside class="l_right">
+<div class="widgets">
+
+
+
+<widget class="widget-wrapper toc" id="data-toc" collapse="false"><div class="widget-header dis-select"><span class="name">本文目录</span><a class="cap-action" onclick="sidebar.toggleTOC()" ><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h11m-11 6h11m-11 6h11M4 6h1v4m-1 0h2m0 8H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg></a></div><div class="widget-body"><ol class="toc"><li class="toc-item toc-level-2"><a class="toc-link" href="#vmstat-%E5%9C%A8%E4%B8%8D%E5%90%8C%E7%BB%B4%E5%BA%A6%E4%B8%8A%E7%9A%84%E7%BB%9F%E8%AE%A1"><span class="toc-text">vmstat 在不同维度上的统计</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%85%A8%E5%B1%80%E7%BB%9F%E8%AE%A1%E7%9A%84%E6%95%B0%E6%8D%AE"><span class="toc-text">全局统计的数据</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#migrate-type-%E6%98%AF%E6%9D%A5%E5%AE%9A%E4%B9%89%E4%BB%80%E4%B9%88%E7%9A%84%EF%BC%9F"><span class="toc-text">migrate type 是来定义什么的？</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#lruvec-%E6%98%AF%E5%9C%A8%E5%93%AA%E4%B8%AA%E7%BB%B4%E5%BA%A6%E4%B8%8A%EF%BC%9F"><span class="toc-text">lruvec 是在哪个维度上？</span></a></li></ol></div><div class="widget-footer"><a class="top" onclick="util.scrollTop()"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><!-- Icon from Solar by 480 Design - https://creativecommons.org/licenses/by/4.0/ --><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><path stroke-linejoin="round" d="m9 15.5l3-3l3 3m-6-4l3-3l3 3"/><path d="M7 3.338A9.95 9.95 0 0 1 12 2c5.523 0 10 4.477 10 10s-4.477 10-10 10S2 17.523 2 12c0-1.821.487-3.53 1.338-5"/></g></svg><span>回到顶部</span></a></div></widget>
+</div></aside><div class='float-panel'>
+  <button type='button' style='display:none' class='laptop-only rightbar-toggle mobile' onclick='sidebar.rightbar()'>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h11m-11 6h11m-11 6h11M4 6h1v4m-1 0h2m0 8H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>
+  </button>
+  <button type='button' style='display:none' class='mobile-only leftbar-toggle mobile' onclick='sidebar.leftbar()'>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 11c0-3.771 0-5.657 1.172-6.828C4.343 3 6.229 3 10 3h4c3.771 0 5.657 0 6.828 1.172C22 5.343 22 7.229 22 11v2c0 3.771 0 5.657-1.172 6.828C19.657 21 17.771 21 14 21h-4c-3.771 0-5.657 0-6.828-1.172C2 18.657 2 16.771 2 13z"/><path id="sep" stroke-linecap="round" d="M5.5 10h6m-5 4h4m4.5 7V3"/></g></svg>
+  </button>
+</div>
+</div><div class="scripts">
+
+
+<script type="text/javascript">
+  window.canonical = {"originalHost":null,"officialHosts":["localhost"],"encoded":""};
+  const ctx = {
+    date_suffix: {
+      just: `刚刚`,
+      min: `分钟前`,
+      hour: `小时前`,
+      day: `天前`,
+    },
+    root : `/`,
+    tag_plugins: {
+      chat: Object.assign({"api":"https://siteinfo.listentothewind.cn/api/v1"}),
+    }
+  };
+
+  // required plugins (only load if needs)
+  if (`local_search`) {
+    ctx.search = {};
+    ctx.search.service = `local_search`;
+    if (ctx.search.service == 'local_search') {
+      let service_obj = Object.assign({}, `{"field":"all","path":"/search.json","content":true,"skip_search":null,"sort":"-date"}`);
+      ctx.search[ctx.search.service] = service_obj;
+    }
+  }
+  const def = {
+    avatar: `https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/avatar/round/3442075.svg`,
+    cover: `https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/cover/76b86c0226ffd.svg`,
+    loading: `https://api.iconify.design/eos-icons:three-dots-loading.svg?color=%231cd0fd`,
+  };
+  const deps = {
+    jquery: `https://gcore.jsdelivr.net/npm/jquery@3.7/dist/jquery.min.js`,
+    marked: `https://gcore.jsdelivr.net/npm/marked@13.0/lib/marked.umd.min.js`,
+    lazyload: `/%5Bobject%20Object%5D`
+  }
+  
+
+</script>
+
+<script type="text/javascript">
+  
+  function RunItem() {
+    this.list = []; // 存放回调函数
+    this.start = () => {
+      for (var i = 0; i < this.list.length; i++) {
+        this.list[i].run();
+      }
+    };
+    this.push = (fn, name, setRequestAnimationFrame = true) => {
+      let myfn = fn
+      if (setRequestAnimationFrame) {
+        myfn = () => {
+          utils.requestAnimationFrame(fn)
+        }
+      }
+      var f = new Item(myfn, name);
+      this.list.push(f);
+    };
+    this.remove = (name) => {
+      for (let index = 0; index < this.list.length; index++) {
+        const e = this.list[index];
+        if (e.name == name) {
+          this.list.splice(index, 1);
+        }
+      }
+    }
+    // 构造一个可以run的对象
+    function Item(fn, name) {
+      // 函数名称
+      this.name = name || fn.name;
+      // run方法
+      this.run = () => {
+        try {
+          fn()
+        } catch (error) {
+          console.log(error);
+        }
+      };
+    }
+  }
+
+  const utils = {
+    // 懒加载 css https://github.com/filamentgroup/loadCSS
+    css: (href, before, media, attributes) => {
+      var doc = window.document;
+      var ss = doc.createElement("link");
+      var ref;
+      if (before) {
+        ref = before;
+      } else {
+        var refs = (doc.body || doc.getElementsByTagName("head")[0]).childNodes;
+        ref = refs[refs.length - 1];
+      }
+      var sheets = doc.styleSheets;
+      if (attributes) {
+        for (var attributeName in attributes) {
+          if (attributes.hasOwnProperty(attributeName)) {
+            ss.setAttribute(attributeName, attributes[attributeName]);
+          }
+        }
+      }
+      ss.rel = "stylesheet";
+      ss.href = href;
+      ss.media = "only x";
+      function ready(cb) {
+        if (doc.body) {
+          return cb();
+        }
+        setTimeout(function () {
+          ready(cb);
+        });
+      }
+      ready(function () {
+        ref.parentNode.insertBefore(ss, before ? ref : ref.nextSibling);
+      });
+      var onloadcssdefined = function (cb) {
+        var resolvedHref = ss.href;
+        var i = sheets.length;
+        while (i--) {
+          if (sheets[i].href === resolvedHref) {
+            return cb();
+          }
+        }
+        setTimeout(function () {
+          onloadcssdefined(cb);
+        });
+      };
+      function loadCB() {
+        if (ss.addEventListener) {
+          ss.removeEventListener("load", loadCB);
+        }
+        ss.media = media || "all";
+      }
+      if (ss.addEventListener) {
+        ss.addEventListener("load", loadCB);
+      }
+      ss.onloadcssdefined = onloadcssdefined;
+      onloadcssdefined(loadCB);
+      return ss;
+    },
+
+    js: (src, opt) => new Promise((resolve, reject) => {
+      var script = document.createElement('script');
+      if (src.startsWith('/')) {
+        src = ctx.root + src.substring(1);
+      }
+      script.src = src;
+      if (opt) {
+        for (let key of Object.keys(opt)) {
+          script[key] = opt[key]
+        }
+      } else {
+        // 默认异步，如果需要同步，第二个参数传入 {} 即可
+        script.async = true
+      }
+      script.onerror = reject
+      script.onload = script.onreadystatechange = function () {
+        const loadState = this.readyState
+        if (loadState && loadState !== 'loaded' && loadState !== 'complete') return
+        script.onload = script.onreadystatechange = null
+        resolve()
+      }
+      document.head.appendChild(script)
+    }),
+
+    jq: (fn) => {
+      if (typeof jQuery === 'undefined') {
+        utils.js(deps.jquery).then(fn)
+      } else {
+        fn()
+      }
+    },
+
+    onLoading: (el) => {
+      if (el) {
+        $(el).append('<div class="loading-wrap"><svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" stroke-opacity=".3" d="M12 3C16.9706 3 21 7.02944 21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="1.3s" values="60;0"/></path><path stroke-dasharray="15" stroke-dashoffset="15" d="M12 3C16.9706 3 21 7.02944 21 12"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.3s" values="15;0"/><animateTransform attributeName="transform" dur="1.5s" repeatCount="indefinite" type="rotate" values="0 12 12;360 12 12"/></path></g></svg></div>');
+      }
+    },
+    onLoadSuccess: (el) => {
+      if (el) {
+        $(el).find('.loading-wrap').remove();
+      }
+    },
+    onLoadFailure: (el) => {
+      if (el) {
+        $(el).find('.loading-wrap svg').remove();
+        $(el).find('.loading-wrap').append('<svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" d="M12 3L21 20H3L12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.5s" values="60;0"/></path><path stroke-dasharray="6" stroke-dashoffset="6" d="M12 10V14"><animate fill="freeze" attributeName="stroke-dashoffset" begin="0.6s" dur="0.2s" values="6;0"/></path></g><circle cx="12" cy="17" r="1" fill="currentColor" fill-opacity="0"><animate fill="freeze" attributeName="fill-opacity" begin="0.8s" dur="0.4s" values="0;1"/></circle></svg>');
+        $(el).find('.loading-wrap').addClass('error');
+      }
+    },
+    request: (el, url, callback, onFailure) => {
+      const maxRetry = 3;
+      let retryCount = 0;
+
+      return new Promise((resolve, reject) => {
+        const load = () => {
+          utils.onLoading?.(el);
+
+          let timedOut = false;
+          const timeout = setTimeout(() => {
+            timedOut = true;
+            console.warn('[request] 超时:', url);
+
+            if (++retryCount >= maxRetry) {
+              utils.onLoadFailure?.(el);
+              onFailure?.();
+              reject('请求超时');
+            } else {
+              setTimeout(load, 1000);
+            }
+          }, 5000);
+
+          fetch(url).then(resp => {
+            if (timedOut) return;
+            clearTimeout(timeout);
+
+            if (!resp.ok) throw new Error('响应失败');
+            return resp;
+          }).then(data => {
+            if (timedOut) return;
+            utils.onLoadSuccess?.(el);
+            callback(data);
+            resolve(data);
+          }).catch(err => {
+            clearTimeout(timeout);
+            console.warn('[request] 错误:', err);
+
+            if (++retryCount >= maxRetry) {
+              utils.onLoadFailure?.(el);
+              onFailure?.();
+              reject(err);
+            } else {
+              setTimeout(load, 1000);
+            }
+          });
+        };
+
+        load();
+      });
+    },
+    requestWithoutLoading: (url, options = {}, maxRetry = 2, timeout = 5000) => {
+      return new Promise((resolve, reject) => {
+        let retryCount = 0;
+
+        const tryRequest = () => {
+          let timedOut = false;
+          const timer = setTimeout(() => {
+            timedOut = true;
+            if (++retryCount > maxRetry) reject('timeout');
+            else tryRequest();
+          }, timeout);
+
+          fetch(url, options)
+            .then(resp => {
+              clearTimeout(timer);
+              if (!resp.ok) throw new Error('bad response');
+              resolve(resp);
+            })
+            .catch(err => {
+              clearTimeout(timer);
+              if (++retryCount > maxRetry) reject(err);
+              else setTimeout(tryRequest, 500);
+            });
+        };
+
+        tryRequest();
+      });
+    },
+    /********************** requestAnimationFrame ********************************/
+    // 1、requestAnimationFrame 会把每一帧中的所有 DOM 操作集中起来，在一次重绘或回流中就完成，并且重绘或回流的时间间隔紧紧跟随浏览器的刷新频率，一般来说，这个频率为每秒60帧。
+    // 2、在隐藏或不可见的元素中，requestAnimationFrame 将不会进行重绘或回流，这当然就意味着更少的的 cpu，gpu 和内存使用量。
+    requestAnimationFrame: (fn) => {
+      if (!window.requestAnimationFrame) {
+        window.requestAnimationFrame = window.requestAnimationFrame || window.mozRequestAnimationFrame || window.webkitRequestAnimationFrame;
+      }
+      window.requestAnimationFrame(fn)
+    },
+    dark: {},
+  };
+
+  // utils.dark.mode 当前模式 dark or light
+  // utils.dark.toggle() 暗黑模式触发器
+  // utils.dark.push(callBack[,"callBackName"]) 传入触发器回调函数
+  utils.dark.method = {
+    toggle: new RunItem(),
+  };
+  utils.dark = Object.assign(utils.dark, {
+    push: utils.dark.method.toggle.push,
+  });
+</script>
+<script>
+  const sidebar = {
+    leftbar: () => {
+      if (l_body) {
+        l_body.toggleAttribute('leftbar');
+        l_body.removeAttribute('rightbar');
+      }
+    },
+    rightbar: () => {
+      if (l_body) {
+        l_body.toggleAttribute('rightbar');
+        l_body.removeAttribute('leftbar');
+      }
+    },
+    dismiss: () => {
+      if (l_body) {
+        l_body.removeAttribute('leftbar');
+        l_body.removeAttribute('rightbar');
+      }
+    },
+    toggleTOC: () => {
+      document.querySelector('#data-toc').classList.toggle('collapse');
+    }
+  }
+</script>
+<script type="text/javascript">
+  (() => {
+    const tagSwitchers = document.querySelectorAll('.tag-subtree.parent-tag > a > .tag-switcher-wrapper')
+    for (const tagSwitcher of tagSwitchers) {
+      tagSwitcher.addEventListener('click', (e) => {
+        const parent = e.target.closest('.tag-subtree.parent-tag')
+        parent.classList.toggle('expanded')
+        e.preventDefault()
+      })
+    }
+
+    // Get active tag from query string, then activate it.
+    const urlParams = new URLSearchParams(window.location.search)
+    const activeTag = urlParams.get('tag')
+    if (activeTag) {
+      let tag = document.querySelector(`.tag-subtree[data-tag="${activeTag}"]`)
+      if (tag) {
+        tag.querySelector('a').classList.add('active')
+        
+        while (tag) {
+          tag.classList.add('expanded')
+          tag = tag.parentElement.closest('.tag-subtree.parent-tag')
+        }
+      }
+    }
+  })()
+</script>
+
+<script async src="https://gcore.jsdelivr.net/npm/vanilla-lazyload@19.1/dist/lazyload.min.js"></script>
+<script>
+  // https://www.npmjs.com/package/vanilla-lazyload
+  // Set the options globally
+  // to make LazyLoad self-initialize
+  window.lazyLoadOptions = {
+    elements_selector: ".lazy",
+    callback_loaded: (el) => {
+      el.classList.add('loaded');
+      const wrapper = el.closest('.lazy-box');
+      const icon = wrapper?.querySelector('.lazy-icon');
+      if (icon) icon.remove();
+    }
+  };
+  // Listen to the initialization event
+  // and get the instance of LazyLoad
+  window.addEventListener(
+    "LazyLoad::Initialized",
+    function (event) {
+      window.lazyLoadInstance = event.detail.instance;
+    },
+    false
+  );
+  document.addEventListener('DOMContentLoaded', function () {
+    window.lazyLoadInstance?.update();
+  });
+
+  window.wrapLazyloadImages = (container) => {
+    if (typeof container === 'string') {
+      container = document.querySelector(container);
+    }
+    if (!container) return;
+    
+    const images = container.querySelectorAll('img');
+    images.forEach((img) => {
+      if (img.classList.contains('lazy')) return;
+
+      const src = img.getAttribute('src');
+      if (!src) return;
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'lazy-box';
+
+      const newImg = img.cloneNode();
+      newImg.removeAttribute('src');
+      newImg.setAttribute('data-src', src);
+      newImg.classList.add('lazy');
+
+      const icon = document.createElement('div');
+      icon.className = 'lazy-icon';
+      if (def.loading) {
+        icon.style.backgroundImage = `url("${def.loading}")`;
+      }
+
+      wrapper.appendChild(newImg);
+      wrapper.appendChild(icon);
+
+      img.replaceWith(wrapper);
+    });
+
+    // 通知 LazyLoad 更新
+    if (window.lazyLoadInstance?.update) {
+      window.lazyLoadInstance.update();
+    }
+  }
+  
+</script>
+
+<!-- required -->
+<script src="/js/main.js?v=1.33.1" defer></script>
+
+<script type="text/javascript">
+  const applyTheme = (theme) => {
+    if (theme === 'auto') {
+      document.documentElement.removeAttribute('data-theme')
+    } else {
+      document.documentElement.setAttribute('data-theme', theme)
+    }
+
+    // applyThemeToGiscus(theme)
+  }
+
+  // FIXME: 这会导致无法使用 preferred_color_scheme 以外的主题
+  const applyThemeToGiscus = (theme) => {
+    // theme = theme === 'auto' ? 'preferred_color_scheme' : theme
+    const cmt = document.getElementById('giscus')
+    if (cmt) {
+      // This works before giscus load.
+      cmt.setAttribute('data-theme', theme)
+    }
+
+    const iframe = document.querySelector('#comments > section.giscus > iframe')
+    if (iframe) {
+      // This works after giscus loaded.
+      const src = iframe.src
+      const newSrc = src.replace(/theme=[\w]+/, `theme=${theme}`)
+      iframe.src = newSrc
+    }
+  }
+
+  const switchTheme = () => {
+    // light -> dark -> auto -> light -> ...
+    const currentTheme = document.documentElement.getAttribute('data-theme')
+    let newTheme;
+    switch (currentTheme) {
+      case 'light':
+        newTheme = 'dark'
+        break
+      case 'dark':
+        newTheme = 'auto'
+        break
+      default:
+        newTheme = 'light'
+    }
+    applyTheme(newTheme)
+    window.localStorage.setItem('Stellar.theme', newTheme)
+    utils.dark.mode = newTheme === 'auto' ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : newTheme;
+    utils.dark.method.toggle.start();
+
+    const messages = {
+      light: `切换到浅色模式`,
+      dark: `切换到深色模式`,
+      auto: `切换到跟随系统配色`,
+    }
+    hud?.toast?.(messages[newTheme])
+  }
+
+  (() => {
+    // Apply user's preferred theme, if any.
+    const theme = window.localStorage.getItem('Stellar.theme')
+    if (theme !== null) {
+      applyTheme(theme)
+    } else {
+      utils.dark.mode = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    utils.dark.method.toggle.start();
+  })()
+</script>
+
+
+<!-- optional -->
+
+
+
+<script defer>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    ctx.services = Object.assign({}, JSON.parse(`{"mdrender":{"js":"/js/services/mdrender.js"},"siteinfo":{"js":"/js/services/siteinfo.js","api":null},"ghinfo":{"js":"/js/services/ghinfo.js"},"rating":{"js":"/js/services/rating.js","api":"https://star-vote.xaox.cc/api/rating"},"vote":{"js":"/js/services/vote.js","api":"https://star-vote.xaox.cc/api/vote"},"sites":{"js":"/js/services/sites.js"},"friends":{"js":"/js/services/friends.js"},"friends_and_posts":{"js":"/js/services/friends_and_posts.js"},"timeline":{"js":"/js/services/timeline.js"},"fcircle":{"js":"/js/services/fcircle.js"},"weibo":{"js":"/js/services/weibo.js"},"memos":{"js":"/js/services/memos.js"},"voice":{"js":"/js/plugins/voice.js"},"video":{"js":"/js/plugins/video.js"},"download-file":{"js":"/js/plugins/download-file.js"},"twikoo":{"js":"/js/services/twikoo_latest_comment.js"},"waline":{"js":"/js/services/waline_latest_comment.js"},"artalk":{"js":"/js/services/artalk_latest_comment.js"},"giscus":{"js":"/js/services/giscus_latest_comment.js"},"contributors":{"edit_this_page":{"_posts/":null,"wiki/stellar/":"https://github.com/xaoxuu/hexo-theme-stellar-docs/blob/main/"},"js":"/js/services/contributors.js"}}`));
+    for (let id of Object.keys(ctx.services)) {
+      const js = ctx.services[id].js;
+      if (id == 'siteinfo') {
+        ctx.cardlinks = document.querySelectorAll('a.link-card[cardlink]');
+        if (ctx.cardlinks?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            setCardLink(ctx.cardlinks);
+          });
+        }
+      } else if (id == 'voice') {
+        ctx.voiceAudios = document.querySelectorAll('.voice>audio');
+        if (ctx.voiceAudios?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            createVoiceDom(ctx.voiceAudios);
+          });
+        }
+      } else if (id == 'video') {
+        ctx.videos = document.querySelectorAll('.video>video');
+        if (ctx.videos?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            videoEvents(ctx.videos);
+          });
+        }
+      } else if (id == 'download-file') {
+        ctx.files = document.querySelectorAll('.file');
+        if (ctx.files?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            downloadFileEvent(ctx.files);
+          });
+        }
+      } else {
+        const els = document.getElementsByClassName(`ds-${id}`);
+        if (els?.length > 0) {
+          utils.jq(() => {
+            if (id == 'timeline' || 'memos' || 'marked') {
+              utils.js(deps.marked).then(function () {
+                utils.js(js, { defer: true });
+              });
+            } else {
+              utils.js(js, { defer: true });
+            }
+          });
+        }
+      }
+    }
+
+    // chat iphone time
+    let phoneTimes = document.querySelectorAll('.chat .status-bar .time');
+
+    if (phoneTimes.length > 0) {
+      NowTime();
+      var date = new Date();
+      var sec = date.getSeconds();
+      var firstAdjustInterval = setInterval(firstAdjustTime, 1000 * (60 - sec));
+    }
+
+    function firstAdjustTime() {
+      NowTime();
+      clearInterval(firstAdjustInterval);
+      setInterval(NowTime, 1000 * 60);
+    }
+
+    function NowTime() {
+      for (let i = 0; i < phoneTimes.length; ++i) {
+        var timeSpan = phoneTimes[i];
+        var date = new Date();
+        var hour = date.getHours();
+        var min = date.getMinutes();
+        timeSpan.innerHTML = check(hour) + ":" + check(min);
+      }
+    };
+
+    function check(val) {
+      if (val < 10) {
+        return ("0" + val);
+      }
+      return (val);
+    }
+
+    // chat quote
+    const chat_quote_obverser = new IntersectionObserver((entries, observer) => {
+      entries.filter((entry) => { return entry.isIntersecting }).sort((a, b) => a.intersectionRect.y !== b.intersectionRect.y ? a.intersectionRect.y - b.intersectionRect.y : a.intersectionRect.x - b.intersectionRect.x).forEach((entry, index) => {
+          observer.unobserve(entry.target);
+          setTimeout(() => {
+            entry.target.classList.add('quote-blink');
+            setTimeout(() => {
+              entry.target.classList.remove('quote-blink');
+            }, 1000);
+          }, Math.max(100, 16) * (index + 1));
+        });
+    });
+
+    var chatQuotes = document.querySelectorAll(".chat .talk .quote");
+    chatQuotes.forEach((quote) => {
+      quote.addEventListener('click', function () {
+        var chatCellDom = document.getElementById("quote-" + quote.getAttribute("quotedCellTag"));
+        if (chatCellDom) {
+          var chatDiv = chatCellDom.parentElement;
+          var mid = chatDiv.clientHeight / 2;
+          var offsetTop = chatCellDom.offsetTop;
+          if (offsetTop > mid - chatCellDom.clientHeight / 2) {
+            chatDiv.scrollTo({
+              top: chatCellDom.offsetTop - mid + chatCellDom.clientHeight / 2,
+              behavior: "smooth"
+            });
+          } else {
+            chatDiv.scrollTo({
+              top: 0,
+              behavior: "smooth"
+            });
+          }
+          chat_quote_obverser.observe(chatCellDom);
+        }
+      });
+    });
+  });
+</script>
+
+<script>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    ctx.search = {
+      path: `/search.json`,
+    }
+    utils.js('/js/search/local-search.js', { defer: true });
+  });
+</script><script>
+  window.FPConfig = {
+    delay: 0,
+    ignoreKeywords: [],
+    maxRPS: 5,
+    hoverDelay: 25
+  };
+</script>
+<script defer src="https://gcore.jsdelivr.net/npm/flying-pages@2/flying-pages.min.js"></script><script>
+  ctx.fancybox = {
+    selector: `.timenode p>img`,
+    css: `https://gcore.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css`,
+    js: `https://gcore.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js`
+  };
+  var selector = '[data-fancybox]:not(.error), .with-fancybox .atk-content img:not([atk-emoticon])';
+  if (ctx.fancybox.selector) {
+    selector += `, ${ctx.fancybox.selector}`
+  }
+  var needFancybox = document.querySelectorAll(selector).length !== 0;
+  if (!needFancybox) {
+    const memos = document.getElementsByClassName('ds-memos');
+    if (memos != undefined && memos.length > 0) {
+      needFancybox = true;
+    }
+    const fancybox = document.getElementsByClassName('with-fancybox');
+    if (fancybox != undefined && fancybox.length > 0) {
+      needFancybox = true;
+    }
+  }
+  if (needFancybox) {
+    utils.css(ctx.fancybox.css);
+    utils.js(ctx.fancybox.js, { defer: true }).then(function () {
+      Fancybox.bind(selector, {
+        hideScrollbar: false,
+        Thumbs: {
+          autoStart: false,
+        },
+        caption: (fancybox, slide) => {
+          return slide.triggerEl.alt || slide.triggerEl.dataset.caption || null
+        }
+      });
+    })
+  }
+</script>
+<script>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    const swiper_api = document.getElementById('swiper-api');
+    if (swiper_api != undefined) {
+      utils.css(`https://unpkg.com/swiper@10.3/swiper-bundle.min.css`);
+      utils.js(`https://unpkg.com/swiper@10.3/swiper-bundle.min.js`, { defer: true }).then(function () {
+        const effect = swiper_api.getAttribute('effect') || '';
+        var swiper = new Swiper('.swiper#swiper-api', {
+          slidesPerView: 'auto',
+          spaceBetween: 8,
+          centeredSlides: true,
+          effect: effect,
+          rewind: true,
+          pagination: {
+            el: '.swiper-pagination',
+            clickable: true,
+          },
+          navigation: {
+            nextEl: '.swiper-button-next',
+            prevEl: '.swiper-button-prev',
+          },
+        });
+      })
+    }
+  });
+</script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    window.codeElements = document.querySelectorAll('.code');
+    if (window.codeElements.length > 0) {
+      ctx.copycode = {
+        default_text: `Copy`,
+        success_text: `Copied`,
+        toast: `复制成功`,
+      };
+      utils.js('/js/plugins/copycode.js');
+    }
+  });
+</script>
+
+
+<!-- inject -->
+
+</div></body></html>

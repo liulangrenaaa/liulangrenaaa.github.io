@@ -1,0 +1,894 @@
+
+<!DOCTYPE html><html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="hexo-theme" content="https://github.com/xaoxuu/hexo-theme-stellar/tree/1.33.1" theme-name="Stellar" theme-version="1.33.1">
+  
+  
+  <meta name="generator" content="Hexo 5.1.1">
+  <meta http-equiv='x-dns-prefetch-control' content='on' />
+  
+  <meta name="renderer" content="webkit">
+  <meta name="force-rendering" content="webkit">
+  <meta http-equiv="X-UA-Compatible" content="IE=Edge,chrome=1">
+  <meta name="HandheldFriendly" content="True" >
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000">
+  <meta name="theme-color" content="#f9fafb">
+  <title>drop_caches  相关 - liulangren Blog</title>
+
+  
+    <meta name="description" content="proc文件系统drop_caches 文件位于系统 &#x2F;proc&#x2F;sys&#x2F;vm 123Inspiron-5548@ubuntu: &#x2F;proc&#x2F;sys&#x2F;vm# ls -al | grep drop--w------- 1 root root 0 2月   7 14:14 drop_cachesInspiron-5548@ubuntu: &#x2F;proc&#x2F;s">
+<meta property="og:type" content="article">
+<meta property="og:title" content="drop_caches  相关">
+<meta property="og:url" content="https://liulangrenaaa.github.io/2021/02/01/filesystem/drop_caches%20%20%E7%9B%B8%E5%85%B3/">
+<meta property="og:site_name" content="liulangren Blog">
+<meta property="og:description" content="proc文件系统drop_caches 文件位于系统 &#x2F;proc&#x2F;sys&#x2F;vm 123Inspiron-5548@ubuntu: &#x2F;proc&#x2F;sys&#x2F;vm# ls -al | grep drop--w------- 1 root root 0 2月   7 14:14 drop_cachesInspiron-5548@ubuntu: &#x2F;proc&#x2F;s">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://liulangrenaaa.github.io/images/icons/image.png">
+<meta property="article:published_time" content="2021-02-01T19:00:40.000Z">
+<meta property="article:modified_time" content="2026-05-14T03:56:22.501Z">
+<meta property="article:author" content="Su Hui">
+<meta property="article:tag" content="drop_caches">
+<meta property="article:tag" content="cache">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://liulangrenaaa.github.io/images/icons/image.png">
+  
+  
+  
+  <meta name="keywords" content="drop_caches,cache">
+
+  <!-- feed -->
+  
+
+  <link rel="stylesheet" href="/css/main.css?v=1.33.1">
+
+
+  
+    <link rel="shortcut icon" href="/images/icons/image.png">
+  
+
+  
+
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"Su Hui","sameAs":[],"image":"/images/icons/image.png"},"dateCreated":"2021-02-01T19:00:40+00:00","dateModified":"2026-05-14T03:56:22+00:00","datePublished":"2021-02-01T19:00:40+00:00","description":"","headline":"drop_caches  相关","mainEntityOfPage":{"@type":"WebPage","@id":"https://liulangrenaaa.github.io/2021/02/01/filesystem/drop_caches%20%20%E7%9B%B8%E5%85%B3/"},"publisher":{"@type":"Organization","name":"Su Hui","sameAs":[],"image":"/images/icons/image.png","logo":{"@type":"ImageObject","url":"/images/icons/image.png"}},"url":"https://liulangrenaaa.github.io/2021/02/01/filesystem/drop_caches%20%20%E7%9B%B8%E5%85%B3/","keywords":"drop_caches, cache","image":[]}</script>
+  
+</head>
+<body>
+
+<div class="l_body content" id="start" layout="post" type="tech" ><aside class="l_left"><div class="sidebg"></div><div class="leftbar-container">
+
+
+<header class="header"><div class="logo-wrap"><a class="avatar" href="/about/"><div class="bg" style="opacity:0;background-image:url(https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/avatar/round/rainbow64@3x.webp);"></div><img no-lazy class="avatar" src="/images/icons/image.png" onerror="javascript:this.classList.add('error');this.src='https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/image/2659360.svg';"></a><a class="title" href="/"><div class="main">liulangren Blog</div></a></div></header>
+
+<div class="nav-area">
+
+<nav class="menu dis-select"></nav>
+</div>
+<div class="widgets">
+<div class="search-wrapper" id="search-wrapper"><form class="search-form"><a class="search-button" onclick="document.getElementById(&quot;search-input&quot;).focus();"><svg t="1705074644177" viewBox="0 0 1025 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="1560" width="200" height="200"><path d="M1008.839137 935.96571L792.364903 719.491476a56.783488 56.783488 0 0 0-80.152866 0 358.53545 358.53545 0 1 1 100.857314-335.166073 362.840335 362.840335 0 0 1-3.689902 170.145468 51.248635 51.248635 0 1 0 99.217358 26.444296 462.057693 462.057693 0 1 0-158.255785 242.303546l185.930047 185.725053a51.248635 51.248635 0 0 0 72.568068 0 51.248635 51.248635 0 0 0 0-72.978056z" p-id="1561"></path><path d="M616.479587 615.969233a50.428657 50.428657 0 0 0-61.498362-5.534852 174.655348 174.655348 0 0 1-177.525271 3.484907 49.403684 49.403684 0 0 0-58.833433 6.76482l-3.074918 2.869923a49.403684 49.403684 0 0 0 8.609771 78.10292 277.767601 277.767601 0 0 0 286.992355-5.739847 49.403684 49.403684 0 0 0 8.404776-76.667958z" p-id="1562"></path></svg></a><input type="text" class="search-input" id="search-input" placeholder="站内搜索"></form><div id="search-result"></div><div class="search-no-result">没有找到内容！</div></div>
+
+<widget class="widget-wrapper linklist"><div class="widget-header dis-select"><span class="name">核心专题</span></div><div class="widget-body fs14">
+<div class="linklist left" style="grid-template-columns:repeat(1,1fr);">
+<a class="link" title="framework基础" href="/categories/android/framework基础/"><div class="flex"><span>framework基础</span></div></a>
+<a class="link" title="app启动与生命周期" href="/categories/android/app启动与生命周期/"><div class="flex"><span>app启动与生命周期</span></div></a>
+<a class="link" title="wms窗口系统" href="/categories/android/wms窗口系统/"><div class="flex"><span>wms窗口系统</span></div></a>
+<a class="link" title="input输入系统" href="/categories/android/input输入系统/"><div class="flex"><span>input输入系统</span></div></a>
+<a class="link" title="binder与系统服务" href="/categories/android/binder与系统服务/"><div class="flex"><span>binder与系统服务</span></div></a>
+<a class="link" title="graphics图形系统" href="/categories/android/graphics图形系统/"><div class="flex"><span>graphics图形系统</span></div></a>
+<a class="link" title="anr-crash稳定性" href="/categories/android/anr-crash稳定性/"><div class="flex"><span>anr-crash稳定性</span></div></a>
+<a class="link" title="debug-trace工具链" href="/categories/android/debug-trace工具链/"><div class="flex"><span>debug-trace工具链</span></div></a>
+<a class="link" title="性能稳定性" href="/tags/性能稳定性/"><div class="flex"><span>性能稳定性</span></div></a>
+<a class="link" title="Linux 调度" href="/categories/linux-kernel/linux-schedule/"><div class="flex"><span>Linux 调度</span></div></a></div></div></widget>
+
+<widget class="widget-wrapper linklist"><div class="widget-header dis-select"><span class="name">精选文章</span></div><div class="widget-body fs14">
+<div class="linklist left" style="grid-template-columns:repeat(1,1fr);">
+<a class="link" title="ANR问题总结" href="/2022/07/01/android/anr-crash稳定性/ANR问题总结/"><div class="flex"><span>ANR问题总结</span></div></a>
+<a class="link" title="android12 gdb64调试进程" href="/2021/09/23/用户空间/android12%20gdb64调试进程/"><div class="flex"><span>android12 gdb64调试进程</span></div></a>
+<a class="link" title="60s定位内核性能瓶颈" href="/2020/09/13/内核观测/性能稳定性/60s定位内核性能瓶颈/"><div class="flex"><span>60s定位内核性能瓶颈</span></div></a>
+<a class="link" title="关于preempt_count的思考" href="/2020/09/21/进程管理/关于preempt_count的思考/"><div class="flex"><span>关于preempt_count的思考</span></div></a></div></div></widget>
+</div>
+
+</div></aside><div class="l_main" id="main">
+
+
+
+
+
+<div class="article banner top">
+  <div class="content">
+    <div class="top bread-nav footnote"><div class="left"><div class="flex-row" id="breadcrumb"><a class="cap breadcrumb" href="/">主页</a>
+<span class="sep"></span><a class="cap breadcrumb" href="/">文章</a><span class="sep"></span><a class="cap breadcrumb-link" href="/categories/linux%E5%86%85%E6%A0%B8/">linux内核</a></div>
+<div class="flex-row" id="post-meta"><span class="text created">发布于：<time datetime="2021-02-01T19:00:40.000Z">2021-02-01</time></span><span class="sep updated"></span><span class="text updated">更新于：<time datetime="2026-05-14T03:56:22.501Z">2026-05-14</time></span></div></div></div>
+    
+    <div class="bottom only-title">
+      
+      <div class="text-area">
+        <h1 class="text title"><span>drop_caches  相关</span></h1>
+        
+      </div>
+    </div>
+    
+  </div>
+  </div><article class="md-text content"><h2 id="proc文件系统"><a href="#proc文件系统" class="headerlink" title="proc文件系统"></a>proc文件系统</h2><p><code>drop_caches</code> 文件位于系统 <code>/proc/sys/vm</code></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">Inspiron-5548@ubuntu: &#x2F;proc&#x2F;sys&#x2F;vm# ls -al | grep drop</span><br><span class="line">--w------- 1 root root 0 2月   7 14:14 drop_caches</span><br><span class="line">Inspiron-5548@ubuntu: &#x2F;proc&#x2F;sys&#x2F;vm#</span><br></pre></td></tr></table></figure>
+
+<p>可以写入<code>1</code>:drop page cache <code>2</code>: drop slab <code>3</code>: drop page cache and slab 等值</p>
+<h2 id="代码分析"><a href="#代码分析" class="headerlink" title="代码分析"></a>代码分析</h2><p>相关代码主要在 <code>fs/drop_caches.c</code> 目录下</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">int drop_caches_sysctl_handler(struct ctl_table *table, int write,</span><br><span class="line">		void *buffer, size_t *length, loff_t *ppos)</span><br><span class="line">&#123;</span><br><span class="line">    ......</span><br><span class="line">		if (sysctl_drop_caches &amp; 1) &#123;</span><br><span class="line">			iterate_supers(drop_pagecache_sb, NULL);</span><br><span class="line">			count_vm_event(DROP_PAGECACHE);</span><br><span class="line">		&#125;</span><br><span class="line">		if (sysctl_drop_caches &amp; 2) &#123;</span><br><span class="line">			drop_slab();</span><br><span class="line">			count_vm_event(DROP_SLAB);</span><br><span class="line">		&#125;</span><br><span class="line">    ......</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>可以看到：<br>如果写入的值 <code>bit1</code> 是1，就会回收<code>page cache</code>，如果写入的值 <code>bit2</code> 是1，就会回收<code>slab</code>。</p>
+<h3 id="pagecache-回收"><a href="#pagecache-回收" class="headerlink" title="pagecache 回收"></a>pagecache 回收</h3><p>简化一些定义 lock操作，如下：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line">static void drop_pagecache_sb(struct super_block *sb, void *unused)</span><br><span class="line">&#123;</span><br><span class="line">    ......</span><br><span class="line">	list_for_each_entry(inode, &amp;sb-&gt;s_inodes, i_sb_list) &#123;</span><br><span class="line">		__iget(inode);</span><br><span class="line">		invalidate_mapping_pages(inode-&gt;i_mapping, 0, -1);</span><br><span class="line">		cond_resched();</span><br><span class="line">	&#125;</span><br><span class="line">	iput(toput_inode);</span><br><span class="line">    ......</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">void iterate_supers(void (*f)(struct super_block *, void *), void *arg)</span><br><span class="line">&#123;</span><br><span class="line">    ......</span><br><span class="line">	list_for_each_entry(sb, &amp;super_blocks, s_list) &#123;</span><br><span class="line">		sb-&gt;s_count++;</span><br><span class="line">		down_read(&amp;sb-&gt;s_umount);</span><br><span class="line">		if (sb-&gt;s_root &amp;&amp; (sb-&gt;s_flags &amp; SB_BORN))</span><br><span class="line">			f(sb, arg);</span><br><span class="line">		up_read(&amp;sb-&gt;s_umount);</span><br><span class="line">	&#125;</span><br><span class="line">    ......</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>首先遍历<code>super_blocks</code>，然后 遍历<code>sb-&gt;s_inodes</code>，实际的回收 <code>pagecache</code>是针对于 <code>inode-&gt;i_mappings</code>的，对应代码就是 <code>invalidate_mapping_pages(inode-&gt;i_mapping, 0, -1);</code>。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br></pre></td><td class="code"><pre><span class="line">int remove_mapping(struct address_space *mapping, struct page *page)</span><br><span class="line">&#123;</span><br><span class="line">	if (__remove_mapping(mapping, page, false, NULL)) &#123;</span><br><span class="line">		&#x2F;*</span><br><span class="line">		 * Unfreezing the refcount with 1 rather than 2 effectively</span><br><span class="line">		 * drops the pagecache ref for us without requiring another</span><br><span class="line">		 * atomic operation.</span><br><span class="line">		 *&#x2F;</span><br><span class="line">		page_ref_unfreeze(page, 1);</span><br><span class="line">		return 1;</span><br><span class="line">	&#125;</span><br><span class="line">	return 0;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">static int</span><br><span class="line">invalidate_complete_page(struct address_space *mapping, struct page *page)</span><br><span class="line">&#123;</span><br><span class="line">	int ret;</span><br><span class="line"></span><br><span class="line">	if (page-&gt;mapping !&#x3D; mapping)</span><br><span class="line">		return 0;</span><br><span class="line"></span><br><span class="line">	if (page_has_private(page) &amp;&amp; !try_to_release_page(page, 0))</span><br><span class="line">		return 0;</span><br><span class="line"></span><br><span class="line">	ret &#x3D; remove_mapping(mapping, page);</span><br><span class="line"></span><br><span class="line">	return ret;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">int invalidate_inode_page(struct page *page)</span><br><span class="line">&#123;</span><br><span class="line">	struct address_space *mapping &#x3D; page_mapping(page);</span><br><span class="line">	if (!mapping)</span><br><span class="line">		return 0;</span><br><span class="line">	if (PageDirty(page) || PageWriteback(page))</span><br><span class="line">		return 0;</span><br><span class="line">	if (page_mapped(page))</span><br><span class="line">		return 0;</span><br><span class="line">	return invalidate_complete_page(mapping, page);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">static unsigned long __invalidate_mapping_pages(struct address_space *mapping,</span><br><span class="line">		pgoff_t start, pgoff_t end, unsigned long *nr_pagevec)</span><br><span class="line">&#123;</span><br><span class="line">	while (index &lt;&#x3D; end &amp;&amp; pagevec_lookup_entries(&amp;pvec, mapping, index,</span><br><span class="line">			min(end - index, (pgoff_t)PAGEVEC_SIZE - 1) + 1,</span><br><span class="line">			indices)) &#123;</span><br><span class="line">		for (i &#x3D; 0; i &lt; pagevec_count(&amp;pvec); i++) &#123;</span><br><span class="line">			struct page *page &#x3D; pvec.pages[i];</span><br><span class="line"></span><br><span class="line">			&#x2F;* We rely upon deletion not changing page-&gt;index *&#x2F;</span><br><span class="line">			index &#x3D; indices[i];</span><br><span class="line">			ret &#x3D; invalidate_inode_page(page);</span><br><span class="line">			unlock_page(page);</span><br><span class="line">			&#x2F;*</span><br><span class="line">			 * Invalidation is a hint that the page is no longer</span><br><span class="line">			 * of interest and try to speed up its reclaim.</span><br><span class="line">			 *&#x2F;</span><br><span class="line">			if (!ret) &#123;</span><br><span class="line">				deactivate_file_page(page);</span><br><span class="line">				&#x2F;* It is likely on the pagevec of a remote CPU *&#x2F;</span><br><span class="line">				if (nr_pagevec)</span><br><span class="line">					(*nr_pagevec)++;</span><br><span class="line">			&#125;</span><br><span class="line">			count +&#x3D; ret;</span><br><span class="line">		&#125;</span><br><span class="line">		pagevec_remove_exceptionals(&amp;pvec);</span><br><span class="line">		pagevec_release(&amp;pvec);</span><br><span class="line"></span><br><span class="line">		index++;</span><br><span class="line">	&#125;</span><br><span class="line">	return count;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">&#x2F;**</span><br><span class="line"> * invalidate_mapping_pages - Invalidate all the unlocked pages of one inode</span><br><span class="line"> * @mapping: the address_space which holds the pages to invalidate</span><br><span class="line"> * @start: the offset &#39;from&#39; which to invalidate</span><br><span class="line"> * @end: the offset &#39;to&#39; which to invalidate (inclusive)</span><br><span class="line"> *</span><br><span class="line"> * This function only removes the unlocked pages, if you want to</span><br><span class="line"> * remove all the pages of one inode, you must call truncate_inode_pages.</span><br><span class="line"> *</span><br><span class="line"> * invalidate_mapping_pages() will not block on IO activity. It will not</span><br><span class="line"> * invalidate pages which are dirty, locked, under writeback or mapped into</span><br><span class="line"> * pagetables.</span><br><span class="line"> *</span><br><span class="line"> * Return: the number of the pages that were invalidated</span><br><span class="line"> *&#x2F;</span><br><span class="line">unsigned long invalidate_mapping_pages(struct address_space *mapping,</span><br><span class="line">		pgoff_t start, pgoff_t end)</span><br><span class="line">&#123;</span><br><span class="line">	return __invalidate_mapping_pages(mapping, start, end, NULL);</span><br><span class="line">&#125;</span><br><span class="line">EXPORT_SYMBOL(invalidate_mapping_pages);</span><br></pre></td></tr></table></figure>
+
+<p><code>invalidate_mapping_pages</code> 会尝试 将这个<code>inode</code>对应的<code>pagecache</code>invaild掉（就像注释里面写的，除去<code>dirty</code> <code>locked</code> <code>writeback</code>的 page）。</p>
+<p>所以 <code>drop cache</code> 不会将脏页给drop掉，要想 drop掉脏页，需要先<code>sync()</code>一下。</p>
+<h3 id="slab-回收"><a href="#slab-回收" class="headerlink" title="slab 回收"></a>slab 回收</h3><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br></pre></td><td class="code"><pre><span class="line">static unsigned long shrink_slab(gfp_t gfp_mask, int nid,</span><br><span class="line">				 struct mem_cgroup *memcg,</span><br><span class="line">				 int priority)</span><br><span class="line">&#123;</span><br><span class="line">	unsigned long ret, freed &#x3D; 0;</span><br><span class="line">	struct shrinker *shrinker;</span><br><span class="line"></span><br><span class="line">	if (!down_read_trylock(&amp;shrinker_rwsem))</span><br><span class="line">		goto out;</span><br><span class="line"></span><br><span class="line">	list_for_each_entry(shrinker, &amp;shrinker_list, list) &#123;</span><br><span class="line">		struct shrink_control sc &#x3D; &#123;</span><br><span class="line">			.gfp_mask &#x3D; gfp_mask,</span><br><span class="line">			.nid &#x3D; nid,</span><br><span class="line">			.memcg &#x3D; memcg,</span><br><span class="line">		&#125;;</span><br><span class="line"></span><br><span class="line">		ret &#x3D; do_shrink_slab(&amp;sc, shrinker, priority);</span><br><span class="line">		if (ret &#x3D;&#x3D; SHRINK_EMPTY)</span><br><span class="line">			ret &#x3D; 0;</span><br><span class="line">		freed +&#x3D; ret;</span><br><span class="line">		&#x2F;*</span><br><span class="line">		 * Bail out if someone want to register a new shrinker to</span><br><span class="line">		 * prevent the registration from being stalled for long periods</span><br><span class="line">		 * by parallel ongoing shrinking.</span><br><span class="line">		 *&#x2F;</span><br><span class="line">		if (rwsem_is_contended(&amp;shrinker_rwsem)) &#123;</span><br><span class="line">			freed &#x3D; freed ? : 1;</span><br><span class="line">			break;</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	up_read(&amp;shrinker_rwsem);</span><br><span class="line">out:</span><br><span class="line">	cond_resched();</span><br><span class="line">	return freed;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">void drop_slab_node(int nid)</span><br><span class="line">&#123;</span><br><span class="line">	unsigned long freed;</span><br><span class="line"></span><br><span class="line">	do &#123;</span><br><span class="line">		struct mem_cgroup *memcg &#x3D; NULL;</span><br><span class="line">		freed &#x3D; 0;</span><br><span class="line">		memcg &#x3D; mem_cgroup_iter(NULL, NULL, NULL);</span><br><span class="line">		do &#123;</span><br><span class="line">			freed +&#x3D; shrink_slab(GFP_KERNEL, nid, memcg, 0);</span><br><span class="line">		&#125; while ((memcg &#x3D; mem_cgroup_iter(NULL, memcg, NULL)) !&#x3D; NULL);</span><br><span class="line">	&#125; while (freed &gt; 10);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">void drop_slab(void)</span><br><span class="line">&#123;</span><br><span class="line">	int nid;</span><br><span class="line"></span><br><span class="line">	for_each_online_node(nid)</span><br><span class="line">		drop_slab_node(nid);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+<p><code>drop_slab</code> 过程首先会遍历 <code>online_node</code>，对该 <code>node</code>进行 <code>drop_slab_node</code>。</p>
+<p>在<code>drop_slab_node</code> 中，会遍历 <code>memcg</code>进行<code>shrink_slab</code>，退出条件是，这一次回收的 <code>slab objects</code> 小于10.</p>
+<p>在 <code>shrink_slab</code> 中，会遍历注册的 <code>shrinker</code>，使用<code>do_shrink_slab</code> 对每个<code>shrinker</code> 进行slab内存回收。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line">static unsigned long do_shrink_slab(struct shrink_control *shrinkctl,</span><br><span class="line">				    struct shrinker *shrinker, int priority)</span><br><span class="line">&#123;</span><br><span class="line">	trace_mm_shrink_slab_start(shrinker, shrinkctl, nr,</span><br><span class="line">				   freeable, delta, total_scan, priority);</span><br><span class="line"></span><br><span class="line">	while (total_scan &gt;&#x3D; batch_size ||</span><br><span class="line">	       total_scan &gt;&#x3D; freeable) &#123;</span><br><span class="line">		unsigned long ret;</span><br><span class="line">		unsigned long nr_to_scan &#x3D; min(batch_size, total_scan);</span><br><span class="line"></span><br><span class="line">		shrinkctl-&gt;nr_to_scan &#x3D; nr_to_scan;</span><br><span class="line">		shrinkctl-&gt;nr_scanned &#x3D; nr_to_scan;</span><br><span class="line">		ret &#x3D; shrinker-&gt;scan_objects(shrinker, shrinkctl);</span><br><span class="line">		if (ret &#x3D;&#x3D; SHRINK_STOP)</span><br><span class="line">			break;</span><br><span class="line">		freed +&#x3D; ret;</span><br><span class="line"></span><br><span class="line">		count_vm_events(SLABS_SCANNED, shrinkctl-&gt;nr_scanned);</span><br><span class="line">		total_scan -&#x3D; shrinkctl-&gt;nr_scanned;</span><br><span class="line">		scanned +&#x3D; shrinkctl-&gt;nr_scanned;</span><br><span class="line"></span><br><span class="line">		cond_resched();</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	trace_mm_shrink_slab_end(shrinker, nid, freed, nr, new_nr, total_scan);</span><br><span class="line">	return freed;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>在 <code>do_shrink_slab</code> 中，有两个 <code>tracepoint</code>点，分别是 start end，可以用来追踪相关事件，<br>实际回收的函数是 <code>shrinker-&gt;scan_objects(shrinker, shrinkctl);</code></p>
+<p>不同的<code>slab</code>，会注册不同的 <code>shrinker</code>.<br>example:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">int ext4_es_register_shrinker(struct ext4_sb_info *sbi)</span><br><span class="line">&#123;</span><br><span class="line">	sbi-&gt;s_es_shrinker.scan_objects &#x3D; ext4_es_scan;</span><br><span class="line">	sbi-&gt;s_es_shrinker.count_objects &#x3D; ext4_es_count;</span><br><span class="line">	sbi-&gt;s_es_shrinker.seeks &#x3D; DEFAULT_SEEKS;</span><br><span class="line">	err &#x3D; register_shrinker(&amp;sbi-&gt;s_es_shrinker);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">static int __init hugepage_init(void)</span><br><span class="line">&#123;</span><br><span class="line">	err &#x3D; register_shrinker(&amp;huge_zero_page_shrinker);</span><br><span class="line">	if (err)</span><br><span class="line">		goto err_hzp_shrinker;</span><br><span class="line">	err &#x3D; register_shrinker(&amp;deferred_split_shrinker);</span><br><span class="line">	if (err)</span><br><span class="line">		goto err_split_shrinker;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>实际上 <code>shrink_slab</code> 不仅仅在 <code>drop_slab_node</code> 中使用，在 内存回收的时候，也会通过<code>shrink_node_memcgs</code> 调用到</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">static void shrink_node_memcgs(pg_data_t *pgdat, struct scan_control *sc)</span><br><span class="line">&#123;</span><br><span class="line">    ......</span><br><span class="line">		shrink_lruvec(lruvec, sc);</span><br><span class="line">		shrink_slab(sc-&gt;gfp_mask, pgdat-&gt;node_id, memcg,</span><br><span class="line">			    sc-&gt;priority);</span><br><span class="line">    ......</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">static void shrink_node(pg_data_t *pgdat, struct scan_control *sc)</span><br><span class="line">&#123;</span><br><span class="line">    shrink_node_memcgs(pgdat, sc);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+<p>来trace一下看看</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: ~&#x2F;workspace&#x2F;tmp# sudo bpftrace -e &#39;tracepoint:vmscan:mm_shrink_slab_start &#123;printf(&quot;[pid-%d:%s]: trace_mm_shrink_slab_start start\n&quot;, pid,comm)&#125;&#39;</span><br><span class="line">Attaching 1 probe...</span><br><span class="line">[pid-1747572:zsh]: trace_mm_shrink_slab_start start</span><br><span class="line">[pid-1747572:zsh]: trace_mm_shrink_slab_start start</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">tencent_clould@ubuntu: ~&#x2F;workspace&#x2F;tmp# sudo bpftrace -e &#39;tracepoint:vmscan:mm_shrink_slab_end &#123;printf(&quot;[pid-%d:%s]: trace_mm_shrink_slab_end total_scan &#x3D; %d\n&quot;, pid,comm, args-&gt;total_scan)&#125;&#39;</span><br><span class="line">Attaching 1 probe...</span><br><span class="line">[pid-1747572:zsh]: trace_mm_shrink_slab_end total_scan &#x3D; 0</span><br><span class="line">[pid-1747572:zsh]: trace_mm_shrink_slab_end total_scan &#x3D; 0</span><br><span class="line">[pid-1747572:zsh]: trace_mm_shrink_slab_end total_scan &#x3D; 57</span><br><span class="line">[pid-1747572:zsh]: trace_mm_shrink_slab_end total_scan &#x3D; 0</span><br><span class="line">[pid-1747572:zsh]: trace_mm_shrink_slab_end total_scan &#x3D; 1</span><br></pre></td></tr></table></figure>
+
+
+
+
+
+<p>代码定义大多来自于<code>Linux 5.10</code></p>
+</article>
+<div class="article-footer">
+    <section id="license">
+      <div class="header"><span>许可协议</span></div>
+      <div class="body"><p>本文采用 <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">署名-非商业性使用-相同方式共享 4.0 国际</a> 许可协议，转载请注明出处。</p>
+</div>
+    </section>
+    
+
+</div>
+
+<div class="related-wrap" id="read-next"><section class="body"><div class="item" id="prev"><div class="note">较新文章</div><a href="/2021/02/04/%E6%B5%8B%E8%AF%95/%E6%90%AD%E5%BB%BAf2fs%E6%B5%8B%E8%AF%95%E7%8E%AF%E5%A2%83/">搭建f2fs测试环境</a></div><div class="item" id="next"><div class="note">较早文章</div><a href="/2021/02/01/filesystem/sync%20%E7%9B%B8%E5%85%B3/">sync  相关</a></div></section></div>
+
+
+
+
+
+
+<footer class="page-footer footnote"><hr><div class="text"><p>本站由 <a href="/">Su Hui</a> 使用 <a target="_blank" rel="noopener" href="https://github.com/xaoxuu/hexo-theme-stellar/tree/1.33.1">Stellar 1.33.1</a> 主题创建。<br>本博客所有文章除特别声明外，均采用 <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> 许可协议，转载请注明出处。</p>
+</div></footer>
+<div class="main-mask" onclick="sidebar.dismiss()"></div></div><aside class="l_right">
+<div class="widgets">
+
+
+
+<widget class="widget-wrapper toc" id="data-toc" collapse="false"><div class="widget-header dis-select"><span class="name">本文目录</span><a class="cap-action" onclick="sidebar.toggleTOC()" ><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h11m-11 6h11m-11 6h11M4 6h1v4m-1 0h2m0 8H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg></a></div><div class="widget-body"><ol class="toc"><li class="toc-item toc-level-2"><a class="toc-link" href="#proc%E6%96%87%E4%BB%B6%E7%B3%BB%E7%BB%9F"><span class="toc-text">proc文件系统</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%BB%A3%E7%A0%81%E5%88%86%E6%9E%90"><span class="toc-text">代码分析</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#pagecache-%E5%9B%9E%E6%94%B6"><span class="toc-text">pagecache 回收</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#slab-%E5%9B%9E%E6%94%B6"><span class="toc-text">slab 回收</span></a></li></ol></li></ol></div><div class="widget-footer"><a class="top" onclick="util.scrollTop()"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><!-- Icon from Solar by 480 Design - https://creativecommons.org/licenses/by/4.0/ --><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><path stroke-linejoin="round" d="m9 15.5l3-3l3 3m-6-4l3-3l3 3"/><path d="M7 3.338A9.95 9.95 0 0 1 12 2c5.523 0 10 4.477 10 10s-4.477 10-10 10S2 17.523 2 12c0-1.821.487-3.53 1.338-5"/></g></svg><span>回到顶部</span></a></div></widget>
+</div></aside><div class='float-panel'>
+  <button type='button' style='display:none' class='laptop-only rightbar-toggle mobile' onclick='sidebar.rightbar()'>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h11m-11 6h11m-11 6h11M4 6h1v4m-1 0h2m0 8H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>
+  </button>
+  <button type='button' style='display:none' class='mobile-only leftbar-toggle mobile' onclick='sidebar.leftbar()'>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 11c0-3.771 0-5.657 1.172-6.828C4.343 3 6.229 3 10 3h4c3.771 0 5.657 0 6.828 1.172C22 5.343 22 7.229 22 11v2c0 3.771 0 5.657-1.172 6.828C19.657 21 17.771 21 14 21h-4c-3.771 0-5.657 0-6.828-1.172C2 18.657 2 16.771 2 13z"/><path id="sep" stroke-linecap="round" d="M5.5 10h6m-5 4h4m4.5 7V3"/></g></svg>
+  </button>
+</div>
+</div><div class="scripts">
+
+
+<script type="text/javascript">
+  window.canonical = {"originalHost":null,"officialHosts":["localhost"],"encoded":""};
+  const ctx = {
+    date_suffix: {
+      just: `刚刚`,
+      min: `分钟前`,
+      hour: `小时前`,
+      day: `天前`,
+    },
+    root : `/`,
+    tag_plugins: {
+      chat: Object.assign({"api":"https://siteinfo.listentothewind.cn/api/v1"}),
+    }
+  };
+
+  // required plugins (only load if needs)
+  if (`local_search`) {
+    ctx.search = {};
+    ctx.search.service = `local_search`;
+    if (ctx.search.service == 'local_search') {
+      let service_obj = Object.assign({}, `{"field":"all","path":"/search.json","content":true,"skip_search":null,"sort":"-date"}`);
+      ctx.search[ctx.search.service] = service_obj;
+    }
+  }
+  const def = {
+    avatar: `https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/avatar/round/3442075.svg`,
+    cover: `https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/cover/76b86c0226ffd.svg`,
+    loading: `https://api.iconify.design/eos-icons:three-dots-loading.svg?color=%231cd0fd`,
+  };
+  const deps = {
+    jquery: `https://gcore.jsdelivr.net/npm/jquery@3.7/dist/jquery.min.js`,
+    marked: `https://gcore.jsdelivr.net/npm/marked@13.0/lib/marked.umd.min.js`,
+    lazyload: `/%5Bobject%20Object%5D`
+  }
+  
+
+</script>
+
+<script type="text/javascript">
+  
+  function RunItem() {
+    this.list = []; // 存放回调函数
+    this.start = () => {
+      for (var i = 0; i < this.list.length; i++) {
+        this.list[i].run();
+      }
+    };
+    this.push = (fn, name, setRequestAnimationFrame = true) => {
+      let myfn = fn
+      if (setRequestAnimationFrame) {
+        myfn = () => {
+          utils.requestAnimationFrame(fn)
+        }
+      }
+      var f = new Item(myfn, name);
+      this.list.push(f);
+    };
+    this.remove = (name) => {
+      for (let index = 0; index < this.list.length; index++) {
+        const e = this.list[index];
+        if (e.name == name) {
+          this.list.splice(index, 1);
+        }
+      }
+    }
+    // 构造一个可以run的对象
+    function Item(fn, name) {
+      // 函数名称
+      this.name = name || fn.name;
+      // run方法
+      this.run = () => {
+        try {
+          fn()
+        } catch (error) {
+          console.log(error);
+        }
+      };
+    }
+  }
+
+  const utils = {
+    // 懒加载 css https://github.com/filamentgroup/loadCSS
+    css: (href, before, media, attributes) => {
+      var doc = window.document;
+      var ss = doc.createElement("link");
+      var ref;
+      if (before) {
+        ref = before;
+      } else {
+        var refs = (doc.body || doc.getElementsByTagName("head")[0]).childNodes;
+        ref = refs[refs.length - 1];
+      }
+      var sheets = doc.styleSheets;
+      if (attributes) {
+        for (var attributeName in attributes) {
+          if (attributes.hasOwnProperty(attributeName)) {
+            ss.setAttribute(attributeName, attributes[attributeName]);
+          }
+        }
+      }
+      ss.rel = "stylesheet";
+      ss.href = href;
+      ss.media = "only x";
+      function ready(cb) {
+        if (doc.body) {
+          return cb();
+        }
+        setTimeout(function () {
+          ready(cb);
+        });
+      }
+      ready(function () {
+        ref.parentNode.insertBefore(ss, before ? ref : ref.nextSibling);
+      });
+      var onloadcssdefined = function (cb) {
+        var resolvedHref = ss.href;
+        var i = sheets.length;
+        while (i--) {
+          if (sheets[i].href === resolvedHref) {
+            return cb();
+          }
+        }
+        setTimeout(function () {
+          onloadcssdefined(cb);
+        });
+      };
+      function loadCB() {
+        if (ss.addEventListener) {
+          ss.removeEventListener("load", loadCB);
+        }
+        ss.media = media || "all";
+      }
+      if (ss.addEventListener) {
+        ss.addEventListener("load", loadCB);
+      }
+      ss.onloadcssdefined = onloadcssdefined;
+      onloadcssdefined(loadCB);
+      return ss;
+    },
+
+    js: (src, opt) => new Promise((resolve, reject) => {
+      var script = document.createElement('script');
+      if (src.startsWith('/')) {
+        src = ctx.root + src.substring(1);
+      }
+      script.src = src;
+      if (opt) {
+        for (let key of Object.keys(opt)) {
+          script[key] = opt[key]
+        }
+      } else {
+        // 默认异步，如果需要同步，第二个参数传入 {} 即可
+        script.async = true
+      }
+      script.onerror = reject
+      script.onload = script.onreadystatechange = function () {
+        const loadState = this.readyState
+        if (loadState && loadState !== 'loaded' && loadState !== 'complete') return
+        script.onload = script.onreadystatechange = null
+        resolve()
+      }
+      document.head.appendChild(script)
+    }),
+
+    jq: (fn) => {
+      if (typeof jQuery === 'undefined') {
+        utils.js(deps.jquery).then(fn)
+      } else {
+        fn()
+      }
+    },
+
+    onLoading: (el) => {
+      if (el) {
+        $(el).append('<div class="loading-wrap"><svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" stroke-opacity=".3" d="M12 3C16.9706 3 21 7.02944 21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="1.3s" values="60;0"/></path><path stroke-dasharray="15" stroke-dashoffset="15" d="M12 3C16.9706 3 21 7.02944 21 12"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.3s" values="15;0"/><animateTransform attributeName="transform" dur="1.5s" repeatCount="indefinite" type="rotate" values="0 12 12;360 12 12"/></path></g></svg></div>');
+      }
+    },
+    onLoadSuccess: (el) => {
+      if (el) {
+        $(el).find('.loading-wrap').remove();
+      }
+    },
+    onLoadFailure: (el) => {
+      if (el) {
+        $(el).find('.loading-wrap svg').remove();
+        $(el).find('.loading-wrap').append('<svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" d="M12 3L21 20H3L12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.5s" values="60;0"/></path><path stroke-dasharray="6" stroke-dashoffset="6" d="M12 10V14"><animate fill="freeze" attributeName="stroke-dashoffset" begin="0.6s" dur="0.2s" values="6;0"/></path></g><circle cx="12" cy="17" r="1" fill="currentColor" fill-opacity="0"><animate fill="freeze" attributeName="fill-opacity" begin="0.8s" dur="0.4s" values="0;1"/></circle></svg>');
+        $(el).find('.loading-wrap').addClass('error');
+      }
+    },
+    request: (el, url, callback, onFailure) => {
+      const maxRetry = 3;
+      let retryCount = 0;
+
+      return new Promise((resolve, reject) => {
+        const load = () => {
+          utils.onLoading?.(el);
+
+          let timedOut = false;
+          const timeout = setTimeout(() => {
+            timedOut = true;
+            console.warn('[request] 超时:', url);
+
+            if (++retryCount >= maxRetry) {
+              utils.onLoadFailure?.(el);
+              onFailure?.();
+              reject('请求超时');
+            } else {
+              setTimeout(load, 1000);
+            }
+          }, 5000);
+
+          fetch(url).then(resp => {
+            if (timedOut) return;
+            clearTimeout(timeout);
+
+            if (!resp.ok) throw new Error('响应失败');
+            return resp;
+          }).then(data => {
+            if (timedOut) return;
+            utils.onLoadSuccess?.(el);
+            callback(data);
+            resolve(data);
+          }).catch(err => {
+            clearTimeout(timeout);
+            console.warn('[request] 错误:', err);
+
+            if (++retryCount >= maxRetry) {
+              utils.onLoadFailure?.(el);
+              onFailure?.();
+              reject(err);
+            } else {
+              setTimeout(load, 1000);
+            }
+          });
+        };
+
+        load();
+      });
+    },
+    requestWithoutLoading: (url, options = {}, maxRetry = 2, timeout = 5000) => {
+      return new Promise((resolve, reject) => {
+        let retryCount = 0;
+
+        const tryRequest = () => {
+          let timedOut = false;
+          const timer = setTimeout(() => {
+            timedOut = true;
+            if (++retryCount > maxRetry) reject('timeout');
+            else tryRequest();
+          }, timeout);
+
+          fetch(url, options)
+            .then(resp => {
+              clearTimeout(timer);
+              if (!resp.ok) throw new Error('bad response');
+              resolve(resp);
+            })
+            .catch(err => {
+              clearTimeout(timer);
+              if (++retryCount > maxRetry) reject(err);
+              else setTimeout(tryRequest, 500);
+            });
+        };
+
+        tryRequest();
+      });
+    },
+    /********************** requestAnimationFrame ********************************/
+    // 1、requestAnimationFrame 会把每一帧中的所有 DOM 操作集中起来，在一次重绘或回流中就完成，并且重绘或回流的时间间隔紧紧跟随浏览器的刷新频率，一般来说，这个频率为每秒60帧。
+    // 2、在隐藏或不可见的元素中，requestAnimationFrame 将不会进行重绘或回流，这当然就意味着更少的的 cpu，gpu 和内存使用量。
+    requestAnimationFrame: (fn) => {
+      if (!window.requestAnimationFrame) {
+        window.requestAnimationFrame = window.requestAnimationFrame || window.mozRequestAnimationFrame || window.webkitRequestAnimationFrame;
+      }
+      window.requestAnimationFrame(fn)
+    },
+    dark: {},
+  };
+
+  // utils.dark.mode 当前模式 dark or light
+  // utils.dark.toggle() 暗黑模式触发器
+  // utils.dark.push(callBack[,"callBackName"]) 传入触发器回调函数
+  utils.dark.method = {
+    toggle: new RunItem(),
+  };
+  utils.dark = Object.assign(utils.dark, {
+    push: utils.dark.method.toggle.push,
+  });
+</script>
+<script>
+  const sidebar = {
+    leftbar: () => {
+      if (l_body) {
+        l_body.toggleAttribute('leftbar');
+        l_body.removeAttribute('rightbar');
+      }
+    },
+    rightbar: () => {
+      if (l_body) {
+        l_body.toggleAttribute('rightbar');
+        l_body.removeAttribute('leftbar');
+      }
+    },
+    dismiss: () => {
+      if (l_body) {
+        l_body.removeAttribute('leftbar');
+        l_body.removeAttribute('rightbar');
+      }
+    },
+    toggleTOC: () => {
+      document.querySelector('#data-toc').classList.toggle('collapse');
+    }
+  }
+</script>
+<script type="text/javascript">
+  (() => {
+    const tagSwitchers = document.querySelectorAll('.tag-subtree.parent-tag > a > .tag-switcher-wrapper')
+    for (const tagSwitcher of tagSwitchers) {
+      tagSwitcher.addEventListener('click', (e) => {
+        const parent = e.target.closest('.tag-subtree.parent-tag')
+        parent.classList.toggle('expanded')
+        e.preventDefault()
+      })
+    }
+
+    // Get active tag from query string, then activate it.
+    const urlParams = new URLSearchParams(window.location.search)
+    const activeTag = urlParams.get('tag')
+    if (activeTag) {
+      let tag = document.querySelector(`.tag-subtree[data-tag="${activeTag}"]`)
+      if (tag) {
+        tag.querySelector('a').classList.add('active')
+        
+        while (tag) {
+          tag.classList.add('expanded')
+          tag = tag.parentElement.closest('.tag-subtree.parent-tag')
+        }
+      }
+    }
+  })()
+</script>
+
+<script async src="https://gcore.jsdelivr.net/npm/vanilla-lazyload@19.1/dist/lazyload.min.js"></script>
+<script>
+  // https://www.npmjs.com/package/vanilla-lazyload
+  // Set the options globally
+  // to make LazyLoad self-initialize
+  window.lazyLoadOptions = {
+    elements_selector: ".lazy",
+    callback_loaded: (el) => {
+      el.classList.add('loaded');
+      const wrapper = el.closest('.lazy-box');
+      const icon = wrapper?.querySelector('.lazy-icon');
+      if (icon) icon.remove();
+    }
+  };
+  // Listen to the initialization event
+  // and get the instance of LazyLoad
+  window.addEventListener(
+    "LazyLoad::Initialized",
+    function (event) {
+      window.lazyLoadInstance = event.detail.instance;
+    },
+    false
+  );
+  document.addEventListener('DOMContentLoaded', function () {
+    window.lazyLoadInstance?.update();
+  });
+
+  window.wrapLazyloadImages = (container) => {
+    if (typeof container === 'string') {
+      container = document.querySelector(container);
+    }
+    if (!container) return;
+    
+    const images = container.querySelectorAll('img');
+    images.forEach((img) => {
+      if (img.classList.contains('lazy')) return;
+
+      const src = img.getAttribute('src');
+      if (!src) return;
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'lazy-box';
+
+      const newImg = img.cloneNode();
+      newImg.removeAttribute('src');
+      newImg.setAttribute('data-src', src);
+      newImg.classList.add('lazy');
+
+      const icon = document.createElement('div');
+      icon.className = 'lazy-icon';
+      if (def.loading) {
+        icon.style.backgroundImage = `url("${def.loading}")`;
+      }
+
+      wrapper.appendChild(newImg);
+      wrapper.appendChild(icon);
+
+      img.replaceWith(wrapper);
+    });
+
+    // 通知 LazyLoad 更新
+    if (window.lazyLoadInstance?.update) {
+      window.lazyLoadInstance.update();
+    }
+  }
+  
+</script>
+
+<!-- required -->
+<script src="/js/main.js?v=1.33.1" defer></script>
+
+<script type="text/javascript">
+  const applyTheme = (theme) => {
+    if (theme === 'auto') {
+      document.documentElement.removeAttribute('data-theme')
+    } else {
+      document.documentElement.setAttribute('data-theme', theme)
+    }
+
+    // applyThemeToGiscus(theme)
+  }
+
+  // FIXME: 这会导致无法使用 preferred_color_scheme 以外的主题
+  const applyThemeToGiscus = (theme) => {
+    // theme = theme === 'auto' ? 'preferred_color_scheme' : theme
+    const cmt = document.getElementById('giscus')
+    if (cmt) {
+      // This works before giscus load.
+      cmt.setAttribute('data-theme', theme)
+    }
+
+    const iframe = document.querySelector('#comments > section.giscus > iframe')
+    if (iframe) {
+      // This works after giscus loaded.
+      const src = iframe.src
+      const newSrc = src.replace(/theme=[\w]+/, `theme=${theme}`)
+      iframe.src = newSrc
+    }
+  }
+
+  const switchTheme = () => {
+    // light -> dark -> auto -> light -> ...
+    const currentTheme = document.documentElement.getAttribute('data-theme')
+    let newTheme;
+    switch (currentTheme) {
+      case 'light':
+        newTheme = 'dark'
+        break
+      case 'dark':
+        newTheme = 'auto'
+        break
+      default:
+        newTheme = 'light'
+    }
+    applyTheme(newTheme)
+    window.localStorage.setItem('Stellar.theme', newTheme)
+    utils.dark.mode = newTheme === 'auto' ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : newTheme;
+    utils.dark.method.toggle.start();
+
+    const messages = {
+      light: `切换到浅色模式`,
+      dark: `切换到深色模式`,
+      auto: `切换到跟随系统配色`,
+    }
+    hud?.toast?.(messages[newTheme])
+  }
+
+  (() => {
+    // Apply user's preferred theme, if any.
+    const theme = window.localStorage.getItem('Stellar.theme')
+    if (theme !== null) {
+      applyTheme(theme)
+    } else {
+      utils.dark.mode = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    utils.dark.method.toggle.start();
+  })()
+</script>
+
+
+<!-- optional -->
+
+
+
+<script defer>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    ctx.services = Object.assign({}, JSON.parse(`{"mdrender":{"js":"/js/services/mdrender.js"},"siteinfo":{"js":"/js/services/siteinfo.js","api":null},"ghinfo":{"js":"/js/services/ghinfo.js"},"rating":{"js":"/js/services/rating.js","api":"https://star-vote.xaox.cc/api/rating"},"vote":{"js":"/js/services/vote.js","api":"https://star-vote.xaox.cc/api/vote"},"sites":{"js":"/js/services/sites.js"},"friends":{"js":"/js/services/friends.js"},"friends_and_posts":{"js":"/js/services/friends_and_posts.js"},"timeline":{"js":"/js/services/timeline.js"},"fcircle":{"js":"/js/services/fcircle.js"},"weibo":{"js":"/js/services/weibo.js"},"memos":{"js":"/js/services/memos.js"},"voice":{"js":"/js/plugins/voice.js"},"video":{"js":"/js/plugins/video.js"},"download-file":{"js":"/js/plugins/download-file.js"},"twikoo":{"js":"/js/services/twikoo_latest_comment.js"},"waline":{"js":"/js/services/waline_latest_comment.js"},"artalk":{"js":"/js/services/artalk_latest_comment.js"},"giscus":{"js":"/js/services/giscus_latest_comment.js"},"contributors":{"edit_this_page":{"_posts/":null,"wiki/stellar/":"https://github.com/xaoxuu/hexo-theme-stellar-docs/blob/main/"},"js":"/js/services/contributors.js"}}`));
+    for (let id of Object.keys(ctx.services)) {
+      const js = ctx.services[id].js;
+      if (id == 'siteinfo') {
+        ctx.cardlinks = document.querySelectorAll('a.link-card[cardlink]');
+        if (ctx.cardlinks?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            setCardLink(ctx.cardlinks);
+          });
+        }
+      } else if (id == 'voice') {
+        ctx.voiceAudios = document.querySelectorAll('.voice>audio');
+        if (ctx.voiceAudios?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            createVoiceDom(ctx.voiceAudios);
+          });
+        }
+      } else if (id == 'video') {
+        ctx.videos = document.querySelectorAll('.video>video');
+        if (ctx.videos?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            videoEvents(ctx.videos);
+          });
+        }
+      } else if (id == 'download-file') {
+        ctx.files = document.querySelectorAll('.file');
+        if (ctx.files?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            downloadFileEvent(ctx.files);
+          });
+        }
+      } else {
+        const els = document.getElementsByClassName(`ds-${id}`);
+        if (els?.length > 0) {
+          utils.jq(() => {
+            if (id == 'timeline' || 'memos' || 'marked') {
+              utils.js(deps.marked).then(function () {
+                utils.js(js, { defer: true });
+              });
+            } else {
+              utils.js(js, { defer: true });
+            }
+          });
+        }
+      }
+    }
+
+    // chat iphone time
+    let phoneTimes = document.querySelectorAll('.chat .status-bar .time');
+
+    if (phoneTimes.length > 0) {
+      NowTime();
+      var date = new Date();
+      var sec = date.getSeconds();
+      var firstAdjustInterval = setInterval(firstAdjustTime, 1000 * (60 - sec));
+    }
+
+    function firstAdjustTime() {
+      NowTime();
+      clearInterval(firstAdjustInterval);
+      setInterval(NowTime, 1000 * 60);
+    }
+
+    function NowTime() {
+      for (let i = 0; i < phoneTimes.length; ++i) {
+        var timeSpan = phoneTimes[i];
+        var date = new Date();
+        var hour = date.getHours();
+        var min = date.getMinutes();
+        timeSpan.innerHTML = check(hour) + ":" + check(min);
+      }
+    };
+
+    function check(val) {
+      if (val < 10) {
+        return ("0" + val);
+      }
+      return (val);
+    }
+
+    // chat quote
+    const chat_quote_obverser = new IntersectionObserver((entries, observer) => {
+      entries.filter((entry) => { return entry.isIntersecting }).sort((a, b) => a.intersectionRect.y !== b.intersectionRect.y ? a.intersectionRect.y - b.intersectionRect.y : a.intersectionRect.x - b.intersectionRect.x).forEach((entry, index) => {
+          observer.unobserve(entry.target);
+          setTimeout(() => {
+            entry.target.classList.add('quote-blink');
+            setTimeout(() => {
+              entry.target.classList.remove('quote-blink');
+            }, 1000);
+          }, Math.max(100, 16) * (index + 1));
+        });
+    });
+
+    var chatQuotes = document.querySelectorAll(".chat .talk .quote");
+    chatQuotes.forEach((quote) => {
+      quote.addEventListener('click', function () {
+        var chatCellDom = document.getElementById("quote-" + quote.getAttribute("quotedCellTag"));
+        if (chatCellDom) {
+          var chatDiv = chatCellDom.parentElement;
+          var mid = chatDiv.clientHeight / 2;
+          var offsetTop = chatCellDom.offsetTop;
+          if (offsetTop > mid - chatCellDom.clientHeight / 2) {
+            chatDiv.scrollTo({
+              top: chatCellDom.offsetTop - mid + chatCellDom.clientHeight / 2,
+              behavior: "smooth"
+            });
+          } else {
+            chatDiv.scrollTo({
+              top: 0,
+              behavior: "smooth"
+            });
+          }
+          chat_quote_obverser.observe(chatCellDom);
+        }
+      });
+    });
+  });
+</script>
+
+<script>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    ctx.search = {
+      path: `/search.json`,
+    }
+    utils.js('/js/search/local-search.js', { defer: true });
+  });
+</script><script>
+  window.FPConfig = {
+    delay: 0,
+    ignoreKeywords: [],
+    maxRPS: 5,
+    hoverDelay: 25
+  };
+</script>
+<script defer src="https://gcore.jsdelivr.net/npm/flying-pages@2/flying-pages.min.js"></script><script>
+  ctx.fancybox = {
+    selector: `.timenode p>img`,
+    css: `https://gcore.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css`,
+    js: `https://gcore.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js`
+  };
+  var selector = '[data-fancybox]:not(.error), .with-fancybox .atk-content img:not([atk-emoticon])';
+  if (ctx.fancybox.selector) {
+    selector += `, ${ctx.fancybox.selector}`
+  }
+  var needFancybox = document.querySelectorAll(selector).length !== 0;
+  if (!needFancybox) {
+    const memos = document.getElementsByClassName('ds-memos');
+    if (memos != undefined && memos.length > 0) {
+      needFancybox = true;
+    }
+    const fancybox = document.getElementsByClassName('with-fancybox');
+    if (fancybox != undefined && fancybox.length > 0) {
+      needFancybox = true;
+    }
+  }
+  if (needFancybox) {
+    utils.css(ctx.fancybox.css);
+    utils.js(ctx.fancybox.js, { defer: true }).then(function () {
+      Fancybox.bind(selector, {
+        hideScrollbar: false,
+        Thumbs: {
+          autoStart: false,
+        },
+        caption: (fancybox, slide) => {
+          return slide.triggerEl.alt || slide.triggerEl.dataset.caption || null
+        }
+      });
+    })
+  }
+</script>
+<script>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    const swiper_api = document.getElementById('swiper-api');
+    if (swiper_api != undefined) {
+      utils.css(`https://unpkg.com/swiper@10.3/swiper-bundle.min.css`);
+      utils.js(`https://unpkg.com/swiper@10.3/swiper-bundle.min.js`, { defer: true }).then(function () {
+        const effect = swiper_api.getAttribute('effect') || '';
+        var swiper = new Swiper('.swiper#swiper-api', {
+          slidesPerView: 'auto',
+          spaceBetween: 8,
+          centeredSlides: true,
+          effect: effect,
+          rewind: true,
+          pagination: {
+            el: '.swiper-pagination',
+            clickable: true,
+          },
+          navigation: {
+            nextEl: '.swiper-button-next',
+            prevEl: '.swiper-button-prev',
+          },
+        });
+      })
+    }
+  });
+</script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    window.codeElements = document.querySelectorAll('.code');
+    if (window.codeElements.length > 0) {
+      ctx.copycode = {
+        default_text: `Copy`,
+        success_text: `Copied`,
+        toast: `复制成功`,
+      };
+      utils.js('/js/plugins/copycode.js');
+    }
+  });
+</script>
+
+
+<!-- inject -->
+
+</div></body></html>

@@ -1,0 +1,930 @@
+
+<!DOCTYPE html><html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="hexo-theme" content="https://github.com/xaoxuu/hexo-theme-stellar/tree/1.33.1" theme-name="Stellar" theme-version="1.33.1">
+  
+  
+  <meta name="generator" content="Hexo 5.1.1">
+  <meta http-equiv='x-dns-prefetch-control' content='on' />
+  
+  <meta name="renderer" content="webkit">
+  <meta name="force-rendering" content="webkit">
+  <meta http-equiv="X-UA-Compatible" content="IE=Edge,chrome=1">
+  <meta name="HandheldFriendly" content="True" >
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000">
+  <meta name="theme-color" content="#f9fafb">
+  <title>perf-tools - liulangren Blog</title>
+
+  
+    <meta name="description" content="介绍翻译自github文档用于 Linux ftrace 和 perf_events（又名“perf”命令）的一系列开发中和不受支持的性能分析工具。 ftrace 和 perf 都是内核源代码中包含的核心 Linux 跟踪工具。 您的系统可能已经有 ftrace，而 perf 通常只是一个包添加（请参阅先决条件）。 这些工具被设计为易于安装（最少的依赖项），提供高级性能可观察性，并且易于使用：做一">
+<meta property="og:type" content="article">
+<meta property="og:title" content="perf-tools">
+<meta property="og:url" content="https://liulangrenaaa.github.io/2021/01/28/%E5%86%85%E6%A0%B8%E8%A7%82%E6%B5%8B/perf%E7%9B%B8%E5%85%B3/perf-tools/">
+<meta property="og:site_name" content="liulangren Blog">
+<meta property="og:description" content="介绍翻译自github文档用于 Linux ftrace 和 perf_events（又名“perf”命令）的一系列开发中和不受支持的性能分析工具。 ftrace 和 perf 都是内核源代码中包含的核心 Linux 跟踪工具。 您的系统可能已经有 ftrace，而 perf 通常只是一个包添加（请参阅先决条件）。 这些工具被设计为易于安装（最少的依赖项），提供高级性能可观察性，并且易于使用：做一">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://liulangrenaaa.github.io/images/icons/image.png">
+<meta property="article:published_time" content="2021-01-28T19:00:00.000Z">
+<meta property="article:modified_time" content="2026-05-14T03:56:22.506Z">
+<meta property="article:author" content="Su Hui">
+<meta property="article:tag" content="perf">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://liulangrenaaa.github.io/images/icons/image.png">
+  
+  
+  
+  <meta name="keywords" content="perf">
+
+  <!-- feed -->
+  
+
+  <link rel="stylesheet" href="/css/main.css?v=1.33.1">
+
+
+  
+    <link rel="shortcut icon" href="/images/icons/image.png">
+  
+
+  
+
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"Su Hui","sameAs":[],"image":"/images/icons/image.png"},"dateCreated":"2021-01-28T19:00:00+00:00","dateModified":"2026-05-14T03:56:22+00:00","datePublished":"2021-01-28T19:00:00+00:00","description":"","headline":"perf-tools","mainEntityOfPage":{"@type":"WebPage","@id":"https://liulangrenaaa.github.io/2021/01/28/%E5%86%85%E6%A0%B8%E8%A7%82%E6%B5%8B/perf%E7%9B%B8%E5%85%B3/perf-tools/"},"publisher":{"@type":"Organization","name":"Su Hui","sameAs":[],"image":"/images/icons/image.png","logo":{"@type":"ImageObject","url":"/images/icons/image.png"}},"url":"https://liulangrenaaa.github.io/2021/01/28/%E5%86%85%E6%A0%B8%E8%A7%82%E6%B5%8B/perf%E7%9B%B8%E5%85%B3/perf-tools/","keywords":"perf","image":[]}</script>
+  
+</head>
+<body>
+
+<div class="l_body content" id="start" layout="post" type="tech" ><aside class="l_left"><div class="sidebg"></div><div class="leftbar-container">
+
+
+<header class="header"><div class="logo-wrap"><a class="avatar" href="/about/"><div class="bg" style="opacity:0;background-image:url(https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/avatar/round/rainbow64@3x.webp);"></div><img no-lazy class="avatar" src="/images/icons/image.png" onerror="javascript:this.classList.add('error');this.src='https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/image/2659360.svg';"></a><a class="title" href="/"><div class="main">liulangren Blog</div></a></div></header>
+
+<div class="nav-area">
+
+<nav class="menu dis-select"></nav>
+</div>
+<div class="widgets">
+<div class="search-wrapper" id="search-wrapper"><form class="search-form"><a class="search-button" onclick="document.getElementById(&quot;search-input&quot;).focus();"><svg t="1705074644177" viewBox="0 0 1025 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="1560" width="200" height="200"><path d="M1008.839137 935.96571L792.364903 719.491476a56.783488 56.783488 0 0 0-80.152866 0 358.53545 358.53545 0 1 1 100.857314-335.166073 362.840335 362.840335 0 0 1-3.689902 170.145468 51.248635 51.248635 0 1 0 99.217358 26.444296 462.057693 462.057693 0 1 0-158.255785 242.303546l185.930047 185.725053a51.248635 51.248635 0 0 0 72.568068 0 51.248635 51.248635 0 0 0 0-72.978056z" p-id="1561"></path><path d="M616.479587 615.969233a50.428657 50.428657 0 0 0-61.498362-5.534852 174.655348 174.655348 0 0 1-177.525271 3.484907 49.403684 49.403684 0 0 0-58.833433 6.76482l-3.074918 2.869923a49.403684 49.403684 0 0 0 8.609771 78.10292 277.767601 277.767601 0 0 0 286.992355-5.739847 49.403684 49.403684 0 0 0 8.404776-76.667958z" p-id="1562"></path></svg></a><input type="text" class="search-input" id="search-input" placeholder="站内搜索"></form><div id="search-result"></div><div class="search-no-result">没有找到内容！</div></div>
+
+<widget class="widget-wrapper linklist"><div class="widget-header dis-select"><span class="name">核心专题</span></div><div class="widget-body fs14">
+<div class="linklist left" style="grid-template-columns:repeat(1,1fr);">
+<a class="link" title="framework基础" href="/categories/android/framework基础/"><div class="flex"><span>framework基础</span></div></a>
+<a class="link" title="app启动与生命周期" href="/categories/android/app启动与生命周期/"><div class="flex"><span>app启动与生命周期</span></div></a>
+<a class="link" title="wms窗口系统" href="/categories/android/wms窗口系统/"><div class="flex"><span>wms窗口系统</span></div></a>
+<a class="link" title="input输入系统" href="/categories/android/input输入系统/"><div class="flex"><span>input输入系统</span></div></a>
+<a class="link" title="binder与系统服务" href="/categories/android/binder与系统服务/"><div class="flex"><span>binder与系统服务</span></div></a>
+<a class="link" title="graphics图形系统" href="/categories/android/graphics图形系统/"><div class="flex"><span>graphics图形系统</span></div></a>
+<a class="link" title="anr-crash稳定性" href="/categories/android/anr-crash稳定性/"><div class="flex"><span>anr-crash稳定性</span></div></a>
+<a class="link" title="debug-trace工具链" href="/categories/android/debug-trace工具链/"><div class="flex"><span>debug-trace工具链</span></div></a>
+<a class="link" title="性能稳定性" href="/tags/性能稳定性/"><div class="flex"><span>性能稳定性</span></div></a>
+<a class="link" title="Linux 调度" href="/categories/linux-kernel/linux-schedule/"><div class="flex"><span>Linux 调度</span></div></a></div></div></widget>
+
+<widget class="widget-wrapper linklist"><div class="widget-header dis-select"><span class="name">精选文章</span></div><div class="widget-body fs14">
+<div class="linklist left" style="grid-template-columns:repeat(1,1fr);">
+<a class="link" title="ANR问题总结" href="/2022/07/01/android/anr-crash稳定性/ANR问题总结/"><div class="flex"><span>ANR问题总结</span></div></a>
+<a class="link" title="android12 gdb64调试进程" href="/2021/09/23/用户空间/android12%20gdb64调试进程/"><div class="flex"><span>android12 gdb64调试进程</span></div></a>
+<a class="link" title="60s定位内核性能瓶颈" href="/2020/09/13/内核观测/性能稳定性/60s定位内核性能瓶颈/"><div class="flex"><span>60s定位内核性能瓶颈</span></div></a>
+<a class="link" title="关于preempt_count的思考" href="/2020/09/21/进程管理/关于preempt_count的思考/"><div class="flex"><span>关于preempt_count的思考</span></div></a></div></div></widget>
+</div>
+
+</div></aside><div class="l_main" id="main">
+
+
+
+
+
+<div class="article banner top">
+  <div class="content">
+    <div class="top bread-nav footnote"><div class="left"><div class="flex-row" id="breadcrumb"><a class="cap breadcrumb" href="/">主页</a>
+<span class="sep"></span><a class="cap breadcrumb" href="/">文章</a><span class="sep"></span><a class="cap breadcrumb-link" href="/categories/kernel-debug/">kernel debug</a></div>
+<div class="flex-row" id="post-meta"><span class="text created">发布于：<time datetime="2021-01-28T19:00:00.000Z">2021-01-28</time></span><span class="sep updated"></span><span class="text updated">更新于：<time datetime="2026-05-14T03:56:22.506Z">2026-05-14</time></span></div></div></div>
+    
+    <div class="bottom only-title">
+      
+      <div class="text-area">
+        <h1 class="text title"><span>perf-tools</span></h1>
+        
+      </div>
+    </div>
+    
+  </div>
+  </div><article class="md-text content"><h2 id="介绍"><a href="#介绍" class="headerlink" title="介绍"></a>介绍</h2><p>翻译自<a target="_blank" rel="noopener" href="https://github.com/brendangregg/perf-tools">github文档</a><br>用于 Linux ftrace 和 perf_events（又名“perf”命令）的一系列开发中和不受支持的性能分析工具。 ftrace 和 perf 都是内核源代码中包含的核心 Linux 跟踪工具。 您的系统可能已经有 ftrace，而 perf 通常只是一个包添加（请参阅先决条件）。</p>
+<p>这些工具被设计为易于安装（最少的依赖项），提供高级性能可观察性，并且易于使用：做一件事并做好。 该集合由 Brendan Gregg（DTraceToolkit 的作者）创建。</p>
+<p>这些工具中的许多都采用了变通方法，以便在现有 Linux 内核上实现功能。 因此，许多工具都有警告（请参阅手册页），在添加未来的内核功能或新的跟踪子系统之前，应将它们的实现视为占位符。</p>
+<p>在 仓库根目录还有各个目录下，有多个 shell 脚本:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">iosnoop: trace disk I&#x2F;O with details including latency. Examples.</span><br><span class="line">iolatency: summarize disk I&#x2F;O latency as a histogram. Examples.</span><br><span class="line">execsnoop: trace process exec() with command line argument details. Examples.</span><br><span class="line">opensnoop: trace open() syscalls showing filenames. Examples.</span><br><span class="line">killsnoop: trace kill() signals showing process and signal details. Examples.</span><br><span class="line">fs&#x2F;cachestat: basic cache hit&#x2F;miss statistics for the Linux page cache. Examples.</span><br><span class="line">net&#x2F;tcpretrans: show TCP retransmits, with address and other details. Examples.</span><br><span class="line">system&#x2F;tpoint: trace a given tracepoint. Examples.</span><br><span class="line">kernel&#x2F;funccount: count kernel function calls, matching a string with wildcards. Examples.</span><br><span class="line">kernel&#x2F;functrace: trace kernel function calls, matching a string with wildcards. Examples.</span><br><span class="line">kernel&#x2F;funcslower: trace kernel functions slower than a threshold. Examples.</span><br><span class="line">kernel&#x2F;funcgraph: trace a graph of kernel function calls, showing children and times. Examples.</span><br><span class="line">kernel&#x2F;kprobe: dynamically trace a kernel function call or its return, with variables. Examples.</span><br><span class="line">user&#x2F;uprobe: dynamically trace a user-level function call or its return, with variables. Examples.</span><br><span class="line">tools&#x2F;reset-ftrace: reset ftrace state if needed. Examples.</span><br></pre></td></tr></table></figure>
+
+<p>在 ./bin 目录下有以上各个shell 的软连接，所以执行这些工具直接到 bin目录即可：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">root@ubuntu-HP-ProDesk-680-G4-MT:&#x2F;home&#x2F;ubuntu&#x2F;workspace&#x2F;perf-tools&#x2F;bin# ls</span><br><span class="line">bitesize   funccount   functrace  killsnoop  perf-stat-hist  tcpretrans</span><br><span class="line">cachestat  funcgraph   iolatency  kprobe     reset-ftrace    tpoint</span><br><span class="line">execsnoop  funcslower  iosnoop    opensnoop  syscount        uprobe</span><br><span class="line">root@ubuntu-HP-ProDesk-680-G4-MT:&#x2F;home&#x2F;ubuntu&#x2F;workspace&#x2F;perf-tools&#x2F;bin#</span><br></pre></td></tr></table></figure>
+
+
+<h2 id="demo"><a href="#demo" class="headerlink" title="demo"></a>demo</h2><p>perf-tools 里面的一些工具在 trace 方面很实用，相见恨晚！下面记录几个 demo:</p>
+<h3 id="funccount"><a href="#funccount" class="headerlink" title="funccount"></a>funccount</h3><p>count kernel function calls, matching a string with wildcards.<br>主要用来统计 函数调用，可以搭配通配符来使用</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line">root@ubuntu-HP-ProDesk-680-G4-MT:&#x2F;home&#x2F;ubuntu&#x2F;workspace&#x2F;perf-tools&#x2F;bin# .&#x2F;funccount &quot;bio_*&quot;</span><br><span class="line">Tracing &quot;bio_*&quot;... Ctrl-C to end.</span><br><span class="line">^C</span><br><span class="line">FUNC                              COUNT</span><br><span class="line">bio_attempt_front_merge               1</span><br><span class="line">bio_attempt_back_merge               82</span><br><span class="line">bio_crypt_ctx_mergeable              83</span><br><span class="line">bio_crypt_rq_ctx_compatible         364</span><br><span class="line">bio_alloc_bioset                    378</span><br><span class="line">bio_associate_blkg                  378</span><br><span class="line">bio_endio                           378</span><br><span class="line">bio_free                            378</span><br><span class="line">bio_integrity_prep                  378</span><br><span class="line">bio_put                             378</span><br><span class="line">bio_advance                         382</span><br><span class="line">bio_associate_blkg_from_css         442</span><br><span class="line">bio_uninit                          756</span><br><span class="line">bio_add_page                        815</span><br><span class="line"></span><br><span class="line">Ending tracing...</span><br><span class="line">root@ubuntu-HP-ProDesk-680-G4-MT:&#x2F;home&#x2F;ubuntu&#x2F;workspace&#x2F;perf-tools&#x2F;bin#</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>-i : 间隔s输出结果</li>
+<li>-t : 输出 top x 的结果</li>
+<li>-d : 总共trace 的时间多久</li>
+</ul>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">root@ubuntu-HP-ProDesk-680-G4-MT:&#x2F;home&#x2F;ubuntu&#x2F;workspace&#x2F;perf-tools&#x2F;bin# .&#x2F;funccount  -i 2 -t 2 -d 4 &quot;bio_*&quot;</span><br><span class="line">Tracing &quot;bio_*&quot; for 4 seconds. Top 2 only...</span><br><span class="line"></span><br><span class="line">FUNC                              COUNT</span><br><span class="line">bio_uninit                           22</span><br><span class="line">bio_crypt_rq_ctx_compatible          55</span><br><span class="line"></span><br><span class="line">FUNC                              COUNT</span><br><span class="line">bio_associate_blkg_from_css          11</span><br><span class="line">bio_uninit                           20</span><br><span class="line"></span><br><span class="line">Ending tracing...</span><br><span class="line">root@ubuntu-HP-ProDesk-680-G4-MT:&#x2F;home&#x2F;ubuntu&#x2F;workspace&#x2F;perf-tools&#x2F;bin#</span><br></pre></td></tr></table></figure>
+
+
+<h4 id="为啥可以支持通配符？"><a href="#为啥可以支持通配符？" class="headerlink" title="为啥可以支持通配符？"></a>为啥可以支持通配符？</h4><p>在 <code>/sys/kernel/debug/tracing/available_filter_functions</code> 中记录了所有可以被 trace的 symbol.</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">root@ubuntu-HP-ProDesk-680-G4-MT:&#x2F;home&#x2F;ubuntu&#x2F;workspace&#x2F;perf-tools&#x2F;bin# cat &#x2F;sys&#x2F;kernel&#x2F;debug&#x2F;tracing&#x2F;available_filter_functions | wc -l</span><br><span class="line">67030</span><br><span class="line">root@ubuntu-HP-ProDesk-680-G4-MT:&#x2F;home&#x2F;ubuntu&#x2F;workspace&#x2F;perf-tools&#x2F;bin#</span><br></pre></td></tr></table></figure>
+<p>可以使用带通配符的 string 到 这个文件中去查找符号条件的 <code>function</code>。</p>
+<h3 id="functrace"><a href="#functrace" class="headerlink" title="functrace"></a>functrace</h3><p>trace kernel function calls, matching a string with wildcards,支持通配符</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">root@ubuntu-HP-ProDesk-680-G4-MT:&#x2F;home&#x2F;ubuntu&#x2F;workspace&#x2F;perf-tools&#x2F;bin# .&#x2F;functrace &quot;kmem_cache_alloc_*&quot;</span><br><span class="line">Tracing &quot;kmem_cache_alloc_*&quot;... Ctrl-C to end.</span><br><span class="line">       functrace-1512675 [009] .... 1298127.500687: kmem_cache_alloc_node &lt;-dup_task_struct</span><br><span class="line">       functrace-1512675 [009] .... 1298127.500709: kmem_cache_alloc_trace &lt;-alloc_fdtable</span><br><span class="line">           &lt;...&gt;-1512680 [001] .... 1298127.501196: kmem_cache_alloc_trace &lt;-alloc_bprm</span><br><span class="line">           &lt;...&gt;-1512680 [001] .... 1298127.501320: kmem_cache_alloc_trace &lt;-load_elf_binary</span><br><span class="line">            node-3706960 [008] .... 1298127.503100: kmem_cache_alloc_node &lt;-__alloc_skb</span><br><span class="line">            node-3706960 [008] .... 1298127.503428: kmem_cache_alloc_node &lt;-__alloc_skb</span><br></pre></td></tr></table></figure>
+
+<p>使用 <code>-H</code> 显示 header:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">root@ubuntu-HP-ProDesk-680-G4-MT:&#x2F;home&#x2F;ubuntu&#x2F;workspace&#x2F;perf-tools&#x2F;bin# .&#x2F;functrace -H &quot;kmem_cache_alloc_*&quot;</span><br><span class="line">Tracing &quot;kmem_cache_alloc_*&quot;... Ctrl-C to end.</span><br><span class="line">^C# tracer: function</span><br><span class="line">#</span><br><span class="line"># entries-in-buffer&#x2F;entries-written: 30&#x2F;30   #P:12</span><br><span class="line">#</span><br><span class="line">#                                _-----&#x3D;&gt; irqs-off</span><br><span class="line">#                               &#x2F; _----&#x3D;&gt; need-resched</span><br><span class="line">#                              | &#x2F; _---&#x3D;&gt; hardirq&#x2F;softirq</span><br><span class="line">#                              || &#x2F; _--&#x3D;&gt; preempt-depth</span><br><span class="line">#                              ||| &#x2F;     delay</span><br><span class="line">#           TASK-PID     CPU#  ||||   TIMESTAMP  FUNCTION</span><br><span class="line">#              | |         |   ||||      |         |</span><br><span class="line">       functrace-1512958 [003] .... 1298157.804761: kmem_cache_alloc_node &lt;-dup_task_struct</span><br><span class="line">       functrace-1512958 [003] .... 1298157.804774: kmem_cache_alloc_trace &lt;-alloc_fdtable</span><br><span class="line">             cat-1512960 [011] .... 1298157.805012: kmem_cache_alloc_trace &lt;-alloc_bprm</span><br></pre></td></tr></table></figure>
+
+<h3 id="funcslower"><a href="#funcslower" class="headerlink" title="funcslower"></a>funcslower</h3><p> trace kernel functions slower than a threshold.</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">root@ubuntu-HP-ProDesk-680-G4-MT:&#x2F;home&#x2F;ubuntu&#x2F;workspace&#x2F;perf-tools&#x2F;bin# .&#x2F;funcslower ext4_mpage_readpages 10</span><br><span class="line">Tracing &quot;ext4_mpage_readpages&quot; slower than 10 us... Ctrl-C to end.</span><br><span class="line"> 11) + 12.260 us   |  &#125; &#x2F;* ext4_mpage_readpages *&#x2F;</span><br><span class="line">  8) + 30.049 us   |  &#125; &#x2F;* ext4_mpage_readpages *&#x2F;</span><br><span class="line">  8) + 13.164 us   |  &#125; &#x2F;* ext4_mpage_readpages *&#x2F;</span><br><span class="line">  8) + 21.117 us   |  &#125; &#x2F;* ext4_mpage_readpages *&#x2F;</span><br><span class="line">  9) + 17.850 us   |  &#125; &#x2F;* ext4_mpage_readpages *&#x2F;</span><br><span class="line">  9) + 13.449 us   |  &#125; &#x2F;* ext4_mpage_readpages *&#x2F;</span><br><span class="line"> 10) + 16.533 us   |  &#125; &#x2F;* ext4_mpage_readpages *&#x2F;</span><br><span class="line">  0) + 32.654 us   |  &#125; &#x2F;* ext4_mpage_readpages *&#x2F;</span><br><span class="line">  0) + 12.850 us   |  &#125; &#x2F;* ext4_mpage_readpages *&#x2F;</span><br><span class="line">  0) + 20.576 us   |  &#125; &#x2F;* ext4_mpage_readpages *&#x2F;</span><br></pre></td></tr></table></figure>
+
+<p>假设 你怀疑系统中某个问题是由于 <code>ext4_mpage_readpages</code> 执行慢导致的，那么可以使用这个 cmd 来确认一下</p>
+<p>可以使用 <code>-Pt</code> 显示更详细信息</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">root@ubuntu-HP-ProDesk-680-G4-MT:&#x2F;home&#x2F;ubuntu&#x2F;workspace&#x2F;perf-tools&#x2F;bin# .&#x2F;funcslower -Pt ext4_mpage_readpages 10</span><br><span class="line">Tracing &quot;ext4_mpage_readpages&quot; slower than 10 us... Ctrl-C to end.</span><br><span class="line">1298799.300724 |    7)  bash-1518301  | + 25.581 us   |  &#125; &#x2F;* ext4_mpage_readpages *&#x2F;</span><br><span class="line">1298799.305213 |    7) cksum-1518301  | + 14.441 us   |  &#125; &#x2F;* ext4_mpage_readpages *&#x2F;</span><br></pre></td></tr></table></figure>
+
+
+
+<h3 id="funcgraph"><a href="#funcgraph" class="headerlink" title="funcgraph"></a>funcgraph</h3><p>trace a graph of kernel function calls, showing children and times.</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br></pre></td><td class="code"><pre><span class="line">root@ubuntu-HP-ProDesk-680-G4-MT:&#x2F;home&#x2F;ubuntu&#x2F;workspace&#x2F;perf-tools&#x2F;bin# .&#x2F;funcgraph schedule</span><br><span class="line">Tracing &quot;schedule&quot;... Ctrl-C to end.</span><br><span class="line">  4)   1.768 us    |  file_ra_state_init();</span><br><span class="line">  4)               |  schedule() &#123;</span><br><span class="line">  4)               |    rcu_note_context_switch() &#123;</span><br><span class="line">  4)   0.382 us    |      rcu_qs();</span><br><span class="line">  4)   0.998 us    |    &#125;</span><br><span class="line">  4)   0.320 us    |    _raw_spin_lock();</span><br><span class="line">  4)   0.351 us    |    update_rq_clock();</span><br><span class="line">  4)               |    psi_task_change() &#123;</span><br><span class="line">  4)   0.285 us    |      psi_flags_change();</span><br><span class="line">  4)               |      psi_group_change() &#123;</span><br><span class="line">  4)   0.430 us    |        record_times();</span><br><span class="line">  4)   1.344 us    |      &#125;</span><br><span class="line">  4)               |      psi_group_change() &#123;</span><br><span class="line">  4)   0.333 us    |        record_times();</span><br><span class="line">  4)   0.909 us    |      &#125;</span><br><span class="line">  4)               |      psi_group_change() &#123;</span><br><span class="line">  4)   0.384 us    |        record_times();</span><br><span class="line">  4)   0.965 us    |      &#125;</span><br><span class="line">  4)               |      psi_group_change() &#123;</span><br><span class="line">  4)   0.337 us    |        record_times();</span><br><span class="line">  4)   0.900 us    |      &#125;</span><br><span class="line">  4)   6.000 us    |    &#125;</span><br><span class="line">  4)               |    dequeue_task_fair() &#123;</span><br><span class="line">  4)               |      dequeue_entity() &#123;</span><br><span class="line">  4)               |        update_curr() &#123;</span><br><span class="line">  4)   0.277 us    |          update_min_vruntime();</span><br><span class="line">  4)               |          cpuacct_charge() &#123;</span><br><span class="line">  4)   0.323 us    |            rcu_read_unlock_strict();</span><br><span class="line">  4)   0.874 us    |          &#125;</span><br><span class="line">  4)               |          __cgroup_account_cputime() &#123;</span><br><span class="line">  4)   0.283 us    |            cgroup_rstat_updated();</span><br><span class="line">  4)   0.814 us    |          &#125;</span><br><span class="line">  4)   0.288 us    |          rcu_read_unlock_strict();</span><br><span class="line">  4)   3.616 us    |        &#125;</span><br><span class="line">  4)   0.488 us    |        __update_load_avg_se();</span><br><span class="line">  4)   0.518 us    |        __update_load_avg_cfs_rq();</span><br><span class="line">  4)   0.284 us    |        clear_buddies();</span><br><span class="line">  4)   0.318 us    |        update_cfs_group();</span><br><span class="line">  4)   0.304 us    |        update_min_vruntime();</span><br><span class="line">  4)   7.470 us    |      &#125;</span><br><span class="line">  4)               |      dequeue_entity() &#123;</span><br><span class="line">  4)               |        update_curr() &#123;</span><br><span class="line">  4)   0.328 us    |          __calc_delta();</span><br><span class="line">  4)   0.280 us    |          update_min_vruntime();</span><br><span class="line">  4)   1.505 us    |        &#125;</span><br><span class="line">  4)   0.422 us    |        __update_load_avg_se();</span><br><span class="line">  4)   0.332 us    |        __update_load_avg_cfs_rq();</span><br><span class="line">  4)   0.284 us    |        clear_buddies();</span><br><span class="line">  4)               |        update_cfs_group() &#123;</span><br><span class="line">  4)   0.309 us    |          reweight_entity();</span><br><span class="line">  4)   0.876 us    |        &#125;</span><br><span class="line">  4)   0.293 us    |        update_min_vruntime();</span><br><span class="line">  4)   5.538 us    |      &#125;</span><br><span class="line">  4)   0.282 us    |      hrtick_update();</span><br><span class="line">  4) + 14.506 us   |    &#125;</span><br><span class="line">  4)               |    pick_next_task_fair() &#123;</span><br><span class="line">  4)               |      newidle_balance() &#123;</span><br><span class="line">  4)   0.276 us    |        __msecs_to_jiffies();</span><br><span class="line">  4)   0.271 us    |        rcu_read_unlock_strict();</span><br><span class="line">  4)   0.347 us    |        nohz_newidle_balance();</span><br><span class="line">  4)   2.079 us    |      &#125;</span><br><span class="line">  4)   2.616 us    |    &#125;</span><br><span class="line">  4)               |    put_prev_task_fair() &#123;</span><br><span class="line">  4)               |      put_prev_entity() &#123;</span><br><span class="line">  4)   0.283 us    |        check_cfs_rq_runtime();</span><br><span class="line">  4)   0.927 us    |      &#125;</span><br><span class="line">  4)               |      put_prev_entity() &#123;</span><br><span class="line">  4)   0.283 us    |        check_cfs_rq_runtime();</span><br><span class="line">  4)   0.807 us    |      &#125;</span><br><span class="line">  4)   2.607 us    |    &#125;</span><br><span class="line">  4)               |    pick_next_task_idle() &#123;</span><br><span class="line">  4)               |      __update_idle_core() &#123;</span><br><span class="line">  4)   0.281 us    |        rcu_read_unlock_strict();</span><br><span class="line">  4)   1.031 us    |      &#125;</span><br><span class="line">  4)   1.668 us    |    &#125;</span><br><span class="line">  4)   0.306 us    |    psi_task_switch();</span><br><span class="line">  4)   0.897 us    |    __traceiter_sched_switch();</span><br><span class="line">  4)   0.315 us    |    enter_lazy_tlb();</span><br><span class="line">  4)   0.403 us    |    copy_fpregs_to_fpstate();</span><br><span class="line">  0)   1.234 us    |  finish_task_switch.isra.0();</span><br></pre></td></tr></table></figure>
+
+<p>可以看到和 ftrace 很类似，但是这样的 输出很难看，可以 使用 <code>-m</code> 精简一下输出</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line">root@ubuntu-HP-ProDesk-680-G4-MT:&#x2F;home&#x2F;ubuntu&#x2F;workspace&#x2F;perf-tools&#x2F;bin# .&#x2F;funcgraph -m2 schedule</span><br><span class="line">Tracing &quot;schedule&quot;... Ctrl-C to end.</span><br><span class="line">  0)   1.265 us    |  file_ra_state_init();</span><br><span class="line">  0)               |  schedule() &#123;</span><br><span class="line">  0)   0.308 us    |    rcu_note_context_switch();</span><br><span class="line">  0)   0.177 us    |    _raw_spin_lock();</span><br><span class="line">  0)   0.190 us    |    update_rq_clock();</span><br><span class="line">  0)   1.267 us    |    psi_task_change();</span><br><span class="line">  0)   3.115 us    |    dequeue_task_fair();</span><br><span class="line">  0) + 16.366 us   |    pick_next_task_fair();</span><br><span class="line">  0)   0.677 us    |    put_prev_task_fair();</span><br><span class="line">  0)   0.520 us    |    pick_next_task_idle();</span><br><span class="line">  0)   0.206 us    |    psi_task_switch();</span><br><span class="line">  0)   0.550 us    |    __traceiter_sched_switch();</span><br><span class="line">  0)   0.176 us    |    enter_lazy_tlb();</span><br><span class="line">  0)   0.241 us    |    copy_fpregs_to_fpstate();</span><br><span class="line">  9)   0.903 us    |    finish_task_switch.isra.0();</span><br><span class="line">  9)   0.567 us    |    wq_worker_running();</span><br><span class="line">  9) @ 103141.5 us |  &#125; &#x2F;* schedule *&#x2F;</span><br></pre></td></tr></table></figure>
+
+<p>可以看到 每个函数的耗费时间，比如这个例子中 可以看到 <code>pick_next_task_fair</code> 耗时较大，可以进一步分析</p>
+<p>还可以使用 -p 来追踪制定 进程的目的</p>
+<h3 id="kprobe"><a href="#kprobe" class="headerlink" title="kprobe"></a>kprobe</h3><p> dynamically trace a kernel function call or its return, with variables.<br> 与前面的工具不一样的是， kprobe 可以跟踪 return, 还有 内部variables。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">root@ubuntu-HP-ProDesk-680-G4-MT:&#x2F;home&#x2F;ubuntu&#x2F;workspace&#x2F;perf-tools&#x2F;bin# .&#x2F;kprobe p:do_sys_openat2</span><br><span class="line">Tracing kprobe do_sys_openat2. Ctrl-C to end.</span><br><span class="line">           &lt;...&gt;-1890130 [003] .... 1304707.196057: do_sys_openat2: (do_sys_openat2+0x0&#x2F;0x150)</span><br><span class="line">           &lt;...&gt;-1890130 [003] .... 1304707.196106: do_sys_openat2: (do_sys_openat2+0x0&#x2F;0x150)</span><br><span class="line">           &lt;...&gt;-1890130 [003] .... 1304707.196676: do_sys_openat2: (do_sys_openat2+0x0&#x2F;0x150)</span><br><span class="line">           &lt;...&gt;-1890130 [003] .... 1304707.196870: do_sys_openat2: (do_sys_openat2+0x0&#x2F;0x150)</span><br><span class="line">            node-3706960 [008] .... 1304707.252605: do_sys_openat2: (do_sys_openat2+0x0&#x2F;0x150)</span><br><span class="line">            node-3706960 [008] .... 1304707.252721: do_sys_openat2: (do_sys_openat2+0x0&#x2F;0x150)</span><br><span class="line">            node-3706960 [008] .... 1304707.252766: do_sys_openat2: (do_sys_openat2+0x0&#x2F;0x150)</span><br><span class="line">            node-3706960 [008] .... 1304707.252802: do_sys_openat2: (do_sys_openat2+0x0&#x2F;0x150)</span><br><span class="line">            node-3706960 [008] .... 1304707.252849: do_sys_openat2: (do_sys_openat2+0x0&#x2F;0x150)</span><br><span class="line">            node-3706960 [008] .... 1304707.252887: do_sys_openat2: (do_sys_openat2+0x0&#x2F;0x150)</span><br><span class="line">            node-3706960 [008] .... 1304707.252930: do_sys_openat2: (do_sys_openat2+0x0&#x2F;0x150)</span><br><span class="line">            node-3706960 [008] .... 1304707.253007: do_sys_openat2: (do_sys_openat2+0x0&#x2F;0x150)</span><br><span class="line">^C</span><br><span class="line">Ending tracing...</span><br><span class="line">root@ubuntu-HP-ProDesk-680-G4-MT:&#x2F;home&#x2F;ubuntu&#x2F;workspace&#x2F;perf-tools&#x2F;bin#</span><br></pre></td></tr></table></figure>
+
+<p>The “p:” is for creating a probe. Use “r:” to probe the return of the function:<br>“p:” 是创建一个kprobe. “r:” 是创建一个kretprobe</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line">root@ubuntu-HP-ProDesk-680-G4-MT:&#x2F;home&#x2F;ubuntu&#x2F;workspace&#x2F;perf-tools&#x2F;bin# .&#x2F;kprobe r:do_sys_openat2</span><br><span class="line">Tracing kprobe do_sys_openat2. Ctrl-C to end.</span><br><span class="line">          kprobe-1892194 [007] .... 1305064.017143: do_sys_openat2: (__x64_sys_openat+0x56&#x2F;0x90 &lt;- do_sys_openat2)</span><br><span class="line">           &lt;...&gt;-1892196 [009] .... 1305064.018585: do_sys_openat2: (__x64_sys_openat+0x56&#x2F;0x90 &lt;- do_sys_openat2)</span><br><span class="line">           &lt;...&gt;-1892196 [009] .... 1305064.018633: do_sys_openat2: (__x64_sys_openat+0x56&#x2F;0x90 &lt;- do_sys_openat2)</span><br><span class="line">           &lt;...&gt;-1892196 [009] .... 1305064.019216: do_sys_openat2: (__x64_sys_openat+0x56&#x2F;0x90 &lt;- do_sys_openat2)</span><br><span class="line">           &lt;...&gt;-1892196 [009] .... 1305064.019410: do_sys_openat2: (__x64_sys_openat+0x56&#x2F;0x90 &lt;- do_sys_openat2)</span><br><span class="line">            node-3706960 [004] .... 1305064.032758: do_sys_openat2: (__x64_sys_openat+0x56&#x2F;0x90 &lt;- do_sys_openat2)</span><br><span class="line">            node-3706960 [004] .... 1305064.033256: do_sys_openat2: (__x64_sys_openat+0x56&#x2F;0x90 &lt;- do_sys_openat2)</span><br><span class="line">            node-3706960 [004] .... 1305064.033325: do_sys_openat2: (__x64_sys_openat+0x56&#x2F;0x90 &lt;- do_sys_openat2)</span><br><span class="line">            node-3706960 [004] .... 1305064.033363: do_sys_openat2: (__x64_sys_openat+0x56&#x2F;0x90 &lt;- do_sys_openat2)</span><br><span class="line">            node-3706960 [004] .... 1305064.033396: do_sys_openat2: (__x64_sys_openat+0x56&#x2F;0x90 &lt;- do_sys_openat2)</span><br><span class="line">            node-3706960 [004] .... 1305064.033428: do_sys_openat2: (__x64_sys_openat+0x56&#x2F;0x90 &lt;- do_sys_openat2)</span><br><span class="line">            node-3706960 [004] .... 1305064.034963: do_sys_openat2: (__x64_sys_openat+0x56&#x2F;0x90 &lt;- do_sys_openat2)</span><br><span class="line">            node-3706960 [004] .... 1305064.035047: do_sys_openat2: (__x64_sys_openat+0x56&#x2F;0x90 &lt;- do_sys_openat2)</span><br><span class="line">            node-1358618 [000] .... 1305064.191464: do_sys_openat2: (__x64_sys_openat+0x56&#x2F;0x90 &lt;- do_sys_openat2)</span><br><span class="line">^C</span><br><span class="line">Ending tracing...</span><br><span class="line">root@ubuntu-HP-ProDesk-680-G4-MT:&#x2F;home&#x2F;ubuntu&#x2F;workspace&#x2F;perf-tools&#x2F;bin#</span><br></pre></td></tr></table></figure>
+
+<p><code>-H</code> 是 显示 headers</p>
+<p>可以显示 返回值</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">root@ubuntu-HP-ProDesk-680-G4-MT:&#x2F;home&#x2F;ubuntu&#x2F;workspace&#x2F;perf-tools&#x2F;bin# .&#x2F;kprobe &#39;r:myopen do_sys_openat2 $retval&#39;</span><br><span class="line">Tracing kprobe myopen. Ctrl-C to end.</span><br><span class="line">          kprobe-1892927 [000] .... 1305161.519664: myopen: (__x64_sys_openat+0x56&#x2F;0x90 &lt;- do_sys_openat2) arg1&#x3D;0x3</span><br><span class="line">           &lt;...&gt;-1892933 [002] .... 1305161.520039: myopen: (__x64_sys_openat+0x56&#x2F;0x90 &lt;- do_sys_openat2) arg1&#x3D;0x3</span><br><span class="line">           &lt;...&gt;-1892933 [002] .... 1305161.520050: myopen: (__x64_sys_openat+0x56&#x2F;0x90 &lt;- do_sys_openat2) arg1&#x3D;0x3</span><br><span class="line">           &lt;...&gt;-1892933 [002] .... 1305161.520178: myopen: (__x64_sys_openat+0x56&#x2F;0x90 &lt;- do_sys_openat2) arg1&#x3D;0x3</span><br><span class="line">           &lt;...&gt;-1892933 [002] .... 1305161.520227: myopen: (__x64_sys_openat+0x56&#x2F;0x90 &lt;- do_sys_openat2) arg1&#x3D;0x3</span><br><span class="line">              sh-1892932 [010] .... 1305161.521214: myopen: (__x64_sys_openat+0x56&#x2F;0x90 &lt;- do_sys_openat2) arg1&#x3D;0x3</span><br></pre></td></tr></table></figure>
+
+<p>‘r:myopen do_sys_open $retval’ 是一个 kprobe 定义，和 kernel 文档 <code>Documentation/trace/kprobetrace.txt</code> 里面定义的一样；<br>除了使用 probe 别名，还可以为参数提供任意名称。例如，将默认值”arg1”改为”rval”:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">root@ubuntu-HP-ProDesk-680-G4-MT:&#x2F;home&#x2F;ubuntu&#x2F;workspace&#x2F;perf-tools&#x2F;bin# .&#x2F;kprobe &#39;r:myopen do_sys_openat2 ret&#x3D;$retval&#39;</span><br><span class="line">Tracing kprobe myopen. Ctrl-C to end.</span><br><span class="line">          kprobe-1894758 [009] .... 1305461.694802: myopen: (__x64_sys_openat+0x56&#x2F;0x90 &lt;- do_sys_openat2) ret&#x3D;0x3</span><br><span class="line">           &lt;...&gt;-1894760 [005] .... 1305461.696161: myopen: (__x64_sys_openat+0x56&#x2F;0x90 &lt;- do_sys_openat2) ret&#x3D;0x3</span><br><span class="line">            node-3706960 [006] .... 1305461.705250: myopen: (__x64_sys_openat+0x56&#x2F;0x90 &lt;- do_sys_openat2) ret&#x3D;0x19</span><br></pre></td></tr></table></figure>
+
+
+<p>还可以trace 函数func的入口参数的值，比如</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">root@ubuntu-HP-ProDesk-680-G4-MT:&#x2F;home&#x2F;ubuntu&#x2F;workspace&#x2F;perf-tools&#x2F;bin# .&#x2F;kprobe &#39;p:myopen do_sys_openat2 filename&#x3D;+0(%si):string&#39;</span><br><span class="line">Tracing kprobe myopen. Ctrl-C to end.</span><br><span class="line">           &lt;...&gt;-1897778 [011] .... 1305798.993302: myopen: (do_sys_openat2+0x0&#x2F;0x150) filename&#x3D;&quot;&#x2F;etc&#x2F;ld.so.cache&quot;</span><br><span class="line">           &lt;...&gt;-1897778 [011] .... 1305798.993349: myopen: (do_sys_openat2+0x0&#x2F;0x150) filename&#x3D;&quot;&#x2F;lib&#x2F;x86_64-linux-gnu&#x2F;libc.so.6&quot;</span><br><span class="line">           &lt;...&gt;-1897778 [011] .... 1305798.993863: myopen: (do_sys_openat2+0x0&#x2F;0x150) filename&#x3D;&quot;&#x2F;usr&#x2F;lib&#x2F;locale&#x2F;locale-archive&quot;</span><br><span class="line">           &lt;...&gt;-1897778 [011] .... 1305798.994040: myopen: (do_sys_openat2+0x0&#x2F;0x150) filename&#x3D;&quot;trace_pipe&quot;</span><br><span class="line">            node-3706960 [003] .... 1305799.184729: myopen: (do_sys_openat2+0x0&#x2F;0x150) filename&#x3D;&quot;&#x2F;proc&#x2F;1452624&#x2F;cmdline&quot;</span><br><span class="line">            node-3706960 [003] .... 1305799.184848: myopen: (do_sys_openat2+0x0&#x2F;0x150) filename&#x3D;&quot;&#x2F;proc&#x2F;1368025&#x2F;cmdline&quot;</span><br><span class="line">            node-3706960 [003] .... 1305799.186491: myopen: (do_sys_openat2+0x0&#x2F;0x150) filename&#x3D;&quot;&#x2F;proc&#x2F;29675&#x2F;cmdline&quot;</span><br><span class="line">            node-3706960 [003] .... 1305799.186586: myopen: (do_sys_openat2+0x0&#x2F;0x150) filename&#x3D;&quot;&#x2F;proc&#x2F;660625&#x2F;cmdline&quot;</span><br><span class="line">            node-3706960 [003] .... 1305799.186638: myopen: (do_sys_openat2+0x0&#x2F;0x150) filename&#x3D;&quot;&#x2F;proc&#x2F;1368168&#x2F;cmdline&quot;</span><br><span class="line">            node-3706960 [003] .... 1305799.186678: myopen: (do_sys_openat2+0x0&#x2F;0x150) filename&#x3D;&quot;&#x2F;proc&#x2F;1368591&#x2F;cmdline&quot;</span><br><span class="line">            node-3706960 [003] .... 1305799.186723: myopen: (do_sys_openat2+0x0&#x2F;0x150) filename&#x3D;&quot;&#x2F;proc&#x2F;1897776&#x2F;cmdline&quot;</span><br><span class="line">^C</span><br></pre></td></tr></table></figure>
+
+<p>因为 <code>do_sys_openat2</code> 原型是：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">static long do_sys_openat2(int dfd, const char __user *filename,</span><br><span class="line">			   struct open_how *how)</span><br><span class="line">&#123;</span><br><span class="line">	struct open_flags op;</span><br><span class="line">	int fd &#x3D; build_open_flags(how, &amp;op);</span><br><span class="line">	struct filename *tmp;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>第二个参数是 filename，且类型是 char*, 根据 syscall 的约定，<code>man syscall</code> 可以看到：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">Arch&#x2F;ABI      arg1  arg2  arg3  arg4  arg5  arg6  arg7  Notes</span><br><span class="line">     ──────────────────────────────────────────────────────────────</span><br><span class="line">     alpha         a0    a1    a2    a3    a4    a5    -</span><br><span class="line">     arc           r0    r1    r2    r3    r4    r5    -</span><br><span class="line">     arm&#x2F;OABI      r0    r1    r2    r3    r4    r5    r6</span><br><span class="line">     arm&#x2F;EABI      r0    r1    r2    r3    r4    r5    r6</span><br><span class="line">     arm64         x0    x1    x2    x3    x4    x5    -</span><br><span class="line">    sparc&#x2F;32      o0    o1    o2    o3    o4    o5    -</span><br><span class="line">     sparc&#x2F;64      o0    o1    o2    o3    o4    o5    -</span><br><span class="line">     tile          R00   R01   R02   R03   R04   R05   -</span><br><span class="line">     x86-64        rdi   rsi   rdx   r10   r8    r9    -</span><br><span class="line">     x32           rdi   rsi   rdx   r10   r8    r9    -</span><br><span class="line">     xtensa        a6    a3    a4    a5    a8    a9    -</span><br></pre></td></tr></table></figure>
+
+<p>在 x86-64 中，第二个参数存放在 rsi中。。<br>所以命令是 <code>kprobe &#39;p:myopen do_sys_openat2 filename=+0(%si):string&#39;</code></p>
+<p>也可以通过 <code>-p</code> 指定特定进程来 做trace.</p>
+<h3 id="uprobe"><a href="#uprobe" class="headerlink" title="uprobe"></a>uprobe</h3><p>dynamically trace a user-level function call or its return, with variables.</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">root@ubuntu-HP-ProDesk-680-G4-MT:&#x2F;home&#x2F;ubuntu&#x2F;workspace&#x2F;perf-tools&#x2F;bin# .&#x2F;uprobe p:bash:readline</span><br><span class="line">Tracing uprobe readline (p:readline &#x2F;usr&#x2F;bin&#x2F;bash:0xd4950). Ctrl-C to end.</span><br><span class="line">            bash-1452624 [003] d... 1306503.199858: readline: (0x55621dedf950)</span><br><span class="line">            bash-1452624 [003] d... 1306503.443193: readline: (0x55621dedf950)</span><br><span class="line">            bash-1452624 [003] d... 1306503.615018: readline: (0x55621dedf950)</span><br><span class="line">            bash-1452624 [003] d... 1306503.772181: readline: (0x55621dedf950)</span><br><span class="line">            bash-1452624 [003] d... 1306503.954737: readline: (0x55621dedf950)</span><br><span class="line">            bash-1452624 [003] d... 1306505.194449: readline: (0x55621dedf950)</span><br><span class="line">^C</span><br><span class="line">Ending tracing...</span><br></pre></td></tr></table></figure>
+
+
+<h3 id="reset-ftrace"><a href="#reset-ftrace" class="headerlink" title="reset-ftrace"></a>reset-ftrace</h3><p>reset ftrace state if needed.</p>
+<h3 id="tpoint"><a href="#tpoint" class="headerlink" title="tpoint"></a>tpoint</h3><p>有较多语法需要学习。</p>
+<p>参考<a target="_blank" rel="noopener" href="https://www.usenix.org/conference/lisa14/conference-program/presentation/gregg">Linux Performance Analysis: New Tools and Old Secrets</a></p>
+</article>
+<div class="article-footer">
+    <section id="license">
+      <div class="header"><span>许可协议</span></div>
+      <div class="body"><p>本文采用 <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">署名-非商业性使用-相同方式共享 4.0 国际</a> 许可协议，转载请注明出处。</p>
+</div>
+    </section>
+    
+
+</div>
+
+<div class="related-wrap" id="read-next"><section class="body"><div class="item" id="prev"><div class="note">较新文章</div><a href="/2021/01/29/%E5%86%85%E6%A0%B8%E8%A7%82%E6%B5%8B/%E6%80%A7%E8%83%BD%E7%A8%B3%E5%AE%9A%E6%80%A7/kprobes%20%E5%8E%9F%E7%90%86%E4%B8%8E%E4%BD%BF%E7%94%A8/">kprobes 原理与使用</a></div><div class="item" id="next"><div class="note">较早文章</div><a href="/2021/01/28/%E5%86%85%E6%A0%B8%E8%A7%82%E6%B5%8B/perf%E7%9B%B8%E5%85%B3/perf%E5%9F%BA%E6%9C%AC%E4%BD%BF%E7%94%A8/">perf基本使用</a></div></section></div>
+
+
+
+
+
+
+<footer class="page-footer footnote"><hr><div class="text"><p>本站由 <a href="/">Su Hui</a> 使用 <a target="_blank" rel="noopener" href="https://github.com/xaoxuu/hexo-theme-stellar/tree/1.33.1">Stellar 1.33.1</a> 主题创建。<br>本博客所有文章除特别声明外，均采用 <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> 许可协议，转载请注明出处。</p>
+</div></footer>
+<div class="main-mask" onclick="sidebar.dismiss()"></div></div><aside class="l_right">
+<div class="widgets">
+
+
+
+<widget class="widget-wrapper toc" id="data-toc" collapse="false"><div class="widget-header dis-select"><span class="name">本文目录</span><a class="cap-action" onclick="sidebar.toggleTOC()" ><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h11m-11 6h11m-11 6h11M4 6h1v4m-1 0h2m0 8H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg></a></div><div class="widget-body"><ol class="toc"><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%BB%8B%E7%BB%8D"><span class="toc-text">介绍</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#demo"><span class="toc-text">demo</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#funccount"><span class="toc-text">funccount</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#%E4%B8%BA%E5%95%A5%E5%8F%AF%E4%BB%A5%E6%94%AF%E6%8C%81%E9%80%9A%E9%85%8D%E7%AC%A6%EF%BC%9F"><span class="toc-text">为啥可以支持通配符？</span></a></li></ol></li><li class="toc-item toc-level-3"><a class="toc-link" href="#functrace"><span class="toc-text">functrace</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#funcslower"><span class="toc-text">funcslower</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#funcgraph"><span class="toc-text">funcgraph</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#kprobe"><span class="toc-text">kprobe</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#uprobe"><span class="toc-text">uprobe</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#reset-ftrace"><span class="toc-text">reset-ftrace</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#tpoint"><span class="toc-text">tpoint</span></a></li></ol></li></ol></div><div class="widget-footer"><a class="top" onclick="util.scrollTop()"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><!-- Icon from Solar by 480 Design - https://creativecommons.org/licenses/by/4.0/ --><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><path stroke-linejoin="round" d="m9 15.5l3-3l3 3m-6-4l3-3l3 3"/><path d="M7 3.338A9.95 9.95 0 0 1 12 2c5.523 0 10 4.477 10 10s-4.477 10-10 10S2 17.523 2 12c0-1.821.487-3.53 1.338-5"/></g></svg><span>回到顶部</span></a></div></widget>
+</div></aside><div class='float-panel'>
+  <button type='button' style='display:none' class='laptop-only rightbar-toggle mobile' onclick='sidebar.rightbar()'>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h11m-11 6h11m-11 6h11M4 6h1v4m-1 0h2m0 8H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>
+  </button>
+  <button type='button' style='display:none' class='mobile-only leftbar-toggle mobile' onclick='sidebar.leftbar()'>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 11c0-3.771 0-5.657 1.172-6.828C4.343 3 6.229 3 10 3h4c3.771 0 5.657 0 6.828 1.172C22 5.343 22 7.229 22 11v2c0 3.771 0 5.657-1.172 6.828C19.657 21 17.771 21 14 21h-4c-3.771 0-5.657 0-6.828-1.172C2 18.657 2 16.771 2 13z"/><path id="sep" stroke-linecap="round" d="M5.5 10h6m-5 4h4m4.5 7V3"/></g></svg>
+  </button>
+</div>
+</div><div class="scripts">
+
+
+<script type="text/javascript">
+  window.canonical = {"originalHost":null,"officialHosts":["localhost"],"encoded":""};
+  const ctx = {
+    date_suffix: {
+      just: `刚刚`,
+      min: `分钟前`,
+      hour: `小时前`,
+      day: `天前`,
+    },
+    root : `/`,
+    tag_plugins: {
+      chat: Object.assign({"api":"https://siteinfo.listentothewind.cn/api/v1"}),
+    }
+  };
+
+  // required plugins (only load if needs)
+  if (`local_search`) {
+    ctx.search = {};
+    ctx.search.service = `local_search`;
+    if (ctx.search.service == 'local_search') {
+      let service_obj = Object.assign({}, `{"field":"all","path":"/search.json","content":true,"skip_search":null,"sort":"-date"}`);
+      ctx.search[ctx.search.service] = service_obj;
+    }
+  }
+  const def = {
+    avatar: `https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/avatar/round/3442075.svg`,
+    cover: `https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/cover/76b86c0226ffd.svg`,
+    loading: `https://api.iconify.design/eos-icons:three-dots-loading.svg?color=%231cd0fd`,
+  };
+  const deps = {
+    jquery: `https://gcore.jsdelivr.net/npm/jquery@3.7/dist/jquery.min.js`,
+    marked: `https://gcore.jsdelivr.net/npm/marked@13.0/lib/marked.umd.min.js`,
+    lazyload: `/%5Bobject%20Object%5D`
+  }
+  
+
+</script>
+
+<script type="text/javascript">
+  
+  function RunItem() {
+    this.list = []; // 存放回调函数
+    this.start = () => {
+      for (var i = 0; i < this.list.length; i++) {
+        this.list[i].run();
+      }
+    };
+    this.push = (fn, name, setRequestAnimationFrame = true) => {
+      let myfn = fn
+      if (setRequestAnimationFrame) {
+        myfn = () => {
+          utils.requestAnimationFrame(fn)
+        }
+      }
+      var f = new Item(myfn, name);
+      this.list.push(f);
+    };
+    this.remove = (name) => {
+      for (let index = 0; index < this.list.length; index++) {
+        const e = this.list[index];
+        if (e.name == name) {
+          this.list.splice(index, 1);
+        }
+      }
+    }
+    // 构造一个可以run的对象
+    function Item(fn, name) {
+      // 函数名称
+      this.name = name || fn.name;
+      // run方法
+      this.run = () => {
+        try {
+          fn()
+        } catch (error) {
+          console.log(error);
+        }
+      };
+    }
+  }
+
+  const utils = {
+    // 懒加载 css https://github.com/filamentgroup/loadCSS
+    css: (href, before, media, attributes) => {
+      var doc = window.document;
+      var ss = doc.createElement("link");
+      var ref;
+      if (before) {
+        ref = before;
+      } else {
+        var refs = (doc.body || doc.getElementsByTagName("head")[0]).childNodes;
+        ref = refs[refs.length - 1];
+      }
+      var sheets = doc.styleSheets;
+      if (attributes) {
+        for (var attributeName in attributes) {
+          if (attributes.hasOwnProperty(attributeName)) {
+            ss.setAttribute(attributeName, attributes[attributeName]);
+          }
+        }
+      }
+      ss.rel = "stylesheet";
+      ss.href = href;
+      ss.media = "only x";
+      function ready(cb) {
+        if (doc.body) {
+          return cb();
+        }
+        setTimeout(function () {
+          ready(cb);
+        });
+      }
+      ready(function () {
+        ref.parentNode.insertBefore(ss, before ? ref : ref.nextSibling);
+      });
+      var onloadcssdefined = function (cb) {
+        var resolvedHref = ss.href;
+        var i = sheets.length;
+        while (i--) {
+          if (sheets[i].href === resolvedHref) {
+            return cb();
+          }
+        }
+        setTimeout(function () {
+          onloadcssdefined(cb);
+        });
+      };
+      function loadCB() {
+        if (ss.addEventListener) {
+          ss.removeEventListener("load", loadCB);
+        }
+        ss.media = media || "all";
+      }
+      if (ss.addEventListener) {
+        ss.addEventListener("load", loadCB);
+      }
+      ss.onloadcssdefined = onloadcssdefined;
+      onloadcssdefined(loadCB);
+      return ss;
+    },
+
+    js: (src, opt) => new Promise((resolve, reject) => {
+      var script = document.createElement('script');
+      if (src.startsWith('/')) {
+        src = ctx.root + src.substring(1);
+      }
+      script.src = src;
+      if (opt) {
+        for (let key of Object.keys(opt)) {
+          script[key] = opt[key]
+        }
+      } else {
+        // 默认异步，如果需要同步，第二个参数传入 {} 即可
+        script.async = true
+      }
+      script.onerror = reject
+      script.onload = script.onreadystatechange = function () {
+        const loadState = this.readyState
+        if (loadState && loadState !== 'loaded' && loadState !== 'complete') return
+        script.onload = script.onreadystatechange = null
+        resolve()
+      }
+      document.head.appendChild(script)
+    }),
+
+    jq: (fn) => {
+      if (typeof jQuery === 'undefined') {
+        utils.js(deps.jquery).then(fn)
+      } else {
+        fn()
+      }
+    },
+
+    onLoading: (el) => {
+      if (el) {
+        $(el).append('<div class="loading-wrap"><svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" stroke-opacity=".3" d="M12 3C16.9706 3 21 7.02944 21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="1.3s" values="60;0"/></path><path stroke-dasharray="15" stroke-dashoffset="15" d="M12 3C16.9706 3 21 7.02944 21 12"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.3s" values="15;0"/><animateTransform attributeName="transform" dur="1.5s" repeatCount="indefinite" type="rotate" values="0 12 12;360 12 12"/></path></g></svg></div>');
+      }
+    },
+    onLoadSuccess: (el) => {
+      if (el) {
+        $(el).find('.loading-wrap').remove();
+      }
+    },
+    onLoadFailure: (el) => {
+      if (el) {
+        $(el).find('.loading-wrap svg').remove();
+        $(el).find('.loading-wrap').append('<svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" d="M12 3L21 20H3L12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.5s" values="60;0"/></path><path stroke-dasharray="6" stroke-dashoffset="6" d="M12 10V14"><animate fill="freeze" attributeName="stroke-dashoffset" begin="0.6s" dur="0.2s" values="6;0"/></path></g><circle cx="12" cy="17" r="1" fill="currentColor" fill-opacity="0"><animate fill="freeze" attributeName="fill-opacity" begin="0.8s" dur="0.4s" values="0;1"/></circle></svg>');
+        $(el).find('.loading-wrap').addClass('error');
+      }
+    },
+    request: (el, url, callback, onFailure) => {
+      const maxRetry = 3;
+      let retryCount = 0;
+
+      return new Promise((resolve, reject) => {
+        const load = () => {
+          utils.onLoading?.(el);
+
+          let timedOut = false;
+          const timeout = setTimeout(() => {
+            timedOut = true;
+            console.warn('[request] 超时:', url);
+
+            if (++retryCount >= maxRetry) {
+              utils.onLoadFailure?.(el);
+              onFailure?.();
+              reject('请求超时');
+            } else {
+              setTimeout(load, 1000);
+            }
+          }, 5000);
+
+          fetch(url).then(resp => {
+            if (timedOut) return;
+            clearTimeout(timeout);
+
+            if (!resp.ok) throw new Error('响应失败');
+            return resp;
+          }).then(data => {
+            if (timedOut) return;
+            utils.onLoadSuccess?.(el);
+            callback(data);
+            resolve(data);
+          }).catch(err => {
+            clearTimeout(timeout);
+            console.warn('[request] 错误:', err);
+
+            if (++retryCount >= maxRetry) {
+              utils.onLoadFailure?.(el);
+              onFailure?.();
+              reject(err);
+            } else {
+              setTimeout(load, 1000);
+            }
+          });
+        };
+
+        load();
+      });
+    },
+    requestWithoutLoading: (url, options = {}, maxRetry = 2, timeout = 5000) => {
+      return new Promise((resolve, reject) => {
+        let retryCount = 0;
+
+        const tryRequest = () => {
+          let timedOut = false;
+          const timer = setTimeout(() => {
+            timedOut = true;
+            if (++retryCount > maxRetry) reject('timeout');
+            else tryRequest();
+          }, timeout);
+
+          fetch(url, options)
+            .then(resp => {
+              clearTimeout(timer);
+              if (!resp.ok) throw new Error('bad response');
+              resolve(resp);
+            })
+            .catch(err => {
+              clearTimeout(timer);
+              if (++retryCount > maxRetry) reject(err);
+              else setTimeout(tryRequest, 500);
+            });
+        };
+
+        tryRequest();
+      });
+    },
+    /********************** requestAnimationFrame ********************************/
+    // 1、requestAnimationFrame 会把每一帧中的所有 DOM 操作集中起来，在一次重绘或回流中就完成，并且重绘或回流的时间间隔紧紧跟随浏览器的刷新频率，一般来说，这个频率为每秒60帧。
+    // 2、在隐藏或不可见的元素中，requestAnimationFrame 将不会进行重绘或回流，这当然就意味着更少的的 cpu，gpu 和内存使用量。
+    requestAnimationFrame: (fn) => {
+      if (!window.requestAnimationFrame) {
+        window.requestAnimationFrame = window.requestAnimationFrame || window.mozRequestAnimationFrame || window.webkitRequestAnimationFrame;
+      }
+      window.requestAnimationFrame(fn)
+    },
+    dark: {},
+  };
+
+  // utils.dark.mode 当前模式 dark or light
+  // utils.dark.toggle() 暗黑模式触发器
+  // utils.dark.push(callBack[,"callBackName"]) 传入触发器回调函数
+  utils.dark.method = {
+    toggle: new RunItem(),
+  };
+  utils.dark = Object.assign(utils.dark, {
+    push: utils.dark.method.toggle.push,
+  });
+</script>
+<script>
+  const sidebar = {
+    leftbar: () => {
+      if (l_body) {
+        l_body.toggleAttribute('leftbar');
+        l_body.removeAttribute('rightbar');
+      }
+    },
+    rightbar: () => {
+      if (l_body) {
+        l_body.toggleAttribute('rightbar');
+        l_body.removeAttribute('leftbar');
+      }
+    },
+    dismiss: () => {
+      if (l_body) {
+        l_body.removeAttribute('leftbar');
+        l_body.removeAttribute('rightbar');
+      }
+    },
+    toggleTOC: () => {
+      document.querySelector('#data-toc').classList.toggle('collapse');
+    }
+  }
+</script>
+<script type="text/javascript">
+  (() => {
+    const tagSwitchers = document.querySelectorAll('.tag-subtree.parent-tag > a > .tag-switcher-wrapper')
+    for (const tagSwitcher of tagSwitchers) {
+      tagSwitcher.addEventListener('click', (e) => {
+        const parent = e.target.closest('.tag-subtree.parent-tag')
+        parent.classList.toggle('expanded')
+        e.preventDefault()
+      })
+    }
+
+    // Get active tag from query string, then activate it.
+    const urlParams = new URLSearchParams(window.location.search)
+    const activeTag = urlParams.get('tag')
+    if (activeTag) {
+      let tag = document.querySelector(`.tag-subtree[data-tag="${activeTag}"]`)
+      if (tag) {
+        tag.querySelector('a').classList.add('active')
+        
+        while (tag) {
+          tag.classList.add('expanded')
+          tag = tag.parentElement.closest('.tag-subtree.parent-tag')
+        }
+      }
+    }
+  })()
+</script>
+
+<script async src="https://gcore.jsdelivr.net/npm/vanilla-lazyload@19.1/dist/lazyload.min.js"></script>
+<script>
+  // https://www.npmjs.com/package/vanilla-lazyload
+  // Set the options globally
+  // to make LazyLoad self-initialize
+  window.lazyLoadOptions = {
+    elements_selector: ".lazy",
+    callback_loaded: (el) => {
+      el.classList.add('loaded');
+      const wrapper = el.closest('.lazy-box');
+      const icon = wrapper?.querySelector('.lazy-icon');
+      if (icon) icon.remove();
+    }
+  };
+  // Listen to the initialization event
+  // and get the instance of LazyLoad
+  window.addEventListener(
+    "LazyLoad::Initialized",
+    function (event) {
+      window.lazyLoadInstance = event.detail.instance;
+    },
+    false
+  );
+  document.addEventListener('DOMContentLoaded', function () {
+    window.lazyLoadInstance?.update();
+  });
+
+  window.wrapLazyloadImages = (container) => {
+    if (typeof container === 'string') {
+      container = document.querySelector(container);
+    }
+    if (!container) return;
+    
+    const images = container.querySelectorAll('img');
+    images.forEach((img) => {
+      if (img.classList.contains('lazy')) return;
+
+      const src = img.getAttribute('src');
+      if (!src) return;
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'lazy-box';
+
+      const newImg = img.cloneNode();
+      newImg.removeAttribute('src');
+      newImg.setAttribute('data-src', src);
+      newImg.classList.add('lazy');
+
+      const icon = document.createElement('div');
+      icon.className = 'lazy-icon';
+      if (def.loading) {
+        icon.style.backgroundImage = `url("${def.loading}")`;
+      }
+
+      wrapper.appendChild(newImg);
+      wrapper.appendChild(icon);
+
+      img.replaceWith(wrapper);
+    });
+
+    // 通知 LazyLoad 更新
+    if (window.lazyLoadInstance?.update) {
+      window.lazyLoadInstance.update();
+    }
+  }
+  
+</script>
+
+<!-- required -->
+<script src="/js/main.js?v=1.33.1" defer></script>
+
+<script type="text/javascript">
+  const applyTheme = (theme) => {
+    if (theme === 'auto') {
+      document.documentElement.removeAttribute('data-theme')
+    } else {
+      document.documentElement.setAttribute('data-theme', theme)
+    }
+
+    // applyThemeToGiscus(theme)
+  }
+
+  // FIXME: 这会导致无法使用 preferred_color_scheme 以外的主题
+  const applyThemeToGiscus = (theme) => {
+    // theme = theme === 'auto' ? 'preferred_color_scheme' : theme
+    const cmt = document.getElementById('giscus')
+    if (cmt) {
+      // This works before giscus load.
+      cmt.setAttribute('data-theme', theme)
+    }
+
+    const iframe = document.querySelector('#comments > section.giscus > iframe')
+    if (iframe) {
+      // This works after giscus loaded.
+      const src = iframe.src
+      const newSrc = src.replace(/theme=[\w]+/, `theme=${theme}`)
+      iframe.src = newSrc
+    }
+  }
+
+  const switchTheme = () => {
+    // light -> dark -> auto -> light -> ...
+    const currentTheme = document.documentElement.getAttribute('data-theme')
+    let newTheme;
+    switch (currentTheme) {
+      case 'light':
+        newTheme = 'dark'
+        break
+      case 'dark':
+        newTheme = 'auto'
+        break
+      default:
+        newTheme = 'light'
+    }
+    applyTheme(newTheme)
+    window.localStorage.setItem('Stellar.theme', newTheme)
+    utils.dark.mode = newTheme === 'auto' ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : newTheme;
+    utils.dark.method.toggle.start();
+
+    const messages = {
+      light: `切换到浅色模式`,
+      dark: `切换到深色模式`,
+      auto: `切换到跟随系统配色`,
+    }
+    hud?.toast?.(messages[newTheme])
+  }
+
+  (() => {
+    // Apply user's preferred theme, if any.
+    const theme = window.localStorage.getItem('Stellar.theme')
+    if (theme !== null) {
+      applyTheme(theme)
+    } else {
+      utils.dark.mode = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    utils.dark.method.toggle.start();
+  })()
+</script>
+
+
+<!-- optional -->
+
+
+
+<script defer>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    ctx.services = Object.assign({}, JSON.parse(`{"mdrender":{"js":"/js/services/mdrender.js"},"siteinfo":{"js":"/js/services/siteinfo.js","api":null},"ghinfo":{"js":"/js/services/ghinfo.js"},"rating":{"js":"/js/services/rating.js","api":"https://star-vote.xaox.cc/api/rating"},"vote":{"js":"/js/services/vote.js","api":"https://star-vote.xaox.cc/api/vote"},"sites":{"js":"/js/services/sites.js"},"friends":{"js":"/js/services/friends.js"},"friends_and_posts":{"js":"/js/services/friends_and_posts.js"},"timeline":{"js":"/js/services/timeline.js"},"fcircle":{"js":"/js/services/fcircle.js"},"weibo":{"js":"/js/services/weibo.js"},"memos":{"js":"/js/services/memos.js"},"voice":{"js":"/js/plugins/voice.js"},"video":{"js":"/js/plugins/video.js"},"download-file":{"js":"/js/plugins/download-file.js"},"twikoo":{"js":"/js/services/twikoo_latest_comment.js"},"waline":{"js":"/js/services/waline_latest_comment.js"},"artalk":{"js":"/js/services/artalk_latest_comment.js"},"giscus":{"js":"/js/services/giscus_latest_comment.js"},"contributors":{"edit_this_page":{"_posts/":null,"wiki/stellar/":"https://github.com/xaoxuu/hexo-theme-stellar-docs/blob/main/"},"js":"/js/services/contributors.js"}}`));
+    for (let id of Object.keys(ctx.services)) {
+      const js = ctx.services[id].js;
+      if (id == 'siteinfo') {
+        ctx.cardlinks = document.querySelectorAll('a.link-card[cardlink]');
+        if (ctx.cardlinks?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            setCardLink(ctx.cardlinks);
+          });
+        }
+      } else if (id == 'voice') {
+        ctx.voiceAudios = document.querySelectorAll('.voice>audio');
+        if (ctx.voiceAudios?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            createVoiceDom(ctx.voiceAudios);
+          });
+        }
+      } else if (id == 'video') {
+        ctx.videos = document.querySelectorAll('.video>video');
+        if (ctx.videos?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            videoEvents(ctx.videos);
+          });
+        }
+      } else if (id == 'download-file') {
+        ctx.files = document.querySelectorAll('.file');
+        if (ctx.files?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            downloadFileEvent(ctx.files);
+          });
+        }
+      } else {
+        const els = document.getElementsByClassName(`ds-${id}`);
+        if (els?.length > 0) {
+          utils.jq(() => {
+            if (id == 'timeline' || 'memos' || 'marked') {
+              utils.js(deps.marked).then(function () {
+                utils.js(js, { defer: true });
+              });
+            } else {
+              utils.js(js, { defer: true });
+            }
+          });
+        }
+      }
+    }
+
+    // chat iphone time
+    let phoneTimes = document.querySelectorAll('.chat .status-bar .time');
+
+    if (phoneTimes.length > 0) {
+      NowTime();
+      var date = new Date();
+      var sec = date.getSeconds();
+      var firstAdjustInterval = setInterval(firstAdjustTime, 1000 * (60 - sec));
+    }
+
+    function firstAdjustTime() {
+      NowTime();
+      clearInterval(firstAdjustInterval);
+      setInterval(NowTime, 1000 * 60);
+    }
+
+    function NowTime() {
+      for (let i = 0; i < phoneTimes.length; ++i) {
+        var timeSpan = phoneTimes[i];
+        var date = new Date();
+        var hour = date.getHours();
+        var min = date.getMinutes();
+        timeSpan.innerHTML = check(hour) + ":" + check(min);
+      }
+    };
+
+    function check(val) {
+      if (val < 10) {
+        return ("0" + val);
+      }
+      return (val);
+    }
+
+    // chat quote
+    const chat_quote_obverser = new IntersectionObserver((entries, observer) => {
+      entries.filter((entry) => { return entry.isIntersecting }).sort((a, b) => a.intersectionRect.y !== b.intersectionRect.y ? a.intersectionRect.y - b.intersectionRect.y : a.intersectionRect.x - b.intersectionRect.x).forEach((entry, index) => {
+          observer.unobserve(entry.target);
+          setTimeout(() => {
+            entry.target.classList.add('quote-blink');
+            setTimeout(() => {
+              entry.target.classList.remove('quote-blink');
+            }, 1000);
+          }, Math.max(100, 16) * (index + 1));
+        });
+    });
+
+    var chatQuotes = document.querySelectorAll(".chat .talk .quote");
+    chatQuotes.forEach((quote) => {
+      quote.addEventListener('click', function () {
+        var chatCellDom = document.getElementById("quote-" + quote.getAttribute("quotedCellTag"));
+        if (chatCellDom) {
+          var chatDiv = chatCellDom.parentElement;
+          var mid = chatDiv.clientHeight / 2;
+          var offsetTop = chatCellDom.offsetTop;
+          if (offsetTop > mid - chatCellDom.clientHeight / 2) {
+            chatDiv.scrollTo({
+              top: chatCellDom.offsetTop - mid + chatCellDom.clientHeight / 2,
+              behavior: "smooth"
+            });
+          } else {
+            chatDiv.scrollTo({
+              top: 0,
+              behavior: "smooth"
+            });
+          }
+          chat_quote_obverser.observe(chatCellDom);
+        }
+      });
+    });
+  });
+</script>
+
+<script>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    ctx.search = {
+      path: `/search.json`,
+    }
+    utils.js('/js/search/local-search.js', { defer: true });
+  });
+</script><script>
+  window.FPConfig = {
+    delay: 0,
+    ignoreKeywords: [],
+    maxRPS: 5,
+    hoverDelay: 25
+  };
+</script>
+<script defer src="https://gcore.jsdelivr.net/npm/flying-pages@2/flying-pages.min.js"></script><script>
+  ctx.fancybox = {
+    selector: `.timenode p>img`,
+    css: `https://gcore.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css`,
+    js: `https://gcore.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js`
+  };
+  var selector = '[data-fancybox]:not(.error), .with-fancybox .atk-content img:not([atk-emoticon])';
+  if (ctx.fancybox.selector) {
+    selector += `, ${ctx.fancybox.selector}`
+  }
+  var needFancybox = document.querySelectorAll(selector).length !== 0;
+  if (!needFancybox) {
+    const memos = document.getElementsByClassName('ds-memos');
+    if (memos != undefined && memos.length > 0) {
+      needFancybox = true;
+    }
+    const fancybox = document.getElementsByClassName('with-fancybox');
+    if (fancybox != undefined && fancybox.length > 0) {
+      needFancybox = true;
+    }
+  }
+  if (needFancybox) {
+    utils.css(ctx.fancybox.css);
+    utils.js(ctx.fancybox.js, { defer: true }).then(function () {
+      Fancybox.bind(selector, {
+        hideScrollbar: false,
+        Thumbs: {
+          autoStart: false,
+        },
+        caption: (fancybox, slide) => {
+          return slide.triggerEl.alt || slide.triggerEl.dataset.caption || null
+        }
+      });
+    })
+  }
+</script>
+<script>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    const swiper_api = document.getElementById('swiper-api');
+    if (swiper_api != undefined) {
+      utils.css(`https://unpkg.com/swiper@10.3/swiper-bundle.min.css`);
+      utils.js(`https://unpkg.com/swiper@10.3/swiper-bundle.min.js`, { defer: true }).then(function () {
+        const effect = swiper_api.getAttribute('effect') || '';
+        var swiper = new Swiper('.swiper#swiper-api', {
+          slidesPerView: 'auto',
+          spaceBetween: 8,
+          centeredSlides: true,
+          effect: effect,
+          rewind: true,
+          pagination: {
+            el: '.swiper-pagination',
+            clickable: true,
+          },
+          navigation: {
+            nextEl: '.swiper-button-next',
+            prevEl: '.swiper-button-prev',
+          },
+        });
+      })
+    }
+  });
+</script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    window.codeElements = document.querySelectorAll('.code');
+    if (window.codeElements.length > 0) {
+      ctx.copycode = {
+        default_text: `Copy`,
+        success_text: `Copied`,
+        toast: `复制成功`,
+      };
+      utils.js('/js/plugins/copycode.js');
+    }
+  });
+</script>
+
+
+<!-- inject -->
+
+</div></body></html>

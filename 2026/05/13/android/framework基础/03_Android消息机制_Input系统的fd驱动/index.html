@@ -1,0 +1,1119 @@
+
+<!DOCTYPE html><html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="hexo-theme" content="https://github.com/xaoxuu/hexo-theme-stellar/tree/1.33.1" theme-name="Stellar" theme-version="1.33.1">
+  
+  
+  <meta name="generator" content="Hexo 5.1.1">
+  <meta http-equiv='x-dns-prefetch-control' content='on' />
+  
+  <meta name="renderer" content="webkit">
+  <meta name="force-rendering" content="webkit">
+  <meta http-equiv="X-UA-Compatible" content="IE=Edge,chrome=1">
+  <meta name="HandheldFriendly" content="True" >
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000">
+  <meta name="theme-color" content="#f9fafb">
+  <title>Android消息机制(三)：Input 系统如何“白嫖” Looper (inputfd) - liulangren Blog</title>
+
+  
+    <meta name="description" content="前两篇已经把 Looper 的两件基础能力讲清楚了：  它能通过 epoll_wait() 把线程安全地睡下去。 它能通过 eventfd 在需要时被立即叫醒。  但 Android 主线程上跑的不只有 Java Message。Input、Vsync、Binder 回调、Native 自定义 fd 事件，本质上都在争抢同一个线程事件循环。这里最典型、也最容易被忽略的一条链路，就是 InputCh">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Android消息机制(三)：Input 系统如何“白嫖” Looper (inputfd)">
+<meta property="og:url" content="https://liulangrenaaa.github.io/2026/05/13/android/framework%E5%9F%BA%E7%A1%80/03_Android%E6%B6%88%E6%81%AF%E6%9C%BA%E5%88%B6_Input%E7%B3%BB%E7%BB%9F%E7%9A%84fd%E9%A9%B1%E5%8A%A8/">
+<meta property="og:site_name" content="liulangren Blog">
+<meta property="og:description" content="前两篇已经把 Looper 的两件基础能力讲清楚了：  它能通过 epoll_wait() 把线程安全地睡下去。 它能通过 eventfd 在需要时被立即叫醒。  但 Android 主线程上跑的不只有 Java Message。Input、Vsync、Binder 回调、Native 自定义 fd 事件，本质上都在争抢同一个线程事件循环。这里最典型、也最容易被忽略的一条链路，就是 InputCh">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://liulangrenaaa.github.io/images/icons/image.png">
+<meta property="article:published_time" content="2026-05-13T10:15:02.000Z">
+<meta property="article:modified_time" content="2026-05-14T03:56:22.498Z">
+<meta property="article:author" content="Su Hui">
+<meta property="article:tag" content="Input">
+<meta property="article:tag" content="源码分析">
+<meta property="article:tag" content="socketpair">
+<meta property="article:tag" content="多路复用">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://liulangrenaaa.github.io/images/icons/image.png">
+  
+  
+  
+  <meta name="keywords" content="Input,源码分析,socketpair,多路复用">
+
+  <!-- feed -->
+  
+
+  <link rel="stylesheet" href="/css/main.css?v=1.33.1">
+
+
+  
+    <link rel="shortcut icon" href="/images/icons/image.png">
+  
+
+  
+
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"Su Hui","sameAs":[],"image":"/images/icons/image.png"},"dateCreated":"2026-05-13T10:15:02+00:00","dateModified":"2026-05-14T03:56:22+00:00","datePublished":"2026-05-13T10:15:02+00:00","description":"","headline":"Android消息机制(三)：Input 系统如何“白嫖” Looper (inputfd)","mainEntityOfPage":{"@type":"WebPage","@id":"https://liulangrenaaa.github.io/2026/05/13/android/framework%E5%9F%BA%E7%A1%80/03_Android%E6%B6%88%E6%81%AF%E6%9C%BA%E5%88%B6_Input%E7%B3%BB%E7%BB%9F%E7%9A%84fd%E9%A9%B1%E5%8A%A8/"},"publisher":{"@type":"Organization","name":"Su Hui","sameAs":[],"image":"/images/icons/image.png","logo":{"@type":"ImageObject","url":"/images/icons/image.png"}},"url":"https://liulangrenaaa.github.io/2026/05/13/android/framework%E5%9F%BA%E7%A1%80/03_Android%E6%B6%88%E6%81%AF%E6%9C%BA%E5%88%B6_Input%E7%B3%BB%E7%BB%9F%E7%9A%84fd%E9%A9%B1%E5%8A%A8/","keywords":"Input, 源码分析, socketpair, 多路复用","image":[]}</script>
+  
+</head>
+<body>
+
+<div class="l_body content" id="start" layout="post" type="tech" ><aside class="l_left"><div class="sidebg"></div><div class="leftbar-container">
+
+
+<header class="header"><div class="logo-wrap"><a class="avatar" href="/about/"><div class="bg" style="opacity:0;background-image:url(https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/avatar/round/rainbow64@3x.webp);"></div><img no-lazy class="avatar" src="/images/icons/image.png" onerror="javascript:this.classList.add('error');this.src='https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/image/2659360.svg';"></a><a class="title" href="/"><div class="main">liulangren Blog</div></a></div></header>
+
+<div class="nav-area">
+
+<nav class="menu dis-select"></nav>
+</div>
+<div class="widgets">
+<div class="search-wrapper" id="search-wrapper"><form class="search-form"><a class="search-button" onclick="document.getElementById(&quot;search-input&quot;).focus();"><svg t="1705074644177" viewBox="0 0 1025 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="1560" width="200" height="200"><path d="M1008.839137 935.96571L792.364903 719.491476a56.783488 56.783488 0 0 0-80.152866 0 358.53545 358.53545 0 1 1 100.857314-335.166073 362.840335 362.840335 0 0 1-3.689902 170.145468 51.248635 51.248635 0 1 0 99.217358 26.444296 462.057693 462.057693 0 1 0-158.255785 242.303546l185.930047 185.725053a51.248635 51.248635 0 0 0 72.568068 0 51.248635 51.248635 0 0 0 0-72.978056z" p-id="1561"></path><path d="M616.479587 615.969233a50.428657 50.428657 0 0 0-61.498362-5.534852 174.655348 174.655348 0 0 1-177.525271 3.484907 49.403684 49.403684 0 0 0-58.833433 6.76482l-3.074918 2.869923a49.403684 49.403684 0 0 0 8.609771 78.10292 277.767601 277.767601 0 0 0 286.992355-5.739847 49.403684 49.403684 0 0 0 8.404776-76.667958z" p-id="1562"></path></svg></a><input type="text" class="search-input" id="search-input" placeholder="站内搜索"></form><div id="search-result"></div><div class="search-no-result">没有找到内容！</div></div>
+
+<widget class="widget-wrapper linklist"><div class="widget-header dis-select"><span class="name">核心专题</span></div><div class="widget-body fs14">
+<div class="linklist left" style="grid-template-columns:repeat(1,1fr);">
+<a class="link" title="framework基础" href="/categories/android/framework基础/"><div class="flex"><span>framework基础</span></div></a>
+<a class="link" title="app启动与生命周期" href="/categories/android/app启动与生命周期/"><div class="flex"><span>app启动与生命周期</span></div></a>
+<a class="link" title="wms窗口系统" href="/categories/android/wms窗口系统/"><div class="flex"><span>wms窗口系统</span></div></a>
+<a class="link" title="input输入系统" href="/categories/android/input输入系统/"><div class="flex"><span>input输入系统</span></div></a>
+<a class="link" title="binder与系统服务" href="/categories/android/binder与系统服务/"><div class="flex"><span>binder与系统服务</span></div></a>
+<a class="link" title="graphics图形系统" href="/categories/android/graphics图形系统/"><div class="flex"><span>graphics图形系统</span></div></a>
+<a class="link" title="anr-crash稳定性" href="/categories/android/anr-crash稳定性/"><div class="flex"><span>anr-crash稳定性</span></div></a>
+<a class="link" title="debug-trace工具链" href="/categories/android/debug-trace工具链/"><div class="flex"><span>debug-trace工具链</span></div></a>
+<a class="link" title="性能稳定性" href="/tags/性能稳定性/"><div class="flex"><span>性能稳定性</span></div></a>
+<a class="link" title="Linux 调度" href="/categories/linux-kernel/linux-schedule/"><div class="flex"><span>Linux 调度</span></div></a></div></div></widget>
+
+<widget class="widget-wrapper linklist"><div class="widget-header dis-select"><span class="name">精选文章</span></div><div class="widget-body fs14">
+<div class="linklist left" style="grid-template-columns:repeat(1,1fr);">
+<a class="link" title="ANR问题总结" href="/2022/07/01/android/anr-crash稳定性/ANR问题总结/"><div class="flex"><span>ANR问题总结</span></div></a>
+<a class="link" title="android12 gdb64调试进程" href="/2021/09/23/用户空间/android12%20gdb64调试进程/"><div class="flex"><span>android12 gdb64调试进程</span></div></a>
+<a class="link" title="60s定位内核性能瓶颈" href="/2020/09/13/内核观测/性能稳定性/60s定位内核性能瓶颈/"><div class="flex"><span>60s定位内核性能瓶颈</span></div></a>
+<a class="link" title="关于preempt_count的思考" href="/2020/09/21/进程管理/关于preempt_count的思考/"><div class="flex"><span>关于preempt_count的思考</span></div></a></div></div></widget>
+</div>
+
+</div></aside><div class="l_main" id="main">
+
+
+
+
+
+<div class="article banner top">
+  <div class="content">
+    <div class="top bread-nav footnote"><div class="left"><div class="flex-row" id="breadcrumb"><a class="cap breadcrumb" href="/">主页</a>
+<span class="sep"></span><a class="cap breadcrumb" href="/">文章</a><span class="sep"></span><a class="cap breadcrumb-link" href="/categories/android/">android</a> <span class="sep"></span> <a class="cap breadcrumb-link" href="/categories/android/framework%E5%9F%BA%E7%A1%80/">framework基础</a></div>
+<div class="flex-row" id="post-meta"><span class="text created">发布于：<time datetime="2026-05-13T10:15:02.000Z">2026-05-13</time></span><span class="sep updated"></span><span class="text updated">更新于：<time datetime="2026-05-14T03:56:22.498Z">2026-05-14</time></span></div></div></div>
+    
+    <div class="bottom only-title">
+      
+      <div class="text-area">
+        <h1 class="text title"><span>Android消息机制(三)：Input 系统如何“白嫖” Looper (inputfd)</span></h1>
+        
+      </div>
+    </div>
+    
+  </div>
+  </div><article class="md-text content"><p>前两篇已经把 <code>Looper</code> 的两件基础能力讲清楚了：</p>
+<ol>
+<li>它能通过 <code>epoll_wait()</code> 把线程安全地睡下去。</li>
+<li>它能通过 <code>eventfd</code> 在需要时被立即叫醒。</li>
+</ol>
+<p>但 Android 主线程上跑的不只有 Java <code>Message</code>。<code>Input</code>、<code>Vsync</code>、Binder 回调、Native 自定义 fd 事件，本质上都在争抢同一个线程事件循环。这里最典型、也最容易被忽略的一条链路，就是 <code>InputChannel</code>。</p>
+<p>很多人看到触摸事件最终进入 <code>ViewRootImpl</code>、<code>DecorView</code>、<code>View</code>，就会下意识认为这还是一条普通 <code>Handler</code> 消息链。实际上不是。对主线程来说，输入事件最早不是以 <code>Message</code> 的形式到来的，而是先让一个 <strong>input fd 变为 readable</strong>，然后由 <code>Looper</code> 在 <code>epoll</code> 层感知到它，再触发后续输入分发。</p>
+<p>这就是标题里说的“白嫖”：</p>
+<ul>
+<li><code>Input</code> 自己不需要重新发明一套线程阻塞/唤醒机制。</li>
+<li>它只要把自己的 fd 挂到 <code>Looper</code> 里。</li>
+<li>剩下的等待、唤醒、回调分发，全部复用现成的 <code>Looper</code> 基建。</li>
+</ul>
+<p>本文默认基于 <code>aosp14</code> 视角说明这条链路。</p>
+<h2 id="1-先看结论"><a href="#1-先看结论" class="headerlink" title="1. 先看结论"></a>1. 先看结论</h2><p>先把核心结论放前面：</p>
+<ol>
+<li><code>InputChannel</code> 的本质不是 Java 消息通道，而是一对 <code>socketpair</code> fd。</li>
+<li>应用主线程监听的是其中的接收端 fd，通常可以理解为 “inputfd”。</li>
+<li>这个 fd 会被注册进 Native <code>Looper</code> 的 <code>epoll</code> 集合，而不是注册进 Java <code>MessageQueue.mMessages</code>。</li>
+<li>当 InputDispatcher 把输入数据写进通道后，inputfd 变为 readable。</li>
+<li>主线程阻塞中的 <code>epoll_wait()</code> 立即返回，<code>Looper</code> 分发该 fd 对应的回调。</li>
+<li>Native 输入接收侧读出 <code>InputMessage</code> 后，再通过 JNI/Java 桥接进入 <code>InputEventReceiver</code> 与 <code>ViewRootImpl</code>。</li>
+</ol>
+<p>所以对主线程而言，输入事件的第一触发点不是：</p>
+<ul>
+<li>“消息队列里多了一条 Handler 消息”</li>
+</ul>
+<p>而是：</p>
+<ul>
+<li>“Looper 监听到一个 fd 可读事件”</li>
+</ul>
+<h2 id="2-整体链路图"><a href="#2-整体链路图" class="headerlink" title="2. 整体链路图"></a>2. 整体链路图</h2><p>先看完整链路，再拆每一层职责：</p>
+<figure style="margin:1.25rem 0;">
+  <a href="/generated/mermaid/c87f706ef94fa7ecb72dedee6bc3e0a096af160b.svg" data-fancybox="mermaid-diagrams" data-caption="Mermaid 图 - 图 1" style="display:block;cursor:zoom-in;">
+    <img src="/generated/mermaid/c87f706ef94fa7ecb72dedee6bc3e0a096af160b.svg" alt="Mermaid 图 - 图 1" loading="lazy" style="display:block;width:100%;height:auto;border-radius:12px;border:1px solid rgba(15,23,42,.08);background:#fff;box-shadow:0 10px 30px rgba(15,23,42,.08);">
+  </a>
+  <figcaption style="margin-top:.5rem;font-size:.875rem;color:rgba(71,85,105,.9);text-align:center;">点击放大查看原图</figcaption>
+</figure>
+
+<p>这张图里最关键的是两点：</p>
+<ul>
+<li><code>InputDispatcher</code> 写的是一个 socket fd，不是往应用主线程投 Java <code>Message</code>。</li>
+<li>主线程之所以能“第一时间”感知输入，是因为它本来就在 <code>epoll_wait()</code> 里顺手监听这个 fd。</li>
+</ul>
+<h2 id="3-InputChannel-的本质是什么"><a href="#3-InputChannel-的本质是什么" class="headerlink" title="3. InputChannel 的本质是什么"></a>3. <code>InputChannel</code> 的本质是什么</h2><p><code>InputChannel</code> 是输入系统在进程间传递事件的基础通道。它的核心并不是一个复杂框架对象，而是一对 Unix 域 <code>socketpair</code>。</p>
+<p>可以把它理解成：</p>
+<ul>
+<li>服务端 fd：通常由 system_server 一侧持有，对应 InputDispatcher 往窗口发事件的出口。</li>
+<li>客户端 fd：通常由应用进程一侧持有，对应主线程接收输入的入口。</li>
+</ul>
+<p>它之所以用 <code>socketpair</code>，本质原因是输入系统传的不是“有/无事件”这种单 bit 信号，而是一整包结构化数据，例如：</p>
+<ul>
+<li>动作类型</li>
+<li>时间戳</li>
+<li>坐标</li>
+<li>pointer 信息</li>
+<li>序列号</li>
+<li>finish/ack 所需字段</li>
+</ul>
+<p>这决定了它需要的是 <strong>可双向传输结构化消息的本地 socket 通道</strong>，而不是只适合做通知计数器的 <code>eventfd</code>。</p>
+<p>可以抽象成下面这样：</p>
+<figure style="margin:1.25rem 0;">
+  <a href="/generated/mermaid/f10dbf13aa2d8718dd8c1ffa575787af097e299a.svg" data-fancybox="mermaid-diagrams" data-caption="Mermaid 图 - 图 2" style="display:block;cursor:zoom-in;">
+    <img src="/generated/mermaid/f10dbf13aa2d8718dd8c1ffa575787af097e299a.svg" alt="Mermaid 图 - 图 2" loading="lazy" style="display:block;width:100%;height:auto;border-radius:12px;border:1px solid rgba(15,23,42,.08);background:#fff;box-shadow:0 10px 30px rgba(15,23,42,.08);">
+  </a>
+  <figcaption style="margin-top:.5rem;font-size:.875rem;color:rgba(71,85,105,.9);text-align:center;">点击放大查看原图</figcaption>
+</figure>
+
+<p>这也是 <code>InputChannel</code> 和普通 <code>Handler</code> 消息的根本区别：</p>
+<ul>
+<li><code>Handler</code> 消息存在于进程内 Java 内存队列。</li>
+<li><code>InputChannel</code> 消息存在于 socket 通道和内核缓冲区。</li>
+</ul>
+<h2 id="4-Input-为什么不直接发-Handler-消息"><a href="#4-Input-为什么不直接发-Handler-消息" class="headerlink" title="4. Input 为什么不直接发 Handler 消息"></a>4. Input 为什么不直接发 Handler 消息</h2><p>这个问题如果只从应用层看，很容易得出错误答案。真正原因至少有四层。</p>
+<h3 id="4-1-输入事件最初发生在系统进程，不在应用进程内"><a href="#4-1-输入事件最初发生在系统进程，不在应用进程内" class="headerlink" title="4.1 输入事件最初发生在系统进程，不在应用进程内"></a>4.1 输入事件最初发生在系统进程，不在应用进程内</h3><p>触摸事件先经过底层驱动、<code>EventHub</code>、<code>InputReader</code>、<code>InputDispatcher</code>，然后才被路由到目标窗口。输入源头根本不在应用主线程所在进程内，因此它首先需要的是：</p>
+<ul>
+<li>进程间通信</li>
+<li>可携带结构体数据</li>
+<li>可关联 backpressure 与 finish/ack 语义</li>
+</ul>
+<p>单纯塞一条 Java <code>Message</code> 并不能解决这些问题。</p>
+<h3 id="4-2-主线程已经有一套成熟的-fd-事件循环"><a href="#4-2-主线程已经有一套成熟的-fd-事件循环" class="headerlink" title="4.2 主线程已经有一套成熟的 fd 事件循环"></a>4.2 主线程已经有一套成熟的 fd 事件循环</h3><p>主线程底层早就不是“只处理 Java Message”的模型，而是：</p>
+<ul>
+<li>Java <code>MessageQueue</code> 负责调度策略</li>
+<li>Native <code>Looper</code> 负责 <code>epoll</code> 等待和 fd 分发</li>
+</ul>
+<p>既然 <code>Looper</code> 已经能监听 fd，那么输入系统最合理的做法就是：</p>
+<ul>
+<li>直接把 <code>InputChannel</code> 客户端 fd 挂进去</li>
+</ul>
+<p>这比“系统进程 -&gt; JNI -&gt; Java 消息投递 -&gt; 再回调输入处理”更直，也更低成本。</p>
+<h3 id="4-3-输入链路需要双向确认"><a href="#4-3-输入链路需要双向确认" class="headerlink" title="4.3 输入链路需要双向确认"></a>4.3 输入链路需要双向确认</h3><p>应用消费一个输入事件后，通常还要通过 finish 信号告诉 dispatcher：</p>
+<ul>
+<li>这次事件已经处理完</li>
+<li>是否被消费</li>
+<li>后续是否可以继续投递下一个事件</li>
+</ul>
+<p>这类“请求-应答”语义更适合走双向 socket，而不是单向消息投递。</p>
+<h3 id="4-4-输入系统需要与-Looper-的阻塞状态天然耦合"><a href="#4-4-输入系统需要与-Looper-的阻塞状态天然耦合" class="headerlink" title="4.4 输入系统需要与 Looper 的阻塞状态天然耦合"></a>4.4 输入系统需要与 Looper 的阻塞状态天然耦合</h3><p>如果主线程当前没有 Java 消息，它通常会睡在 <code>epoll_wait()</code>。输入系统只要让 inputfd 变为 readable，就能把线程从阻塞态直接唤醒。这种设计天然满足两件事：</p>
+<ol>
+<li>没输入时主线程不会空转。</li>
+<li>一有输入，主线程会从内核等待点立即返回。</li>
+</ol>
+<h2 id="5-inputfd-是怎么注册进-Looper-的"><a href="#5-inputfd-是怎么注册进-Looper-的" class="headerlink" title="5. inputfd 是怎么注册进 Looper 的"></a>5. inputfd 是怎么注册进 Looper 的</h2><p>这一步是理解“白嫖 Looper”的核心。</p>
+<p>应用窗口在创建输入接收器时，会建立 <code>InputChannel</code>，随后在 Native 输入接收端把客户端 fd 注册到当前线程的 <code>Looper</code>。概念上等价于：</p>
+<ol>
+<li>拿到主线程对应的 <code>Looper</code></li>
+<li>调用 <code>addFd(inputfd, ...)</code></li>
+<li>指定当 <code>EVENT_INPUT</code> 到来时的回调对象</li>
+</ol>
+<p>此后主线程每轮 <code>nativePollOnce()</code> 最终都会落到：</p>
+<ul>
+<li><code>Looper::pollOnce()</code></li>
+<li><code>Looper::pollInner()</code></li>
+<li><code>epoll_wait()</code></li>
+</ul>
+<p>而 inputfd 已经在这个 <code>epoll</code> 监听集合里了。</p>
+<p>可以把这一步画成下面这样：</p>
+<figure style="margin:1.25rem 0;">
+  <a href="/generated/mermaid/c4f77726b4936f14e3630a54cbe1c11b7bb60816.svg" data-fancybox="mermaid-diagrams" data-caption="Mermaid 图 - 图 3" style="display:block;cursor:zoom-in;">
+    <img src="/generated/mermaid/c4f77726b4936f14e3630a54cbe1c11b7bb60816.svg" alt="Mermaid 图 - 图 3" loading="lazy" style="display:block;width:100%;height:auto;border-radius:12px;border:1px solid rgba(15,23,42,.08);background:#fff;box-shadow:0 10px 30px rgba(15,23,42,.08);">
+  </a>
+  <figcaption style="margin-top:.5rem;font-size:.875rem;color:rgba(71,85,105,.9);text-align:center;">点击放大查看原图</figcaption>
+</figure>
+
+<p>这里非常关键的一点是：</p>
+<ul>
+<li><code>addFd()</code> 注册的是 <strong>文件描述符事件</strong></li>
+<li>不是 Java <code>MessageQueue.enqueueMessage()</code></li>
+</ul>
+<p>也就是说，<code>Input</code> 和 <code>Handler</code> 在主线程上虽然最终都汇入同一个“事件循环节拍”，但它们进入循环的入口完全不同。</p>
+<h2 id="6-输入来了以后，主线程第一时间做了什么"><a href="#6-输入来了以后，主线程第一时间做了什么" class="headerlink" title="6. 输入来了以后，主线程第一时间做了什么"></a>6. 输入来了以后，主线程第一时间做了什么</h2><p>当 <code>InputDispatcher</code> 往服务端 fd 写入一包 <code>InputMessage</code> 后，客户端 inputfd 会在内核里变成 readable。此时如果应用主线程正阻塞在 <code>epoll_wait()</code>，内核就会立即让它返回。</p>
+<p>后续动作可以分成三层：</p>
+<h3 id="6-1-epoll-层：发现-inputfd-就绪"><a href="#6-1-epoll-层：发现-inputfd-就绪" class="headerlink" title="6.1 epoll 层：发现 inputfd 就绪"></a>6.1 <code>epoll</code> 层：发现 inputfd 就绪</h3><p>Native <code>Looper</code> 这一轮 <code>epoll_wait()</code> 返回，拿到“哪个 fd ready 了”的结果。若命中的是 inputfd，对应 request 会被塞进响应列表，等待回调分发。</p>
+<h3 id="6-2-Native-输入接收层：读出-InputMessage"><a href="#6-2-Native-输入接收层：读出-InputMessage" class="headerlink" title="6.2 Native 输入接收层：读出 InputMessage"></a>6.2 Native 输入接收层：读出 <code>InputMessage</code></h3><p><code>NativeInputEventReceiver</code> 的 fd 回调执行后，会从 inputfd 中把数据包读出来，并按协议解析成输入消息结构。</p>
+<h3 id="6-3-Java-分发层：桥接进-ViewRootImpl"><a href="#6-3-Java-分发层：桥接进-ViewRootImpl" class="headerlink" title="6.3 Java 分发层：桥接进 ViewRootImpl"></a>6.3 Java 分发层：桥接进 <code>ViewRootImpl</code></h3><p>Native 层把数据桥接到 Java <code>InputEventReceiver</code> 后，主线程才开始进入大家熟悉的应用输入分发路径，例如：</p>
+<ul>
+<li><code>ViewRootImpl</code></li>
+<li><code>DecorView</code></li>
+<li><code>ViewGroup.dispatchTouchEvent</code></li>
+<li><code>View.onTouchEvent</code></li>
+</ul>
+<p>这意味着“屏幕刚被触摸时主线程最早感知到的那个瞬间”，发生在：</p>
+<ul>
+<li><code>epoll_wait()</code> 因 inputfd readable 而返回</li>
+</ul>
+<p>而不是发生在：</p>
+<ul>
+<li>某个 <code>Handler</code> 收到普通消息</li>
+</ul>
+<h2 id="7-关键时序图：触摸事件如何驱动主线程返回"><a href="#7-关键时序图：触摸事件如何驱动主线程返回" class="headerlink" title="7. 关键时序图：触摸事件如何驱动主线程返回"></a>7. 关键时序图：触摸事件如何驱动主线程返回</h2><figure style="margin:1.25rem 0;">
+  <a href="/generated/mermaid/3aebf049a066493e9569a2b683f3eb0a6c33cf8b.svg" data-fancybox="mermaid-diagrams" data-caption="Mermaid 图 - 图 4" style="display:block;cursor:zoom-in;">
+    <img src="/generated/mermaid/3aebf049a066493e9569a2b683f3eb0a6c33cf8b.svg" alt="Mermaid 图 - 图 4" loading="lazy" style="display:block;width:100%;height:auto;border-radius:12px;border:1px solid rgba(15,23,42,.08);background:#fff;box-shadow:0 10px 30px rgba(15,23,42,.08);">
+  </a>
+  <figcaption style="margin-top:.5rem;font-size:.875rem;color:rgba(71,85,105,.9);text-align:center;">点击放大查看原图</figcaption>
+</figure>
+
+<p>这张图可以直接回答一个常见疑问：</p>
+<ul>
+<li>为什么主线程即使此刻没有任何 Java Message，也能立刻响应触摸？</li>
+</ul>
+<p>答案是：</p>
+<ul>
+<li>因为它并不是只在等 Java Message，而是在等 <code>epoll</code> 上的所有关键事件源，其中就包括 inputfd。</li>
+</ul>
+<h2 id="8-socketpair-和-eventfd-分工为什么不同"><a href="#8-socketpair-和-eventfd-分工为什么不同" class="headerlink" title="8. socketpair 和 eventfd 分工为什么不同"></a>8. <code>socketpair</code> 和 <code>eventfd</code> 分工为什么不同</h2><p>很多人学完上一篇后会继续问：既然 <code>Looper</code> 唤醒是 <code>eventfd</code>，那输入系统为什么不也用 <code>eventfd</code>？</p>
+<p>答案并不复杂，因为这两者职责完全不同。</p>
+<h3 id="8-1-eventfd-负责“叫醒”"><a href="#8-1-eventfd-负责“叫醒”" class="headerlink" title="8.1 eventfd 负责“叫醒”"></a>8.1 <code>eventfd</code> 负责“叫醒”</h3><p><code>eventfd</code> 适合表达的语义是：</p>
+<ul>
+<li>有事了</li>
+<li>快醒一下</li>
+<li>不需要携带复杂载荷</li>
+</ul>
+<p>它是一个计数器型通知器，最适合做：</p>
+<ul>
+<li>Looper 的 wake fd</li>
+<li>跨线程唤醒信号</li>
+</ul>
+<h3 id="8-2-socketpair-负责“传数据”"><a href="#8-2-socketpair-负责“传数据”" class="headerlink" title="8.2 socketpair 负责“传数据”"></a>8.2 <code>socketpair</code> 负责“传数据”</h3><p><code>socketpair</code> 适合表达的语义是：</p>
+<ul>
+<li>不只是通知有事</li>
+<li>还要把结构化消息包一起带过去</li>
+<li>还要支持另一侧回写完成状态</li>
+</ul>
+<p>输入系统需要的正是这种能力，所以它选的是 <code>socketpair</code>。</p>
+<h3 id="8-3-一张图看清职责边界"><a href="#8-3-一张图看清职责边界" class="headerlink" title="8.3 一张图看清职责边界"></a>8.3 一张图看清职责边界</h3><figure style="margin:1.25rem 0;">
+  <a href="/generated/mermaid/7ab91c8cc32249465f0c1ca8511faaf6ea9caf73.svg" data-fancybox="mermaid-diagrams" data-caption="Mermaid 图 - 图 5" style="display:block;cursor:zoom-in;">
+    <img src="/generated/mermaid/7ab91c8cc32249465f0c1ca8511faaf6ea9caf73.svg" alt="Mermaid 图 - 图 5" loading="lazy" style="display:block;width:100%;height:auto;border-radius:12px;border:1px solid rgba(15,23,42,.08);background:#fff;box-shadow:0 10px 30px rgba(15,23,42,.08);">
+  </a>
+  <figcaption style="margin-top:.5rem;font-size:.875rem;color:rgba(71,85,105,.9);text-align:center;">点击放大查看原图</figcaption>
+</figure>
+
+<p>一句话概括就是：</p>
+<ul>
+<li><code>eventfd</code> 是门铃。</li>
+<li><code>socketpair</code> 是快递通道。</li>
+</ul>
+<p>门铃只能告诉你“有人来了”，但输入系统真正要送进来的，是一整包事件数据。</p>
+<h2 id="9-UI-线程为什么能做到“第一时间”响应触摸"><a href="#9-UI-线程为什么能做到“第一时间”响应触摸" class="headerlink" title="9. UI 线程为什么能做到“第一时间”响应触摸"></a>9. UI 线程为什么能做到“第一时间”响应触摸</h2><p>这里的“第一时间”不是说主线程能绕开调度器，而是说它不需要额外等待一层转发机制。</p>
+<p>主线程对输入事件的响应快，主要依赖下面三点：</p>
+<ol>
+<li>主线程本来就在 <code>epoll_wait()</code> 里睡眠</li>
+<li>inputfd 已经预先注册进 <code>Looper</code></li>
+<li>InputDispatcher 一写入，内核立刻把 fd readable 事件反馈给 <code>epoll</code></li>
+</ol>
+<p>于是线程的唤醒路径非常短：</p>
+<ul>
+<li>内核事件就绪</li>
+<li><code>epoll_wait()</code> 返回</li>
+<li>Native callback 执行</li>
+<li>JNI 桥接</li>
+<li>Java 输入分发</li>
+</ul>
+<p>如果把输入改造成“先到某个中转线程，再投递一条 Handler 消息给主线程”，就会平白多出一次线程切换或一次额外排队，这显然不是 Input 系统想要的设计。</p>
+<h2 id="10-关键源码路径分别负责什么"><a href="#10-关键源码路径分别负责什么" class="headerlink" title="10. 关键源码路径分别负责什么"></a>10. 关键源码路径分别负责什么</h2><p>如果你准备沿着 <code>aosp14</code> 自己跟代码，主线可以抓下面几处。</p>
+<h3 id="10-1-frameworks-base-core-java-android-view-InputEventReceiver-java"><a href="#10-1-frameworks-base-core-java-android-view-InputEventReceiver-java" class="headerlink" title="10.1 frameworks/base/core/java/android/view/InputEventReceiver.java"></a>10.1 <code>frameworks/base/core/java/android/view/InputEventReceiver.java</code></h3><p>这里是 Java 输入接收器的入口，负责：</p>
+<ul>
+<li>持有 Native 接收端桥接对象</li>
+<li>接收 Native 分发上来的输入事件</li>
+<li>把事件继续交给上层窗口/视图体系</li>
+</ul>
+<h3 id="10-2-frameworks-base-core-jni-android-view-InputEventReceiver-cpp"><a href="#10-2-frameworks-base-core-jni-android-view-InputEventReceiver-cpp" class="headerlink" title="10.2 frameworks/base/core/jni/android_view_InputEventReceiver.cpp"></a>10.2 <code>frameworks/base/core/jni/android_view_InputEventReceiver.cpp</code></h3><p>这里是 Java 与 Native 输入接收层的桥梁，负责：</p>
+<ul>
+<li>创建 <code>NativeInputEventReceiver</code></li>
+<li>把 <code>InputChannel</code> 客户端 fd 注册进 <code>Looper</code></li>
+<li>在 fd 就绪时读取 <code>InputMessage</code></li>
+<li>再桥接回 Java <code>InputEventReceiver</code></li>
+</ul>
+<h3 id="10-3-frameworks-native-libs-input-InputTransport-cpp"><a href="#10-3-frameworks-native-libs-input-InputTransport-cpp" class="headerlink" title="10.3 frameworks/native/libs/input/InputTransport.cpp"></a>10.3 <code>frameworks/native/libs/input/InputTransport.cpp</code></h3><p>这里是 <code>InputChannel</code>、<code>InputPublisher</code>、<code>InputConsumer</code> 的核心实现，负责：</p>
+<ul>
+<li>建立 channel</li>
+<li>定义输入传输协议</li>
+<li>读写 <code>InputMessage</code></li>
+<li>处理 finish/ack 等回传动作</li>
+</ul>
+<h3 id="10-4-system-core-libutils-Looper-cpp"><a href="#10-4-system-core-libutils-Looper-cpp" class="headerlink" title="10.4 system/core/libutils/Looper.cpp"></a>10.4 <code>system/core/libutils/Looper.cpp</code></h3><p>这里是 Native <code>Looper</code> 的核心，负责：</p>
+<ul>
+<li><code>addFd()</code> 注册 fd</li>
+<li><code>pollOnce()</code> / <code>pollInner()</code> 等待事件</li>
+<li><code>epoll_wait()</code> 返回后的 fd 分发</li>
+<li><code>wake()</code> / <code>awoken()</code> 管理唤醒 fd</li>
+</ul>
+<p>把这四处串起来，整条链路就比较完整了。</p>
+<h2 id="11-这一篇和前两篇怎么连起来"><a href="#11-这一篇和前两篇怎么连起来" class="headerlink" title="11. 这一篇和前两篇怎么连起来"></a>11. 这一篇和前两篇怎么连起来</h2><p>如果把三篇文章放在一起看，逻辑其实很顺：</p>
+<ol>
+<li>第一篇解决的是：<code>Looper</code> 为什么能睡、又为什么能被唤醒。</li>
+<li>第二篇解决的是：Java <code>MessageQueue</code> 和 Native <code>Looper</code> 是怎么协同工作的。</li>
+<li>这一篇解决的是：<code>Input</code> 为什么不走普通 <code>Handler</code> 消息，而是把自己伪装成一个 fd 事件源接进 <code>Looper</code>。</li>
+</ol>
+<p>可以用最后这张图把三篇串起来：</p>
+<figure style="margin:1.25rem 0;">
+  <a href="/generated/mermaid/2073b919dd2ca3a2030f967973e8363ecd208ce1.svg" data-fancybox="mermaid-diagrams" data-caption="Mermaid 图 - 图 6" style="display:block;cursor:zoom-in;">
+    <img src="/generated/mermaid/2073b919dd2ca3a2030f967973e8363ecd208ce1.svg" alt="Mermaid 图 - 图 6" loading="lazy" style="display:block;width:100%;height:auto;border-radius:12px;border:1px solid rgba(15,23,42,.08);background:#fff;box-shadow:0 10px 30px rgba(15,23,42,.08);">
+  </a>
+  <figcaption style="margin-top:.5rem;font-size:.875rem;color:rgba(71,85,105,.9);text-align:center;">点击放大查看原图</figcaption>
+</figure>
+
+<h2 id="12-总结"><a href="#12-总结" class="headerlink" title="12. 总结"></a>12. 总结</h2><p><code>Input</code> 系统并不是在主线程里“额外插了一套消息机制”，而是非常克制地复用了 <code>Looper</code> 现成的 fd 事件循环能力。</p>
+<p>所以最值得记住的不是某个类名，而是这句抽象：</p>
+<ul>
+<li>Java <code>Handler</code> 靠的是内存消息队列。</li>
+<li>Input 事件靠的是 <code>socketpair + epoll + fd callback</code>。</li>
+<li>它们最终共享同一个线程 Looper，只是进入 Looper 的入口不同。</li>
+</ul>
+<p>理解了这一点，再回头看 <code>InputChannel</code>、<code>InputEventReceiver</code>、<code>ViewRootImpl</code>，整条输入链就不会再被误解成“只是又发了一条 Handler 消息”。</p>
+</article>
+<div class="article-footer">
+    <section id="license">
+      <div class="header"><span>许可协议</span></div>
+      <div class="body"><p>本文采用 <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">署名-非商业性使用-相同方式共享 4.0 国际</a> 许可协议，转载请注明出处。</p>
+</div>
+    </section>
+    
+
+</div>
+
+<div class="related-wrap" id="read-next"><section class="body"><div class="item" id="prev"><div class="note">较新文章</div><a href="/2026/05/13/android/framework%E5%9F%BA%E7%A1%80/04_Android%E6%B6%88%E6%81%AF%E6%9C%BA%E5%88%B6_Vsync%E4%BF%A1%E5%8F%B7%E4%B8%8EUI%E5%88%B7%E6%96%B0/">Android消息机制(四)：Vsync 信号与 UI 刷新 (vsyncfd)</a></div><div class="item" id="next"><div class="note">较早文章</div><a href="/2026/05/13/android/framework%E5%9F%BA%E7%A1%80/02_Android%E6%B6%88%E6%81%AF%E6%9C%BA%E5%88%B6_Java_Native%E5%8F%8C%E5%B1%82MQ%E5%8D%8F%E4%BD%9C/">Android消息机制(二)：Java 与 Native 双层队列如何协同调度</a></div></section></div>
+
+
+
+
+
+
+<footer class="page-footer footnote"><hr><div class="text"><p>本站由 <a href="/">Su Hui</a> 使用 <a target="_blank" rel="noopener" href="https://github.com/xaoxuu/hexo-theme-stellar/tree/1.33.1">Stellar 1.33.1</a> 主题创建。<br>本博客所有文章除特别声明外，均采用 <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> 许可协议，转载请注明出处。</p>
+</div></footer>
+<div class="main-mask" onclick="sidebar.dismiss()"></div></div><aside class="l_right">
+<div class="widgets">
+
+
+
+<widget class="widget-wrapper toc" id="data-toc" collapse="false"><div class="widget-header dis-select"><span class="name">本文目录</span><a class="cap-action" onclick="sidebar.toggleTOC()" ><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h11m-11 6h11m-11 6h11M4 6h1v4m-1 0h2m0 8H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg></a></div><div class="widget-body"><ol class="toc"><li class="toc-item toc-level-2"><a class="toc-link" href="#1-%E5%85%88%E7%9C%8B%E7%BB%93%E8%AE%BA"><span class="toc-text">1. 先看结论</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#2-%E6%95%B4%E4%BD%93%E9%93%BE%E8%B7%AF%E5%9B%BE"><span class="toc-text">2. 整体链路图</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#3-InputChannel-%E7%9A%84%E6%9C%AC%E8%B4%A8%E6%98%AF%E4%BB%80%E4%B9%88"><span class="toc-text">3. InputChannel 的本质是什么</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#4-Input-%E4%B8%BA%E4%BB%80%E4%B9%88%E4%B8%8D%E7%9B%B4%E6%8E%A5%E5%8F%91-Handler-%E6%B6%88%E6%81%AF"><span class="toc-text">4. Input 为什么不直接发 Handler 消息</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#4-1-%E8%BE%93%E5%85%A5%E4%BA%8B%E4%BB%B6%E6%9C%80%E5%88%9D%E5%8F%91%E7%94%9F%E5%9C%A8%E7%B3%BB%E7%BB%9F%E8%BF%9B%E7%A8%8B%EF%BC%8C%E4%B8%8D%E5%9C%A8%E5%BA%94%E7%94%A8%E8%BF%9B%E7%A8%8B%E5%86%85"><span class="toc-text">4.1 输入事件最初发生在系统进程，不在应用进程内</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#4-2-%E4%B8%BB%E7%BA%BF%E7%A8%8B%E5%B7%B2%E7%BB%8F%E6%9C%89%E4%B8%80%E5%A5%97%E6%88%90%E7%86%9F%E7%9A%84-fd-%E4%BA%8B%E4%BB%B6%E5%BE%AA%E7%8E%AF"><span class="toc-text">4.2 主线程已经有一套成熟的 fd 事件循环</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#4-3-%E8%BE%93%E5%85%A5%E9%93%BE%E8%B7%AF%E9%9C%80%E8%A6%81%E5%8F%8C%E5%90%91%E7%A1%AE%E8%AE%A4"><span class="toc-text">4.3 输入链路需要双向确认</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#4-4-%E8%BE%93%E5%85%A5%E7%B3%BB%E7%BB%9F%E9%9C%80%E8%A6%81%E4%B8%8E-Looper-%E7%9A%84%E9%98%BB%E5%A1%9E%E7%8A%B6%E6%80%81%E5%A4%A9%E7%84%B6%E8%80%A6%E5%90%88"><span class="toc-text">4.4 输入系统需要与 Looper 的阻塞状态天然耦合</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#5-inputfd-%E6%98%AF%E6%80%8E%E4%B9%88%E6%B3%A8%E5%86%8C%E8%BF%9B-Looper-%E7%9A%84"><span class="toc-text">5. inputfd 是怎么注册进 Looper 的</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#6-%E8%BE%93%E5%85%A5%E6%9D%A5%E4%BA%86%E4%BB%A5%E5%90%8E%EF%BC%8C%E4%B8%BB%E7%BA%BF%E7%A8%8B%E7%AC%AC%E4%B8%80%E6%97%B6%E9%97%B4%E5%81%9A%E4%BA%86%E4%BB%80%E4%B9%88"><span class="toc-text">6. 输入来了以后，主线程第一时间做了什么</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#6-1-epoll-%E5%B1%82%EF%BC%9A%E5%8F%91%E7%8E%B0-inputfd-%E5%B0%B1%E7%BB%AA"><span class="toc-text">6.1 epoll 层：发现 inputfd 就绪</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#6-2-Native-%E8%BE%93%E5%85%A5%E6%8E%A5%E6%94%B6%E5%B1%82%EF%BC%9A%E8%AF%BB%E5%87%BA-InputMessage"><span class="toc-text">6.2 Native 输入接收层：读出 InputMessage</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#6-3-Java-%E5%88%86%E5%8F%91%E5%B1%82%EF%BC%9A%E6%A1%A5%E6%8E%A5%E8%BF%9B-ViewRootImpl"><span class="toc-text">6.3 Java 分发层：桥接进 ViewRootImpl</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#7-%E5%85%B3%E9%94%AE%E6%97%B6%E5%BA%8F%E5%9B%BE%EF%BC%9A%E8%A7%A6%E6%91%B8%E4%BA%8B%E4%BB%B6%E5%A6%82%E4%BD%95%E9%A9%B1%E5%8A%A8%E4%B8%BB%E7%BA%BF%E7%A8%8B%E8%BF%94%E5%9B%9E"><span class="toc-text">7. 关键时序图：触摸事件如何驱动主线程返回</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#8-socketpair-%E5%92%8C-eventfd-%E5%88%86%E5%B7%A5%E4%B8%BA%E4%BB%80%E4%B9%88%E4%B8%8D%E5%90%8C"><span class="toc-text">8. socketpair 和 eventfd 分工为什么不同</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#8-1-eventfd-%E8%B4%9F%E8%B4%A3%E2%80%9C%E5%8F%AB%E9%86%92%E2%80%9D"><span class="toc-text">8.1 eventfd 负责“叫醒”</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#8-2-socketpair-%E8%B4%9F%E8%B4%A3%E2%80%9C%E4%BC%A0%E6%95%B0%E6%8D%AE%E2%80%9D"><span class="toc-text">8.2 socketpair 负责“传数据”</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#8-3-%E4%B8%80%E5%BC%A0%E5%9B%BE%E7%9C%8B%E6%B8%85%E8%81%8C%E8%B4%A3%E8%BE%B9%E7%95%8C"><span class="toc-text">8.3 一张图看清职责边界</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#9-UI-%E7%BA%BF%E7%A8%8B%E4%B8%BA%E4%BB%80%E4%B9%88%E8%83%BD%E5%81%9A%E5%88%B0%E2%80%9C%E7%AC%AC%E4%B8%80%E6%97%B6%E9%97%B4%E2%80%9D%E5%93%8D%E5%BA%94%E8%A7%A6%E6%91%B8"><span class="toc-text">9. UI 线程为什么能做到“第一时间”响应触摸</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#10-%E5%85%B3%E9%94%AE%E6%BA%90%E7%A0%81%E8%B7%AF%E5%BE%84%E5%88%86%E5%88%AB%E8%B4%9F%E8%B4%A3%E4%BB%80%E4%B9%88"><span class="toc-text">10. 关键源码路径分别负责什么</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#10-1-frameworks-base-core-java-android-view-InputEventReceiver-java"><span class="toc-text">10.1 frameworks&#x2F;base&#x2F;core&#x2F;java&#x2F;android&#x2F;view&#x2F;InputEventReceiver.java</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#10-2-frameworks-base-core-jni-android-view-InputEventReceiver-cpp"><span class="toc-text">10.2 frameworks&#x2F;base&#x2F;core&#x2F;jni&#x2F;android_view_InputEventReceiver.cpp</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#10-3-frameworks-native-libs-input-InputTransport-cpp"><span class="toc-text">10.3 frameworks&#x2F;native&#x2F;libs&#x2F;input&#x2F;InputTransport.cpp</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#10-4-system-core-libutils-Looper-cpp"><span class="toc-text">10.4 system&#x2F;core&#x2F;libutils&#x2F;Looper.cpp</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#11-%E8%BF%99%E4%B8%80%E7%AF%87%E5%92%8C%E5%89%8D%E4%B8%A4%E7%AF%87%E6%80%8E%E4%B9%88%E8%BF%9E%E8%B5%B7%E6%9D%A5"><span class="toc-text">11. 这一篇和前两篇怎么连起来</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#12-%E6%80%BB%E7%BB%93"><span class="toc-text">12. 总结</span></a></li></ol></div><div class="widget-footer"><a class="top" onclick="util.scrollTop()"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><!-- Icon from Solar by 480 Design - https://creativecommons.org/licenses/by/4.0/ --><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><path stroke-linejoin="round" d="m9 15.5l3-3l3 3m-6-4l3-3l3 3"/><path d="M7 3.338A9.95 9.95 0 0 1 12 2c5.523 0 10 4.477 10 10s-4.477 10-10 10S2 17.523 2 12c0-1.821.487-3.53 1.338-5"/></g></svg><span>回到顶部</span></a></div></widget>
+</div></aside><div class='float-panel'>
+  <button type='button' style='display:none' class='laptop-only rightbar-toggle mobile' onclick='sidebar.rightbar()'>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h11m-11 6h11m-11 6h11M4 6h1v4m-1 0h2m0 8H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>
+  </button>
+  <button type='button' style='display:none' class='mobile-only leftbar-toggle mobile' onclick='sidebar.leftbar()'>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 11c0-3.771 0-5.657 1.172-6.828C4.343 3 6.229 3 10 3h4c3.771 0 5.657 0 6.828 1.172C22 5.343 22 7.229 22 11v2c0 3.771 0 5.657-1.172 6.828C19.657 21 17.771 21 14 21h-4c-3.771 0-5.657 0-6.828-1.172C2 18.657 2 16.771 2 13z"/><path id="sep" stroke-linecap="round" d="M5.5 10h6m-5 4h4m4.5 7V3"/></g></svg>
+  </button>
+</div>
+</div><div class="scripts">
+
+
+<script type="text/javascript">
+  window.canonical = {"originalHost":null,"officialHosts":["localhost"],"encoded":""};
+  const ctx = {
+    date_suffix: {
+      just: `刚刚`,
+      min: `分钟前`,
+      hour: `小时前`,
+      day: `天前`,
+    },
+    root : `/`,
+    tag_plugins: {
+      chat: Object.assign({"api":"https://siteinfo.listentothewind.cn/api/v1"}),
+    }
+  };
+
+  // required plugins (only load if needs)
+  if (`local_search`) {
+    ctx.search = {};
+    ctx.search.service = `local_search`;
+    if (ctx.search.service == 'local_search') {
+      let service_obj = Object.assign({}, `{"field":"all","path":"/search.json","content":true,"skip_search":null,"sort":"-date"}`);
+      ctx.search[ctx.search.service] = service_obj;
+    }
+  }
+  const def = {
+    avatar: `https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/avatar/round/3442075.svg`,
+    cover: `https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/cover/76b86c0226ffd.svg`,
+    loading: `https://api.iconify.design/eos-icons:three-dots-loading.svg?color=%231cd0fd`,
+  };
+  const deps = {
+    jquery: `https://gcore.jsdelivr.net/npm/jquery@3.7/dist/jquery.min.js`,
+    marked: `https://gcore.jsdelivr.net/npm/marked@13.0/lib/marked.umd.min.js`,
+    lazyload: `/%5Bobject%20Object%5D`
+  }
+  
+
+</script>
+
+<script type="text/javascript">
+  
+  function RunItem() {
+    this.list = []; // 存放回调函数
+    this.start = () => {
+      for (var i = 0; i < this.list.length; i++) {
+        this.list[i].run();
+      }
+    };
+    this.push = (fn, name, setRequestAnimationFrame = true) => {
+      let myfn = fn
+      if (setRequestAnimationFrame) {
+        myfn = () => {
+          utils.requestAnimationFrame(fn)
+        }
+      }
+      var f = new Item(myfn, name);
+      this.list.push(f);
+    };
+    this.remove = (name) => {
+      for (let index = 0; index < this.list.length; index++) {
+        const e = this.list[index];
+        if (e.name == name) {
+          this.list.splice(index, 1);
+        }
+      }
+    }
+    // 构造一个可以run的对象
+    function Item(fn, name) {
+      // 函数名称
+      this.name = name || fn.name;
+      // run方法
+      this.run = () => {
+        try {
+          fn()
+        } catch (error) {
+          console.log(error);
+        }
+      };
+    }
+  }
+
+  const utils = {
+    // 懒加载 css https://github.com/filamentgroup/loadCSS
+    css: (href, before, media, attributes) => {
+      var doc = window.document;
+      var ss = doc.createElement("link");
+      var ref;
+      if (before) {
+        ref = before;
+      } else {
+        var refs = (doc.body || doc.getElementsByTagName("head")[0]).childNodes;
+        ref = refs[refs.length - 1];
+      }
+      var sheets = doc.styleSheets;
+      if (attributes) {
+        for (var attributeName in attributes) {
+          if (attributes.hasOwnProperty(attributeName)) {
+            ss.setAttribute(attributeName, attributes[attributeName]);
+          }
+        }
+      }
+      ss.rel = "stylesheet";
+      ss.href = href;
+      ss.media = "only x";
+      function ready(cb) {
+        if (doc.body) {
+          return cb();
+        }
+        setTimeout(function () {
+          ready(cb);
+        });
+      }
+      ready(function () {
+        ref.parentNode.insertBefore(ss, before ? ref : ref.nextSibling);
+      });
+      var onloadcssdefined = function (cb) {
+        var resolvedHref = ss.href;
+        var i = sheets.length;
+        while (i--) {
+          if (sheets[i].href === resolvedHref) {
+            return cb();
+          }
+        }
+        setTimeout(function () {
+          onloadcssdefined(cb);
+        });
+      };
+      function loadCB() {
+        if (ss.addEventListener) {
+          ss.removeEventListener("load", loadCB);
+        }
+        ss.media = media || "all";
+      }
+      if (ss.addEventListener) {
+        ss.addEventListener("load", loadCB);
+      }
+      ss.onloadcssdefined = onloadcssdefined;
+      onloadcssdefined(loadCB);
+      return ss;
+    },
+
+    js: (src, opt) => new Promise((resolve, reject) => {
+      var script = document.createElement('script');
+      if (src.startsWith('/')) {
+        src = ctx.root + src.substring(1);
+      }
+      script.src = src;
+      if (opt) {
+        for (let key of Object.keys(opt)) {
+          script[key] = opt[key]
+        }
+      } else {
+        // 默认异步，如果需要同步，第二个参数传入 {} 即可
+        script.async = true
+      }
+      script.onerror = reject
+      script.onload = script.onreadystatechange = function () {
+        const loadState = this.readyState
+        if (loadState && loadState !== 'loaded' && loadState !== 'complete') return
+        script.onload = script.onreadystatechange = null
+        resolve()
+      }
+      document.head.appendChild(script)
+    }),
+
+    jq: (fn) => {
+      if (typeof jQuery === 'undefined') {
+        utils.js(deps.jquery).then(fn)
+      } else {
+        fn()
+      }
+    },
+
+    onLoading: (el) => {
+      if (el) {
+        $(el).append('<div class="loading-wrap"><svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" stroke-opacity=".3" d="M12 3C16.9706 3 21 7.02944 21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="1.3s" values="60;0"/></path><path stroke-dasharray="15" stroke-dashoffset="15" d="M12 3C16.9706 3 21 7.02944 21 12"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.3s" values="15;0"/><animateTransform attributeName="transform" dur="1.5s" repeatCount="indefinite" type="rotate" values="0 12 12;360 12 12"/></path></g></svg></div>');
+      }
+    },
+    onLoadSuccess: (el) => {
+      if (el) {
+        $(el).find('.loading-wrap').remove();
+      }
+    },
+    onLoadFailure: (el) => {
+      if (el) {
+        $(el).find('.loading-wrap svg').remove();
+        $(el).find('.loading-wrap').append('<svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" d="M12 3L21 20H3L12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.5s" values="60;0"/></path><path stroke-dasharray="6" stroke-dashoffset="6" d="M12 10V14"><animate fill="freeze" attributeName="stroke-dashoffset" begin="0.6s" dur="0.2s" values="6;0"/></path></g><circle cx="12" cy="17" r="1" fill="currentColor" fill-opacity="0"><animate fill="freeze" attributeName="fill-opacity" begin="0.8s" dur="0.4s" values="0;1"/></circle></svg>');
+        $(el).find('.loading-wrap').addClass('error');
+      }
+    },
+    request: (el, url, callback, onFailure) => {
+      const maxRetry = 3;
+      let retryCount = 0;
+
+      return new Promise((resolve, reject) => {
+        const load = () => {
+          utils.onLoading?.(el);
+
+          let timedOut = false;
+          const timeout = setTimeout(() => {
+            timedOut = true;
+            console.warn('[request] 超时:', url);
+
+            if (++retryCount >= maxRetry) {
+              utils.onLoadFailure?.(el);
+              onFailure?.();
+              reject('请求超时');
+            } else {
+              setTimeout(load, 1000);
+            }
+          }, 5000);
+
+          fetch(url).then(resp => {
+            if (timedOut) return;
+            clearTimeout(timeout);
+
+            if (!resp.ok) throw new Error('响应失败');
+            return resp;
+          }).then(data => {
+            if (timedOut) return;
+            utils.onLoadSuccess?.(el);
+            callback(data);
+            resolve(data);
+          }).catch(err => {
+            clearTimeout(timeout);
+            console.warn('[request] 错误:', err);
+
+            if (++retryCount >= maxRetry) {
+              utils.onLoadFailure?.(el);
+              onFailure?.();
+              reject(err);
+            } else {
+              setTimeout(load, 1000);
+            }
+          });
+        };
+
+        load();
+      });
+    },
+    requestWithoutLoading: (url, options = {}, maxRetry = 2, timeout = 5000) => {
+      return new Promise((resolve, reject) => {
+        let retryCount = 0;
+
+        const tryRequest = () => {
+          let timedOut = false;
+          const timer = setTimeout(() => {
+            timedOut = true;
+            if (++retryCount > maxRetry) reject('timeout');
+            else tryRequest();
+          }, timeout);
+
+          fetch(url, options)
+            .then(resp => {
+              clearTimeout(timer);
+              if (!resp.ok) throw new Error('bad response');
+              resolve(resp);
+            })
+            .catch(err => {
+              clearTimeout(timer);
+              if (++retryCount > maxRetry) reject(err);
+              else setTimeout(tryRequest, 500);
+            });
+        };
+
+        tryRequest();
+      });
+    },
+    /********************** requestAnimationFrame ********************************/
+    // 1、requestAnimationFrame 会把每一帧中的所有 DOM 操作集中起来，在一次重绘或回流中就完成，并且重绘或回流的时间间隔紧紧跟随浏览器的刷新频率，一般来说，这个频率为每秒60帧。
+    // 2、在隐藏或不可见的元素中，requestAnimationFrame 将不会进行重绘或回流，这当然就意味着更少的的 cpu，gpu 和内存使用量。
+    requestAnimationFrame: (fn) => {
+      if (!window.requestAnimationFrame) {
+        window.requestAnimationFrame = window.requestAnimationFrame || window.mozRequestAnimationFrame || window.webkitRequestAnimationFrame;
+      }
+      window.requestAnimationFrame(fn)
+    },
+    dark: {},
+  };
+
+  // utils.dark.mode 当前模式 dark or light
+  // utils.dark.toggle() 暗黑模式触发器
+  // utils.dark.push(callBack[,"callBackName"]) 传入触发器回调函数
+  utils.dark.method = {
+    toggle: new RunItem(),
+  };
+  utils.dark = Object.assign(utils.dark, {
+    push: utils.dark.method.toggle.push,
+  });
+</script>
+<script>
+  const sidebar = {
+    leftbar: () => {
+      if (l_body) {
+        l_body.toggleAttribute('leftbar');
+        l_body.removeAttribute('rightbar');
+      }
+    },
+    rightbar: () => {
+      if (l_body) {
+        l_body.toggleAttribute('rightbar');
+        l_body.removeAttribute('leftbar');
+      }
+    },
+    dismiss: () => {
+      if (l_body) {
+        l_body.removeAttribute('leftbar');
+        l_body.removeAttribute('rightbar');
+      }
+    },
+    toggleTOC: () => {
+      document.querySelector('#data-toc').classList.toggle('collapse');
+    }
+  }
+</script>
+<script type="text/javascript">
+  (() => {
+    const tagSwitchers = document.querySelectorAll('.tag-subtree.parent-tag > a > .tag-switcher-wrapper')
+    for (const tagSwitcher of tagSwitchers) {
+      tagSwitcher.addEventListener('click', (e) => {
+        const parent = e.target.closest('.tag-subtree.parent-tag')
+        parent.classList.toggle('expanded')
+        e.preventDefault()
+      })
+    }
+
+    // Get active tag from query string, then activate it.
+    const urlParams = new URLSearchParams(window.location.search)
+    const activeTag = urlParams.get('tag')
+    if (activeTag) {
+      let tag = document.querySelector(`.tag-subtree[data-tag="${activeTag}"]`)
+      if (tag) {
+        tag.querySelector('a').classList.add('active')
+        
+        while (tag) {
+          tag.classList.add('expanded')
+          tag = tag.parentElement.closest('.tag-subtree.parent-tag')
+        }
+      }
+    }
+  })()
+</script>
+
+<script async src="https://gcore.jsdelivr.net/npm/vanilla-lazyload@19.1/dist/lazyload.min.js"></script>
+<script>
+  // https://www.npmjs.com/package/vanilla-lazyload
+  // Set the options globally
+  // to make LazyLoad self-initialize
+  window.lazyLoadOptions = {
+    elements_selector: ".lazy",
+    callback_loaded: (el) => {
+      el.classList.add('loaded');
+      const wrapper = el.closest('.lazy-box');
+      const icon = wrapper?.querySelector('.lazy-icon');
+      if (icon) icon.remove();
+    }
+  };
+  // Listen to the initialization event
+  // and get the instance of LazyLoad
+  window.addEventListener(
+    "LazyLoad::Initialized",
+    function (event) {
+      window.lazyLoadInstance = event.detail.instance;
+    },
+    false
+  );
+  document.addEventListener('DOMContentLoaded', function () {
+    window.lazyLoadInstance?.update();
+  });
+
+  window.wrapLazyloadImages = (container) => {
+    if (typeof container === 'string') {
+      container = document.querySelector(container);
+    }
+    if (!container) return;
+    
+    const images = container.querySelectorAll('img');
+    images.forEach((img) => {
+      if (img.classList.contains('lazy')) return;
+
+      const src = img.getAttribute('src');
+      if (!src) return;
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'lazy-box';
+
+      const newImg = img.cloneNode();
+      newImg.removeAttribute('src');
+      newImg.setAttribute('data-src', src);
+      newImg.classList.add('lazy');
+
+      const icon = document.createElement('div');
+      icon.className = 'lazy-icon';
+      if (def.loading) {
+        icon.style.backgroundImage = `url("${def.loading}")`;
+      }
+
+      wrapper.appendChild(newImg);
+      wrapper.appendChild(icon);
+
+      img.replaceWith(wrapper);
+    });
+
+    // 通知 LazyLoad 更新
+    if (window.lazyLoadInstance?.update) {
+      window.lazyLoadInstance.update();
+    }
+  }
+  
+</script>
+
+<!-- required -->
+<script src="/js/main.js?v=1.33.1" defer></script>
+
+<script type="text/javascript">
+  const applyTheme = (theme) => {
+    if (theme === 'auto') {
+      document.documentElement.removeAttribute('data-theme')
+    } else {
+      document.documentElement.setAttribute('data-theme', theme)
+    }
+
+    // applyThemeToGiscus(theme)
+  }
+
+  // FIXME: 这会导致无法使用 preferred_color_scheme 以外的主题
+  const applyThemeToGiscus = (theme) => {
+    // theme = theme === 'auto' ? 'preferred_color_scheme' : theme
+    const cmt = document.getElementById('giscus')
+    if (cmt) {
+      // This works before giscus load.
+      cmt.setAttribute('data-theme', theme)
+    }
+
+    const iframe = document.querySelector('#comments > section.giscus > iframe')
+    if (iframe) {
+      // This works after giscus loaded.
+      const src = iframe.src
+      const newSrc = src.replace(/theme=[\w]+/, `theme=${theme}`)
+      iframe.src = newSrc
+    }
+  }
+
+  const switchTheme = () => {
+    // light -> dark -> auto -> light -> ...
+    const currentTheme = document.documentElement.getAttribute('data-theme')
+    let newTheme;
+    switch (currentTheme) {
+      case 'light':
+        newTheme = 'dark'
+        break
+      case 'dark':
+        newTheme = 'auto'
+        break
+      default:
+        newTheme = 'light'
+    }
+    applyTheme(newTheme)
+    window.localStorage.setItem('Stellar.theme', newTheme)
+    utils.dark.mode = newTheme === 'auto' ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : newTheme;
+    utils.dark.method.toggle.start();
+
+    const messages = {
+      light: `切换到浅色模式`,
+      dark: `切换到深色模式`,
+      auto: `切换到跟随系统配色`,
+    }
+    hud?.toast?.(messages[newTheme])
+  }
+
+  (() => {
+    // Apply user's preferred theme, if any.
+    const theme = window.localStorage.getItem('Stellar.theme')
+    if (theme !== null) {
+      applyTheme(theme)
+    } else {
+      utils.dark.mode = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    utils.dark.method.toggle.start();
+  })()
+</script>
+
+
+<!-- optional -->
+
+
+
+<script defer>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    ctx.services = Object.assign({}, JSON.parse(`{"mdrender":{"js":"/js/services/mdrender.js"},"siteinfo":{"js":"/js/services/siteinfo.js","api":null},"ghinfo":{"js":"/js/services/ghinfo.js"},"rating":{"js":"/js/services/rating.js","api":"https://star-vote.xaox.cc/api/rating"},"vote":{"js":"/js/services/vote.js","api":"https://star-vote.xaox.cc/api/vote"},"sites":{"js":"/js/services/sites.js"},"friends":{"js":"/js/services/friends.js"},"friends_and_posts":{"js":"/js/services/friends_and_posts.js"},"timeline":{"js":"/js/services/timeline.js"},"fcircle":{"js":"/js/services/fcircle.js"},"weibo":{"js":"/js/services/weibo.js"},"memos":{"js":"/js/services/memos.js"},"voice":{"js":"/js/plugins/voice.js"},"video":{"js":"/js/plugins/video.js"},"download-file":{"js":"/js/plugins/download-file.js"},"twikoo":{"js":"/js/services/twikoo_latest_comment.js"},"waline":{"js":"/js/services/waline_latest_comment.js"},"artalk":{"js":"/js/services/artalk_latest_comment.js"},"giscus":{"js":"/js/services/giscus_latest_comment.js"},"contributors":{"edit_this_page":{"_posts/":null,"wiki/stellar/":"https://github.com/xaoxuu/hexo-theme-stellar-docs/blob/main/"},"js":"/js/services/contributors.js"}}`));
+    for (let id of Object.keys(ctx.services)) {
+      const js = ctx.services[id].js;
+      if (id == 'siteinfo') {
+        ctx.cardlinks = document.querySelectorAll('a.link-card[cardlink]');
+        if (ctx.cardlinks?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            setCardLink(ctx.cardlinks);
+          });
+        }
+      } else if (id == 'voice') {
+        ctx.voiceAudios = document.querySelectorAll('.voice>audio');
+        if (ctx.voiceAudios?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            createVoiceDom(ctx.voiceAudios);
+          });
+        }
+      } else if (id == 'video') {
+        ctx.videos = document.querySelectorAll('.video>video');
+        if (ctx.videos?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            videoEvents(ctx.videos);
+          });
+        }
+      } else if (id == 'download-file') {
+        ctx.files = document.querySelectorAll('.file');
+        if (ctx.files?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            downloadFileEvent(ctx.files);
+          });
+        }
+      } else {
+        const els = document.getElementsByClassName(`ds-${id}`);
+        if (els?.length > 0) {
+          utils.jq(() => {
+            if (id == 'timeline' || 'memos' || 'marked') {
+              utils.js(deps.marked).then(function () {
+                utils.js(js, { defer: true });
+              });
+            } else {
+              utils.js(js, { defer: true });
+            }
+          });
+        }
+      }
+    }
+
+    // chat iphone time
+    let phoneTimes = document.querySelectorAll('.chat .status-bar .time');
+
+    if (phoneTimes.length > 0) {
+      NowTime();
+      var date = new Date();
+      var sec = date.getSeconds();
+      var firstAdjustInterval = setInterval(firstAdjustTime, 1000 * (60 - sec));
+    }
+
+    function firstAdjustTime() {
+      NowTime();
+      clearInterval(firstAdjustInterval);
+      setInterval(NowTime, 1000 * 60);
+    }
+
+    function NowTime() {
+      for (let i = 0; i < phoneTimes.length; ++i) {
+        var timeSpan = phoneTimes[i];
+        var date = new Date();
+        var hour = date.getHours();
+        var min = date.getMinutes();
+        timeSpan.innerHTML = check(hour) + ":" + check(min);
+      }
+    };
+
+    function check(val) {
+      if (val < 10) {
+        return ("0" + val);
+      }
+      return (val);
+    }
+
+    // chat quote
+    const chat_quote_obverser = new IntersectionObserver((entries, observer) => {
+      entries.filter((entry) => { return entry.isIntersecting }).sort((a, b) => a.intersectionRect.y !== b.intersectionRect.y ? a.intersectionRect.y - b.intersectionRect.y : a.intersectionRect.x - b.intersectionRect.x).forEach((entry, index) => {
+          observer.unobserve(entry.target);
+          setTimeout(() => {
+            entry.target.classList.add('quote-blink');
+            setTimeout(() => {
+              entry.target.classList.remove('quote-blink');
+            }, 1000);
+          }, Math.max(100, 16) * (index + 1));
+        });
+    });
+
+    var chatQuotes = document.querySelectorAll(".chat .talk .quote");
+    chatQuotes.forEach((quote) => {
+      quote.addEventListener('click', function () {
+        var chatCellDom = document.getElementById("quote-" + quote.getAttribute("quotedCellTag"));
+        if (chatCellDom) {
+          var chatDiv = chatCellDom.parentElement;
+          var mid = chatDiv.clientHeight / 2;
+          var offsetTop = chatCellDom.offsetTop;
+          if (offsetTop > mid - chatCellDom.clientHeight / 2) {
+            chatDiv.scrollTo({
+              top: chatCellDom.offsetTop - mid + chatCellDom.clientHeight / 2,
+              behavior: "smooth"
+            });
+          } else {
+            chatDiv.scrollTo({
+              top: 0,
+              behavior: "smooth"
+            });
+          }
+          chat_quote_obverser.observe(chatCellDom);
+        }
+      });
+    });
+  });
+</script>
+
+<script>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    ctx.search = {
+      path: `/search.json`,
+    }
+    utils.js('/js/search/local-search.js', { defer: true });
+  });
+</script><script>
+  window.FPConfig = {
+    delay: 0,
+    ignoreKeywords: [],
+    maxRPS: 5,
+    hoverDelay: 25
+  };
+</script>
+<script defer src="https://gcore.jsdelivr.net/npm/flying-pages@2/flying-pages.min.js"></script><script>
+  ctx.fancybox = {
+    selector: `.timenode p>img`,
+    css: `https://gcore.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css`,
+    js: `https://gcore.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js`
+  };
+  var selector = '[data-fancybox]:not(.error), .with-fancybox .atk-content img:not([atk-emoticon])';
+  if (ctx.fancybox.selector) {
+    selector += `, ${ctx.fancybox.selector}`
+  }
+  var needFancybox = document.querySelectorAll(selector).length !== 0;
+  if (!needFancybox) {
+    const memos = document.getElementsByClassName('ds-memos');
+    if (memos != undefined && memos.length > 0) {
+      needFancybox = true;
+    }
+    const fancybox = document.getElementsByClassName('with-fancybox');
+    if (fancybox != undefined && fancybox.length > 0) {
+      needFancybox = true;
+    }
+  }
+  if (needFancybox) {
+    utils.css(ctx.fancybox.css);
+    utils.js(ctx.fancybox.js, { defer: true }).then(function () {
+      Fancybox.bind(selector, {
+        hideScrollbar: false,
+        Thumbs: {
+          autoStart: false,
+        },
+        caption: (fancybox, slide) => {
+          return slide.triggerEl.alt || slide.triggerEl.dataset.caption || null
+        }
+      });
+    })
+  }
+</script>
+<script>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    const swiper_api = document.getElementById('swiper-api');
+    if (swiper_api != undefined) {
+      utils.css(`https://unpkg.com/swiper@10.3/swiper-bundle.min.css`);
+      utils.js(`https://unpkg.com/swiper@10.3/swiper-bundle.min.js`, { defer: true }).then(function () {
+        const effect = swiper_api.getAttribute('effect') || '';
+        var swiper = new Swiper('.swiper#swiper-api', {
+          slidesPerView: 'auto',
+          spaceBetween: 8,
+          centeredSlides: true,
+          effect: effect,
+          rewind: true,
+          pagination: {
+            el: '.swiper-pagination',
+            clickable: true,
+          },
+          navigation: {
+            nextEl: '.swiper-button-next',
+            prevEl: '.swiper-button-prev',
+          },
+        });
+      })
+    }
+  });
+</script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    window.codeElements = document.querySelectorAll('.code');
+    if (window.codeElements.length > 0) {
+      ctx.copycode = {
+        default_text: `Copy`,
+        success_text: `Copied`,
+        toast: `复制成功`,
+      };
+      utils.js('/js/plugins/copycode.js');
+    }
+  });
+</script>
+
+
+<!-- inject -->
+
+</div></body></html>
