@@ -9,6 +9,7 @@ const { execFile } = require('child_process');
 
 const execFileAsync = promisify(execFile);
 const generatedSvgMap = new Map();
+const referencedSvgSet = new Set();
 const MARKDOWN_MERMAID_REGEX = /```mermaid\s*\n([\s\S]*?)```/g;
 const HTML_HIGHLIGHT_BLOCK_REGEX = /<figure class="highlight plain">[\s\S]*?<\/figure>/g;
 const PUBLIC_PREFIX = '/generated/mermaid';
@@ -27,7 +28,9 @@ function decodeHtml(content) {
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'");
+    .replace(/&#39;/g, "'")
+    .replace(/&#(\d+);/g, (match, decimalCode) => String.fromCodePoint(Number(decimalCode)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (match, hexCode) => String.fromCodePoint(parseInt(hexCode, 16)));
 }
 
 // 规范化 Mermaid 源码内容，避免仅空白差异导致重复生成。
@@ -143,6 +146,13 @@ async function renderMermaidSvg(hexo, sourceText, outputKey) {
   return fsPromises.readFile(outputPath, 'utf8');
 }
 
+// 检查 Mermaid CLI 输出是否为错误占位图，避免把语法错误静默发布到站点上。
+function assertMermaidSvgIsHealthy(svgText, outputKey) {
+  if (svgText.includes('Syntax error in graph') || svgText.includes('mermaid version')) {
+    throw new Error(`[mermaid-static] Mermaid 图渲染失败: ${outputKey}`);
+  }
+}
+
 // 强制把 Mermaid SVG 处理成白底，并写入明确尺寸，避免 Fancybox 把它当成小图适配展示。
 function ensureOpaqueSvgBackground(svgText) {
   let nextSvg = svgText.replace('background-color: transparent;', 'background-color: #ffffff;');
@@ -201,7 +211,9 @@ async function prebuildMermaidSvgs(hexo) {
       }
 
       hexo.log.info(`[mermaid-static] 生成 ${fileName}`);
-      const svgText = ensureOpaqueSvgBackground(await renderMermaidSvg(hexo, normalizedSource, diagramHash));
+      const rawSvgText = await renderMermaidSvg(hexo, normalizedSource, diagramHash);
+      assertMermaidSvgIsHealthy(rawSvgText, fileName);
+      const svgText = ensureOpaqueSvgBackground(rawSvgText);
       generatedSvgMap.set(fileName, svgText);
       await persistSvgToSource(hexo, fileName, svgText);
     }
@@ -226,6 +238,11 @@ function buildMermaidFigureFromSource(sourceContent, postTitle, index) {
   const normalizedSource = normalizeMermaidSource(sourceContent);
   const diagramHash = buildDiagramHash(normalizedSource);
   const fileName = `${diagramHash}.svg`;
+  if (!generatedSvgMap.has(fileName)) {
+    throw new Error(`[mermaid-static] Mermaid 图引用缺失: title=${postTitle || 'unknown'}, index=${index + 1}, file=${fileName}`);
+  }
+
+  referencedSvgSet.add(fileName);
   const publicPath = `${PUBLIC_PREFIX}/${fileName}`;
   const altText = `${postTitle || 'Mermaid 图'} - 图 ${index + 1}`;
 
@@ -275,9 +292,20 @@ function copyGeneratedSvgsToPublic(hexo) {
   fs.cpSync(sourceDir, publicDir, { recursive: true });
 }
 
+// 校验所有注入到 HTML 的 Mermaid 静态图都已成功复制到 public，缺失时直接让构建失败。
+function validateReferencedSvgs(hexo) {
+  for (const fileName of referencedSvgSet) {
+    const publicSvgPath = path.join(hexo.public_dir, 'generated', 'mermaid', fileName);
+    if (!fs.existsSync(publicSvgPath)) {
+      throw new Error(`[mermaid-static] Mermaid 静态图缺失: ${publicSvgPath}`);
+    }
+  }
+}
+
 // 在每次 generate 前清空缓存并重建 source/generated/mermaid 目录。
 hexo.extend.filter.register('before_generate', async function () {
   generatedSvgMap.clear();
+  referencedSvgSet.clear();
   await fsPromises.rm(path.join(hexo.base_dir, SOURCE_OUTPUT_DIR), { recursive: true, force: true });
   await prebuildMermaidSvgs(hexo);
 });
@@ -298,4 +326,5 @@ hexo.extend.filter.register('after_render:html', function (htmlContent, data) {
 // 在 generate 收尾阶段同步拷贝 Mermaid SVG，避免资源引用落空。
 hexo.extend.filter.register('after_generate', function () {
   copyGeneratedSvgsToPublic(hexo);
+  validateReferencedSvgs(hexo);
 });
