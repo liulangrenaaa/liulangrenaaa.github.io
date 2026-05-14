@@ -26,6 +26,18 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: Resolve Chrome for Mermaid CLI
+        run: |
+          for candidate in /usr/bin/google-chrome /usr/bin/google-chrome-stable /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then
+              echo "MERMAID_CHROME_PATH=$candidate" >> "$GITHUB_ENV"
+              echo "PUPPETEER_SKIP_DOWNLOAD=true" >> "$GITHUB_ENV"
+              exit 0
+            fi
+          done
+          echo "No Chrome/Chromium executable found on runner." >&2
+          exit 1
+
       - name: Install dependencies
         run: npm ci
 

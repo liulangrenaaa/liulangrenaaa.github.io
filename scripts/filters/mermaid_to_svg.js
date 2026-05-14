@@ -1,0 +1,257 @@
+'use strict';
+
+const crypto = require('crypto');
+const fs = require('fs');
+const fsPromises = require('fs/promises');
+const path = require('path');
+const { promisify } = require('util');
+const { execFile } = require('child_process');
+
+const execFileAsync = promisify(execFile);
+const generatedSvgMap = new Map();
+const MARKDOWN_MERMAID_REGEX = /```mermaid\s*\n([\s\S]*?)```/g;
+const HTML_MERMAID_REGEX = /<pre class="mermaid">([\s\S]*?)<\/pre>/g;
+const PUBLIC_PREFIX = '/generated/mermaid';
+const TMP_DIR = '.tmp/hexo-mermaid';
+const SOURCE_OUTPUT_DIR = path.join('source', 'generated', 'mermaid');
+
+// 计算 Mermaid 内容的稳定哈希，用于复用已生成的静态图文件名。
+function buildDiagramHash(content) {
+  return crypto.createHash('sha1').update(content).digest('hex');
+}
+
+// 解码 Mermaid 代码块中的常见 HTML 实体，保证替换阶段能拿到原始语法。
+function decodeHtml(content) {
+  return content
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}
+
+// 规范化 Mermaid 源码内容，避免仅空白差异导致重复生成。
+function normalizeMermaidSource(content) {
+  return decodeHtml(content).replace(/\r\n/g, '\n').trim() + '\n';
+}
+
+// 返回 Mermaid 静态图在 source 目录中的绝对输出路径。
+function getSourceSvgPath(hexo, fileName) {
+  return path.join(hexo.base_dir, SOURCE_OUTPUT_DIR, fileName);
+}
+
+// 检测可复用的 Chromium 可执行文件路径，优先使用环境变量和 Playwright 缓存。
+async function resolveChromeExecutable() {
+  const candidatePaths = [
+    process.env.MERMAID_CHROME_PATH,
+    process.env.PUPPETEER_EXECUTABLE_PATH,
+    '/home/lucas_wsl/.cache/ms-playwright/chromium-1223/chrome-linux64/chrome',
+    '/home/lucas_wsl/.cache/ms-playwright/chromium_headless_shell-1223/chrome-headless-shell-linux64/chrome-headless-shell',
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser'
+  ].filter(Boolean);
+
+  for (const candidatePath of candidatePaths) {
+    try {
+      await fsPromises.access(candidatePath);
+      return candidatePath;
+    } catch (error) {
+      continue;
+    }
+  }
+
+  throw new Error('未找到可用的 Chromium 可执行文件，请设置 MERMAID_CHROME_PATH。');
+}
+
+// 递归收集 source 目录下需要参与 Mermaid 静态化的 Markdown 文件。
+async function collectMarkdownFiles(rootDir) {
+  const entries = await fsPromises.readdir(rootDir, { withFileTypes: true });
+  const filePaths = [];
+
+  for (const entry of entries) {
+    const fullPath = path.join(rootDir, entry.name);
+    if (entry.isDirectory()) {
+      if (fullPath.includes(path.join('source', 'generated'))) {
+        continue;
+      }
+      filePaths.push(...await collectMarkdownFiles(fullPath));
+      continue;
+    }
+
+    if (entry.isFile() && fullPath.endsWith('.md')) {
+      filePaths.push(fullPath);
+    }
+  }
+
+  return filePaths;
+}
+
+// 调用 Mermaid CLI 在构建阶段把源码渲染成 SVG 文本。
+async function renderMermaidSvg(hexo, sourceText, outputKey) {
+  const baseDir = hexo.base_dir;
+  const tempDir = path.join(baseDir, TMP_DIR);
+  const inputPath = path.join(tempDir, `${outputKey}.mmd`);
+  const outputPath = path.join(tempDir, `${outputKey}.svg`);
+  const chromeExecutable = await resolveChromeExecutable();
+
+  await fsPromises.mkdir(tempDir, { recursive: true });
+  await fsPromises.writeFile(inputPath, sourceText, 'utf8');
+
+  const mermaidConfigPath = path.join(baseDir, 'ops', 'mermaid-render-config.json');
+  const puppeteerConfigPath = path.join(baseDir, 'ops', 'puppeteer-config.json');
+  const mmdcBinPath = path.join(baseDir, 'node_modules', '.bin', 'mmdc');
+
+  await execFileAsync(mmdcBinPath, [
+    '-i', inputPath,
+    '-o', outputPath,
+    '-c', mermaidConfigPath,
+    '-p', puppeteerConfigPath,
+    '-b', '#ffffff'
+  ], {
+    cwd: baseDir,
+    env: {
+      ...process.env,
+      PUPPETEER_SKIP_DOWNLOAD: '1',
+      PUPPETEER_EXECUTABLE_PATH: chromeExecutable
+    },
+    maxBuffer: 10 * 1024 * 1024
+  });
+
+  return fsPromises.readFile(outputPath, 'utf8');
+}
+
+// 强制把 Mermaid SVG 处理成白底，并写入明确尺寸，避免 Fancybox 把它当成小图适配展示。
+function ensureOpaqueSvgBackground(svgText) {
+  let nextSvg = svgText.replace('background-color: transparent;', 'background-color: #ffffff;');
+  const viewBoxMatch = nextSvg.match(/viewBox="([^"]+)"/);
+
+  if (viewBoxMatch) {
+    const viewBoxValues = viewBoxMatch[1].trim().split(/\s+/).map(Number);
+    if (viewBoxValues.length === 4 && viewBoxValues.every((value) => Number.isFinite(value))) {
+      const width = Math.ceil(viewBoxValues[2]);
+      const height = Math.ceil(viewBoxValues[3]);
+      nextSvg = nextSvg.replace(/width="[^"]*"/, `width="${width}"`);
+      if (/height="[^"]*"/.test(nextSvg)) {
+        nextSvg = nextSvg.replace(/height="[^"]*"/, `height="${height}"`);
+      } else {
+        nextSvg = nextSvg.replace(/<svg/, `<svg height="${height}"`);
+      }
+      nextSvg = nextSvg.replace(/style="([^"]*)"/, (match, styleValue) => {
+        const normalized = styleValue
+          .replace(/max-width\s*:\s*[^;]+;?/g, '')
+          .replace(/width\s*:\s*[^;]+;?/g, '')
+          .trim();
+        const merged = ['background-color: #ffffff;', normalized].filter(Boolean).join(' ');
+        return `style="${merged}"`;
+      });
+      nextSvg = nextSvg.replace(/<svg([^>]*)>/, `<svg$1><rect width="${width}" height="${height}" fill="#ffffff"/>`);
+      return nextSvg;
+    }
+  }
+
+  nextSvg = nextSvg.replace(/<svg([^>]*)>/, '<svg$1><rect width="100%" height="100%" fill="#ffffff"/>');
+  return nextSvg;
+}
+
+// 把生成好的 SVG 写入 source/generated/mermaid，供后续拷贝到 public。
+async function persistSvgToSource(hexo, fileName, svgText) {
+  const sourceSvgPath = getSourceSvgPath(hexo, fileName);
+  await fsPromises.mkdir(path.dirname(sourceSvgPath), { recursive: true });
+  await fsPromises.writeFile(sourceSvgPath, svgText, 'utf8');
+}
+
+// 扫描 Markdown 源文件并预生成本次构建需要的所有 Mermaid 静态图。
+async function prebuildMermaidSvgs(hexo) {
+  const markdownFiles = await collectMarkdownFiles(path.join(hexo.base_dir, 'source'));
+
+  for (const filePath of markdownFiles) {
+    const markdownContent = await fsPromises.readFile(filePath, 'utf8');
+    const matches = Array.from(markdownContent.matchAll(MARKDOWN_MERMAID_REGEX));
+
+    for (const match of matches) {
+      const normalizedSource = normalizeMermaidSource(match[1]);
+      const diagramHash = buildDiagramHash(normalizedSource);
+      const fileName = `${diagramHash}.svg`;
+
+      if (generatedSvgMap.has(fileName)) {
+        continue;
+      }
+
+      hexo.log.info(`[mermaid-static] 生成 ${fileName}`);
+      const svgText = ensureOpaqueSvgBackground(await renderMermaidSvg(hexo, normalizedSource, diagramHash));
+      generatedSvgMap.set(fileName, svgText);
+      await persistSvgToSource(hexo, fileName, svgText);
+    }
+  }
+}
+
+// 生成文章中插入的静态 SVG 图片 HTML，并接入 Fancybox 放大查看。
+function buildMermaidFigureHtml(publicPath, altText) {
+  const safeAltText = altText.replace(/"/g, '&quot;');
+  return [
+    '<figure style="margin:1.25rem 0;">',
+    `  <a href="${publicPath}" data-fancybox="mermaid-diagrams" data-caption="${safeAltText}" style="display:block;cursor:zoom-in;">`,
+    `    <img src="${publicPath}" alt="${safeAltText}" loading="lazy" style="display:block;width:100%;height:auto;border-radius:12px;border:1px solid rgba(15,23,42,.08);background:#fff;box-shadow:0 10px 30px rgba(15,23,42,.08);">`,
+    '  </a>',
+    '  <figcaption style="margin-top:.5rem;font-size:.875rem;color:rgba(71,85,105,.9);text-align:center;">点击放大查看原图</figcaption>',
+    '</figure>'
+  ].join('\n');
+}
+
+// 把 HTML 中的 Mermaid 代码块替换为构建期生成的 SVG 图片引用。
+function replaceMermaidBlocks(htmlContent, postTitle) {
+  const matches = Array.from(htmlContent.matchAll(HTML_MERMAID_REGEX));
+  if (matches.length === 0) {
+    return htmlContent;
+  }
+
+  let replacedContent = htmlContent;
+  for (let index = 0; index < matches.length; index += 1) {
+    const fullMatch = matches[index][0];
+    const normalizedSource = normalizeMermaidSource(matches[index][1]);
+    const diagramHash = buildDiagramHash(normalizedSource);
+    const fileName = `${diagramHash}.svg`;
+    const publicPath = `${PUBLIC_PREFIX}/${fileName}`;
+    const altText = `${postTitle || 'Mermaid 图'} - 图 ${index + 1}`;
+
+    replacedContent = replacedContent.replace(fullMatch, buildMermaidFigureHtml(publicPath, altText));
+  }
+
+  return replacedContent;
+}
+
+// 同步把 source/generated/mermaid 拷贝到 public/generated/mermaid，确保 generate 结束后资源在位。
+function copyGeneratedSvgsToPublic(hexo) {
+  const sourceDir = path.join(hexo.base_dir, SOURCE_OUTPUT_DIR);
+  const publicDir = path.join(hexo.public_dir, 'generated', 'mermaid');
+
+  fs.rmSync(publicDir, { recursive: true, force: true });
+  if (!fs.existsSync(sourceDir)) {
+    return;
+  }
+
+  fs.mkdirSync(path.dirname(publicDir), { recursive: true });
+  fs.cpSync(sourceDir, publicDir, { recursive: true });
+}
+
+// 在每次 generate 前清空缓存并重建 source/generated/mermaid 目录。
+hexo.extend.filter.register('before_generate', async function () {
+  generatedSvgMap.clear();
+  await fsPromises.rm(path.join(hexo.base_dir, SOURCE_OUTPUT_DIR), { recursive: true, force: true });
+  await prebuildMermaidSvgs(hexo);
+});
+
+// 在 HTML 输出阶段把 Mermaid 代码块转换成静态图片引用。
+hexo.extend.filter.register('after_render:html', function (htmlContent, data) {
+  if (!htmlContent || htmlContent.indexOf('<pre class="mermaid">') === -1) {
+    return htmlContent;
+  }
+
+  return replaceMermaidBlocks(htmlContent, data && data.title);
+});
+
+// 在 generate 收尾阶段同步拷贝 Mermaid SVG，避免资源引用落空。
+hexo.extend.filter.register('after_generate', function () {
+  copyGeneratedSvgsToPublic(hexo);
+});

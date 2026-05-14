@@ -1,9 +1,6 @@
 plugins:
   mermaid:
-    enable: true
-    style_optimization: false
-    js: /js/vendor/mermaid.min.js
-    theme: neutral
+    enable: false
 
 site_tree:
   home:
