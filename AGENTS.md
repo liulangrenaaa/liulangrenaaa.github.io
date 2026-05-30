@@ -16,3 +16,4 @@
 ## AOSP 分析约束
 
 - 后续涉及 AOSP 源码分析、Android Framework 机制说明、源码路径引用等内容时，默认统一基于 `aosp14`。
+- 如果是在 Linux 上，代码目录在 `/home/suhui/workspace/aosp/los21/frameworks`。
