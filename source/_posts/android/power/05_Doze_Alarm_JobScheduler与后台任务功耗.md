@@ -448,7 +448,7 @@ setImpl(type, triggerAtTime, windowLength, interval, ...):
 | 每个 UID 有 alarm 数量上限 | 防止大量并发 alarm 占用系统资源 |
 | 新 alarm 会 remove 旧匹配项 | 重复设置同一个 PendingIntent 会覆盖 |
 
-所以排查时不要只问“有没有 alarm”，还要问：
+所以排查时不能只问“有没有 alarm”，还要问：
 
 - 它是 wakeup 还是 non-wakeup？
 - 它是 exact 还是 inexact？
@@ -876,7 +876,7 @@ sequenceDiagram
     Modem-->>Kernel: wakeup source activity
 ```
 
-所以文章和报告里不要只写“Alarm 多”。更完整的表述是：
+所以文章和报告里不能只写“Alarm 多”。更完整的表述是：
 
 ```text
 UID xxx 每 60 秒触发一次 ELAPSED_REALTIME_WAKEUP。
@@ -1252,7 +1252,7 @@ flowchart LR
 9. 做 AB：关闭定位、Wi-Fi、BT、移动数据，或禁用目标应用，对比 delta。
 10. 写结论：区分“无法 Doze”“能 Doze 但被唤醒”“maintenance 内任务重”“外设唤醒”。
 
-## 报告模板
+## 复盘报告写法
 
 ```text
 1. 场景
@@ -1302,9 +1302,9 @@ flowchart LR
    优化建议：
 ```
 
-## 面试表达
+## 我会这样说明
 
-如果面试官问“Doze 怎么限制后台功耗”，可以这样说：
+如果被问到“Doze 怎么限制后台功耗”，我会这样说：
 
 ```text
 Doze 由 DeviceIdleController 管理，不是简单开关，而是 deep idle 和 light idle 两套状态机。
@@ -1313,7 +1313,7 @@ IDLE 期间普通后台活动会被限制，Alarm 和 Job 不会随便执行。
 系统会周期性打开 IDLE_MAINTENANCE 窗口，让延迟的后台任务集中运行，减少频繁唤醒。
 ```
 
-如果问“Alarm 和 JobScheduler 的功耗差异”，可以这样说：
+如果问“Alarm 和 JobScheduler 的功耗差异”，我会这样说：
 
 ```text
 Alarm 更像时间触发器，尤其是 RTC_WAKEUP 或 ELAPSED_REALTIME_WAKEUP，会把设备从 suspend 唤醒。
@@ -1321,7 +1321,7 @@ JobScheduler 更像约束调度器，它会综合网络、充电、idle、电量
 所以普通后台同步不应该用高频 exact wakeup alarm 轮询，而应该尽量用 JobScheduler 加约束和退避。
 ```
 
-如果问“后台待机耗电怎么查”，可以这样说：
+如果问“后台待机耗电怎么查”，我会这样说：
 
 ```text
 先看 dumpsys power 和 dumpsys deviceidle，确认系统是否进入 Doze 和 suspend 前提。
@@ -1330,7 +1330,7 @@ JobScheduler 更像约束调度器，它会综合网络、充电、idle、电量
 最后用 Perfetto 把 resume、alarm dispatch、job start、网络/定位动作和再次 suspend 串起来。
 ```
 
-## 小结
+## 复盘
 
 后台功耗的核心是唤醒频率和合并程度。
 
@@ -1340,7 +1340,7 @@ JobScheduler 更像约束调度器，它会综合网络、充电、idle、电量
 - Alarm/Job 往往只是触发器，真正耗电可能发生在网络、定位、蓝牙、传感器。
 - 分析时必须看时间线和 delta，不能只看单个 dumpsys 截图。
 
-一句话记住：
+我的判断口径：
 
 ```text
 后台功耗不是看任务有没有跑，而是看它有没有频繁把系统叫醒，以及叫醒后做了什么。

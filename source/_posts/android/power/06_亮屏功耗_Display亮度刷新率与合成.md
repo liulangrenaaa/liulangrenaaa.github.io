@@ -127,7 +127,7 @@ flowchart TD
 
 ## 源码入口
 
-AOSP14 / LOS21 中，本篇重点看这些入口：
+AOSP14 / LOS21 中，这篇重点看这些入口：
 
 | 模块 | 源码 |
 |------|------|
@@ -613,7 +613,7 @@ QCOM 平台常见 GPU 路径可能在：
 /sys/class/devfreq/*kgsl*/cur_freq
 ```
 
-不要硬编码结论，先 `find` 再看节点是否存在。
+不要预设结论，先 `find` 再看节点是否存在。
 
 ## 固定刷新率
 
@@ -961,7 +961,7 @@ adb shell dumpsys display > display_video.txt
 高亮度 + GPS + 地图渲染 + 移动网络 + 语音 + 弱网重传 + 车内高温
 ```
 
-分析时不要把所有电流都算给 Display。
+分析时不能把所有电流都算给 Display。
 
 拆解方法：
 
@@ -1047,7 +1047,7 @@ adb shell 'find /sys/class/kgsl /sys/class/devfreq /sys/class/thermal -maxdepth 
 adb shell 'find /sys/kernel/tracing/events -maxdepth 2 -type d 2>/dev/null | grep -Ei "kgsl|mdss|sde|drm|thermal|power"'
 ```
 
-不要把某个路径写死为所有 QCOM 设备通用。msm8998、sm8250、sm8550 的节点和 trace event 都可能不同。
+不能把某个路径写成所有 QCOM 设备通用。msm8998、sm8250、sm8550 的节点和 trace event 都可能不同。
 
 ## 完整采集脚本
 
@@ -1104,7 +1104,7 @@ adb shell chmod 755 /data/local/tmp/collect_display_power.sh
 adb shell 'nohup /data/local/tmp/collect_display_power.sh 300 com.example.app >/data/local/tmp/display_power.nohup 2>&1 &'
 ```
 
-## 报告模板
+## 复盘报告写法
 
 ```text
 1. 场景
@@ -1154,9 +1154,9 @@ adb shell 'nohup /data/local/tmp/collect_display_power.sh 300 com.example.app >/
    是否与热策略耦合？
 ```
 
-## 面试表达
+## 我会这样说明
 
-如果面试官问“亮屏功耗怎么分析”，可以这样回答：
+如果被问到“亮屏功耗怎么分析”，我会这样回答：
 
 ```text
 我会先固定亮度、刷新率、网络和温度，把变量收住。
@@ -1168,7 +1168,7 @@ adb shell 'nohup /data/local/tmp/collect_display_power.sh 300 com.example.app >/
 最后还要看 thermal，因为亮屏高功耗会反过来触发降亮度、降刷新率和限频。
 ```
 
-如果问“为什么 screen_brightness 设置一样，功耗还不一样”，可以这样回答：
+如果问“为什么 screen_brightness 设置一样，功耗还不一样”，我会这样回答：
 
 ```text
 screen_brightness 只是用户设置值，不一定等于最终 panel 亮度。
@@ -1177,9 +1177,9 @@ DisplayPowerController 里还会叠加自动亮度、doze亮度、HBM/HDR、low 
 另外 OLED 还跟画面内容 APL 有关，同样亮度下白底和黑底功耗差异很大。
 ```
 
-## 小结
+## 复盘
 
-亮屏功耗不要只说“屏幕耗电”。更准确的拆法是：
+亮屏功耗不能只说“屏幕耗电”。更准确的拆法是：
 
 - 亮度/面板：亮度阶梯、HBM/HDR、OLED APL、背光。
 - 刷新率：DisplayModeDirector vote、SF RefreshRateSelector、physical/render rate。
@@ -1188,7 +1188,7 @@ DisplayPowerController 里还会叠加自动亮度、doze亮度、HBM/HDR、low 
 - 平台负载：CPU/GPU/DDR 频率和 idle。
 - 热反馈：降亮度、降刷新率、限频。
 
-一句话记住：
+我的判断口径：
 
 ```text
 亮屏功耗 = 屏幕发光成本 + 每帧生产成本 + 每帧合成成本 + 热策略反馈。

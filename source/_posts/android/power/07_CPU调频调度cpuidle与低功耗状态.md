@@ -23,7 +23,7 @@ CPU 功耗最容易被“CPU 占用率”误导。占用率只是结果的一小
 - 每 10ms 醒一次，每次跑很短：平均占用低，但 cpuidle 被打碎，功耗高。
 - 连续跑一小段后长时间不醒：平均占用类似，但 CPU 可以进入深 idle，功耗低。
 
-所以 CPU 功耗分析不要只问“top 里谁占用高”，要问“谁让 CPU 不能安静下来”。
+所以 CPU 功耗分析不能只问“top 里谁占用高”，要问“谁让 CPU 不能安静下来”。
 
 ## 总览
 
@@ -200,7 +200,7 @@ adb shell 'find /sys -path "*interactive*" -type f 2>/dev/null | head -80'
 adb shell 'for p in /sys/devices/system/cpu/cpufreq/policy*; do echo $p; ls $p; done'
 ```
 
-注意：不要把某个 governor 的结论套到所有设备。msm8998、sm8250、Tensor、MTK 平台会差很多。
+注意：不能把某个 governor 的结论套到所有设备。msm8998、sm8250、Tensor、MTK 平台会差很多。
 
 ## 调度与大小核
 
@@ -428,7 +428,7 @@ flowchart LR
 
 ## cpuidle delta分析
 
-不要只看一次绝对值，要看窗口差值：
+不能只看一次绝对值，要看窗口差值：
 
 ```bash
 adb shell 'for c in /sys/devices/system/cpu/cpu0 /sys/devices/system/cpu/cpu4; do for s in $c/cpuidle/state*; do echo "$c $(basename $s) $(cat $s/name) $(cat $s/usage) $(cat $s/time)"; done; done' > idle_before.txt
@@ -906,7 +906,7 @@ tar -czf "$OUT.tar.gz" -C "$(dirname "$OUT")" "$(basename "$OUT")"
 echo "$OUT.tar.gz"
 ```
 
-## 报告模板
+## 复盘报告写法
 
 ```text
 1. 场景
@@ -954,9 +954,9 @@ echo "$OUT.tar.gz"
    driver/IRQ？
 ```
 
-## 面试表达
+## 我会这样说明
 
-如果面试官问“CPU 功耗怎么分析”，可以这样回答：
+如果被问到“CPU 功耗怎么分析”，我会这样回答：
 
 ```text
 我不会只看 CPU 占用率，而是看线程运行、调度、频率和 idle 的闭环。
@@ -966,7 +966,7 @@ echo "$OUT.tar.gz"
 最后结合 Power HAL boost、uclamp/cpuset、省电模式和 thermal cooling，判断频率高或频率低到底是策略导致还是负载导致。
 ```
 
-如果问“低 CPU 占用为什么还耗电”，可以这样回答：
+如果问“低 CPU 占用为什么还耗电”，我会这样回答：
 
 ```text
 因为平均占用低不代表 CPU 睡得好。
@@ -975,7 +975,7 @@ echo "$OUT.tar.gz"
 所以要看 wakeup 频率和 cpuidle state delta，而不是只看 CPU 百分比。
 ```
 
-## 小结
+## 复盘
 
 CPU 功耗分析要建立因果链：
 
@@ -991,7 +991,7 @@ CPU 功耗分析要建立因果链：
 - 再看 boost/uclamp/cpuset，判断是否被人为拉高。
 - 最后看 thermal/cooling/battery saver，判断是否被压频。
 
-一句话记住：
+我的判断口径：
 
 ```text
 CPU 功耗不是“占用率”一个数字，而是运行时间、运行位置、运行频率和睡眠质量共同决定的。

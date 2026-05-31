@@ -16,7 +16,7 @@ categories:
 
 PowerManagerService，后面简称 PMS，是 Android Framework 电源策略的中枢。它不是“省电服务”，而是一个状态收敛器：把输入事件、屏幕状态、用户活动、wakelock、电池状态、Doze、Power HAL、suspend blocker 都合成一个当前系统应该处于的电源状态。
 
-可以先用一句话建立直觉：
+可以先建立一个直觉：
 
 ```text
 PMS 决定 Framework 是否还需要保持系统 awake；
@@ -677,7 +677,7 @@ adb shell perfetto -o /data/misc/perfetto-traces/power.trace -t 120s sched freq 
 adb pull /data/misc/perfetto-traces/power.trace
 ```
 
-## 结论模板
+## 我会这样收口
 
 ### Framework wakelock问题
 
@@ -709,7 +709,7 @@ Framework:
     应继续排查显示状态、插电 stay awake、Doze/AOD 或 Kernel wakeup source。
 ```
 
-## 本篇总结
+## 这篇总结
 
 PMS 和 wakelock 的核心不是“看到锁就怪锁”，而是看完整链路：
 
