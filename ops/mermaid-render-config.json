@@ -1,7 +1,7 @@
 {
   "theme": "neutral",
   "securityLevel": "loose",
-  "fontFamily": "Arial, PingFang SC, Microsoft YaHei, sans-serif",
+  "fontFamily": "Noto Sans CJK SC, Arial, sans-serif",
   "flowchart": {
     "useMaxWidth": false,
     "htmlLabels": true,
