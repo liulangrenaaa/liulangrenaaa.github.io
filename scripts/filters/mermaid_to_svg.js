@@ -12,7 +12,7 @@ const generatedSvgMap = new Map();
 const referencedSvgSet = new Set();
 const mermaidWarnings = [];
 const MARKDOWN_MERMAID_REGEX = /```mermaid\s*\n([\s\S]*?)```/g;
-const HTML_HIGHLIGHT_BLOCK_REGEX = /<figure class="highlight plain">[\s\S]*?<\/figure>/g;
+const HTML_HIGHLIGHT_BLOCK_REGEX = /<figure class="highlight (?:plain|plaintext)">[\s\S]*?<\/figure>/g;
 const PUBLIC_PREFIX = '/generated/mermaid';
 const TMP_DIR = '.tmp/hexo-mermaid';
 const SOURCE_OUTPUT_DIR = path.join('source', 'generated', 'mermaid');
@@ -395,7 +395,9 @@ hexo.extend.filter.register('after_render:html', function (htmlContent, data) {
     return htmlContent;
   }
 
-  if (htmlContent.indexOf('<pre class="mermaid">') === -1 && htmlContent.indexOf('<figure class="highlight plain">') === -1) {
+  if (htmlContent.indexOf('<pre class="mermaid">') === -1 &&
+      htmlContent.indexOf('<figure class="highlight plain">') === -1 &&
+      htmlContent.indexOf('<figure class="highlight plaintext">') === -1) {
     if (data && data.path === 'index.html') {
       return injectHomepageWarningToHtml(htmlContent);
     }
