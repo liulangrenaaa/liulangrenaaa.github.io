@@ -7,7 +7,7 @@
     "build:site": "hexo generate",
     "clean": "hexo clean",
     "deploy": "hexo deploy",
-    "server": "hexo server"
+    "server": "python3 -m http.server 4000 --directory public"
   },
   "hexo": {
     "version": "8.1.2"
