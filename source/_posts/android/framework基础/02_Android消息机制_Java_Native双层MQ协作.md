@@ -487,11 +487,43 @@ Native 层可以专注：
 
 这种设计让 Looper 在响应时延和资源利用率之间取得了较好的平衡。
 
-## 13. 对应到 AOSP14 的关键源码位置
+## 13. 各类消息优先级问题
+
+把 Java `MessageQueue`、JNI 桥接层和 Native `Looper` 串起来看，一次典型调度链路大致是这样：
+
+1. Java `MessageQueue.next()`
+2. `nativePollOnce()`
+3. Native `Looper` 的 `epoll_wait` 返回
+4. Native `Looper` 先处理到期的 Native Message
+5. Native `Looper` 再处理 fd callback，例如 `vsync fd`
+6. `nativePollOnce()` 返回 Java 层
+7. Java `MessageQueue.next()` 继续取到期的 Java Message
+8. Java `Handler.dispatchMessage()`
+
+```mermaid
+sequenceDiagram
+    participant JMQ as Java MessageQueue
+    participant JNI as android_os_MessageQueue.cpp
+    participant NLooper as Native Looper
+    participant Fd as fd callback
+    participant Handler as Java Handler
+
+    JMQ->>JNI: next() 调用 nativePollOnce()
+    JNI->>NLooper: pollOnce / epoll_wait
+    NLooper-->>NLooper: epoll_wait 返回
+    NLooper->>NLooper: 处理 due Native Message
+    NLooper->>Fd: 处理 fd callback<br/>例如 vsync fd
+    NLooper-->>JNI: nativePollOnce 返回
+    JNI-->>JMQ: 回到 Java next()
+    JMQ->>JMQ: 取出到期 Java Message
+    JMQ->>Handler: dispatchMessage()
+```
+
+## 14. 对应到 AOSP14 的关键源码位置
 
 如果你后续要继续顺着源码读，建议抓下面三个文件：
 
-### 13.1 `frameworks/base/core/java/android/os/MessageQueue.java`
+### 14.1 `frameworks/base/core/java/android/os/MessageQueue.java`
 
 重点看：
 
@@ -506,7 +538,7 @@ Native 层可以专注：
 - 什么时候需要唤醒
 - 为什么有时会无限阻塞、有时只阻塞几毫秒
 
-### 13.2 `frameworks/base/core/jni/android_os_MessageQueue.cpp`
+### 14.2 `frameworks/base/core/jni/android_os_MessageQueue.cpp`
 
 重点看：
 
@@ -519,7 +551,7 @@ Native 层可以专注：
 - Java `MessageQueue` 如何绑定到 Native `Looper`
 - `nativePollOnce()` / `nativeWake()` 如何桥接到 C++
 
-### 13.3 `system/core/libutils/Looper.cpp`
+### 14.3 `system/core/libutils/Looper.cpp`
 
 重点看：
 
