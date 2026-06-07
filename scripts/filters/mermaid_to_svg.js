@@ -3,6 +3,7 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const fsPromises = require('fs/promises');
+const os = require('os');
 const path = require('path');
 const { promisify } = require('util');
 const { execFile } = require('child_process');
@@ -16,6 +17,31 @@ const HTML_HIGHLIGHT_BLOCK_REGEX = /<figure class="highlight (?:plain|plaintext)
 const PUBLIC_PREFIX = '/generated/mermaid';
 const TMP_DIR = '.tmp/hexo-mermaid';
 const SOURCE_OUTPUT_DIR = path.join('source', 'generated', 'mermaid');
+
+function getMermaidConcurrency() {
+  const configured = Number(process.env.MERMAID_CONCURRENCY);
+  if (Number.isInteger(configured) && configured > 0) {
+    return configured;
+  }
+
+  const availableCpus = typeof os.availableParallelism === 'function'
+    ? os.availableParallelism()
+    : os.cpus().length;
+  return Math.max(1, Math.min(4, availableCpus));
+}
+
+async function runWithConcurrency(items, concurrency, worker) {
+  let cursor = 0;
+  const workerCount = Math.min(concurrency, items.length);
+
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (cursor < items.length) {
+      const currentIndex = cursor;
+      cursor += 1;
+      await worker(items[currentIndex], currentIndex);
+    }
+  }));
+}
 
 // 计算 Mermaid 内容的稳定哈希，用于复用已生成的静态图文件名。
 function buildDiagramHash(content) {
@@ -221,9 +247,65 @@ async function persistSvgToSource(hexo, fileName, svgText) {
   await fsPromises.writeFile(sourceSvgPath, svgText, 'utf8');
 }
 
+async function removeStaleMermaidSvgs(hexo) {
+  const sourceDir = path.join(hexo.base_dir, SOURCE_OUTPUT_DIR);
+  let entries = [];
+
+  try {
+    entries = await fsPromises.readdir(sourceDir, { withFileTypes: true });
+  } catch (error) {
+    return;
+  }
+
+  await Promise.all(entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.svg') && !generatedSvgMap.has(entry.name))
+    .map((entry) => fsPromises.rm(path.join(sourceDir, entry.name), { force: true })));
+}
+
+async function loadCachedMermaidSvg(hexo, fileName) {
+  const sourceSvgPath = getSourceSvgPath(hexo, fileName);
+  try {
+    return await fsPromises.readFile(sourceSvgPath, 'utf8');
+  } catch (error) {
+    return '';
+  }
+}
+
+async function prebuildSingleMermaidSvg(hexo, item) {
+  const { fileName, diagramHash, normalizedSource } = item;
+  const cachedSvgText = await loadCachedMermaidSvg(hexo, fileName);
+  if (cachedSvgText) {
+    generatedSvgMap.set(fileName, cachedSvgText);
+    return;
+  }
+
+  hexo.log.info(`[mermaid-static] 生成 ${fileName}`);
+  let rawSvgText = '';
+  let renderWarning = '';
+  let warningAlreadyLogged = false;
+  try {
+    rawSvgText = await renderMermaidSvg(hexo, normalizedSource, diagramHash);
+    renderWarning = getMermaidSvgWarning(rawSvgText, fileName);
+  } catch (error) {
+    renderWarning = `[mermaid-static] Mermaid CLI 执行失败: ${fileName}`;
+    pushMermaidWarning(hexo, renderWarning);
+    warningAlreadyLogged = true;
+    rawSvgText = buildMermaidFallbackSvg(renderWarning);
+  }
+
+  if (renderWarning && !warningAlreadyLogged) {
+    pushMermaidWarning(hexo, renderWarning);
+  }
+
+  const svgText = ensureOpaqueSvgBackground(rawSvgText);
+  generatedSvgMap.set(fileName, svgText);
+  await persistSvgToSource(hexo, fileName, svgText);
+}
+
 // 扫描 Markdown 源文件并预生成本次构建需要的所有 Mermaid 静态图。
 async function prebuildMermaidSvgs(hexo) {
   const markdownFiles = await collectMarkdownFiles(path.join(hexo.base_dir, 'source'));
+  const diagramMap = new Map();
 
   for (const filePath of markdownFiles) {
     const markdownContent = await fsPromises.readFile(filePath, 'utf8');
@@ -234,33 +316,19 @@ async function prebuildMermaidSvgs(hexo) {
       const diagramHash = buildDiagramHash(normalizedSource);
       const fileName = `${diagramHash}.svg`;
 
-      if (generatedSvgMap.has(fileName)) {
+      if (diagramMap.has(fileName)) {
         continue;
       }
 
-      hexo.log.info(`[mermaid-static] 生成 ${fileName}`);
-      let rawSvgText = '';
-      let renderWarning = '';
-      let warningAlreadyLogged = false;
-      try {
-        rawSvgText = await renderMermaidSvg(hexo, normalizedSource, diagramHash);
-        renderWarning = getMermaidSvgWarning(rawSvgText, fileName);
-      } catch (error) {
-        renderWarning = `[mermaid-static] Mermaid CLI 执行失败: ${fileName}`;
-        pushMermaidWarning(hexo, renderWarning);
-        warningAlreadyLogged = true;
-        rawSvgText = buildMermaidFallbackSvg(renderWarning);
-      }
-
-      if (renderWarning && !warningAlreadyLogged) {
-        pushMermaidWarning(hexo, renderWarning);
-      }
-
-      const svgText = ensureOpaqueSvgBackground(rawSvgText);
-      generatedSvgMap.set(fileName, svgText);
-      await persistSvgToSource(hexo, fileName, svgText);
+      diagramMap.set(fileName, { fileName, diagramHash, normalizedSource });
     }
   }
+
+  const diagrams = Array.from(diagramMap.values());
+  const concurrency = getMermaidConcurrency();
+  hexo.log.info(`[mermaid-static] 发现 ${diagrams.length} 张图，并发 ${concurrency}`);
+  await runWithConcurrency(diagrams, concurrency, (item) => prebuildSingleMermaidSvg(hexo, item));
+  await removeStaleMermaidSvgs(hexo);
 }
 
 // 生成文章中插入的静态 SVG 图片 HTML，并接入 Fancybox 放大查看。
@@ -385,7 +453,6 @@ hexo.extend.filter.register('before_generate', async function () {
   generatedSvgMap.clear();
   referencedSvgSet.clear();
   mermaidWarnings.length = 0;
-  await fsPromises.rm(path.join(hexo.base_dir, SOURCE_OUTPUT_DIR), { recursive: true, force: true });
   await prebuildMermaidSvgs(hexo);
 });
 
