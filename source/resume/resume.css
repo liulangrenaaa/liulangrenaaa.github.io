@@ -41,7 +41,7 @@
   color: var(--resume-ink);
   font-family: "Times New Roman", "SimSun", "Songti SC", serif;
   font-size: 11.4pt;
-  line-height: 1.5;
+  line-height: 1.42;
 }
 
 .resume-pages,
@@ -65,7 +65,7 @@
   box-shadow: none;
   font-family: "Times New Roman", "SimSun", "Songti SC", serif;
   font-size: 11.4pt;
-  line-height: 1.5;
+  line-height: 1.42;
   overflow: visible;
 }
 
@@ -103,7 +103,7 @@
   row-gap: 2px;
   align-items: start;
   width: 100%;
-  margin: 0 0 16px;
+  margin: 0 0 8px;
   padding-bottom: 0;
   margin-left: 0 !important;
 }
@@ -126,7 +126,7 @@
   margin: 0;
   color: var(--resume-ink);
   font-size: 11.4pt;
-  line-height: 1.6;
+  line-height: 1.45;
   white-space: nowrap;
 }
 
@@ -144,7 +144,9 @@
 }
 
 .resume-section {
-  margin-top: 14px;
+  margin-top: 6px;
+  padding-top: 3px;
+  border-top: 2px solid var(--resume-ink);
   break-inside: avoid;
   page-break-inside: avoid;
 }
@@ -154,7 +156,7 @@
 }
 
 .resume-section-title {
-  margin: 0 0 6px;
+  margin: 0 0 4px;
   padding-bottom: 0;
   border-bottom: 0;
   color: var(--resume-ink);
@@ -180,13 +182,18 @@
 }
 
 .resume-item {
-  margin-top: 9px;
+  margin-top: 2px;
   break-inside: avoid;
   page-break-inside: avoid;
 }
 
 .resume-item:first-of-type {
   margin-top: 0;
+}
+
+.resume-item + .resume-item {
+  padding-top: 2px;
+  border-top: 1px solid var(--resume-rule);
 }
 
 .resume-item-head {
@@ -199,7 +206,7 @@
 
 .resume-item-title {
   color: var(--resume-ink);
-  font-size: 11.2pt;
+  font-size: 11.8pt;
   font-weight: 800;
   white-space: nowrap;
 }
@@ -219,13 +226,13 @@
 }
 
 .resume-list {
-  margin: 5px 0 0 0;
+  margin: 4px 0 0 0;
   padding-left: 16px;
   color: var(--resume-muted);
 }
 
 .resume-list li {
-  margin: 2px 0;
+  margin: 1px 0;
 }
 
 .resume-highlight {
