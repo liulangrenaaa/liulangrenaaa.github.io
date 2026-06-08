@@ -10,7 +10,6 @@ breadcrumb: false
 leftbar: []
 rightbar: []
 ---
-
 <style>
   .l_body[type="resume"] {
     display: block;
@@ -22,6 +21,7 @@ rightbar: []
   .l_body[type="resume"] .l_right,
   .l_body[type="resume"] .article.banner,
   .l_body[type="resume"] .l_main > header,
+  .l_body[type="resume"] .page-footer,
   .l_body[type="resume"] .footer {
     display: none !important;
   }
@@ -274,6 +274,7 @@ rightbar: []
     .l_body[type="resume"] .l_right,
     .l_body[type="resume"] .article.banner,
     .l_body[type="resume"] .l_main > header,
+    .l_body[type="resume"] .page-footer,
     .l_body[type="resume"] .footer {
       display: none !important;
     }
@@ -316,11 +317,9 @@ rightbar: []
     }
   }
 </style>
-
 <div class="resume-toolbar">
   <button class="resume-print-button" type="button" onclick="window.print()">导出 PDF</button>
 </div>
-
 <main class="resume-sheet">
   <header class="resume-header">
     <div>
@@ -337,24 +336,19 @@ rightbar: []
       <li>所在地：中国</li>
     </ul>
   </header>
-
   <section class="resume-section">
     <h2 class="resume-section-title">专业技能</h2>
     <div class="resume-skill-grid">
       <div class="resume-skill-name">Android</div>
       <div class="resume-skill-detail">熟悉 Android Framework、应用启动与生命周期、WMS/Input/Binder、系统服务、ANR/Crash 稳定性分析。</div>
-
       <div class="resume-skill-name">Linux</div>
       <div class="resume-skill-detail">熟悉 Linux 内核调度、内存管理、文件系统、锁机制、驱动调试、异常现场分析与问题复盘。</div>
-
       <div class="resume-skill-name">性能优化</div>
       <div class="resume-skill-detail">具备启动速度、功耗、卡顿、低内存、CPU 调度、系统稳定性等问题的定位和优化经验。</div>
-
       <div class="resume-skill-name">工具链</div>
       <div class="resume-skill-detail">熟悉 Perfetto/Systrace、logcat、dumpsys、crash、gdb、kdump、QEMU、ADB、脚本化分析工具。</div>
     </div>
   </section>
-
   <section class="resume-section">
     <h2 class="resume-section-title">工作经历</h2>
     <article class="resume-item">
@@ -371,7 +365,6 @@ rightbar: []
         <li>负责稳定性问题分析，长期处理 ANR、Crash、Watchdog、Softlockup、低内存等复杂系统问题。</li>
       </ul>
     </article>
-
     <article class="resume-item">
       <div class="resume-item-head">
         <div>
@@ -386,7 +379,6 @@ rightbar: []
       </ul>
     </article>
   </section>
-
   <section class="resume-section">
     <h2 class="resume-section-title">项目经历</h2>
     <article class="resume-item">
@@ -403,7 +395,6 @@ rightbar: []
         <li>沉淀可复用分析方法，提升后续同类性能问题定位效率。</li>
       </ul>
     </article>
-
     <article class="resume-item">
       <div class="resume-item-head">
         <div>
@@ -419,7 +410,6 @@ rightbar: []
       </ul>
     </article>
   </section>
-
   <section class="resume-section">
     <h2 class="resume-section-title">教育背景</h2>
     <article class="resume-item">
