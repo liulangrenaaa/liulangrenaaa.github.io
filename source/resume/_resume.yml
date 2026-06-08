@@ -7,32 +7,39 @@ profile:
   email: suhui_kernel@163.com
   birth: 1997 (29 岁)
 
-skills:
-  - name: Android
-    detail: 熟悉 Android Framework、应用启动与生命周期、WMS/Input/Binder、系统服务、ANR/Crash 稳定性分析。
-  - name: Linux
-    detail: 熟悉 Linux 内核调度、内存管理、文件系统、锁机制、驱动调试、异常现场分析与问题复盘。
-  - name: 性能优化
-    detail: 具备启动速度、功耗、卡顿、低内存、CPU 调度、系统稳定性等问题的定位和优化经验。
-  - name: 工具链
-    detail: 熟悉 Perfetto/Systrace、logcat、dumpsys、crash、gdb、kdump、QEMU、ADB、脚本化分析工具。
 
 sections:
   - title: 工作经历
     items:
-      - title: XXX 公司
-        subtitle: 高级系统工程师
-        time: 2020 - 至今
+      - title: 大疆创新
+        subtitle: linux工程师
+        time: 2019.01 - 2021.03
         bullets:
-          - 负责 Android Framework 层开发与系统问题定位，覆盖应用启动、窗口系统、输入系统、系统服务等模块。
-          - 负责系统性能优化，针对启动耗时、调度延迟、内存压力、功耗发热等问题建立分析路径并推进优化落地。
-          - 负责稳定性问题分析，长期处理 ANR、Crash、Watchdog、Softlockup、低内存等复杂系统问题。
-      - title: YYY 公司
-        subtitle: 系统工程师
-        time: 2018 - 2020
+          - 参与了 DJI 穿越机、DJI FPV 高清数字图传项目, 解决了一些系统稳定性和性能问题, 如系统卡顿、loading 高, soft/hard-lockup, 用户空间、内核空间内存泄露等问题。
+          - 参与内核社区，提交过一些 patch 进入 mainline, backport 一些社区新 bugfix
+          - 引入RT-linux, 系统性能benchmark、优化实时性等工作
+
+      - title: 哲库科技
+        subtitle: 高级linux内核工程师
+        time: 2021.03 - 2023.05
+        bullets:
+          - 优化自研芯片研发中的内核调度性能问题
+          - 实现优化性能 feature 如 vip_thread、core_ctl、eas 等，使得系统关键业务进程的流畅性大大提升
+
+      - title: 传音控股
+        subtitle: 高级android/linux性能工程师
+        time: 2023.05 - 2025.02
+        bullets:
+          - 参与多款手机项目(如 infinix GT20 pro 等, MTK D8200 平台)，负责其中的性能模块，解决项目中诸多问题包括不限于 应用滑动卡顿、高负载下应用启动慢、开机慢，跑分衰退等
+          - 引入业界先进方案 vip-thread、cgroup 资源统计，落地项目中，提升系统性能和用户体验
+
+      - title: XXX 公司
+        subtitle: 高级linux内核工程师
+        time: 2025.02 - now
         bullets:
           - 负责 Linux 内核驱动开发、系统调试和稳定性问题分析。
           - 参与调试工具开发，提升问题复现、日志采集和现场分析效率。
+
   - title: 项目经历
     items:
       - title: 项目一：XXX 性能优化
@@ -49,3 +56,14 @@ sections:
           - 系统性分析 ANR、Crash 与低内存问题，建立从现象、日志、trace 到根因的排查流程。
           - 累计解决 ANR 问题 **100+**，推动 Crash 率降低 **50%**。
           - 输出问题复盘和排查模板，帮助团队形成稳定性治理闭环。
+
+
+skills:
+  - name: Android
+    detail: 熟悉 Android Framework、应用启动与生命周期、WMS/Input/Binder、系统服务、ANR/Crash 稳定性分析。
+  - name: Linux
+    detail: 熟悉 Linux 内核调度、内存管理、文件系统、锁机制、驱动调试、异常现场分析与问题复盘。
+  - name: 性能优化
+    detail: 具备启动速度、功耗、卡顿、低内存、CPU 调度、系统稳定性等问题的定位和优化经验。
+  - name: 工具链
+    detail: 熟悉 Perfetto/Systrace、logcat、dumpsys、crash、gdb、kdump、QEMU、ADB、脚本化分析工具。

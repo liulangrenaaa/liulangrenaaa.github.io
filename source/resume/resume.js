@@ -6,7 +6,6 @@
 
   var source = documentRoot.querySelector("[data-resume-source]");
   var pages = documentRoot.querySelector("[data-resume-pages]");
-  var printButton = documentRoot.querySelector("[data-resume-print]");
   var scheduled = false;
   var lastLayoutWidth = 0;
 
@@ -153,14 +152,6 @@
     lastLayoutWidth = getLayoutWidth();
   }
 
-  function printResume() {
-    setPrintMode(true);
-    layoutPages();
-    window.setTimeout(function () {
-      window.print();
-    }, 150);
-  }
-
   function scheduleLayout() {
     if (scheduled) {
       return;
@@ -187,10 +178,6 @@
 
   if (document.fonts && document.fonts.ready) {
     document.fonts.ready.then(scheduleLayout);
-  }
-
-  if (printButton) {
-    printButton.addEventListener("click", printResume);
   }
 
   window.addEventListener("beforeprint", function () {

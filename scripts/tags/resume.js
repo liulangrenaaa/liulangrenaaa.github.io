@@ -174,10 +174,8 @@ function renderItem(item) {
   return [
     '<article class="resume-item">',
     '<div class="resume-item-head">',
-    '<div>',
     '<div class="resume-item-title">' + renderInline(item && item.title) + '</div>',
     subtitle,
-    '</div>',
     time,
     '</div>',
     renderBullets(item && item.bullets),
@@ -231,10 +229,6 @@ hexo.extend.tag.register('resume', function () {
   return [
     '<link rel="stylesheet" href="/resume/resume.css">',
     '<div class="resume-document" data-resume-document>',
-    '<div class="resume-toolbar">',
-    '<p class="resume-toolbar-title">博客主题预览，导出时自动切换为 A4 PDF</p>',
-    '<button class="resume-print-button" type="button" data-resume-print>导出 PDF</button>',
-    '</div>',
     '<div class="resume-pages" data-resume-pages></div>',
     '<main class="resume-source" data-resume-source>',
     renderHeader(resumeData.profile, groupedSections.education),
