@@ -1,0 +1,69 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>Capacity awareness for the deadline scheduler | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>Capacity awareness for the deadline scheduler</h1><div class="post-meta"><time datetime="2021-04-12T19:00:00.000Z">2021年4月12日</time><span> / linux kernel / linux schedule / deadline schedule</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">schedule</span></div></header><div class="article-body"><h2 id="what-is-cpu-capacity">What is CPU Capacity?</h2>
+<h2 id="what-is-capacity-awareness">What is Capacity awareness</h2>
+<p>Capacity Awareness refers to the fact that on heterogeneous systems
+(like Arm big.LITTLE), the capacity of the CPUs is not uniform, hence
+when placing tasks we need to be aware of this difference of CPU
+capacities.
+容量意识是指在异构系统上（例如Arm big.LITTLE），CPU的容量不一致，因此
+在放置任务时，我们需要意识到CPU的这种差异能力。</p>
+<h2 id="rt-scheduler-遇到的问题">RT scheduler 遇到的问题</h2>
+<p>参考<a href="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=804d402fb6f6">sched/rt: Make RT capacity-aware</a></p>
+<p>在ARM big.LITTLE情况下，我们要确保所选的CPU有足够的Capacity，满足运行任务运行的要求，可以理解为：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>capacity_orig_of（cpu）> = task.requirement。</span></span></code></pre>
+<ol>
+<li>对于CFS来说：</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>capacity_orig_of(cpu) >= cfs_task.util</span></span></code></pre>
+<ol start="2">
+<li>对于 deadline来说：(虽然还没有这个机制，但是可以使用bandwidth
+reservation实现)</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>capacity_orig_of(cpu)/SCHED_CAPACITY >= dl_deadline/dl_runtime</span></span></code></pre>
+<ol start="3">
+<li>对于RT，我们没有跟踪Per-task的CPU利用率，并且我们没有任何需求 去跟踪 RT-task对性能的要求。 但是随着uclamp的引入，RT任务现在可以控制通过设置uclamp_min来保证最低性能点。</li>
+</ol>
+<h2 id="deadline-scheduler-遇到的问题">Deadline scheduler 遇到的问题</h2>
+<p>参考<a href="https://lwn.net/Articles/821578/">LWN文章</a>
+linux deadline scheduler 将cpu分配给deadline 调度类的task，确保每个task不会逾期，这在SMP系统上很容易办到，但是在arm的 big.LITTLE系统中这变得很复杂，因为一个task假设在big core上需要运行50ms，在LITTLE core上可能需要运行100ms。在scheduler 不能感知到这些 big.LITTLE core的算力差异的时候，deadline的选核操作就有很大问题，会导致一些task被调度到小核上去，task由于小核算力不足导致最后逾期。</p>
+<p>deadline schedule中缺少的信息是对CPU容量（CPU Capacity）的了解-在给定时间内可以执行的指令数。CPU capacity已经在 load balancing和其他场景中使用了。</p>
+<p>For example:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>1. [Telling the scheduler about thermal pressure](https://lwn.net/Articles/788380/)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>2. [CPU capacity Usage in rt scheduler](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=804d402fb6f6)</span></span></code></pre>
+<p>Eggemann’s的工作主要是让 task placement 算法 考虑了不通CPU的 Capacity的差异，加上他的patch之后，deadline scheduler不管是选择到了big core还是 LITTLE core，都会满足 task的算力要求。</p>
+<h2 id="具体改了啥">具体改了啥？</h2>
+<p>admission-control 主要是基于系统中CPU总算力决定的。</p>
+<ol>
+<li>在SMP系统中，单个CPU 容量是c, 系统中有x个cpu，系统总算力C = x * c。</li>
+<li>AMP系统中，x个big core，单个容量是c1，y个LITTLE core，单个容量是c2，系统总算力C = x * c1 + y * c2。</li>
+</ol>
+<p>deadline scheduler的task-placement 还必须更好地了解系统的CPU拓扑。 在将任务移至新CPU之前，调度程序需要确保新CPU可以处理该任务。 在AMP中，需要有新的方法检查从一个cpu a迁移出的task到 cpu b，b的CPU Capacity满足task的要求，使用以下公式执行 fitness check：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>(CPU capacity) / 1024 >= (task runtime) / (task deadline)</span></span>
+<span class="line"><span>                    |</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>cap            >> 10  >= (p->dl.dl_runtime) / (p->dl.dl_deadline)</span></span>
+<span class="line"><span>                    |</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>(cap >> 10) * p->dl.dl_deadline  >=  p->dl.dl_runtime</span></span>
+<span class="line"><span>                    |</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>(cap * p->dl.dl_deadline)  >> 10  >=  p->dl.dl_runtime</span></span>
+<span class="line"><span>                    |</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>cap_scale(p->dl.dl_deadline, cap) >= p->dl.dl_runtime;</span></span></code></pre>
+<p>对应<code>kernel/sched/sched.h</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>#define cap_scale(v, s) ((v)*(s) >> SCHED_CAPACITY_SHIFT)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static inline bool dl_task_fits_capacity(struct task_struct *p, int cpu)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	unsigned long cap = arch_scale_cpu_capacity(cpu);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	return cap_scale(p->dl.dl_deadline, cap) >= p->dl.dl_runtime;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<h2 id="这个改动会影响啥">这个改动会影响啥</h2>
+<ol>
+<li>waking up a deadline task</li>
+<li>moving a deadline task to a different CPU</li>
+<li>migrating a task out of a CPU that is going offline</li>
+</ol>
+<p>都会检查 target cpu的 Capacity 是否满足task 的deadline条件。</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

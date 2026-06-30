@@ -1,0 +1,153 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>vscode task.json 与 launch.json配置 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>vscode task.json 与 launch.json配置</h1><div class="post-meta"><time datetime="2021-01-24T19:00:00.000Z">2021年1月24日</time><span> / 开发工具</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">vscode</span><span class="tag">task.json</span><span class="tag">launch.json</span><span class="tag">gdb</span></div></header><div class="article-body"><h2 id="快捷键">快捷键</h2>
+<ol>
+<li>
+<p>撤销光标移动 <code>Ctrl + U</code></p>
+</li>
+<li>
+<p>一行代码太长被折叠成为多行了，想切换回一行 <code>Alt + z</code></p>
+</li>
+<li>
+<p>多行编辑 <code>Alt + 鼠标左键</code>可以选择好要编辑位置</p>
+</li>
+<li>
+<p>跳转 <code>F12</code> 跳转回来 <code>带前进后退的鼠标后退</code> or <code>Alt + &#x3C;-</code></p>
+</li>
+<li>
+<p>折叠文件代码 <code>Ctrl + 0</code>, 展开文件代码 <code>Ctrl + J</code></p>
+</li>
+<li>
+<p>折叠部分代码 <code>Ctrl + Shift + [</code>, 展开部分代码 <code>Ctrl + Shift + ]</code></p>
+</li>
+<li>
+<p>显示参数：放到函数后面()内，<code>Ctrl + Shift + Space</code></p>
+</li>
+<li>
+<p>切换到原有终端</p>
+</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Ctrl + `</span></span></code></pre>
+<p>创建一个新终端</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Ctrl + Shift + `</span></span></code></pre>
+<ol start="9">
+<li>
+<p>移动到行首 <code>Home</code>， 移动到行尾 <code>END</code></p>
+</li>
+<li>
+<p>移动到文件头 <code>Ctrl + Home</code>， 移动到文件尾 <code>Ctrl + END</code></p>
+</li>
+<li>
+<p>编辑器Tab 切换 <code>Ctrl + PageUp</code> + <code>Ctrl + PageDown</code></p>
+</li>
+<li>
+<p>快速格式化当前文件代码 <code>Shift</code> + <code>Alt</code> + <code>F</code></p>
+</li>
+</ol>
+<h2 id="taskjson">task.json</h2>
+<h3 id="what">What?</h3>
+<p>vscode 提供了 <code>默认task的配置</code> 和 <code>每个workspace的 task配置</code>。
+可以通过 <code>Ctrl + Shift + p</code>，输入<code>task</code>，可以选择 <code>配置</code> <code>运行</code> task。
+可以减少运行的时候少敲几个命令。。</p>
+<h3 id="example">example</h3>
+<p>下面看我给<code>linux kernel</code> 工作区配置的一些<code>task</code>。</p>
+<p>文件位于</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>amd_server@ubuntu: ~/workspace/linux-stable# ls .vscode</span></span>
+<span class="line"><span>c_cpp_properties.json  launch.json  tasks.json</span></span>
+<span class="line"><span>amd_server@ubuntu: ~/workspace/linux-stable#</span></span></code></pre>
+<p>内容：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>{</span></span>
+<span class="line"><span>        // See https://go.microsoft.com/fwlink/?LinkId=733558</span></span>
+<span class="line"><span>        // for the documentation about the tasks.json format</span></span>
+<span class="line"><span>        "version": "2.0.0",</span></span>
+<span class="line"><span>        "tasks": [</span></span>
+<span class="line"><span>                {</span></span>
+<span class="line"><span>                        "label": "vm-start",</span></span>
+<span class="line"><span>                        "type": "shell",</span></span>
+<span class="line"><span>                        "command": "sudo qemu-system-x86_64 -kernel /home/ubuntu/workspace/linux-stable/out/arch/x86/boot/bzImage -hda /home/ubuntu/myspace/qemu_build/stable_ubuntu.img -append "root=/dev/sda5 console=ttyS0 crashkernel=256M" -smp 4 -m 2048 --enable-kvm -net nic -net user,hostfwd=tcp::2222-:22 --nographic -fsdev local,id=fs1,path=/home/ubuntu/workspace/share,security_model=none -device virtio-9p-pci,fsdev=fs1,mount_tag=host_share",</span></span>
+<span class="line"><span>                        "presentation": {</span></span>
+<span class="line"><span>                                "echo": true,</span></span>
+<span class="line"><span>                                "clear": true,</span></span>
+<span class="line"><span>                                "group": "vm"</span></span>
+<span class="line"><span>                        },</span></span>
+<span class="line"><span>                },</span></span>
+<span class="line"><span>                {</span></span>
+<span class="line"><span>                        "label": "vm-stop",</span></span>
+<span class="line"><span>                        "type": "shell",</span></span>
+<span class="line"><span>                        "command": "sudo pkill qemu",</span></span>
+<span class="line"><span>                        "presentation": {</span></span>
+<span class="line"><span>                                "echo": true,</span></span>
+<span class="line"><span>                                "clear": true,</span></span>
+<span class="line"><span>                                "group": "vm"</span></span>
+<span class="line"><span>                        },</span></span>
+<span class="line"><span>                },</span></span>
+<span class="line"><span>                {</span></span>
+<span class="line"><span>                        "label": "vm-restart",</span></span>
+<span class="line"><span>                        "type": "shell",</span></span>
+<span class="line"><span>                        "command": "sudo pkill qemu ; echo "qemu have been stopped, now run the new qemu..."; sudo qemu-system-x86_64 -kernel /home/ubuntu/workspace/linux-stable/out/arch/x86/boot/bzImage -hda /home/ubuntu/myspace/qemu_build/stable_ubuntu.img -append "root=/dev/sda5 console=ttyS0 crashkernel=256M" -smp 4 -m 2048 --enable-kvm -net nic -net user,hostfwd=tcp::2222-:22 --nographic -fsdev local,id=fs1,path=/home/ubuntu/workspace/share,security_model=none -device virtio-9p-pci,fsdev=fs1,mount_tag=host_share",</span></span>
+<span class="line"><span>                        "presentation": {</span></span>
+<span class="line"><span>                                "echo": true,</span></span>
+<span class="line"><span>                                "clear": true,</span></span>
+<span class="line"><span>                                "group": "vm"</span></span>
+<span class="line"><span>                        },</span></span>
+<span class="line"><span>                },</span></span>
+<span class="line"><span>                {</span></span>
+<span class="line"><span>                        "label": "make",</span></span>
+<span class="line"><span>                        "type": "shell",</span></span>
+<span class="line"><span>                        "command": "make -j10 O=./out &#x26;&#x26; python ./scripts/clang-tools/gen_compile_commands.py -d ./out/",</span></span>
+<span class="line"><span>                        "group": {</span></span>
+<span class="line"><span>                                "kind": "build",</span></span>
+<span class="line"><span>                                "isDefault": true</span></span>
+<span class="line"><span>                        },</span></span>
+<span class="line"><span>                        "presentation": {</span></span>
+<span class="line"><span>                                "echo": false,</span></span>
+<span class="line"><span>                                "group": "build"</span></span>
+<span class="line"><span>                        }</span></span>
+<span class="line"><span>                },</span></span>
+<span class="line"><span>                {</span></span>
+<span class="line"><span>                        "label": "make clean",</span></span>
+<span class="line"><span>                        "type": "shell",</span></span>
+<span class="line"><span>                        "command": "make mrproper;",</span></span>
+<span class="line"><span>                        "group": {</span></span>
+<span class="line"><span>                                "kind": "build",</span></span>
+<span class="line"><span>                                "isDefault": true</span></span>
+<span class="line"><span>                        },</span></span>
+<span class="line"><span>                        "presentation": {</span></span>
+<span class="line"><span>                                "echo": false,</span></span>
+<span class="line"><span>                                "group": "build"</span></span>
+<span class="line"><span>                        }</span></span>
+<span class="line"><span>                },</span></span>
+<span class="line"><span>                {</span></span>
+<span class="line"><span>                        "label": "remake",</span></span>
+<span class="line"><span>                        "type": "shell",</span></span>
+<span class="line"><span>                        "command": "make mrproper &#x26;&#x26; make -j10 O=./out &#x26;&#x26; python ./scripts/clang-tools/gen_compile_commands.py -d ./out/",</span></span>
+<span class="line"><span>                        "group": {</span></span>
+<span class="line"><span>                                "kind": "build",</span></span>
+<span class="line"><span>                                "isDefault": true</span></span>
+<span class="line"><span>                        },</span></span>
+<span class="line"><span>                        "presentation": {</span></span>
+<span class="line"><span>                                "echo": false,</span></span>
+<span class="line"><span>                                "group": "build"</span></span>
+<span class="line"><span>                        }</span></span>
+<span class="line"><span>                },</span></span>
+<span class="line"><span>                {</span></span>
+<span class="line"><span>                        "label": "generate label",</span></span>
+<span class="line"><span>                        "type": "shell",</span></span>
+<span class="line"><span>                        "command": "python ./scripts/clang-tools/gen_compile_commands.py -d ./out/",</span></span>
+<span class="line"><span>                        "group": {</span></span>
+<span class="line"><span>                                "kind": "build",</span></span>
+<span class="line"><span>                                "isDefault": true</span></span>
+<span class="line"><span>                        },</span></span>
+<span class="line"><span>                        "presentation": {</span></span>
+<span class="line"><span>                                "echo": false,</span></span>
+<span class="line"><span>                                "group": "build"</span></span>
+<span class="line"><span>                        }</span></span>
+<span class="line"><span>                }</span></span>
+<span class="line"><span>        ]</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>设置了 <code>vm-start</code> <code>vm-stop</code> <code>vm-restart</code> <code>make</code> <code>make clean</code> <code>remake</code> <code>generate label</code>，这些task，可以随时 <code>Ctrl + Shift + p</code> 呼出来运行。极大方便了编译运行配置。。</p>
+<h2 id="launchjson">launch.json</h2>
+<h3 id="what-1">What?</h3>
+<p>vscode 提供了 <code>launch</code> 来配置debug相关参数。后面会以 <code>benos</code> 为例记录一下</p>
+<h3 id="example-1">example</h3>
+<p>下面看我给<code>benos</code> 工作区配置的一些参数</p>
+<p>参考<a href="https://howardlau.me/programming/debugging-linux-kernel-with-vscode-qemu.html">CodeTalks</a>
+参考<a href="https://geek-docs.com/vscode/vscode-tutorials/how-does-vscode-create-custom-tasks.html">极客课程</a></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

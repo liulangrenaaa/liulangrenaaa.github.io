@@ -1,0 +1,306 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>使能lock_dep解决死锁问题 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>使能lock_dep解决死锁问题</h1><div class="post-meta"><time datetime="2021-01-23T19:00:00.000Z">2021年1月23日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">deadlock</span><span class="tag">lockdep</span></div></header><div class="article-body"><p>lockdep 就是 <code>lock dependencies</code> 缩写，翻译是 <code>锁依赖</code>。</p>
+<h2 id="如何使能-lockdep">如何使能 lockdep</h2>
+<p>在 <code>make menuconfig</code> 使能 <code>lockdep</code> 之后，会自动增加如下配置</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>	echo "CONFIG_LOCKUP_DETECTOR=y" >> /tmp/.config</span></span>
+<span class="line"><span>	echo "CONFIG_SOFTLOCKUP_DETECTOR=y" >> /tmp/.config</span></span>
+<span class="line"><span>	echo "CONFIG_BOOTPARAM_SOFTLOCKUP_PANIC=y" >> /tmp/.config</span></span>
+<span class="line"><span>	echo "CONFIG_BOOTPARAM_SOFTLOCKUP_PANIC_VALUE=1" >> /tmp/.config</span></span>
+<span class="line"><span>	echo "CONFIG_HARDLOCKUP_DETECTOR_PERF=y" >> /tmp/.config</span></span>
+<span class="line"><span>	echo "CONFIG_HARDLOCKUP_DETECTOR=y" >> /tmp/.config</span></span>
+<span class="line"><span>	echo "CONFIG_BOOTPARAM_HARDLOCKUP_PANIC=y" >> /tmp/.config</span></span>
+<span class="line"><span>	echo "CONFIG_BOOTPARAM_HARDLOCKUP_PANIC_VALUE=1" >> /tmp/.config</span></span></code></pre>
+<p>配置之后重新编译运行，会发现在 <code>/proc/lockdep</code> 目录下多出几个文件</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/proc/sys/kernel/lock_stat--------置位则可以查看/proc/lock_stat统计信息，清楚则关闭lockdep统计信息。</span></span>
+<span class="line"><span>/proc/sys/kernel/max_lock_depth---</span></span>
+<span class="line"><span>/proc/sys/kernel/prove_locking</span></span>
+<span class="line"><span>/proc/locks</span></span>
+<span class="line"><span>/proc/lock_stat-------------------关于锁的使用统计信息</span></span>
+<span class="line"><span>/proc/lockdep---------------------存在依赖关系的锁</span></span>
+<span class="line"><span>/proc/lockdep_stats---------------存在依赖关系锁的统计信息</span></span>
+<span class="line"><span>/proc/lockdep_chains--------------依赖关系锁链表</span></span></code></pre>
+<h2 id="lockdep-原理">lockdep 原理</h2>
+<p>常见的死锁有如下两种：</p>
+<ol>
+<li>递归死锁：中断等延迟操作中使用了锁，和外面的锁构成了递归死锁。</li>
+<li>AB-BA死锁：多个锁因处理不当而引发死锁，多个内核路径上的所处理顺序不一致也会导致死锁。</li>
+</ol>
+<p>Linux内核提供死锁调试模块Lockdep，跟踪每个锁的自身状态和各个锁之间的依赖关系，经过一系列的验
+证规则来确保锁之间依赖关系是正确的。</p>
+<p>先看代码注释</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/*</span></span>
+<span class="line"><span> * this code maps all the lock dependencies as they occur in a live kernel</span></span>
+<span class="line"><span> * and will warn about the following classes of locking bugs:</span></span>
+<span class="line"><span> *</span></span>
+<span class="line"><span> * - lock inversion scenarios</span></span>
+<span class="line"><span> * - circular lock dependencies</span></span>
+<span class="line"><span> * - hardirq/softirq safe/unsafe locking bugs</span></span>
+<span class="line"><span> *</span></span>
+<span class="line"><span> * Bugs are reported even if the current locking scenario does not cause</span></span>
+<span class="line"><span> * any deadlock at this point.</span></span>
+<span class="line"><span> *</span></span>
+<span class="line"><span> * I.e. if anytime in the past two locks were taken in a different order,</span></span>
+<span class="line"><span> * even if it happened for another task, even if those were different</span></span>
+<span class="line"><span> * locks (but of the same class as this lock), this code will detect it.</span></span>
+<span class="line"><span> */</span></span></code></pre>
+<p>翻译就是可以解决如下的问题</p>
+<ol>
+<li>锁定反转方案 — ABBA</li>
+<li>循环锁依赖性 — 递归锁</li>
+<li>hardirq / softirq安全/不安全的锁定错误</li>
+</ol>
+<h2 id="lockdep-案例">lockdep 案例</h2>
+<p>写了一个<code>ABBA型</code> 基于 spinlock的 deadlock demo。参考 <a href="https://github.com/liulangrenaaa/test_modules/blob/main/lock_race/lockdep_test/lockdep_test.c">代码</a>
+其实这个demo 会触发多个问题</p>
+<ol>
+<li>deadlock 被检测出来。</li>
+<li>由于是基于 <code>spinlock</code> 的，所以在等待lock的时候一直处于<code>spin</code>，导致 <code>rcu stall</code></li>
+<li>等待 <code>20s</code> 之后，由于基于 <code>spinlock</code>的，所以两个cpu一直未调度，发生 <code>soft lockup</code>，然后 panic.</li>
+</ol>
+<p>编译安装之后，kmsg 显示如下问题：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>[  147.475517] lockdep_test: loading out-of-tree module taints kernel.</span></span>
+<span class="line"><span>[  157.769995]</span></span>
+<span class="line"><span>[  157.770640] ======================================================</span></span>
+<span class="line"><span>[  157.770683] WARNING: possible circular locking dependency detected</span></span>
+<span class="line"><span>[  157.770683] 5.11.0-rc4+ #5 Tainted: G           O</span></span>
+<span class="line"><span>[  157.770683] ------------------------------------------------------</span></span>
+<span class="line"><span>[  157.770683] krace_0/3755 is trying to acquire lock:</span></span>
+<span class="line"><span>[  157.770683] ffffffffc0527468 (&#x26;g_lockdep_test.lock_A){+.+.}-{2:2}, at: klockdep_test_BA+0x2e/0x80 [lockdep_test]</span></span>
+<span class="line"><span>[  157.770683]</span></span>
+<span class="line"><span>               but task is already holding lock:</span></span>
+<span class="line"><span>[  157.770683] ffffffffc05274a8 (&#x26;g_lockdep_test.lock_B){+.+.}-{2:2}, at: klockdep_test_BA+0x18/0x80 [lockdep_test]</span></span>
+<span class="line"><span>[  157.770683]</span></span>
+<span class="line"><span>               which lock already depends on the new lock.</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>[  157.770683]</span></span>
+<span class="line"><span>               the existing dependency chain (in reverse order) is:</span></span>
+<span class="line"><span>[  157.770683]</span></span>
+<span class="line"><span>               -> #1 (&#x26;g_lockdep_test.lock_B){+.+.}-{2:2}:</span></span>
+<span class="line"><span>[  157.770683]        _raw_spin_lock+0x27/0x40</span></span>
+<span class="line"><span>[  157.770683]        klockdep_test_AB+0x2e/0x80 [lockdep_test]</span></span>
+<span class="line"><span>[  157.770683]        kthread+0x10a/0x140</span></span>
+<span class="line"><span>[  157.770683]        ret_from_fork+0x22/0x30</span></span>
+<span class="line"><span>[  157.770683]</span></span>
+<span class="line"><span>               -> #0 (&#x26;g_lockdep_test.lock_A){+.+.}-{2:2}:</span></span>
+<span class="line"><span>[  157.770683]        __lock_acquire+0x139e/0x28a0</span></span>
+<span class="line"><span>[  157.770683]        lock_acquire+0xbd/0x360</span></span>
+<span class="line"><span>[  157.770683]        _raw_spin_lock+0x27/0x40</span></span>
+<span class="line"><span>[  157.770683]        klockdep_test_BA+0x2e/0x80 [lockdep_test]</span></span>
+<span class="line"><span>[  157.770683]        kthread+0x10a/0x140</span></span>
+<span class="line"><span>[  157.770683]        ret_from_fork+0x22/0x30</span></span>
+<span class="line"><span>[  157.770683]</span></span>
+<span class="line"><span>               other info that might help us debug this:</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>[  157.770683]  Possible unsafe locking scenario:</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>[  157.770683]        CPU0                    CPU1</span></span>
+<span class="line"><span>[  157.770683]        ----                    ----</span></span>
+<span class="line"><span>[  157.770683]   lock(&#x26;g_lockdep_test.lock_B);</span></span>
+<span class="line"><span>[  157.770683]                                lock(&#x26;g_lockdep_test.lock_A);</span></span>
+<span class="line"><span>[  157.770683]                                lock(&#x26;g_lockdep_test.lock_B);</span></span>
+<span class="line"><span>[  157.770683]   lock(&#x26;g_lockdep_test.lock_A);</span></span>
+<span class="line"><span>[  157.770683]</span></span>
+<span class="line"><span>                *** DEADLOCK ***</span></span>
+<span class="line"><span>[  157.770683] 1 lock held by krace_0/3755:</span></span>
+<span class="line"><span>[  157.770683]  #0: ffffffffc05274a8 (&#x26;g_lockdep_test.lock_B){+.+.}-{2:2}, at: klockdep_test_BA+0x18/0x80 [lockdep_test]</span></span>
+<span class="line"><span>[  157.770683]</span></span>
+<span class="line"><span>               stack backtrace:</span></span>
+<span class="line"><span>[  157.770683] CPU: 1 PID: 3755 Comm: krace_0 Kdump: loaded Tainted: G           O      5.11.0-rc4+ #5</span></span>
+<span class="line"><span>[  157.770683] Hardware name: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.13.0-1ubuntu1 04/01/2014</span></span>
+<span class="line"><span>[  157.770683] Call Trace:</span></span>
+<span class="line"><span>[  157.770683]  dump_stack+0x77/0x97</span></span>
+<span class="line"><span>[  157.770683]  check_noncircular+0xfe/0x110</span></span>
+<span class="line"><span>[  157.770683]  ? find_held_lock+0x2b/0x80</span></span>
+<span class="line"><span>[  157.770683]  __lock_acquire+0x139e/0x28a0</span></span>
+<span class="line"><span>[  157.770683]  lock_acquire+0xbd/0x360</span></span>
+<span class="line"><span>[  157.770683]  ? klockdep_test_BA+0x2e/0x80 [lockdep_test]</span></span>
+<span class="line"><span>[  157.770683]  ? klockdep_test_AB+0x80/0x80 [lockdep_test]</span></span>
+<span class="line"><span>[  157.770683]  _raw_spin_lock+0x27/0x40</span></span>
+<span class="line"><span>[  157.770683]  ? klockdep_test_BA+0x2e/0x80 [lockdep_test]</span></span>
+<span class="line"><span>[  157.770683]  klockdep_test_BA+0x2e/0x80 [lockdep_test]</span></span>
+<span class="line"><span>[  157.770683]  kthread+0x10a/0x140</span></span>
+<span class="line"><span>[  157.770683]  ? kthread_park+0x80/0x80</span></span>
+<span class="line"><span>[  157.770683]  ret_from_fork+0x22/0x30</span></span></code></pre>
+<p>其中可以很明显看到如下提示</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>[  157.770683]        CPU0                    CPU1</span></span>
+<span class="line"><span>[  157.770683]        ----                    ----</span></span>
+<span class="line"><span>[  157.770683]   lock(&#x26;g_lockdep_test.lock_B);</span></span>
+<span class="line"><span>[  157.770683]                                lock(&#x26;g_lockdep_test.lock_A);</span></span>
+<span class="line"><span>[  157.770683]                                lock(&#x26;g_lockdep_test.lock_B);</span></span>
+<span class="line"><span>[  157.770683]   lock(&#x26;g_lockdep_test.lock_A);</span></span></code></pre>
+<p>这个提示简直无敌，完美显示了 <code>deadlock</code> 的原因</p>
+<p>写了一个<code>ABBA型</code> 基于 mutex 的 deadlock demo。参考 <a href="https://github.com/liulangrenaaa/test_modules/blob/main/lock_race/lockdep_test_mutex/lockdep_test_mutex.c">代码</a>
+其实这个demo 会触发多个问题</p>
+<ol>
+<li>deadlock 被检测出来。</li>
+<li>等待 <code>120s</code> 之后，由于基于 <code>mutex</code>的，所以发生死锁的俩线程都是 <code>D状态</code>，所以检测到发生 <code>hung_task</code>，然后 panic.</li>
+</ol>
+<p>为啥 <code>mutex</code> 的waiter会 处于 <code>D状态</code> ？看看代码</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static noinline void __sched</span></span>
+<span class="line"><span>__mutex_lock_slowpath(struct mutex *lock)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	__mutex_lock(lock, TASK_UNINTERRUPTIBLE, 0, NULL, _RET_IP_);</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>void __sched mutex_lock(struct mutex *lock)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	if (!__mutex_trylock_fast(lock))</span></span>
+<span class="line"><span>		__mutex_lock_slowpath(lock);</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span>EXPORT_SYMBOL(mutex_lock);</span></span></code></pre>
+<p>发现等待 mutex的线程都会被设置成 <code>TASK_UNINTERRUPTIBLE</code>，也就是 <code>D状态</code>。</p>
+<p>也可以通过 hung_task 之后panic 的现场看出来</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>crash> ps | grep UN</span></span>
+<span class="line"><span>   3193      2   2  ffff9127bb82b240  UN   0.0       0      0  [krace_0]</span></span>
+<span class="line"><span>   3194      2   0  ffff9127c3458040  UN   0.0       0      0  [krace_1]</span></span>
+<span class="line"><span>crash> bt 3193</span></span>
+<span class="line"><span>PID: 3193   TASK: ffff9127bb82b240  CPU: 2   COMMAND: "krace_0"</span></span>
+<span class="line"><span> #0 [ffffb557007efd78] __schedule at ffffffff8c319af2</span></span>
+<span class="line"><span> #1 [ffffb557007efe08] schedule at ffffffff8c31a1e6</span></span>
+<span class="line"><span> #2 [ffffb557007efe20] schedule_preempt_disabled at ffffffff8c31a53c</span></span>
+<span class="line"><span> #3 [ffffb557007efe28] __mutex_lock at ffffffff8c31bcd5</span></span>
+<span class="line"><span> #4 [ffffb557007eff08] klockdep_test_mutex_BA at ffffffffc02990b2 [lockdep_test_mutex]</span></span>
+<span class="line"><span> #5 [ffffb557007eff10] kthread at ffffffff8b6930da</span></span>
+<span class="line"><span> #6 [ffffb557007eff50] ret_from_fork at ffffffff8b601ae2</span></span>
+<span class="line"><span>crash></span></span>
+<span class="line"><span>crash> bt 3194</span></span>
+<span class="line"><span>PID: 3194   TASK: ffff9127c3458040  CPU: 0   COMMAND: "krace_1"</span></span>
+<span class="line"><span> #0 [ffffb557004c3d78] __schedule at ffffffff8c319af2</span></span>
+<span class="line"><span> #1 [ffffb557004c3e08] schedule at ffffffff8c31a1e6</span></span>
+<span class="line"><span> #2 [ffffb557004c3e20] schedule_preempt_disabled at ffffffff8c31a53c</span></span>
+<span class="line"><span> #3 [ffffb557004c3e28] __mutex_lock at ffffffff8c31bcd5</span></span>
+<span class="line"><span> #4 [ffffb557004c3f08] klockdep_test_mutex_AB at ffffffffc0299032 [lockdep_test_mutex]</span></span>
+<span class="line"><span> #5 [ffffb557004c3f10] kthread at ffffffff8b6930da</span></span>
+<span class="line"><span> #6 [ffffb557004c3f50] ret_from_fork at ffffffff8b601ae2</span></span>
+<span class="line"><span>crash></span></span></code></pre>
+<p>可以看到 <code>krace_0</code> <code>krace_1</code> 线程都是处于 <code>UN</code> 状态，这也导致此时系统负载有<code>2</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>crash> sys</span></span>
+<span class="line"><span>      KERNEL: vmlinux</span></span>
+<span class="line"><span>    DUMPFILE: dump.202101221553  [PARTIAL DUMP]</span></span>
+<span class="line"><span>        CPUS: 4</span></span>
+<span class="line"><span>        DATE: Fri Jan 22 15:53:16 CST 2021</span></span>
+<span class="line"><span>      UPTIME: 00:04:06</span></span>
+<span class="line"><span>LOAD AVERAGE: 1.96, 1.10, 0.46</span></span></code></pre>
+<p>再看一下 检测到的死锁日志：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>[   60.151205] lockdep_test_mutex: loading out-of-tree module taints kernel.</span></span>
+<span class="line"><span>[   70.216063]</span></span>
+<span class="line"><span>[   70.216623] ======================================================</span></span>
+<span class="line"><span>[   70.216866] WARNING: possible circular locking dependency detected</span></span>
+<span class="line"><span>[   70.216866] 5.11.0-rc4+ #5 Tainted: G           O</span></span>
+<span class="line"><span>[   70.216866] ------------------------------------------------------</span></span>
+<span class="line"><span>[   70.216866] krace_0/3193 is trying to acquire lock:</span></span>
+<span class="line"><span>[   70.216866] ffffffffc029b4b8 (&#x26;g_lockdep_test_mutex.lock_A){+.+.}-{3:3}, at: klockdep_test_mutex_BA+0x32/0x80 [lockdep_test_mutex]</span></span>
+<span class="line"><span>[   70.216866]</span></span>
+<span class="line"><span>               but task is already holding lock:</span></span>
+<span class="line"><span>[   70.216866] ffffffffc029b548 (&#x26;g_lockdep_test_mutex.lock_B){+.+.}-{3:3}, at: klockdep_test_mutex_BA+0x1a/0x80 [lockdep_test_mutex]</span></span>
+<span class="line"><span>[   70.216866]</span></span>
+<span class="line"><span>               which lock already depends on the new lock.</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>[   70.216866]</span></span>
+<span class="line"><span>               the existing dependency chain (in reverse order) is:</span></span>
+<span class="line"><span>[   70.216866]</span></span>
+<span class="line"><span>               -> #1 (&#x26;g_lockdep_test_mutex.lock_B){+.+.}-{3:3}:</span></span>
+<span class="line"><span>[   70.216866]        __mutex_lock+0x8d/0x920</span></span>
+<span class="line"><span>[   70.216866]        klockdep_test_mutex_AB+0x32/0x80 [lockdep_test_mutex]</span></span>
+<span class="line"><span>[   70.216866]        kthread+0x10a/0x140</span></span>
+<span class="line"><span>[   70.216866]        ret_from_fork+0x22/0x30</span></span>
+<span class="line"><span>[   70.216866]</span></span>
+<span class="line"><span>               -> #0 (&#x26;g_lockdep_test_mutex.lock_A){+.+.}-{3:3}:</span></span>
+<span class="line"><span>[   70.216866]        __lock_acquire+0x139e/0x28a0</span></span>
+<span class="line"><span>[   70.216866]        lock_acquire+0xbd/0x360</span></span>
+<span class="line"><span>[   70.216866]        __mutex_lock+0x8d/0x920</span></span>
+<span class="line"><span>[   70.216866]        klockdep_test_mutex_BA+0x32/0x80 [lockdep_test_mutex]</span></span>
+<span class="line"><span>[   70.216866]        kthread+0x10a/0x140</span></span>
+<span class="line"><span>[   70.216866]        ret_from_fork+0x22/0x30</span></span>
+<span class="line"><span>[   70.216866]</span></span>
+<span class="line"><span>               other info that might help us debug this:</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>[   70.216866]  Possible unsafe locking scenario:</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>[   70.216866]        CPU0                    CPU1</span></span>
+<span class="line"><span>[   70.216866]        ----                    ----</span></span>
+<span class="line"><span>[   70.216866]   lock(&#x26;g_lockdep_test_mutex.lock_B);</span></span>
+<span class="line"><span>[   70.216866]                                lock(&#x26;g_lockdep_test_mutex.lock_A);</span></span>
+<span class="line"><span>[   70.216866]                                lock(&#x26;g_lockdep_test_mutex.lock_B);</span></span>
+<span class="line"><span>[   70.216866]   lock(&#x26;g_lockdep_test_mutex.lock_A);</span></span>
+<span class="line"><span>[   70.216866]</span></span>
+<span class="line"><span>                *** DEADLOCK ***</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>[   70.216866] 1 lock held by krace_0/3193:</span></span>
+<span class="line"><span>[   70.216866]  #0: ffffffffc029b548 (&#x26;g_lockdep_test_mutex.lock_B){+.+.}-{3:3}, at: klockdep_test_mutex_BA+0x1a/0x80 [lockdep_test_mutex]</span></span>
+<span class="line"><span>[   70.216866]</span></span>
+<span class="line"><span>               stack backtrace:</span></span>
+<span class="line"><span>[   70.216866] CPU: 2 PID: 3193 Comm: krace_0 Kdump: loaded Tainted: G           O      5.11.0-rc4+ #5</span></span>
+<span class="line"><span>[   70.216866] Hardware name: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.13.0-1ubuntu1 04/01/2014</span></span>
+<span class="line"><span>[   70.216866] Call Trace:</span></span>
+<span class="line"><span>[   70.216866]  dump_stack+0x77/0x97</span></span>
+<span class="line"><span>[   70.216866]  check_noncircular+0xfe/0x110</span></span>
+<span class="line"><span>[   70.216866]  __lock_acquire+0x139e/0x28a0</span></span>
+<span class="line"><span>[   70.216866]  lock_acquire+0xbd/0x360</span></span>
+<span class="line"><span>[   70.216866]  ? klockdep_test_mutex_BA+0x32/0x80 [lockdep_test_mutex]</span></span>
+<span class="line"><span>[   70.216866]  ? lockdep_hardirqs_on_prepare+0xd4/0x170</span></span>
+<span class="line"><span>[   70.216866]  ? _raw_spin_unlock_irqrestore+0x34/0x40</span></span>
+<span class="line"><span>[   70.216866]  __mutex_lock+0x8d/0x920</span></span>
+<span class="line"><span>[   70.216866]  ? klockdep_test_mutex_BA+0x32/0x80 [lockdep_test_mutex]</span></span>
+<span class="line"><span>[   70.216866]  ? find_held_lock+0x2b/0x80</span></span>
+<span class="line"><span>[   70.216866]  ? klockdep_test_mutex_BA+0x32/0x80 [lockdep_test_mutex]</span></span>
+<span class="line"><span>[   70.216866]  ? __next_timer_interrupt+0x100/0x100</span></span>
+<span class="line"><span>[   70.216866]  ? klockdep_test_mutex_AB+0x80/0x80 [lockdep_test_mutex]</span></span>
+<span class="line"><span>[   70.216866]  ? klockdep_test_mutex_BA+0x32/0x80 [lockdep_test_mutex]</span></span>
+<span class="line"><span>[   70.216866]  ? klockdep_test_mutex_AB+0x80/0x80 [lockdep_test_mutex]</span></span>
+<span class="line"><span>[   70.216866]  klockdep_test_mutex_BA+0x32/0x80 [lockdep_test_mutex]</span></span>
+<span class="line"><span>[   70.216866]  kthread+0x10a/0x140</span></span>
+<span class="line"><span>[   70.216866]  ? kthread_park+0x80/0x80</span></span>
+<span class="line"><span>[   70.216866]  ret_from_fork+0x22/0x30</span></span></code></pre>
+<p>同样也是 给出了很详细出错位置，对于找出问题代码一如反掌。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>[   70.216866]        CPU0                    CPU1</span></span>
+<span class="line"><span>[   70.216866]        ----                    ----</span></span>
+<span class="line"><span>[   70.216866]   lock(&#x26;g_lockdep_test_mutex.lock_B);</span></span>
+<span class="line"><span>[   70.216866]                                lock(&#x26;g_lockdep_test_mutex.lock_A);</span></span>
+<span class="line"><span>[   70.216866]                                lock(&#x26;g_lockdep_test_mutex.lock_B);</span></span>
+<span class="line"><span>[   70.216866]   lock(&#x26;g_lockdep_test_mutex.lock_A);</span></span></code></pre>
+<h2 id="lockdep-代码">lockdep 代码</h2>
+<p>之后填坑</p>
+<h2 id="死锁带来的影响">死锁带来的影响</h2>
+<p>对于线程自身</p>
+<ol>
+<li><code>spinlock</code> 的死锁可以带来 线程一直在<code>spin</code>，占用cpu且无法恢复.</li>
+<li><code>mutex</code> <code>semaphore</code> <code>rwsem</code> 的死锁会在<code>slowpath</code> 中让线程进入了
+<code>TASK_UNINTERRUPTIBLE</code> 状态，导致不响应外部信号，也无法使用 <code>kill</code> 去杀死</li>
+</ol>
+<p>对于系统</p>
+<ol>
+<li><code>spinlock</code> 的死锁可以带来 <code>rcu stall</code> <code>soft lockup</code> <code>hard lockup</code>问题，如果对应项
+设置了 panic 选项，就会导致 kernel panic.</li>
+<li><code>mutex</code> <code>semaphore</code> <code>rwsem</code> 的死锁会带来系统的 load升高，因为都在 <code>slowpath</code> 中让线
+程进入了<code>TASK_UNINTERRUPTIBLE</code> 状态，会被统计为系统负载，最后会导致 hung_task 发生，如果对应项设置了 panic 选项，就会导致 kernel panic.</li>
+</ol>
+<p>不同锁进入slowpath的行为</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>mutex:</span></span>
+<span class="line"><span>static noinline void __sched</span></span>
+<span class="line"><span>__mutex_lock_slowpath(struct mutex *lock)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	__mutex_lock(lock, TASK_UNINTERRUPTIBLE, 0, NULL, _RET_IP_);</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>semaphore:</span></span>
+<span class="line"><span>static noinline void __sched __down(struct semaphore *sem)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	__down_common(sem, TASK_UNINTERRUPTIBLE, MAX_SCHEDULE_TIMEOUT);</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>semaphore:</span></span>
+<span class="line"><span>static noinline void __sched __down(struct semaphore *sem)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	__down_common(sem, TASK_UNINTERRUPTIBLE, MAX_SCHEDULE_TIMEOUT);</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>rwsem:</span></span>
+<span class="line"><span>static inline void __down_write(struct rw_semaphore *sem)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	__down_write_common(sem, TASK_UNINTERRUPTIBLE);</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>可以参考：
+<a href="https://stackoverflow.com/questions/20892822/how-to-use-lockdep-feature-in-linux-kernel-for-deadlock-detection">stack overflow提问</a>
+<a href="https://www.cnblogs.com/arnoldlu/p/8580387.html">博客园文章</a>
+<a href="http://kernel.meizu.com/linux-dead-lock-detect-lockdep.html">魅族内核团队文章</a>
+<a href="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/Documentation/locking/">内核文档</a></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

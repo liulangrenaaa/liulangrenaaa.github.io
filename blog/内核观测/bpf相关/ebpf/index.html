@@ -1,0 +1,27 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>ebpf | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>ebpf</h1><div class="post-meta"><time datetime="2020-09-12T19:00:00.000Z">2020年9月12日</time><span> / kernel debug</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">ebpf</span></div></header><div class="article-body"><h1 id="ebpf">ebpf</h1>
+<p>ebpf 是类似于C语言的一种语言（bpf指令集规范），可以通过bcc编译成为 字节码， 然后通过 bpf加载器 在用户态程序调用 BPF() 系统调用注入kernel中， 注入kernel之后会先触发 bpf_check() 来verify一下，是否存在死循环 空指针等问题，避免内核崩溃等。</p>
+<h1 id="字节码什么时候执行">字节码什么时候执行？</h1>
+<p>uprobe, kprobe, tracepoint 等bpf程序挂载点触发的时候</p>
+<h1 id="bpf虚拟机是什么">bpf虚拟机是什么？</h1>
+<p>主要包含 一个 JIT 编译器，一个指令解释器，
+使能 JIT 编译器之后性能更高，会将BPF指令直接转换为 本地CPU指令之后保存下来</p>
+<h1 id="ebpf-辅助函数">ebpf 辅助函数</h1>
+<p>bpf code 不能直接使用kernel中的函数
+bpf_get_current_pid_tgid();
+bpf_get_current_comm();
+bpf_get_ktime_ns();</p>
+<h1 id="ebpf-执行字节码">ebpf 执行字节码</h1>
+<p>___bpf_prog_run</p>
+<h1 id="ebpf-编程">ebpf 编程</h1>
+<ul>
+<li>bpf指令集编程</li>
+<li>bpfC编程</li>
+<li>bpf前端编程</li>
+</ul>
+<p>其中最推荐 bpf前端编程, 最简单其中又分为几个前端</p>
+<ol>
+<li>BCC 难-可以做复杂功能, 提供框架用户接口,屏蔽加载编译复杂接口</li>
+<li>bpftrace - 简单,都是一行程序可以搞定， 当然也可以像写shell一样写脚本bt文件</li>
+<li>ply 编程</li>
+</ol>
+<p>所以最推荐的还是 BCC(BPF compiler collection)</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

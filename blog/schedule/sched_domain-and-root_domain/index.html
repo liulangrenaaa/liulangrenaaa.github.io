@@ -1,0 +1,112 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>sched_domain and root_domain | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>sched_domain and root_domain</h1><div class="post-meta"><time datetime="2021-04-12T19:00:00.000Z">2021年4月12日</time><span> / linux kernel / linux schedule</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">schedule</span></div></header><div class="article-body"><h2 id="root_domain">root_domain</h2>
+<p><code>root_domain</code> 相对于 <code>sched_domain</code> 来说简单很多， 这是描述一个cpu集合的 数据结构。
+每个 <code>cpuset</code> 都会拥有一个 <code>root_domain</code>，无论何时何地 <code>cpuset</code>被创建，同时会创建 并 attach 一个 root_domain结构。
+一个  <code>root_domain</code> 可能包含多个cpu，且这些cpu的能效不一定是一致的，所以内嵌了<code>perf_domain</code> 结构来描述这种差异。</p>
+<p><code>perf_domain</code> 的<code>next</code> 指针 就这样将这个<code>root_domain</code> 中的<code>perf_domain</code> 连接起来了。
+具有同一能效模型的俩cpu(在同一cluster上)，共享一个 <code>em_perf_domain</code> 能效模型结构，但是 <code>perf_domain</code>可能是分开的，因为这俩cpu可能是属于不同<code>root_domain</code>的。</p>
+<p>参考 <a href="https://www.kernel.org/doc/html/latest/scheduler/sched-energy.html">kernel 文档</a></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>The lists are attached to the root domains in order to cope with exclusive cpuset configurations. Since the boundaries of exclusive cpusets do not necessarily match those of performance domains, the lists of different root domains can contain duplicate elements.</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Example 1.</span></span>
+<span class="line"><span>Let us consider a platform with 12 CPUs, split in 3 performance domains (pd0, pd4 and pd8), organized as follows:</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>CPUs:   0 1 2 3 4 5 6 7 8 9 10 11</span></span>
+<span class="line"><span>PDs:   |--pd0--|--pd4--|---pd8---|</span></span>
+<span class="line"><span>RDs:   |----rd1----|-----rd2-----|</span></span>
+<span class="line"><span>Now, consider that userspace decided to split the system with two exclusive cpusets, hence creating two independent root domains, each containing 6 CPUs. The two root domains are denoted rd1 and rd2 in the above figure. Since pd4 intersects with both rd1 and rd2, it will be present in the linked list ‘->pd’ attached to each of them:</span></span>
+<span class="line"><span>rd1->pd: pd0 -> pd4</span></span>
+<span class="line"><span>rd2->pd: pd4 -> pd8</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Please note that the scheduler will create two duplicate list nodes for pd4 (one for each list). However, both just hold a pointer to the same shared data structure of the EM framework.</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Since the access to these lists can happen concurrently with hotplug and other things, they are protected by RCU, like the rest of topology structures manipulated by the scheduler.</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>EAS also maintains a static key (sched_energy_present) which is enabled when at least one root domain meets all conditions for EAS to start. Those conditions are summarized in Section 6.</span></span></code></pre>
+<p>这是 <code>root_domain</code> 实现：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>struct perf_domain {</span></span>
+<span class="line"><span>	struct em_perf_domain *em_pd;</span></span>
+<span class="line"><span>	struct perf_domain *next;</span></span>
+<span class="line"><span>	struct rcu_head rcu;</span></span>
+<span class="line"><span>};</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>/*</span></span>
+<span class="line"><span> * We add the notion of a root-domain which will be used to define per-domain</span></span>
+<span class="line"><span> * variables. Each exclusive cpuset essentially defines an island domain by</span></span>
+<span class="line"><span> * fully partitioning the member CPUs from any other cpuset. Whenever a new</span></span>
+<span class="line"><span> * exclusive cpuset is created, we also create and attach a new root-domain</span></span>
+<span class="line"><span> * object.</span></span>
+<span class="line"><span> *</span></span>
+<span class="line"><span> */</span></span>
+<span class="line"><span>struct root_domain {</span></span>
+<span class="line"><span>	atomic_t		refcount;</span></span>
+<span class="line"><span>	atomic_t		rto_count;</span></span>
+<span class="line"><span>	struct rcu_head		rcu;</span></span>
+<span class="line"><span>	cpumask_var_t		span;</span></span>
+<span class="line"><span>	cpumask_var_t		online;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	/*</span></span>
+<span class="line"><span>	 * Indicate pullable load on at least one CPU, e.g:</span></span>
+<span class="line"><span>	 * - More than one runnable task</span></span>
+<span class="line"><span>	 * - Running task is misfit</span></span>
+<span class="line"><span>	 */</span></span>
+<span class="line"><span>	int			overload;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	/* Indicate one or more cpus over-utilized (tipping point) */</span></span>
+<span class="line"><span>	int			overutilized;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	/*</span></span>
+<span class="line"><span>	 * The bit corresponding to a CPU gets set here if such CPU has more</span></span>
+<span class="line"><span>	 * than one runnable -deadline task (as it is below for RT tasks).</span></span>
+<span class="line"><span>	 */</span></span>
+<span class="line"><span>	cpumask_var_t		dlo_mask;</span></span>
+<span class="line"><span>	atomic_t		dlo_count;</span></span>
+<span class="line"><span>	struct dl_bw		dl_bw;</span></span>
+<span class="line"><span>	struct cpudl		cpudl;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>#ifdef HAVE_RT_PUSH_IPI</span></span>
+<span class="line"><span>	/*</span></span>
+<span class="line"><span>	 * For IPI pull requests, loop across the rto_mask.</span></span>
+<span class="line"><span>	 */</span></span>
+<span class="line"><span>	struct irq_work		rto_push_work;</span></span>
+<span class="line"><span>	raw_spinlock_t		rto_lock;</span></span>
+<span class="line"><span>	/* These are only updated and read within rto_lock */</span></span>
+<span class="line"><span>	int			rto_loop;</span></span>
+<span class="line"><span>	int			rto_cpu;</span></span>
+<span class="line"><span>	/* These atomics are updated outside of a lock */</span></span>
+<span class="line"><span>	atomic_t		rto_loop_next;</span></span>
+<span class="line"><span>	atomic_t		rto_loop_start;</span></span>
+<span class="line"><span>#endif</span></span>
+<span class="line"><span>	/*</span></span>
+<span class="line"><span>	 * The "RT overload" flag: it gets set if a CPU has more than</span></span>
+<span class="line"><span>	 * one runnable RT task.</span></span>
+<span class="line"><span>	 */</span></span>
+<span class="line"><span>	cpumask_var_t		rto_mask;</span></span>
+<span class="line"><span>	struct cpupri		cpupri;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	unsigned long		max_cpu_capacity;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	/*</span></span>
+<span class="line"><span>	 * NULL-terminated list of performance domains intersecting with the</span></span>
+<span class="line"><span>	 * CPUs of the rd. Protected by RCU.</span></span>
+<span class="line"><span>	 */</span></span>
+<span class="line"><span>	struct perf_domain __rcu *pd;</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<h2 id="sched-domain-what">sched domain: WHAT?</h2>
+<h2 id="sched-domain-如何标识">sched domain: 如何标识？</h2>
+<p><code>include/linux/sched/sd_flags.h</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>#define SDF_SHARED_CHILD       0x1</span></span>
+<span class="line"><span>#define SDF_SHARED_PARENT      0x2</span></span>
+<span class="line"><span>#define SDF_NEEDS_GROUPS       0x4</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>SD_FLAG(SD_BALANCE_NEWIDLE, SDF_SHARED_CHILD | SDF_NEEDS_GROUPS)</span></span>
+<span class="line"><span>SD_FLAG(SD_BALANCE_EXEC, SDF_SHARED_CHILD | SDF_NEEDS_GROUPS)</span></span>
+<span class="line"><span>SD_FLAG(SD_BALANCE_FORK, SDF_SHARED_CHILD | SDF_NEEDS_GROUPS)</span></span>
+<span class="line"><span>SD_FLAG(SD_BALANCE_WAKE, SDF_SHARED_CHILD | SDF_NEEDS_GROUPS)</span></span>
+<span class="line"><span>SD_FLAG(SD_WAKE_AFFINE, SDF_SHARED_CHILD)</span></span>
+<span class="line"><span>SD_FLAG(SD_ASYM_CPUCAPACITY, SDF_SHARED_PARENT | SDF_NEEDS_GROUPS)</span></span>
+<span class="line"><span>SD_FLAG(SD_SHARE_CPUCAPACITY, SDF_SHARED_CHILD | SDF_NEEDS_GROUPS)</span></span>
+<span class="line"><span>SD_FLAG(SD_SHARE_PKG_RESOURCES, SDF_SHARED_CHILD | SDF_NEEDS_GROUPS)</span></span>
+<span class="line"><span>SD_FLAG(SD_SERIALIZE, SDF_SHARED_PARENT | SDF_NEEDS_GROUPS)</span></span>
+<span class="line"><span>SD_FLAG(SD_ASYM_PACKING, SDF_SHARED_CHILD | SDF_NEEDS_GROUPS)</span></span>
+<span class="line"><span>SD_FLAG(SD_PREFER_SIBLING, SDF_NEEDS_GROUPS)</span></span>
+<span class="line"><span>SD_FLAG(SD_OVERLAP, SDF_SHARED_PARENT | SDF_NEEDS_GROUPS)</span></span>
+<span class="line"><span>SD_FLAG(SD_NUMA, SDF_SHARED_PARENT | SDF_NEEDS_GROUPS)</span></span></code></pre></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

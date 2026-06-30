@@ -1,0 +1,98 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>lock_stat | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>lock_stat</h1><div class="post-meta"><time datetime="2021-01-16T19:00:00.000Z">2021年1月16日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">lock_stat</span></div></header><div class="article-body"><h2 id="介绍">介绍</h2>
+<p>lock_stat 是一款测试查看内核锁状态的工具，可以看出刚刚锁的争用繁忙情况和到底哪个路径上争用最多，从而找到性能优化的思路。
+但是它会使内核的大小变大很多</p>
+<h2 id="使用">使用</h2>
+<p>使用之前需要使能<code>CONFIG_LOCK_STATS</code>，然后重新编译内核</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>CONFIG_LOCK_STAT:</span></span>
+<span class="line"><span>This feature enables tracking lock contention points</span></span>
+<span class="line"><span>For more details, see Documentation/locking/lockstat.rst</span></span>
+<span class="line"><span>This also enables lock events required by "perf lock",</span></span>
+<span class="line"><span>subcommand of perf.</span></span>
+<span class="line"><span>If you want to use "perf lock", you also need to turn on</span></span>
+<span class="line"><span>CONFIG_EVENT_TRACING.</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>CONFIG_LOCK_STAT defines "contended" and "acquired" lock events.</span></span>
+<span class="line"><span>(CONFIG_LOCKDEP defines "acquire" and "release" events.)</span></span></code></pre>
+<p>enable/disable</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span># echo 1 >/proc/sys/kernel/lock_stat</span></span>
+<span class="line"><span># echo 0 >/proc/sys/kernel/lock_stat</span></span></code></pre>
+<p>enable之后，数据在 <code>/proc/lock_stat</code>输出</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/proc# head lock_stat</span></span>
+<span class="line"><span>lock_stat version 0.4</span></span>
+<span class="line"><span>-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------</span></span>
+<span class="line"><span>                              class name    con-bounces    contentions   waittime-min   waittime-max waittime-total   waittime-avg    acq-bounces   acquisitions   holdtime-min   holdtime-max holdtime-total   holdtime-avg</span></span>
+<span class="line"><span>-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>                         &#x26;dentry->d_lock:          6614           6650           0.06       23656.56      133605.67          20.09         282765        2391624           0.00       36452.61      529319.05           0.22</span></span>
+<span class="line"><span>                         ---------------</span></span>
+<span class="line"><span>                         &#x26;dentry->d_lock           1703          [&#x3C;0000000060216fb7>] lockref_get_not_dead+0xe/0x30</span></span>
+<span class="line"><span>                         &#x26;dentry->d_lock            747          [&#x3C;00000000bcf55138>] __d_lookup+0x76/0x160</span></span>
+<span class="line"><span>                         &#x26;dentry->d_lock           3256          [&#x3C;000000009f49056e>] dput+0x146/0x380</span></span></code></pre>
+<h2 id="格式解析">格式解析</h2>
+<p>看一份完整的log</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>lock_stat version 0.4</span></span>
+<span class="line"><span>-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------</span></span>
+<span class="line"><span>                              class name    con-bounces    contentions   waittime-min   waittime-max waittime-total   waittime-avg    acq-bounces   acquisitions   holdtime-min   holdtime-max holdtime-total   holdtime-avg</span></span>
+<span class="line"><span>-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>                         &#x26;dentry->d_lock:          6606           6642           0.06       23656.56      133603.59          20.11         242023        1893479           0.00       36452.61      427674.18           0.23</span></span>
+<span class="line"><span>                         ---------------</span></span>
+<span class="line"><span>                         &#x26;dentry->d_lock           1699          [&#x3C;0000000060216fb7>] lockref_get_not_dead+0xe/0x30</span></span>
+<span class="line"><span>                         &#x26;dentry->d_lock            747          [&#x3C;00000000bcf55138>] __d_lookup+0x76/0x160</span></span>
+<span class="line"><span>                         &#x26;dentry->d_lock           3254          [&#x3C;000000009f49056e>] dput+0x146/0x380</span></span>
+<span class="line"><span>                         &#x26;dentry->d_lock            536          [&#x3C;000000003b543617>] lockref_get+0x9/0x20</span></span>
+<span class="line"><span>                         ---------------</span></span>
+<span class="line"><span>                         &#x26;dentry->d_lock           1792          [&#x3C;0000000060216fb7>] lockref_get_not_dead+0xe/0x30</span></span>
+<span class="line"><span>                         &#x26;dentry->d_lock            764          [&#x3C;00000000bcf55138>] __d_lookup+0x76/0x160</span></span>
+<span class="line"><span>                         &#x26;dentry->d_lock           3082          [&#x3C;000000009f49056e>] dput+0x146/0x380</span></span>
+<span class="line"><span>                         &#x26;dentry->d_lock            537          [&#x3C;000000003b543617>] lockref_get+0x9/0x20</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>.............................................................................................................................................................................................................................</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>                      &#x26;mm->mmap_lock#2-W:           729           1328           0.12       56312.54      243027.65         183.00           3411         138648           0.10       34454.21     1951568.44          14.08</span></span>
+<span class="line"><span>                      &#x26;mm->mmap_lock#2-R:           883           3858           0.13       11168.49      224472.15          58.18           4642         736764           0.08       79362.93     8514224.22          11.56</span></span>
+<span class="line"><span>                      ------------------</span></span>
+<span class="line"><span>                        &#x26;mm->mmap_lock#2           3840          [&#x3C;00000000346dbc30>] do_user_addr_fault+0x403/0x690</span></span>
+<span class="line"><span>                        &#x26;mm->mmap_lock#2             73          [&#x3C;000000007f3a53b5>] mpol_rebind_mm+0x27/0xf0</span></span>
+<span class="line"><span>                        &#x26;mm->mmap_lock#2             13          [&#x3C;0000000004a222ed>] __access_remote_vm+0x4d/0x350</span></span>
+<span class="line"><span>                        &#x26;mm->mmap_lock#2            378          [&#x3C;00000000e3ffe1c7>] vm_mmap_pgoff+0xa9/0x180</span></span>
+<span class="line"><span>                      ------------------</span></span>
+<span class="line"><span>                        &#x26;mm->mmap_lock#2             94          [&#x3C;000000007f3a53b5>] mpol_rebind_mm+0x27/0xf0</span></span>
+<span class="line"><span>                        &#x26;mm->mmap_lock#2             73          [&#x3C;00000000542c73e5>] dup_mm+0xd5/0x640</span></span>
+<span class="line"><span>                        &#x26;mm->mmap_lock#2             18          [&#x3C;0000000015e7bc9a>] dup_mm+0x9c/0x640</span></span>
+<span class="line"><span>                        &#x26;mm->mmap_lock#2              1          [&#x3C;00000000d9e9fd4c>] prctl_set_mm+0xfa/0x540</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>.............................................................................................................................................................................................................................</span></span></code></pre>
+<p>可以看出争用的路径，尝试获取锁次数，获取但是需要等待的次数，等待的最大、最小、平均时间等，持有锁的最大、最小、平均时间。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------</span></span>
+<span class="line"><span>                              class name    con-bounces    contentions   waittime-min   waittime-max waittime-total   waittime-avg    acq-bounces   acquisitions   holdtime-min   holdtime-max holdtime-total   holdtime-avg</span></span>
+<span class="line"><span>-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>                           &#x26;sem->waiters:             0              0           0.00           0.00           0.00           0.00             36            618           0.09           1.69         140.32           0.23</span></span>
+<span class="line"><span>                           callback_lock:             0              0           0.00           0.00           0.00           0.00             28            121           0.10           1.83          67.38           0.56</span></span>
+<span class="line"><span>                               pmus_lock:             0              0           0.00           0.00           0.00           0.00             20             30           0.00         200.86         231.73           7.72</span></span>
+<span class="line"><span>                           &#x26;rsp->gp_wait:             0              0           0.00           0.00           0.00           0.00             79           1430           0.07           5.83         265.57           0.19</span></span>
+<span class="line"><span>                         &#x26;cpuset_rwsem-W:             0              0           0.00           0.00           0.00           0.00              0            618           0.64       76605.59     1370704.10        2217.97</span></span>
+<span class="line"><span>                         &#x26;cpuset_rwsem-R:             0              0           0.00           0.00           0.00           0.00              0            413           0.00          21.72         473.62           1.15</span></span>
+<span class="line"><span>         "warn_unseeded_randomness".lock:             0              0           0.00           0.00           0.00           0.00              0              1           0.08           0.08           0.08           0.08</span></span>
+<span class="line"><span>                                &#x26;c->lock:             0              0           0.00           0.00           0.00           0.00              0         201310           0.00         457.69       38407.85           0.19</span></span>
+<span class="line"><span>                         cgroup_idr_lock:             0              0           0.00           0.00           0.00           0.00             88           2148           0.09          11.15         939.40           0.44</span></span>
+<span class="line"><span>                             pin_fs_lock:             0              0           0.00           0.00           0.00           0.00             35          11335           0.00          15.48        1171.10           0.10</span></span>
+<span class="line"><span>                  tk_core.seq.seqcount-W:             0              0           0.00           0.00           0.00           0.00              0          10049           0.00         894.17       10020.79           1.00</span></span>
+<span class="line"><span>                  tk_core.seq.seqcount-R:             0              0           0.00           0.00           0.00           0.00              0        1126135           0.00        4915.37      105326.06           0.09</span></span>
+<span class="line"><span>                     cgroup_file_kn_lock:             0              0           0.00           0.00           0.00           0.00            197           1734           0.06          28.30        1893.58           1.09</span></span>
+<span class="line"><span>                  cpufreq_governor_mutex:             0              0           0.00           0.00           0.00           0.00              0              6           0.00           0.32           0.95           0.16</span></span>
+<span class="line"><span>               &#x26;sb->s_type->i_lock_key#4:             0              0           0.00           0.00           0.00           0.00              2             69           0.05           0.80          16.10           0.23</span></span>
+<span class="line"><span>                         timekeeper_lock:             0              0           0.00           0.00           0.00           0.00           4065          10349           0.00        6268.82       26333.01           2.54</span></span>
+<span class="line"><span>                         resource_lock-W:             0              0           0.00           0.00           0.00           0.00              1            357           0.08           3.13          77.04           0.22</span></span>
+<span class="line"><span>                         resource_lock-R:             0              0           0.00           0.00           0.00           0.00             24           1601           0.08          29.63         682.58           0.43</span></span>
+<span class="line"><span>                 &#x26;type->s_umount_key#4/1:             0              0           0.00           0.00           0.00           0.00              0              1           6.78           6.78           6.78           6.78</span></span>
+<span class="line"><span>                            drivers_lock:             0              0           0.00           0.00           0.00           0.00              2              4           0.09           0.44           0.99           0.25</span></span>
+<span class="line"><span>                      pernet_ops_rwsem-W:             0              0           0.00           0.00           0.00           0.00              2            115           0.00         367.87        2408.12          20.94</span></span>
+<span class="line"><span>                      pernet_ops_rwsem-R:             0              0           0.00           0.00           0.00           0.00              5              5        1129.92       83930.70       94433.84       18886.77</span></span>
+<span class="line"><span>                      proc_subdir_lock-W:             0              0           0.00           0.00           0.00           0.00              4            586           0.00          29.05         195.94           0.33</span></span>
+<span class="line"><span>                      proc_subdir_lock-R:             0              0           0.00           0.00           0.00           0.00            129            963           0.00          13.59         394.16           0.41</span></span>
+<span class="line"><span>                          subsys mutex#2:             0              0           0.00           0.00           0.00           0.00              0              1           0.12           0.12           0.12           0.12</span></span></code></pre>
+<p>这里可以看出系统中最繁忙的锁的数据统计信息</p>
+<p>参考<a href="https://source.android.google.cn/devices/tech/debug/ftrace?hl=zh-cn">使用 ftrace</a>
+参考<a href="https://www.kernel.org/doc/html/latest/locking/lockstat.html">Lock Statistics</a></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

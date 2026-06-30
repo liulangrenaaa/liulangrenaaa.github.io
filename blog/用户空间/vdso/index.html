@@ -1,0 +1,90 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>vdso | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>vdso</h1><div class="post-meta"><time datetime="2020-09-12T19:00:00.000Z">2020年9月12日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">vdso</span></div></header><div class="article-body"><h2 id="系统调用">系统调用</h2>
+<p>linux 系统调用需要用户态，内核态中切换，代价比较大。
+假设 <code>gettimeofday</code> 这种常用的系统调用，在无人机这种场景中几乎每个service都需要频繁去调用，这样势必会导致较大的开销(无论采用早期的int 0x80/iret中断，还是sysenter/sysexit指令，再到syscall/sysexit指令)。</p>
+<p>linux针对这种场景推出了 <code>vsyscall</code> 和 <code>vdso</code> 两种解决方案。</p>
+<h2 id="vsyscall">vsyscall</h2>
+<p><code>virtual system call</code>，<code>vsyscall</code> 的工作原则其实十分简单。Linux 内核在<code>用户空间</code>映射一个包含一些<code>内核变量</code>及一些<code>系统调用</code>的实现的内存页。</p>
+<p>有些系统调用不会向 <code>kernel</code> 传递什么参数，只是读取一些参数比如时间等信息；这种参数都是kernel定期去更新；这类系统调用就很适合放到 <code>vsyscall</code>中,</p>
+<p><code>ubuntu 20.04</code> 开启了下面这些 和 <code>vsyscall</code> 相关的宏</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:~ $ cat /boot/config-5.4.0-72-generic | grep VSYSCALL</span></span>
+<span class="line"><span>CONFIG_GENERIC_TIME_VSYSCALL=y</span></span>
+<span class="line"><span>CONFIG_X86_VSYSCALL_EMULATION=y</span></span>
+<span class="line"><span># CONFIG_LEGACY_VSYSCALL_EMULATE is not set</span></span>
+<span class="line"><span>CONFIG_LEGACY_VSYSCALL_XONLY=y</span></span>
+<span class="line"><span># CONFIG_LEGACY_VSYSCALL_NONE is not set</span></span>
+<span class="line"><span>ubuntu@zeku_server:~ $</span></span></code></pre>
+<p>在 <code>/proc/$self/maps</code> 也可以看到 <code>vsyscall</code> 的 section段</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:~ $ cat /proc/self/maps</span></span>
+<span class="line"><span>558ea272a000-558ea272c000 r--p 00000000 103:02 9830525                   /bin/cat</span></span>
+<span class="line"><span>558ea272c000-558ea2731000 r-xp 00002000 103:02 9830525                   /bin/cat</span></span>
+<span class="line"><span>558ea2731000-558ea2734000 r--p 00007000 103:02 9830525                   /bin/cat</span></span>
+<span class="line"><span>558ea2734000-558ea2735000 r--p 00009000 103:02 9830525                   /bin/cat</span></span>
+<span class="line"><span>558ea2735000-558ea2736000 rw-p 0000a000 103:02 9830525                   /bin/cat</span></span>
+<span class="line"><span>558ea34ce000-558ea34ef000 rw-p 00000000 00:00 0                          [heap]</span></span>
+<span class="line"><span>7f2093d4a000-7f2093d6c000 rw-p 00000000 00:00 0</span></span>
+<span class="line"><span>7f2093d6c000-7f20945dc000 r--p 00000000 103:02 11280639                  /usr/lib/locale/locale-archive</span></span>
+<span class="line"><span>7f20945dc000-7f2094601000 r--p 00000000 103:02 7079520                   /lib/x86_64-linux-gnu/libc-2.31.so</span></span>
+<span class="line"><span>7f2094601000-7f2094779000 r-xp 00025000 103:02 7079520                   /lib/x86_64-linux-gnu/libc-2.31.so</span></span>
+<span class="line"><span>7f2094779000-7f20947c3000 r--p 0019d000 103:02 7079520                   /lib/x86_64-linux-gnu/libc-2.31.so</span></span>
+<span class="line"><span>7f20947c3000-7f20947c4000 ---p 001e7000 103:02 7079520                   /lib/x86_64-linux-gnu/libc-2.31.so</span></span>
+<span class="line"><span>7f20947c4000-7f20947c7000 r--p 001e7000 103:02 7079520                   /lib/x86_64-linux-gnu/libc-2.31.so</span></span>
+<span class="line"><span>7f20947c7000-7f20947ca000 rw-p 001ea000 103:02 7079520                   /lib/x86_64-linux-gnu/libc-2.31.so</span></span>
+<span class="line"><span>7f20947ca000-7f20947d0000 rw-p 00000000 00:00 0</span></span>
+<span class="line"><span>7f20947e4000-7f20947e5000 r--p 00000000 103:02 7077894                   /lib/x86_64-linux-gnu/ld-2.31.so</span></span>
+<span class="line"><span>7f20947e5000-7f2094808000 r-xp 00001000 103:02 7077894                   /lib/x86_64-linux-gnu/ld-2.31.so</span></span>
+<span class="line"><span>7f2094808000-7f2094810000 r--p 00024000 103:02 7077894                   /lib/x86_64-linux-gnu/ld-2.31.so</span></span>
+<span class="line"><span>7f2094811000-7f2094812000 r--p 0002c000 103:02 7077894                   /lib/x86_64-linux-gnu/ld-2.31.so</span></span>
+<span class="line"><span>7f2094812000-7f2094813000 rw-p 0002d000 103:02 7077894                   /lib/x86_64-linux-gnu/ld-2.31.so</span></span>
+<span class="line"><span>7f2094813000-7f2094814000 rw-p 00000000 00:00 0</span></span>
+<span class="line"><span>7ffc7c696000-7ffc7c6b7000 rw-p 00000000 00:00 0                          [stack]</span></span>
+<span class="line"><span>7ffc7c754000-7ffc7c757000 r--p 00000000 00:00 0                          [vvar]</span></span>
+<span class="line"><span>7ffc7c757000-7ffc7c758000 r-xp 00000000 00:00 0                          [vdso]</span></span>
+<span class="line"><span>ffffffffff600000-ffffffffff601000 --xp 00000000 00:00 0                  [vsyscall]</span></span>
+<span class="line"><span>ubuntu@zeku_server:~ $</span></span></code></pre>
+<h2 id="vdso">vdso</h2>
+<p><code>vdso</code> 全称 <code>virtual dynamic share object</code>。
+由于 <code>vsyscall</code> 会将某些系统调用或者数据 固定映射到某个物理地址，这样存在一定的安全隐患，所以后面就出现了 <code>vdso</code> 这样的替代方案。</p>
+<p>vdso的随机映射在一定程度上缓解了安全威胁。虽然有了vdso，但从历史兼容性上来讲，vsyscall不能就此完全抛弃，否则将导致一些陈旧的（特别是静态连接的）应用程序无法执行，因此现在在5.4内核上，还可以同时看到vdso和vsyscall。</p>
+<p><code>ubuntu 20.04</code> 开启了下面这些 和 <code>vdso</code> 相关的宏</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:~ $ cat /boot/config-5.4.0-72-generic | grep VDSO</span></span>
+<span class="line"><span># CONFIG_COMPAT_VDSO is not set</span></span>
+<span class="line"><span>CONFIG_HAVE_GENERIC_VDSO=y</span></span>
+<span class="line"><span>ubuntu@zeku_server:~ $</span></span></code></pre>
+<p>在 <code>/proc/$self/maps</code> 也可以看到 <code>vdso</code> 的 section 段</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:~ $ cat /proc/self/maps | grep vdso</span></span>
+<span class="line"><span>7fffd4086000-7fffd4087000 r-xp 00000000 00:00 0                          [vdso]</span></span>
+<span class="line"><span>ubuntu@zeku_server:~ $</span></span></code></pre>
+<p>可以将vdso看成一个shared objdect file（这个文件实际上不存在）,内核将其映射到某个地址空间，被所有程序所共享。（我觉得这里用到了一个技术：多个虚拟页面映射到同一个物理页面。即内核把vdso映射到某个物理页面上，然后所有程序都会有一个页表项指向它，以此来共享，这样每个程序的vdso地址就可以不相同了）</p>
+<p>几乎所有程序都会连接 <code>vdso</code> 这个库</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:~ $ ldd /bin/cat</span></span>
+<span class="line"><span>	linux-vdso.so.1 (0x00007ffd75ff5000)</span></span>
+<span class="line"><span>	libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007f4775d15000)</span></span>
+<span class="line"><span>	/lib64/ld-linux-x86-64.so.2 (0x00007f4775f29000)</span></span>
+<span class="line"><span>ubuntu@zeku_server:~ $ ldd /bin/uname</span></span>
+<span class="line"><span>	linux-vdso.so.1 (0x00007ffc839be000)</span></span>
+<span class="line"><span>	libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007f7a445f0000)</span></span>
+<span class="line"><span>	/lib64/ld-linux-x86-64.so.2 (0x00007f7a44803000)</span></span>
+<span class="line"><span>ubuntu@zeku_server:~ $</span></span></code></pre>
+<h2 id="tests">tests</h2>
+<p>linux kernel 针对 <code>vdso</code> 有一些测试项目位于 <code>tools/testing/selftests/vDSO</code>，</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:~/workspace/linux/tools/testing/selftests/vDSO $ ls</span></span>
+<span class="line"><span>Makefile      parse_vdso.h   vdso_standalone_test_x86.c  vdso_test_clock_getres.c  vdso_test_getcpu.c</span></span>
+<span class="line"><span>parse_vdso.c  vdso_config.h  vdso_test_abi.c             vdso_test_correctness.c   vdso_test_gettimeofday.c</span></span>
+<span class="line"><span>ubuntu@zeku_server:~/workspace/linux/tools/testing/selftests/vDSO $ make</span></span>
+<span class="line"><span>gcc -std=gnu99    vdso_test_gettimeofday.c parse_vdso.c  -o /home/ubuntu/workspace/linux/tools/testing/selftests/vDSO/vdso_test_gettimeofday</span></span>
+<span class="line"><span>gcc -std=gnu99    vdso_test_getcpu.c parse_vdso.c  -o /home/ubuntu/workspace/linux/tools/testing/selftests/vDSO/vdso_test_getcpu</span></span>
+<span class="line"><span>gcc -std=gnu99    vdso_test_abi.c parse_vdso.c  -o /home/ubuntu/workspace/linux/tools/testing/selftests/vDSO/vdso_test_abi</span></span>
+<span class="line"><span>gcc -std=gnu99    vdso_test_clock_getres.c  -o /home/ubuntu/workspace/linux/tools/testing/selftests/vDSO/vdso_test_clock_getres</span></span>
+<span class="line"><span>gcc -std=gnu99 -nostdlib -fno-asynchronous-unwind-tables -fno-stack-protector \</span></span>
+<span class="line"><span>        vdso_standalone_test_x86.c parse_vdso.c \</span></span>
+<span class="line"><span>        -o /home/ubuntu/workspace/linux/tools/testing/selftests/vDSO/vdso_standalone_test_x86</span></span>
+<span class="line"><span>gcc -std=gnu99 \</span></span>
+<span class="line"><span>        vdso_test_correctness.c \</span></span>
+<span class="line"><span>        -o /home/ubuntu/workspace/linux/tools/testing/selftests/vDSO/vdso_test_correctness \</span></span>
+<span class="line"><span>        -ldl</span></span>
+<span class="line"><span>ubuntu@zeku_server:~/workspace/linux/tools/testing/selftests/vDSO $ ls</span></span>
+<span class="line"><span>Makefile       vdso_standalone_test_x86    vdso_test_clock_getres    vdso_test_getcpu</span></span>
+<span class="line"><span>parse_vdso.c   vdso_standalone_test_x86.c  vdso_test_clock_getres.c  vdso_test_getcpu.c</span></span>
+<span class="line"><span>parse_vdso.h   vdso_test_abi               vdso_test_correctness     vdso_test_gettimeofday</span></span>
+<span class="line"><span>vdso_config.h  vdso_test_abi.c             vdso_test_correctness.c   vdso_test_gettimeofday.c</span></span>
+<span class="line"><span>ubuntu@zeku_server:~/workspace/linux/tools/testing/selftests/vDSO $</span></span></code></pre></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

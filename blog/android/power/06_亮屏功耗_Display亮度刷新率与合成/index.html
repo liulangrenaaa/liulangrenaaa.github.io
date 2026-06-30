@@ -1,0 +1,1286 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>亮屏功耗：Display、亮度、刷新率与合成 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>亮屏功耗：Display、亮度、刷新率与合成</h1><div class="post-meta"><time datetime="2026-05-31T11:06:00.000Z">2026年5月31日</time><span> / android / power</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">android</span><span class="tag">power</span><span class="tag">display</span><span class="tag">SurfaceFlinger</span></div></header><div class="article-body"><p>亮屏功耗比灭屏待机更“热闹”。灭屏问题经常围绕 suspend、wakeup source、后台任务；亮屏问题则同时牵涉屏幕面板、背光、亮度策略、刷新率、SurfaceFlinger 合成、GPU、DDR、CPU、网络和热管理。</p>
+<p>所以亮屏功耗分析第一步不是抓日志，而是先把问题分成两类：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>屏幕本身耗电高：亮度高、HBM/HDR、面板刷新率高、背光/驱动IC功耗高</span></span>
+<span class="line"><span>系统持续刷新耗电高：App/RenderThread/SF/HWC/GPU/DDR持续工作，导致平台无法降频或进idle</span></span></code></pre>
+<p>很多“亮屏静置电流高”并不是背光问题，而是页面看起来静止，底层却一直在提交 buffer。反过来，视频播放或白底高亮场景中，即使 CPU/GPU 很闲，屏幕和显示链路本身也可能是主要电流来源。</p>
+<h2 id="分析边界">分析边界</h2>
+<p>亮屏功耗必须先固定条件，否则数据不可比。</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>条件</th><th>为什么重要</th></tr></thead><tbody><tr><td>亮度</td><td>OLED/背光 LCD 都高度依赖亮度，自动亮度会让数据漂</td></tr><tr><td>刷新率</td><td>60/90/120Hz 会影响 panel、SF、App、CPU/GPU、DDR</td></tr><tr><td>画面内容</td><td>OLED 对白底、HDR、高 APL 更敏感；动画会拉起渲染链路</td></tr><tr><td>网络</td><td>弱网、导航、视频流会和显示功耗叠加</td></tr><tr><td>温度</td><td>热后会降亮度、降刷新率、限 CPU/GPU，数据前后不可比</td></tr><tr><td>插电/USB</td><td>会影响热、电池、调度、adbd、充电 IC</td></tr><tr><td>屏幕保护/壁纸</td><td>动态壁纸、AOD、SystemUI 动画会造成持续刷新</td></tr></tbody></table>
+<p>建议每个 case 报告都写清楚：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>亮度：手动/自动，设置值，nits或slider</span></span>
+<span class="line"><span>刷新率：固定60/90/120，还是系统自适应</span></span>
+<span class="line"><span>画面：白屏/黑屏/桌面/视频/目标App页面</span></span>
+<span class="line"><span>网络：飞行模式/Wi-Fi/移动数据/弱网</span></span>
+<span class="line"><span>温度：开始和结束电池温度、skin thermal状态</span></span>
+<span class="line"><span>采样时间：预热多久，统计多久</span></span>
+<span class="line"><span>是否USB：插线只用于调试，定量最好断开</span></span></code></pre>
+<h2 id="总体链路">总体链路</h2>
+<p>亮屏链路可以分为两条：一条是电源/亮度链路，一条是帧生产/合成链路。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    PMS[PowerManagerService]</span></span>
+<span class="line"><span style="color:#E1E4E8">    DMS[DisplayManagerService]</span></span>
+<span class="line"><span style="color:#E1E4E8">    DPC[DisplayPowerController]</span></span>
+<span class="line"><span style="color:#E1E4E8">    DBC[DisplayBrightnessController]</span></span>
+<span class="line"><span style="color:#E1E4E8">    ABC[AutomaticBrightnessController]</span></span>
+<span class="line"><span style="color:#E1E4E8">    BRC[BrightnessRangeController]</span></span>
+<span class="line"><span style="color:#E1E4E8">    DPS[DisplayPowerState]</span></span>
+<span class="line"><span style="color:#E1E4E8">    LDA[LocalDisplayAdapter]</span></span>
+<span class="line"><span style="color:#E1E4E8">    BL[Backlight or panel brightness]</span></span>
+<span class="line"><span style="color:#E1E4E8">    WMS[WindowManager]</span></span>
+<span class="line"><span style="color:#E1E4E8">    App[App UI and RenderThread]</span></span>
+<span class="line"><span style="color:#E1E4E8">    BQ[BufferQueue]</span></span>
+<span class="line"><span style="color:#E1E4E8">    SF[SurfaceFlinger]</span></span>
+<span class="line"><span style="color:#E1E4E8">    HWC[Hardware Composer]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Panel[Panel]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    PMS --> DMS</span></span>
+<span class="line"><span style="color:#E1E4E8">    DMS --> DPC</span></span>
+<span class="line"><span style="color:#E1E4E8">    DPC --> DBC</span></span>
+<span class="line"><span style="color:#E1E4E8">    DBC --> ABC</span></span>
+<span class="line"><span style="color:#E1E4E8">    DBC --> BRC</span></span>
+<span class="line"><span style="color:#E1E4E8">    DPC --> DPS</span></span>
+<span class="line"><span style="color:#E1E4E8">    DPS --> LDA</span></span>
+<span class="line"><span style="color:#E1E4E8">    LDA --> BL</span></span>
+<span class="line"><span style="color:#E1E4E8">    BL --> Panel</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    WMS --> App</span></span>
+<span class="line"><span style="color:#E1E4E8">    App --> BQ</span></span>
+<span class="line"><span style="color:#E1E4E8">    BQ --> SF</span></span>
+<span class="line"><span style="color:#E1E4E8">    SF --> HWC</span></span>
+<span class="line"><span style="color:#E1E4E8">    HWC --> Panel</span></span></code></pre>
+<p>亮屏功耗高时，要看是哪条链路在主导：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>主导链路</th><th>典型现象</th><th>证据</th></tr></thead><tbody><tr><td>背光/面板</td><td>电流随亮度明显变化，CPU/GPU 很闲</td><td>固定画面下亮度阶梯测试</td></tr><tr><td>自动亮度/HBM</td><td>亮度被自动拉高或进入高亮模式</td><td><code>dumpsys display</code> 中 brightness reason/HBM</td></tr><tr><td>刷新率</td><td>高刷场景电流高，降到 60Hz 明显下降</td><td><code>dumpsys display</code>、SF refresh rate</td></tr><tr><td>App 持续刷新</td><td>页面静止但 RenderThread 周期运行</td><td>Perfetto 中 app frame 持续提交</td></tr><tr><td>SF/HWC 合成</td><td>SurfaceFlinger 每帧工作，HWC/GPU 负载高</td><td>Perfetto、<code>dumpsys SurfaceFlinger</code></td></tr><tr><td>GPU 合成</td><td>Overlay 不满足，GPU 参与合成</td><td>SF/HWC dump、GPU freq</td></tr><tr><td>热反馈</td><td>开始电流高，随后亮度/帧率/频率下降</td><td>thermal log、brightness throttle</td></tr></tbody></table>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[亮屏功耗高]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B{固定亮度后是否仍高}</span></span>
+<span class="line"><span style="color:#E1E4E8">    C{固定刷新率后是否变化}</span></span>
+<span class="line"><span style="color:#E1E4E8">    D{画面是否持续提交帧}</span></span>
+<span class="line"><span style="color:#E1E4E8">    E{GPU合成是否高}</span></span>
+<span class="line"><span style="color:#E1E4E8">    F{是否热降亮度或降刷新率}</span></span>
+<span class="line"><span style="color:#E1E4E8">    G[面板/背光/HBM方向]</span></span>
+<span class="line"><span style="color:#E1E4E8">    H[刷新率策略方向]</span></span>
+<span class="line"><span style="color:#E1E4E8">    I[App动画/RenderThread方向]</span></span>
+<span class="line"><span style="color:#E1E4E8">    J[SF/HWC/GPU方向]</span></span>
+<span class="line"><span style="color:#E1E4E8">    K[Thermal和亮度限幅方向]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    A --> B</span></span>
+<span class="line"><span style="color:#E1E4E8">    B -->|随亮度强相关| G</span></span>
+<span class="line"><span style="color:#E1E4E8">    B -->|不完全相关| C</span></span>
+<span class="line"><span style="color:#E1E4E8">    C -->|变化明显| H</span></span>
+<span class="line"><span style="color:#E1E4E8">    C -->|变化不明显| D</span></span>
+<span class="line"><span style="color:#E1E4E8">    D -->|是| I</span></span>
+<span class="line"><span style="color:#E1E4E8">    D -->|否| E</span></span>
+<span class="line"><span style="color:#E1E4E8">    E -->|是| J</span></span>
+<span class="line"><span style="color:#E1E4E8">    E -->|否| F</span></span>
+<span class="line"><span style="color:#E1E4E8">    F -->|是| K</span></span></code></pre>
+<h2 id="源码入口">源码入口</h2>
+<p>AOSP14 / LOS21 中，这篇重点看这些入口：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>模块</th><th>源码</th></tr></thead><tbody><tr><td>DisplayPowerController</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/display/DisplayPowerController.java:127:1">DisplayPowerController.java line 127</a></td></tr><tr><td>requestPowerState</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/display/DisplayPowerController.java:755:1">DisplayPowerController.java line 755</a></td></tr><tr><td>updatePowerStateInternal</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/display/DisplayPowerController.java:1336:1">DisplayPowerController.java line 1336</a></td></tr><tr><td>setScreenState</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/display/DisplayPowerController.java:2129:1">DisplayPowerController.java line 2129</a></td></tr><tr><td>animateScreenBrightness</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/display/DisplayPowerController.java:2247:1">DisplayPowerController.java line 2247</a></td></tr><tr><td>DisplayBrightnessController</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/display/brightness/DisplayBrightnessController.java:303:1">DisplayBrightnessController.java line 303</a></td></tr><tr><td>DisplayModeDirector</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/display/mode/DisplayModeDirector.java:104:1">DisplayModeDirector.java line 104</a></td></tr><tr><td>getDesiredDisplayModeSpecs</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/display/mode/DisplayModeDirector.java:289:1">DisplayModeDirector.java line 289</a></td></tr><tr><td>LocalDisplayAdapter.setDesiredDisplayModeSpecsLocked</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/display/LocalDisplayAdapter.java:1037:1">LocalDisplayAdapter.java line 1037</a></td></tr><tr><td>SurfaceFlinger.commit</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/native/services/surfaceflinger/SurfaceFlinger.cpp:2517:1">SurfaceFlinger.cpp line 2517</a></td></tr><tr><td>SurfaceFlinger.updateLayerHistory</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/native/services/surfaceflinger/SurfaceFlinger.cpp:2277:1">SurfaceFlinger.cpp line 2277</a></td></tr><tr><td>SurfaceFlinger.setPowerMode</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/native/services/surfaceflinger/SurfaceFlinger.cpp:6213:1">SurfaceFlinger.cpp line 6213</a></td></tr><tr><td>SurfaceFlinger.setDesiredDisplayModeSpecs</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/native/services/surfaceflinger/SurfaceFlinger.cpp:8617:1">SurfaceFlinger.cpp line 8617</a></td></tr><tr><td>Scheduler.chooseRefreshRateForContent</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/native/services/surfaceflinger/Scheduler/Scheduler.cpp:694:1">Scheduler.cpp line 694</a></td></tr><tr><td>RefreshRateSelector</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/native/services/surfaceflinger/Scheduler/RefreshRateSelector.cpp:476:1">RefreshRateSelector.cpp line 476</a></td></tr></tbody></table>
+<h2 id="displaypowercontroller">DisplayPowerController</h2>
+<p><code>DisplayPowerController</code> 是显示电源状态和亮度策略的核心。PMS 决定系统 wakefulness，DMS/DisplayPowerController 决定 display 具体应该是什么状态：off、on、doze、doze suspend，以及亮度应该是多少。</p>
+<p>简化链路：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">sequenceDiagram</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant PMS as PowerManagerService</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant DMS as DisplayManagerService</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant DPC as DisplayPowerController</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant DBC as DisplayBrightnessController</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant DPS as DisplayPowerState</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Panel as Panel or Backlight</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    PMS->>DMS: request display power state</span></span>
+<span class="line"><span style="color:#E1E4E8">    DMS->>DPC: requestPowerState</span></span>
+<span class="line"><span style="color:#E1E4E8">    DPC->>DPC: updateDisplayState</span></span>
+<span class="line"><span style="color:#E1E4E8">    DPC->>DBC: updateBrightness</span></span>
+<span class="line"><span style="color:#E1E4E8">    DBC-->>DPC: DisplayBrightnessState</span></span>
+<span class="line"><span style="color:#E1E4E8">    DPC->>DPC: clamp, throttle, dim, HBM/HDR</span></span>
+<span class="line"><span style="color:#E1E4E8">    DPC->>DPS: animate brightness</span></span>
+<span class="line"><span style="color:#E1E4E8">    DPS->>Panel: apply brightness</span></span></code></pre>
+<p><code>updatePowerStateInternal()</code> 里有几个很关键的阶段：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>1. 读取 pending DisplayPowerRequest</span></span>
+<span class="line"><span>2. 根据 policy 计算目标 display state</span></span>
+<span class="line"><span>3. 执行 screen on/off/doze 状态切换</span></span>
+<span class="line"><span>4. 更新自动亮度模式</span></span>
+<span class="line"><span>5. DisplayBrightnessController 计算基础亮度</span></span>
+<span class="line"><span>6. 自动亮度、doze亮度、screen-off sensor、手动亮度兜底</span></span>
+<span class="line"><span>7. brightness clamper / throttling / HBM / HDR 修正</span></span>
+<span class="line"><span>8. 根据 ramp rate 动画到目标亮度</span></span>
+<span class="line"><span>9. 保存 BrightnessInfo 并通知变化</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[updatePowerStateInternal]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B[Read DisplayPowerRequest]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C[Update display state]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D[Animate screen state]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E[Update auto brightness mode]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F[DisplayBrightnessController.updateBrightness]</span></span>
+<span class="line"><span style="color:#E1E4E8">    G{Brightness already decided}</span></span>
+<span class="line"><span style="color:#E1E4E8">    H[Automatic brightness]</span></span>
+<span class="line"><span style="color:#E1E4E8">    I[Doze default brightness]</span></span>
+<span class="line"><span style="color:#E1E4E8">    J[Screen-off brightness sensor]</span></span>
+<span class="line"><span style="color:#E1E4E8">    K[Manual brightness]</span></span>
+<span class="line"><span style="color:#E1E4E8">    L[Clamp and throttle]</span></span>
+<span class="line"><span style="color:#E1E4E8">    M[HBM or HDR modifier]</span></span>
+<span class="line"><span style="color:#E1E4E8">    N[Animate brightness]</span></span>
+<span class="line"><span style="color:#E1E4E8">    O[Save BrightnessInfo]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    A --> B</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> D</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> F</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> G</span></span>
+<span class="line"><span style="color:#E1E4E8">    G -->|NaN and auto enabled| H</span></span>
+<span class="line"><span style="color:#E1E4E8">    G -->|Doze| I</span></span>
+<span class="line"><span style="color:#E1E4E8">    G -->|ALS not ready| J</span></span>
+<span class="line"><span style="color:#E1E4E8">    G -->|fallback| K</span></span>
+<span class="line"><span style="color:#E1E4E8">    H --> L</span></span>
+<span class="line"><span style="color:#E1E4E8">    I --> L</span></span>
+<span class="line"><span style="color:#E1E4E8">    J --> L</span></span>
+<span class="line"><span style="color:#E1E4E8">    K --> L</span></span>
+<span class="line"><span style="color:#E1E4E8">    L --> M</span></span>
+<span class="line"><span style="color:#E1E4E8">    M --> N</span></span>
+<span class="line"><span style="color:#E1E4E8">    N --> O</span></span></code></pre>
+<p>这里有一个排查亮度问题的核心点：<strong>最终写到屏幕的亮度，不一定等于设置里的 slider 值。</strong></p>
+<p>可能改变最终亮度的因素包括：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>因素</th><th>源码中的表现</th><th>典型影响</th></tr></thead><tbody><tr><td>自动亮度</td><td><code>BrightnessReason.REASON_AUTOMATIC</code></td><td>环境光变化会改变亮度</td></tr><tr><td>手动亮度</td><td><code>REASON_MANUAL</code></td><td>slider 作为基础值</td></tr><tr><td>Doze</td><td><code>REASON_DOZE_DEFAULT</code> / <code>REASON_DOZE_INITIAL</code></td><td>AOD/Doze 低亮策略</td></tr><tr><td>HBM</td><td>brightness range / HBM controller</td><td>高亮模式提高功耗，也可能限时</td></tr><tr><td>HDR</td><td><code>MODIFIER_HDR</code></td><td>HDR layer 可触发更高亮度</td></tr><tr><td>Low power</td><td><code>MODIFIER_LOW_POWER</code></td><td>省电模式降低亮度</td></tr><tr><td>Dim</td><td><code>MODIFIER_DIMMED</code></td><td>临近休眠前 dim</td></tr><tr><td>Thermal throttling</td><td>brightness clamper</td><td>温度高时降低最大亮度</td></tr><tr><td>App override</td><td>override/temporary brightness</td><td>某些窗口临时提高亮度</td></tr></tbody></table>
+<p>所以亮屏功耗报告里不能只写 <code>screen_brightness=80</code>。更严谨的是写：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>screen_brightness_mode=0</span></span>
+<span class="line"><span>screen_brightness=80</span></span>
+<span class="line"><span>dumpsys display 中实际 brightness/current/min/max</span></span>
+<span class="line"><span>BrightnessReason=MANUAL 或 AUTOMATIC/HDR/LOW_POWER/THROTTLED</span></span>
+<span class="line"><span>是否 HBM/HDR/thermal brightness throttling</span></span></code></pre>
+<h2 id="亮度固定方法">亮度固定方法</h2>
+<p>基础命令：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> settings</span><span style="color:#9ECBFF"> get</span><span style="color:#9ECBFF"> system</span><span style="color:#9ECBFF"> screen_brightness_mode</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> settings</span><span style="color:#9ECBFF"> get</span><span style="color:#9ECBFF"> system</span><span style="color:#9ECBFF"> screen_brightness</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> settings</span><span style="color:#9ECBFF"> get</span><span style="color:#9ECBFF"> system</span><span style="color:#9ECBFF"> screen_auto_brightness_adj</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> display</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> display.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> power</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> power.txt</span></span></code></pre>
+<p>固定手动亮度：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> settings</span><span style="color:#9ECBFF"> put</span><span style="color:#9ECBFF"> system</span><span style="color:#9ECBFF"> screen_brightness_mode</span><span style="color:#79B8FF"> 0</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> settings</span><span style="color:#9ECBFF"> put</span><span style="color:#9ECBFF"> system</span><span style="color:#9ECBFF"> screen_brightness</span><span style="color:#79B8FF"> 80</span></span></code></pre>
+<p>有些 Android 版本亮度内部使用 float 或由 DisplayBrightnessController 管理，<code>screen_brightness</code> 只是用户设置值。真正分析仍然要看 <code>dumpsys display</code>。</p>
+<p>建议做亮度阶梯测试：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#F97583">for</span><span style="color:#E1E4E8"> b </span><span style="color:#F97583">in</span><span style="color:#9ECBFF"> 20</span><span style="color:#9ECBFF"> 60</span><span style="color:#9ECBFF"> 100</span><span style="color:#9ECBFF"> 160</span><span style="color:#9ECBFF"> 220</span><span style="color:#E1E4E8">; </span><span style="color:#F97583">do</span></span>
+<span class="line"><span style="color:#B392F0">    adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> settings</span><span style="color:#9ECBFF"> put</span><span style="color:#9ECBFF"> system</span><span style="color:#9ECBFF"> screen_brightness_mode</span><span style="color:#79B8FF"> 0</span></span>
+<span class="line"><span style="color:#B392F0">    adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> settings</span><span style="color:#9ECBFF"> put</span><span style="color:#9ECBFF"> system</span><span style="color:#9ECBFF"> screen_brightness</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$b</span><span style="color:#9ECBFF">"</span></span>
+<span class="line"><span style="color:#B392F0">    sleep</span><span style="color:#79B8FF"> 60</span></span>
+<span class="line"><span style="color:#B392F0">    adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> display</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "display_b${</span><span style="color:#E1E4E8">b</span><span style="color:#9ECBFF">}.txt"</span></span>
+<span class="line"><span style="color:#B392F0">    adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> battery</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "battery_b${</span><span style="color:#E1E4E8">b</span><span style="color:#9ECBFF">}.txt"</span></span>
+<span class="line"><span style="color:#F97583">done</span></span></code></pre>
+<p>如果接电源仪或电流计，记录每个亮度档位的稳定电流：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>亮度档</th><th>电流</th><th>结论</th></tr></thead><tbody><tr><td>20</td><td>baseline</td><td>面板/背光低功耗</td></tr><tr><td>80</td><td>+x mA</td><td>近似线性或非线性增长</td></tr><tr><td>160</td><td>+y mA</td><td>高亮区开始明显上升</td></tr><tr><td>220</td><td>+z mA</td><td>可能接近 HBM/高亮策略</td></tr></tbody></table>
+<p>OLED 和 LCD 的曲线不同：</p>
+<ul>
+<li>LCD 背光功耗主要跟背光强度相关，画面黑白对背光影响小。</li>
+<li>OLED 每个像素自发光，白底、高 APL、HDR、高亮图像会明显更耗电。</li>
+<li>LTPO/高刷屏还要叠加刷新率和驱动策略。</li>
+</ul>
+<h2 id="屏幕状态切换">屏幕状态切换</h2>
+<p><code>setScreenState()</code> 负责把 display state 真正切过去，并通知 WindowManagerPolicy、BatteryStats 等。</p>
+<p>源码中几个关键点：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>如果要 turn off：</span></span>
+<span class="line"><span>    先通知 policy screenTurningOff</span></span>
+<span class="line"><span>    可能 block screen off 等动画/策略完成</span></span>
+<span class="line"><span>    mPowerState.setScreenState(state)</span></span>
+<span class="line"><span>    noteScreenState(state)</span></span>
+<span class="line"><span>    screenTurnedOff</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>如果要 turn on：</span></span>
+<span class="line"><span>    可能 block screen on 等窗口绘制完成</span></span>
+<span class="line"><span>    screenTurningOn</span></span>
+<span class="line"><span>    等待 unblock 后继续</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[setScreenState]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B{state changed}</span></span>
+<span class="line"><span style="color:#E1E4E8">    C{turning off}</span></span>
+<span class="line"><span style="color:#E1E4E8">    D[screenTurningOff]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E[blockScreenOff if needed]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F[mPowerState.setScreenState]</span></span>
+<span class="line"><span style="color:#E1E4E8">    G[noteScreenState]</span></span>
+<span class="line"><span style="color:#E1E4E8">    H[screenTurnedOff]</span></span>
+<span class="line"><span style="color:#E1E4E8">    I{turning on}</span></span>
+<span class="line"><span style="color:#E1E4E8">    J[blockScreenOn if needed]</span></span>
+<span class="line"><span style="color:#E1E4E8">    K[screenTurningOn]</span></span>
+<span class="line"><span style="color:#E1E4E8">    L[wait windows drawn]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    A --> B</span></span>
+<span class="line"><span style="color:#E1E4E8">    B -->|yes| C</span></span>
+<span class="line"><span style="color:#E1E4E8">    C -->|yes| D</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> F</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> G</span></span>
+<span class="line"><span style="color:#E1E4E8">    G --> H</span></span>
+<span class="line"><span style="color:#E1E4E8">    C -->|no| I</span></span>
+<span class="line"><span style="color:#E1E4E8">    I -->|yes| J</span></span>
+<span class="line"><span style="color:#E1E4E8">    J --> K</span></span>
+<span class="line"><span style="color:#E1E4E8">    K --> L</span></span></code></pre>
+<p>这解释了亮灭屏瞬间的功耗尖峰：亮屏不仅是背光打开，还可能包含 WMS 准备窗口、SF 恢复 VSYNC、HWC power mode 切换、app 重绘等动作。做“亮屏静置”测试时，要等过渡完成再统计，不要把点亮瞬间算进去。</p>
+<h2 id="surfaceflinger电源模式">SurfaceFlinger电源模式</h2>
+<p>DisplayPowerController 负责 Framework display state，SurfaceFlinger 负责把 power mode 传到 HWC。</p>
+<p>SurfaceFlinger 的 <code>setPowerModeInternal()</code> 里，ON/OFF/DOZE/DOZE_SUSPEND 对 VSYNC 和调度有不同处理：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Power mode</th><th>行为倾向</th><th>功耗意义</th></tr></thead><tbody><tr><td>ON</td><td>打开 HWC power mode，启用硬件 VSYNC，调度合成</td><td>正常亮屏</td></tr><tr><td>OFF</td><td>先关闭 VSYNC，再让 HWC display off</td><td>停止该显示输出</td></tr><tr><td>DOZE</td><td>AOD/Doze 显示，仍可更新</td><td>低频/低亮显示</td></tr><tr><td>DOZE_SUSPEND</td><td>disable hardware VSYNC，synthetic VSYNC</td><td>更省电的 doze suspend</td></tr></tbody></table>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[SurfaceFlinger.setPowerMode]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B[setPowerModeInternal]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C{mode}</span></span>
+<span class="line"><span style="color:#E1E4E8">    D[ON: HWC setPowerMode ON]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E[Enable hardware VSYNC]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F[Schedule composite]</span></span>
+<span class="line"><span style="color:#E1E4E8">    G[OFF: disable VSYNC]</span></span>
+<span class="line"><span style="color:#E1E4E8">    H[HWC setPowerMode OFF]</span></span>
+<span class="line"><span style="color:#E1E4E8">    I[DOZE: HWC DOZE]</span></span>
+<span class="line"><span style="color:#E1E4E8">    J[DOZE_SUSPEND: disable HW VSYNC]</span></span>
+<span class="line"><span style="color:#E1E4E8">    K[Scheduler update power mode stats]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    A --> B</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C</span></span>
+<span class="line"><span style="color:#E1E4E8">    C -->|ON| D</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> F</span></span>
+<span class="line"><span style="color:#E1E4E8">    C -->|OFF| G</span></span>
+<span class="line"><span style="color:#E1E4E8">    G --> H</span></span>
+<span class="line"><span style="color:#E1E4E8">    C -->|DOZE| I</span></span>
+<span class="line"><span style="color:#E1E4E8">    C -->|DOZE_SUSPEND| J</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> K</span></span>
+<span class="line"><span style="color:#E1E4E8">    H --> K</span></span>
+<span class="line"><span style="color:#E1E4E8">    I --> K</span></span>
+<span class="line"><span style="color:#E1E4E8">    J --> K</span></span></code></pre>
+<p>亮屏功耗高时，如果 display 已经 ON，那么重点不只是 panel，而是每个 VSYNC 周期有没有工作：</p>
+<ul>
+<li>App 是否每帧提交 buffer。</li>
+<li>SF 是否每帧 commit/composite。</li>
+<li>HWC 是否每帧 present。</li>
+<li>GPU 是否参与合成。</li>
+<li>CPU/GPU/DDR 是否因为帧率维持高频。</li>
+</ul>
+<h2 id="刷新率策略">刷新率策略</h2>
+<p>Android 的刷新率不是一个简单 settings 值。Framework 侧由 <code>DisplayModeDirector</code> 汇总多方 vote，生成 <code>DesiredDisplayModeSpecs</code>；<code>LocalDisplayAdapter</code> 转成 SurfaceControl 的 specs；SurfaceFlinger 再用 <code>RefreshRateSelector</code> 和内容历史选择具体模式。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[Settings min/peak refresh rate]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B[App frame rate request]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C[Thermal vote]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D[Brightness or HBM vote]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E[UDFPS/proximity/sensor vote]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F[DisplayModeDirector]</span></span>
+<span class="line"><span style="color:#E1E4E8">    G[DesiredDisplayModeSpecs]</span></span>
+<span class="line"><span style="color:#E1E4E8">    H[LocalDisplayAdapter]</span></span>
+<span class="line"><span style="color:#E1E4E8">    I[SurfaceControl.setDesiredDisplayModeSpecs]</span></span>
+<span class="line"><span style="color:#E1E4E8">    J[SurfaceFlinger]</span></span>
+<span class="line"><span style="color:#E1E4E8">    K[RefreshRateSelector]</span></span>
+<span class="line"><span style="color:#E1E4E8">    L[HWC display mode]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    A --> F</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> F</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> F</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> F</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> F</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> G</span></span>
+<span class="line"><span style="color:#E1E4E8">    G --> H</span></span>
+<span class="line"><span style="color:#E1E4E8">    H --> I</span></span>
+<span class="line"><span style="color:#E1E4E8">    I --> J</span></span>
+<span class="line"><span style="color:#E1E4E8">    J --> K</span></span>
+<span class="line"><span style="color:#E1E4E8">    K --> L</span></span></code></pre>
+<p><code>DisplayModeDirector.getDesiredDisplayModeSpecs()</code> 的逻辑重点：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>读取 display votes</span></span>
+<span class="line"><span>读取 supported modes 和 default mode</span></span>
+<span class="line"><span>从最高/最低 priority 范围尝试生成 VoteSummary</span></span>
+<span class="line"><span>如果过滤后没有可用 mode，逐步丢弃低优先级 vote</span></span>
+<span class="line"><span>选择 base mode</span></span>
+<span class="line"><span>根据 modeSwitchingType 决定是否允许 mode switching</span></span>
+<span class="line"><span>生成 primary refresh range 和 app request refresh range</span></span></code></pre>
+<p>这意味着“为什么没有降到低刷新率”不能只看一个设置项，要看哪些 vote 把范围卡住了：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>vote 来源</th><th>可能影响</th></tr></thead><tbody><tr><td>user peak/min refresh rate</td><td>用户设置高刷或限制低刷</td></tr><tr><td>app requested frame rate</td><td>App 通过 API 请求帧率</td></tr><tr><td>touch/scroll/game</td><td>交互场景偏向高刷</td></tr><tr><td>thermal</td><td>温度高时限制最大刷新率</td></tr><tr><td>HBM/HDR</td><td>高亮/HDR 场景可能限制刷新率</td></tr><tr><td>UDFPS</td><td>屏下指纹场景可能要求特定刷新率</td></tr><tr><td>proximity/sensor</td><td>某些传感器组合限制</td></tr><tr><td>external display</td><td>外接显示模式限制</td></tr></tbody></table>
+<h2 id="surfaceflinger内容帧率">SurfaceFlinger内容帧率</h2>
+<p>Framework 给的是策略范围，SurfaceFlinger 还会根据 layer 内容历史选择刷新率。</p>
+<p><code>SurfaceFlinger.updateLayerHistory()</code> 会记录 layer 的变化：</p>
+<ul>
+<li>Visibility。</li>
+<li>Geometry。</li>
+<li>FrameRate vote。</li>
+<li>Buffer update。</li>
+<li>Animation transaction。</li>
+<li>Surface damage / small dirty area。</li>
+</ul>
+<p><code>SurfaceFlinger.commit()</code> 每帧处理 transaction 和 layer snapshot 后，会调用：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>mScheduler->chooseRefreshRateForContent(...)</span></span>
+<span class="line"><span>initiateDisplayModeChanges()</span></span></code></pre>
+<p>Scheduler 中 <code>chooseRefreshRateForContent()</code> 会：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>LayerHistory.summarize(...)</span></span>
+<span class="line"><span>applyPolicy(contentRequirements)</span></span>
+<span class="line"><span>必要时 update attached Choreographer</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">sequenceDiagram</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant App as App</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Layer as Layer</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant SF as SurfaceFlinger</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Scheduler as Scheduler</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Selector as RefreshRateSelector</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant HWC as HWC</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    App->>Layer: buffer or animation update</span></span>
+<span class="line"><span style="color:#E1E4E8">    SF->>SF: updateLayerHistory</span></span>
+<span class="line"><span style="color:#E1E4E8">    SF->>Scheduler: chooseRefreshRateForContent</span></span>
+<span class="line"><span style="color:#E1E4E8">    Scheduler->>Selector: rank frame rates</span></span>
+<span class="line"><span style="color:#E1E4E8">    Selector-->>Scheduler: selected mode or render rate</span></span>
+<span class="line"><span style="color:#E1E4E8">    Scheduler-->>SF: policy updated</span></span>
+<span class="line"><span style="color:#E1E4E8">    SF->>HWC: initiate display mode changes</span></span></code></pre>
+<p>这对功耗排查非常关键：</p>
+<ul>
+<li>看起来静止的页面，如果一直有 buffer update，SF 会认为内容在变化。</li>
+<li>动画 transaction 即使视觉上很小，也可能维持高刷新。</li>
+<li>小面积脏区可能降低合成成本，但不等于不刷新。</li>
+<li>App 设置 frame rate 不当，可能让系统无法降到更低 refresh/render rate。</li>
+</ul>
+<h2 id="合成路径">合成路径</h2>
+<p>Android 显示合成一般涉及 App、RenderThread、BufferQueue、SurfaceFlinger、HWC、GPU、Panel。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[Choreographer vsync]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B[App UI thread]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C[RenderThread]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D[GPU render]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E[BufferQueue queueBuffer]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F[SurfaceFlinger latchBuffer]</span></span>
+<span class="line"><span style="color:#E1E4E8">    G{HWC overlay possible}</span></span>
+<span class="line"><span style="color:#E1E4E8">    H[Device composition by HWC]</span></span>
+<span class="line"><span style="color:#E1E4E8">    I[Client composition by GPU]</span></span>
+<span class="line"><span style="color:#E1E4E8">    J[HWC present]</span></span>
+<span class="line"><span style="color:#E1E4E8">    K[Panel scanout]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    A --> B</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> D</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> F</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> G</span></span>
+<span class="line"><span style="color:#E1E4E8">    G -->|yes| H</span></span>
+<span class="line"><span style="color:#E1E4E8">    G -->|no| I</span></span>
+<span class="line"><span style="color:#E1E4E8">    H --> J</span></span>
+<span class="line"><span style="color:#E1E4E8">    I --> J</span></span>
+<span class="line"><span style="color:#E1E4E8">    J --> K</span></span></code></pre>
+<p>功耗上要分三类：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>合成类型</th><th>说明</th><th>功耗风险</th></tr></thead><tbody><tr><td>Device composition</td><td>HWC/Display controller 直接合成或 overlay</td><td>通常比 GPU 合成省</td></tr><tr><td>Client composition</td><td>GPU 先合成到 framebuffer，再交 HWC</td><td>GPU/DDR 更忙</td></tr><tr><td>Mixed composition</td><td>部分 overlay，部分 GPU</td><td>常见，需看比例和原因</td></tr></tbody></table>
+<p>常见导致 GPU 合成增加的原因：</p>
+<ul>
+<li>图层过多。</li>
+<li>透明/alpha 复杂。</li>
+<li>圆角、模糊、阴影、实时滤镜。</li>
+<li>DRM protected layer 限制。</li>
+<li>HWC overlay 数量不足。</li>
+<li>Surface 尺寸/格式/变换不满足 overlay。</li>
+<li>HDR/SDR 混合带来额外处理。</li>
+<li>小窗口、悬浮窗、录屏、投屏。</li>
+</ul>
+<h2 id="调试命令">调试命令</h2>
+<p>基础信息：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> power</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> power.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> display</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> display.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> SurfaceFlinger</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> sf.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> window</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> window.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> gfxinfo</span><span style="color:#F97583"> &#x3C;</span><span style="color:#9ECBFF">packag</span><span style="color:#E1E4E8">e</span><span style="color:#F97583">></span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> gfxinfo.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> thermalservice</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> thermal.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> battery</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> battery.txt</span></span></code></pre>
+<p>亮度：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> settings</span><span style="color:#9ECBFF"> get</span><span style="color:#9ECBFF"> system</span><span style="color:#9ECBFF"> screen_brightness_mode</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> settings</span><span style="color:#9ECBFF"> get</span><span style="color:#9ECBFF"> system</span><span style="color:#9ECBFF"> screen_brightness</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> display</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -Ei</span><span style="color:#9ECBFF"> "brightness|BrightnessReason|HBM|HDR|throttl|nits|lux"</span></span></code></pre>
+<p>刷新率：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> settings</span><span style="color:#9ECBFF"> get</span><span style="color:#9ECBFF"> system</span><span style="color:#9ECBFF"> peak_refresh_rate</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> settings</span><span style="color:#9ECBFF"> get</span><span style="color:#9ECBFF"> system</span><span style="color:#9ECBFF"> min_refresh_rate</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> display</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -Ei</span><span style="color:#9ECBFF"> "DisplayModeDirector|RefreshRate|mode|vote|DesiredDisplayMode"</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> SurfaceFlinger</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -Ei</span><span style="color:#9ECBFF"> "refresh|mode|fps|LayerHistory|Scheduler"</span></span></code></pre>
+<p>SurfaceFlinger 和图层：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> SurfaceFlinger</span><span style="color:#79B8FF"> --list</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> SurfaceFlinger</span><span style="color:#79B8FF"> --latency</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> SurfaceFlinger</span><span style="color:#79B8FF"> --latency-clear</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> SurfaceFlinger</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> sf_full.txt</span></span></code></pre>
+<p>CPU/GPU/DDR 频率视平台而定：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for p in /sys/devices/system/cpu/cpufreq/policy*; do echo $p; cat $p/scaling_cur_freq; cat $p/scaling_governor; done'</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'find /sys/class/kgsl -maxdepth 3 -type f 2>/dev/null | grep -Ei "gpuclk|freq|busy|pwr"'</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'find /sys/class/devfreq -maxdepth 2 -type f 2>/dev/null | grep -Ei "cur_freq|governor|available_frequencies"'</span></span></code></pre>
+<p>QCOM 平台常见 GPU 路径可能在：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">/sys/class/kgsl/kgsl-3d0/gpuclk</span></span>
+<span class="line"><span style="color:#B392F0">/sys/class/kgsl/kgsl-3d0/gpubusy</span></span>
+<span class="line"><span style="color:#B392F0">/sys/class/devfreq/*kgsl*/cur_freq</span></span></code></pre>
+<p>不要预设结论，先 <code>find</code> 再看节点是否存在。</p>
+<h2 id="固定刷新率">固定刷新率</h2>
+<p>不同系统支持不同设置项，常见方法：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> settings</span><span style="color:#9ECBFF"> get</span><span style="color:#9ECBFF"> system</span><span style="color:#9ECBFF"> peak_refresh_rate</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> settings</span><span style="color:#9ECBFF"> get</span><span style="color:#9ECBFF"> system</span><span style="color:#9ECBFF"> min_refresh_rate</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> settings</span><span style="color:#9ECBFF"> put</span><span style="color:#9ECBFF"> system</span><span style="color:#9ECBFF"> peak_refresh_rate</span><span style="color:#79B8FF"> 60</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> settings</span><span style="color:#9ECBFF"> put</span><span style="color:#9ECBFF"> system</span><span style="color:#9ECBFF"> min_refresh_rate</span><span style="color:#79B8FF"> 60</span></span></code></pre>
+<p>恢复时：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> settings</span><span style="color:#9ECBFF"> delete</span><span style="color:#9ECBFF"> system</span><span style="color:#9ECBFF"> peak_refresh_rate</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> settings</span><span style="color:#9ECBFF"> delete</span><span style="color:#9ECBFF"> system</span><span style="color:#9ECBFF"> min_refresh_rate</span></span></code></pre>
+<p>如果设备本身只有 60Hz，例如某些老 QCOM 机型，那就不能造“高刷未降”的 case，但仍然可以分析：</p>
+<ul>
+<li>60Hz 下是否持续满帧。</li>
+<li>App 是否持续提交 buffer。</li>
+<li>SF 是否每帧合成。</li>
+<li>GPU/DDR 是否因为合成保持活跃。</li>
+<li>Panel 亮度曲线是否异常。</li>
+</ul>
+<h2 id="perfetto采集">Perfetto采集</h2>
+<p>亮屏功耗强烈建议用 Perfetto，因为它能把 App 帧、SF 帧、CPU/GPU 频率、idle、thermal 放在同一时间线。</p>
+<p>简单 atrace：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> atrace</span><span style="color:#79B8FF"> --async_start</span><span style="color:#79B8FF"> -b</span><span style="color:#79B8FF"> 32768</span><span style="color:#9ECBFF"> gfx</span><span style="color:#9ECBFF"> view</span><span style="color:#9ECBFF"> wm</span><span style="color:#9ECBFF"> am</span><span style="color:#9ECBFF"> sched</span><span style="color:#9ECBFF"> freq</span><span style="color:#9ECBFF"> idle</span><span style="color:#9ECBFF"> power</span></span>
+<span class="line"><span style="color:#B392F0">sleep</span><span style="color:#79B8FF"> 60</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> atrace</span><span style="color:#79B8FF"> --async_stop</span><span style="color:#79B8FF"> -z</span><span style="color:#79B8FF"> -o</span><span style="color:#9ECBFF"> /data/local/tmp/display_power.html</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> pull</span><span style="color:#9ECBFF"> /data/local/tmp/display_power.html</span><span style="color:#9ECBFF"> .</span></span></code></pre>
+<p>Perfetto 命令：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> perfetto</span><span style="color:#79B8FF"> \</span></span>
+<span class="line"><span style="color:#79B8FF">    -o</span><span style="color:#9ECBFF"> /data/misc/perfetto-traces/display_power.trace</span><span style="color:#79B8FF"> \</span></span>
+<span class="line"><span style="color:#79B8FF">    -t</span><span style="color:#9ECBFF"> 60s</span><span style="color:#79B8FF"> \</span></span>
+<span class="line"><span style="color:#9ECBFF">    sched</span><span style="color:#9ECBFF"> freq</span><span style="color:#9ECBFF"> idle</span><span style="color:#9ECBFF"> gfx</span><span style="color:#9ECBFF"> view</span><span style="color:#9ECBFF"> wm</span><span style="color:#9ECBFF"> power</span><span style="color:#9ECBFF"> am</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> pull</span><span style="color:#9ECBFF"> /data/misc/perfetto-traces/display_power.trace</span><span style="color:#9ECBFF"> .</span></span></code></pre>
+<p>如果要更完整，可以加入 ftrace event：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>sched/sched_switch</span></span>
+<span class="line"><span>sched/sched_wakeup</span></span>
+<span class="line"><span>power/cpu_frequency</span></span>
+<span class="line"><span>power/cpu_idle</span></span>
+<span class="line"><span>power/suspend_resume</span></span>
+<span class="line"><span>freq/gpu_frequency</span></span>
+<span class="line"><span>kgsl/kgsl_pwrlevel</span></span>
+<span class="line"><span>mdss/mdss_* 或 drm/drm_vblank_event</span></span></code></pre>
+<p>具体 event 以设备为准：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'ls /sys/kernel/tracing/events 2>/dev/null || ls /sys/kernel/debug/tracing/events'</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'find /sys/kernel/tracing/events -maxdepth 2 -type d 2>/dev/null | grep -Ei "kgsl|gpu|mdss|drm|power|freq"'</span></span></code></pre>
+<p>Perfetto 里要看：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>轨道</th><th>判断点</th></tr></thead><tbody><tr><td>App UI thread</td><td>是否每帧执行 traversal/input/animation</td></tr><tr><td>RenderThread</td><td>是否每 VSYNC 都 drawFrame</td></tr><tr><td>SurfaceFlinger</td><td>是否每帧 commit/composite</td></tr><tr><td>FrameTimeline</td><td>是否持续产生 frame，是否 jank</td></tr><tr><td>CPU freq</td><td>小核/大核是否降不下来</td></tr><tr><td>CPU idle</td><td>亮屏静置时是否还能进 shallow/deep idle</td></tr><tr><td>GPU freq</td><td>是否持续高频</td></tr><tr><td>IRQ/vsync</td><td>是否固定周期唤醒</td></tr><tr><td>thermal</td><td>温升后是否限频/降亮度</td></tr></tbody></table>
+<h2 id="亮屏静置排查法">亮屏静置排查法</h2>
+<p>做一个最小矩阵：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Case</th><th>亮度</th><th>刷新率</th><th>画面</th><th>网络</th><th>目的</th></tr></thead><tbody><tr><td>A</td><td>低</td><td>固定 60</td><td>黑图/暗图</td><td>飞行模式</td><td>看系统和面板低负载基线</td></tr><tr><td>B</td><td>中</td><td>固定 60</td><td>白图/亮图</td><td>飞行模式</td><td>看面板/背光增长</td></tr><tr><td>C</td><td>中</td><td>固定 60</td><td>桌面静置</td><td>飞行模式</td><td>看 SystemUI/壁纸是否刷新</td></tr><tr><td>D</td><td>中</td><td>固定 60</td><td>目标 App 静置</td><td>飞行模式</td><td>看 App 是否暗中刷新</td></tr><tr><td>E</td><td>中</td><td>自适应/高刷</td><td>目标 App 静置</td><td>飞行模式</td><td>看刷新率策略影响</td></tr><tr><td>F</td><td>中</td><td>固定 60</td><td>目标 App</td><td>开网络</td><td>看网络叠加</td></tr></tbody></table>
+<p>每个 case 都记录：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>dumpsys power</span></span>
+<span class="line"><span>dumpsys display</span></span>
+<span class="line"><span>dumpsys SurfaceFlinger</span></span>
+<span class="line"><span>dumpsys gfxinfo &#x3C;package></span></span>
+<span class="line"><span>dumpsys thermalservice</span></span>
+<span class="line"><span>Perfetto trace</span></span>
+<span class="line"><span>电流或电量变化</span></span>
+<span class="line"><span>电池温度开始/结束</span></span></code></pre>
+<h2 id="案例一亮度导致电流高">案例一：亮度导致电流高</h2>
+<p>现象：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>同一静态页面，亮度从 20 提到 220，电流明显上升。</span></span>
+<span class="line"><span>Perfetto 中 App、RenderThread、SurfaceFlinger 基本空闲。</span></span>
+<span class="line"><span>CPU/GPU 频率可下降。</span></span></code></pre>
+<p>分析：</p>
+<p>这种 case 主因是屏幕本身，不是系统持续刷新。尤其 OLED 白底、高 APL 或 LCD 高背光，亮度就是主要电流来源。</p>
+<p>验证：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> settings</span><span style="color:#9ECBFF"> put</span><span style="color:#9ECBFF"> system</span><span style="color:#9ECBFF"> screen_brightness_mode</span><span style="color:#79B8FF"> 0</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> settings</span><span style="color:#9ECBFF"> put</span><span style="color:#9ECBFF"> system</span><span style="color:#9ECBFF"> screen_brightness</span><span style="color:#79B8FF"> 20</span></span>
+<span class="line"><span style="color:#B392F0">sleep</span><span style="color:#79B8FF"> 60</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> settings</span><span style="color:#9ECBFF"> put</span><span style="color:#9ECBFF"> system</span><span style="color:#9ECBFF"> screen_brightness</span><span style="color:#79B8FF"> 220</span></span>
+<span class="line"><span style="color:#B392F0">sleep</span><span style="color:#79B8FF"> 60</span></span></code></pre>
+<p>报告写法：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>固定刷新率和画面内容后，电流随亮度阶梯显著上升。</span></span>
+<span class="line"><span>Perfetto 未显示持续 App/SF 合成负载，CPU/GPU 可进入低频。</span></span>
+<span class="line"><span>因此该场景主导因素为面板/背光亮度，而不是 Framework 或 App 持续刷新。</span></span></code></pre>
+<h2 id="案例二页面看似静止但持续刷新">案例二：页面看似静止但持续刷新</h2>
+<p>现象：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>目标 App 页面肉眼看起来静止。</span></span>
+<span class="line"><span>Perfetto 中 UI thread/RenderThread 每 16.6ms 活跃。</span></span>
+<span class="line"><span>SurfaceFlinger 每帧 commit/composite。</span></span>
+<span class="line"><span>CPU/GPU 频率无法下降。</span></span></code></pre>
+<p>常见原因：</p>
+<ul>
+<li>无限动画没有停止。</li>
+<li>Lottie/GIF/WebView 动画在屏幕上或屏幕外仍刷新。</li>
+<li><code>invalidate()</code> 周期调用。</li>
+<li>自定义 View 在 <code>onDraw()</code> 里触发下一帧。</li>
+<li>Compose/RecyclerView 状态变化导致重组/重绘。</li>
+<li>TextureView/SurfaceView 持续出帧。</li>
+<li>视频/地图/相机预览没有暂停。</li>
+</ul>
+<p>排查：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> gfxinfo</span><span style="color:#F97583"> &#x3C;</span><span style="color:#9ECBFF">packag</span><span style="color:#E1E4E8">e</span><span style="color:#F97583">></span><span style="color:#9ECBFF"> framestats</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> framestats.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> SurfaceFlinger</span><span style="color:#79B8FF"> --latency-clear</span></span>
+<span class="line"><span style="color:#B392F0">sleep</span><span style="color:#79B8FF"> 10</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> SurfaceFlinger</span><span style="color:#79B8FF"> --latency</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> sf_latency.txt</span></span></code></pre>
+<p>报告写法：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>亮屏静置电流高不是背光单独导致。</span></span>
+<span class="line"><span>Perfetto 显示目标页面在静置期间仍以约 60fps 提交 frame，RenderThread 和 SurfaceFlinger 周期性运行。</span></span>
+<span class="line"><span>关闭页面动画后，SF composite 次数和 CPU/GPU 频率下降，电流回落。</span></span>
+<span class="line"><span>建议 App 在不可见或静止状态停止动画/定时 invalidate，并避免后台 Surface 持续出帧。</span></span></code></pre>
+<h2 id="案例三动态壁纸或systemui刷新">案例三：动态壁纸或SystemUI刷新</h2>
+<p>现象：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>桌面静置电流高。</span></span>
+<span class="line"><span>切到纯黑静态图片后电流下降。</span></span>
+<span class="line"><span>Perfetto 中 SystemUI 或 launcher 仍在周期性绘制。</span></span></code></pre>
+<p>分析：</p>
+<p>桌面不是天然静态。动态壁纸、时钟小组件、天气动效、充电动画、通知动效都可能持续刷新。</p>
+<p>命令：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> window</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -Ei</span><span style="color:#9ECBFF"> "mCurrentFocus|Wallpaper|Launcher|SystemUI"</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> SurfaceFlinger</span><span style="color:#79B8FF"> --list</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> gfxinfo</span><span style="color:#9ECBFF"> com.android.systemui</span></span></code></pre>
+<p>报告写法：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>问题发生在 launcher 桌面静置场景，但目标 App 未运行。</span></span>
+<span class="line"><span>替换为静态壁纸后，SurfaceFlinger 周期合成减少，电流下降。</span></span>
+<span class="line"><span>该问题应归类为 SystemUI/Launcher/Wallpaper 刷新导致的亮屏静置功耗，而不是普通后台任务功耗。</span></span></code></pre>
+<h2 id="案例四刷新率没有降下来">案例四：刷新率没有降下来</h2>
+<p>现象：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>静态页面仍保持 120Hz 或高 render rate。</span></span>
+<span class="line"><span>固定 60Hz 后电流明显下降。</span></span>
+<span class="line"><span>dumpsys display 中存在 high refresh 相关 vote。</span></span></code></pre>
+<p>分析：</p>
+<p>要分清两件事：</p>
+<ul>
+<li>Physical refresh rate：panel/HWC 的物理刷新率。</li>
+<li>Render frame rate：App/SF 内容渲染帧率。</li>
+</ul>
+<p>高物理刷新率会增加 panel/display pipeline 功耗；高 render frame rate 会增加 App/SF/GPU/CPU 工作。两者可能一致，也可能不同。</p>
+<p>排查：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> display</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -Ei</span><span style="color:#9ECBFF"> "RefreshRate|DisplayModeDirector|vote|DesiredDisplayMode"</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> SurfaceFlinger</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -Ei</span><span style="color:#9ECBFF"> "refresh|fps|mode|Scheduler"</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> settings</span><span style="color:#9ECBFF"> get</span><span style="color:#9ECBFF"> system</span><span style="color:#9ECBFF"> peak_refresh_rate</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> settings</span><span style="color:#9ECBFF"> get</span><span style="color:#9ECBFF"> system</span><span style="color:#9ECBFF"> min_refresh_rate</span></span></code></pre>
+<p>报告写法：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>目标页面静置时，DisplayModeDirector 的 vote 使显示保持高刷新率。</span></span>
+<span class="line"><span>固定 60Hz 后，panel/display pipeline 电流下降，同时 SF/CPU 负载没有明显变化。</span></span>
+<span class="line"><span>因此该 case 主因是刷新率策略未降，而不是 App 持续渲染。</span></span></code></pre>
+<p>如果固定 60Hz 后电流仍高，则要回到持续刷新、GPU 合成或亮度/HBM。</p>
+<h2 id="案例五gpu合成比例高">案例五：GPU合成比例高</h2>
+<p>现象：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>App 帧率正常，但 GPU 频率较高。</span></span>
+<span class="line"><span>SurfaceFlinger/HWC dump 显示 client composition 增加。</span></span>
+<span class="line"><span>复杂透明、模糊、圆角或多层 overlay 场景电流高。</span></span></code></pre>
+<p>分析：</p>
+<p>GPU 合成会让 GPU 和 DDR 都更忙。尤其 1080p/2K 高刷下，每帧读写大 buffer，内存带宽和功耗会明显上升。</p>
+<p>排查：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> SurfaceFlinger</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> sf_full.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'find /sys/class/kgsl -maxdepth 3 -type f 2>/dev/null | grep -Ei "gpuclk|gpubusy|pwr"'</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'find /sys/class/devfreq -maxdepth 2 -type f 2>/dev/null | grep cur_freq'</span></span></code></pre>
+<p>报告写法：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>目标页面没有异常高帧率，但 HWC 无法将主要图层走 device composition，导致 GPU client composition 比例上升。</span></span>
+<span class="line"><span>Perfetto 中 GPU 相关频率和 SF composite 时间增加。</span></span>
+<span class="line"><span>优化方向是减少透明叠层、模糊/阴影，降低 overlay 冲突，避免不必要的全屏 GPU 合成。</span></span></code></pre>
+<h2 id="案例六hdrhbm导致亮屏发热">案例六：HDR/HBM导致亮屏发热</h2>
+<p>现象：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>播放 HDR 视频或户外强光场景，屏幕亮度自动升高。</span></span>
+<span class="line"><span>dumpsys display 中出现 HDR/HBM 或 brightness modifier。</span></span>
+<span class="line"><span>几分钟后 thermal 触发，亮度下降或刷新率降低。</span></span></code></pre>
+<p>分析：</p>
+<p>HDR/HBM 不是普通亮度。它可能提高 panel 峰值亮度，也可能改变刷新率限制和热策略。DPC 中 HDR layer 会让 brightness range controller 给出 HDR brightness value，并给 BrightnessReason 加上 HDR modifier。</p>
+<p>排查：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> display</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -Ei</span><span style="color:#9ECBFF"> "HBM|HDR|brightness|BrightnessReason|throttl|thermal"</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> SurfaceFlinger</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -Ei</span><span style="color:#9ECBFF"> "HDR|dataspace|color|layer"</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> thermalservice</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> battery</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -i</span><span style="color:#9ECBFF"> temperature</span></span></code></pre>
+<p>报告写法：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>该场景在 HDR/HBM 下复现，亮度实际值高于普通 SDR 手动亮度。</span></span>
+<span class="line"><span>温度上升后出现 brightness throttling，随后屏幕亮度下降。</span></span>
+<span class="line"><span>问题属于显示高亮/HDR 热功耗耦合，不应和普通 SDR 亮屏静置电流直接比较。</span></span></code></pre>
+<h2 id="案例七视频播放功耗">案例七：视频播放功耗</h2>
+<p>视频播放要分清解码、合成、刷新率、亮度：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>场景</th><th>可能主因</th></tr></thead><tbody><tr><td>本地 SDR 视频</td><td>decoder + display</td></tr><tr><td>在线视频</td><td>decoder + network + display</td></tr><tr><td>HDR 视频</td><td>decoder + HDR/HBM + thermal</td></tr><tr><td>弹幕/浮层视频</td><td>decoder + GPU/SF 合成</td></tr><tr><td>高帧率视频</td><td>decode fps + display refresh</td></tr></tbody></table>
+<p>排查：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> media.codec</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> SurfaceFlinger</span><span style="color:#79B8FF"> --list</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> SurfaceFlinger</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> sf_video.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> netstats</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> netstats_video.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> display</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> display_video.txt</span></span></code></pre>
+<p>报告写法：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>关闭弹幕后，视频解码仍在，但 SF/GPU 合成压力下降，电流回落。</span></span>
+<span class="line"><span>说明主因不是 decoder，而是视频上层浮层导致 overlay 失效或 GPU 合成增加。</span></span></code></pre>
+<h2 id="案例八导航亮屏发热">案例八：导航亮屏发热</h2>
+<p>导航是亮屏功耗的叠加场景：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>高亮度 + GPS + 地图渲染 + 移动网络 + 语音 + 弱网重传 + 车内高温</span></span></code></pre>
+<p>分析时不能把所有电流都算给 Display。</p>
+<p>拆解方法：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Case</th><th>设置</th><th>目的</th></tr></thead><tbody><tr><td>地图静止 + 飞行模式</td><td>固定亮度</td><td>看地图渲染基础负载</td></tr><tr><td>地图导航 + GPS + Wi-Fi</td><td>固定亮度</td><td>看定位和地图刷新</td></tr><tr><td>地图导航 + 移动数据</td><td>固定亮度</td><td>看网络叠加</td></tr><tr><td>同场景降低亮度</td><td>固定网络</td><td>看显示亮度贡献</td></tr><tr><td>同场景固定低刷新</td><td>固定亮度</td><td>看刷新率贡献</td></tr></tbody></table>
+<p>报告写法：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>导航场景功耗由显示、定位、网络和地图渲染叠加。</span></span>
+<span class="line"><span>固定亮度后，移动数据弱网场景电流仍明显高于离线地图，说明网络/定位贡献较大。</span></span>
+<span class="line"><span>降低亮度后电流下降 xx，说明显示仍是重要贡献项。</span></span></code></pre>
+<h2 id="thermal反向影响display">Thermal反向影响Display</h2>
+<p>功耗和热在亮屏场景里是强耦合。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[High brightness]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B[High refresh rate]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C[GPU composition]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D[CPU/GPU/DDR power]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E[Skin temperature rises]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F[Thermal policy]</span></span>
+<span class="line"><span style="color:#E1E4E8">    G[Brightness throttling]</span></span>
+<span class="line"><span style="color:#E1E4E8">    H[Refresh rate throttling]</span></span>
+<span class="line"><span style="color:#E1E4E8">    I[CPU/GPU frequency limit]</span></span>
+<span class="line"><span style="color:#E1E4E8">    J[User sees dim or frame drop]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    A --> E</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> D</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> D</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> F</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> G</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> H</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> I</span></span>
+<span class="line"><span style="color:#E1E4E8">    G --> J</span></span>
+<span class="line"><span style="color:#E1E4E8">    H --> J</span></span>
+<span class="line"><span style="color:#E1E4E8">    I --> J</span></span></code></pre>
+<p>这会让亮屏功耗曲线出现“前高后低”：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>刚开始：亮度高、频率高、电流高</span></span>
+<span class="line"><span>几分钟后：温度升高，thermal 降亮度/限频/降刷新率</span></span>
+<span class="line"><span>后半段：电流下降，但体验变差</span></span></code></pre>
+<p>所以报告要同时给：</p>
+<ul>
+<li>开始电流。</li>
+<li>稳态电流。</li>
+<li>温度曲线。</li>
+<li>是否触发 brightness throttling。</li>
+<li>是否触发 refresh rate thermal vote。</li>
+<li>是否触发 CPU/GPU thermal limit。</li>
+</ul>
+<h2 id="qcom设备注意点">QCOM设备注意点</h2>
+<p>QCOM 平台亮屏功耗常见观察点：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>模块</th><th>可能节点/命令</th></tr></thead><tbody><tr><td>CPU</td><td><code>/sys/devices/system/cpu/cpufreq/policy*/scaling_cur_freq</code></td></tr><tr><td>GPU</td><td><code>/sys/class/kgsl/kgsl-3d0/gpuclk</code>、<code>gpubusy</code></td></tr><tr><td>DDR/devfreq</td><td><code>/sys/class/devfreq/*/cur_freq</code></td></tr><tr><td>Display/DRM/MDSS trace</td><td><code>/sys/kernel/tracing/events/*</code> 中 <code>mdss</code>、<code>drm</code>、<code>sde</code></td></tr><tr><td>Thermal</td><td><code>dumpsys thermalservice</code>、<code>/sys/class/thermal/thermal_zone*</code></td></tr></tbody></table>
+<p>先发现节点：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'find /sys/class/kgsl /sys/class/devfreq /sys/class/thermal -maxdepth 3 -type f 2>/dev/null | head -200'</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'find /sys/kernel/tracing/events -maxdepth 2 -type d 2>/dev/null | grep -Ei "kgsl|mdss|sde|drm|thermal|power"'</span></span></code></pre>
+<p>不能把某个路径写成所有 QCOM 设备通用。msm8998、sm8250、sm8550 的节点和 trace event 都可能不同。</p>
+<h2 id="完整采集脚本">完整采集脚本</h2>
+<p>亮屏测试可以本地落盘，避免一直连 USB 影响热和电流。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#6A737D">#!/system/bin/sh</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">OUT</span><span style="color:#F97583">=</span><span style="color:#9ECBFF">/data/local/tmp/display_power_</span><span style="color:#E1E4E8">$(</span><span style="color:#B392F0">date</span><span style="color:#9ECBFF"> +%Y%m%d_%H%M%S</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">DURATION</span><span style="color:#F97583">=</span><span style="color:#FFAB70">${1</span><span style="color:#F97583">:-</span><span style="color:#FFAB70">300}</span></span>
+<span class="line"><span style="color:#E1E4E8">PKG</span><span style="color:#F97583">=</span><span style="color:#FFAB70">${2</span><span style="color:#F97583">:-</span><span style="color:#FFAB70">}</span></span>
+<span class="line"><span style="color:#B392F0">mkdir</span><span style="color:#79B8FF"> -p</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">"</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">date</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/meta.txt"</span></span>
+<span class="line"><span style="color:#B392F0">getprop</span><span style="color:#9ECBFF"> ro.product.device</span><span style="color:#F97583"> >></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/meta.txt"</span></span>
+<span class="line"><span style="color:#B392F0">getprop</span><span style="color:#9ECBFF"> ro.board.platform</span><span style="color:#F97583"> >></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/meta.txt"</span></span>
+<span class="line"><span style="color:#B392F0">getprop</span><span style="color:#9ECBFF"> ro.build.version.release</span><span style="color:#F97583"> >></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/meta.txt"</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> power</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/power_before.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> display</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/display_before.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> SurfaceFlinger</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/sf_before.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> thermalservice</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/thermal_before.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> battery</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/battery_before.txt"</span></span>
+<span class="line"><span style="color:#B392F0">settings</span><span style="color:#9ECBFF"> get</span><span style="color:#9ECBFF"> system</span><span style="color:#9ECBFF"> screen_brightness_mode</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/brightness_mode.txt"</span></span>
+<span class="line"><span style="color:#B392F0">settings</span><span style="color:#9ECBFF"> get</span><span style="color:#9ECBFF"> system</span><span style="color:#9ECBFF"> screen_brightness</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/brightness_value.txt"</span></span>
+<span class="line"><span style="color:#B392F0">settings</span><span style="color:#9ECBFF"> get</span><span style="color:#9ECBFF"> system</span><span style="color:#9ECBFF"> peak_refresh_rate</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/peak_refresh_rate.txt"</span></span>
+<span class="line"><span style="color:#B392F0">settings</span><span style="color:#9ECBFF"> get</span><span style="color:#9ECBFF"> system</span><span style="color:#9ECBFF"> min_refresh_rate</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/min_refresh_rate.txt"</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">if</span><span style="color:#E1E4E8"> [ </span><span style="color:#F97583">-n</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$PKG</span><span style="color:#9ECBFF">"</span><span style="color:#E1E4E8"> ]; </span><span style="color:#F97583">then</span></span>
+<span class="line"><span style="color:#B392F0">    dumpsys</span><span style="color:#9ECBFF"> gfxinfo</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$PKG</span><span style="color:#9ECBFF">"</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/gfxinfo_before.txt"</span></span>
+<span class="line"><span style="color:#F97583">fi</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">sleep</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$DURATION</span><span style="color:#9ECBFF">"</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> power</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/power_after.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> display</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/display_after.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> SurfaceFlinger</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/sf_after.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> thermalservice</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/thermal_after.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> battery</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/battery_after.txt"</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">if</span><span style="color:#E1E4E8"> [ </span><span style="color:#F97583">-n</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$PKG</span><span style="color:#9ECBFF">"</span><span style="color:#E1E4E8"> ]; </span><span style="color:#F97583">then</span></span>
+<span class="line"><span style="color:#B392F0">    dumpsys</span><span style="color:#9ECBFF"> gfxinfo</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$PKG</span><span style="color:#9ECBFF">"</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/gfxinfo_after.txt"</span></span>
+<span class="line"><span style="color:#F97583">fi</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">tar</span><span style="color:#79B8FF"> -czf</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">.tar.gz"</span><span style="color:#79B8FF"> -C</span><span style="color:#9ECBFF"> "$(</span><span style="color:#B392F0">dirname</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">")"</span><span style="color:#9ECBFF"> "$(</span><span style="color:#B392F0">basename</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">")"</span></span>
+<span class="line"><span style="color:#79B8FF">echo</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">.tar.gz"</span></span></code></pre>
+<p>使用：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> push</span><span style="color:#9ECBFF"> collect_display_power.sh</span><span style="color:#9ECBFF"> /data/local/tmp/</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> chmod</span><span style="color:#79B8FF"> 755</span><span style="color:#9ECBFF"> /data/local/tmp/collect_display_power.sh</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'nohup /data/local/tmp/collect_display_power.sh 300 com.example.app >/data/local/tmp/display_power.nohup 2>&#x26;1 &#x26;'</span></span></code></pre>
+<h2 id="复盘报告写法">复盘报告写法</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>1. 场景</span></span>
+<span class="line"><span>   设备：</span></span>
+<span class="line"><span>   Android版本：</span></span>
+<span class="line"><span>   面板刷新率能力：</span></span>
+<span class="line"><span>   App/页面：</span></span>
+<span class="line"><span>   画面内容：</span></span>
+<span class="line"><span>   USB是否连接：</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>2. 控制变量</span></span>
+<span class="line"><span>   亮度模式：</span></span>
+<span class="line"><span>   亮度值：</span></span>
+<span class="line"><span>   实际亮度/HBM/HDR：</span></span>
+<span class="line"><span>   刷新率设置：</span></span>
+<span class="line"><span>   网络：</span></span>
+<span class="line"><span>   温度起止：</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>3. Display证据</span></span>
+<span class="line"><span>   dumpsys display brightness reason：</span></span>
+<span class="line"><span>   HBM/HDR/throttling：</span></span>
+<span class="line"><span>   DisplayModeDirector votes：</span></span>
+<span class="line"><span>   当前/期望 display mode：</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>4. SF/HWC证据</span></span>
+<span class="line"><span>   SurfaceFlinger 是否持续 commit/composite：</span></span>
+<span class="line"><span>   Layer 是否持续 buffer update：</span></span>
+<span class="line"><span>   是否高刷新：</span></span>
+<span class="line"><span>   device/client composition 比例：</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>5. App证据</span></span>
+<span class="line"><span>   UI thread 是否持续工作：</span></span>
+<span class="line"><span>   RenderThread 是否持续 drawFrame：</span></span>
+<span class="line"><span>   gfxinfo framestats：</span></span>
+<span class="line"><span>   是否有动画/视频/TextureView/SurfaceView：</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>6. 平台证据</span></span>
+<span class="line"><span>   CPU/GPU/DDR频率：</span></span>
+<span class="line"><span>   CPU idle：</span></span>
+<span class="line"><span>   thermal状态：</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>7. 结论</span></span>
+<span class="line"><span>   主因是亮度/面板？</span></span>
+<span class="line"><span>   主因是刷新率？</span></span>
+<span class="line"><span>   主因是持续刷新？</span></span>
+<span class="line"><span>   主因是GPU合成？</span></span>
+<span class="line"><span>   是否与热策略耦合？</span></span></code></pre>
+<h2 id="我会这样说明">我会这样说明</h2>
+<p>如果被问到“亮屏功耗怎么分析”，我会这样回答：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>我会先固定亮度、刷新率、网络和温度，把变量收住。</span></span>
+<span class="line"><span>然后把亮屏功耗拆成两条链路：一条是 DisplayPowerController 管的亮度和屏幕电源状态，另一条是 App 到 SurfaceFlinger 到 HWC 的帧生产和合成链路。</span></span>
+<span class="line"><span>如果电流随亮度阶梯明显变化，而 CPU/GPU/SF 都比较闲，主因偏面板/背光。</span></span>
+<span class="line"><span>如果页面静止但 Perfetto 看到 RenderThread 和 SurfaceFlinger 每帧工作，就偏持续刷新。</span></span>
+<span class="line"><span>如果高刷固定 60Hz 后电流明显下降，就看 DisplayModeDirector vote 和 SF RefreshRateSelector。</span></span>
+<span class="line"><span>如果 GPU 频率高，就看 HWC overlay 是否失败、client composition 是否多。</span></span>
+<span class="line"><span>最后还要看 thermal，因为亮屏高功耗会反过来触发降亮度、降刷新率和限频。</span></span></code></pre>
+<p>如果问“为什么 screen_brightness 设置一样，功耗还不一样”，我会这样回答：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>screen_brightness 只是用户设置值，不一定等于最终 panel 亮度。</span></span>
+<span class="line"><span>DisplayPowerController 里还会叠加自动亮度、doze亮度、HBM/HDR、low power、dim、thermal brightness throttling、app override 等策略。</span></span>
+<span class="line"><span>所以要看 dumpsys display 里的实际 brightness、BrightnessReason、modifier、HBM/HDR 和 throttling 信息。</span></span>
+<span class="line"><span>另外 OLED 还跟画面内容 APL 有关，同样亮度下白底和黑底功耗差异很大。</span></span></code></pre>
+<h2 id="复盘">复盘</h2>
+<p>亮屏功耗不能只说“屏幕耗电”。更准确的拆法是：</p>
+<ul>
+<li>亮度/面板：亮度阶梯、HBM/HDR、OLED APL、背光。</li>
+<li>刷新率：DisplayModeDirector vote、SF RefreshRateSelector、physical/render rate。</li>
+<li>持续刷新：App UI thread、RenderThread、BufferQueue、SF commit/composite。</li>
+<li>合成方式：HWC overlay 还是 GPU client composition。</li>
+<li>平台负载：CPU/GPU/DDR 频率和 idle。</li>
+<li>热反馈：降亮度、降刷新率、限频。</li>
+</ul>
+<p>我的判断口径：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>亮屏功耗 = 屏幕发光成本 + 每帧生产成本 + 每帧合成成本 + 热策略反馈。</span></span></code></pre></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

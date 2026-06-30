@@ -1,0 +1,283 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>vmstat 统计了什么资源 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>vmstat 统计了什么资源</h1><div class="post-meta"><time datetime="2021-02-01T19:00:40.000Z">2021年2月1日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">vmstat</span></div></header><div class="article-body"><p><code>mm/vmstat.c</code> 提供了很多对内存方面的统计，在<code>/proc/vmstat</code> 上有体现。</p>
+<h2 id="vmstat-在不同维度上的统计">vmstat 在不同维度上的统计</h2>
+<p>先看 <code>drain_zonestat</code> 函数</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>void drain_zonestat(struct zone *zone, struct per_cpu_pageset *pset)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	int i;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	for (i = 0; i &#x3C; NR_VM_ZONE_STAT_ITEMS; i++)</span></span>
+<span class="line"><span>		if (pset->vm_stat_diff[i]) {</span></span>
+<span class="line"><span>			int v = pset->vm_stat_diff[i];</span></span>
+<span class="line"><span>			pset->vm_stat_diff[i] = 0;</span></span>
+<span class="line"><span>			atomic_long_add(v, &#x26;zone->vm_stat[i]);</span></span>
+<span class="line"><span>			atomic_long_add(v, &#x26;vm_zone_stat[i]);</span></span>
+<span class="line"><span>		}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>#ifdef CONFIG_NUMA</span></span>
+<span class="line"><span>	for (i = 0; i &#x3C; NR_VM_NUMA_STAT_ITEMS; i++)</span></span>
+<span class="line"><span>		if (pset->vm_numa_stat_diff[i]) {</span></span>
+<span class="line"><span>			int v = pset->vm_numa_stat_diff[i];</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>			pset->vm_numa_stat_diff[i] = 0;</span></span>
+<span class="line"><span>			atomic_long_add(v, &#x26;zone->vm_numa_stat[i]);</span></span>
+<span class="line"><span>			atomic_long_add(v, &#x26;vm_numa_stat[i]);</span></span>
+<span class="line"><span>		}</span></span>
+<span class="line"><span>#endif</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>可以发现 <code>struct per_cpu_pageset->vm_stat_diff[NR_VM_ZONE_STAT_ITEMS]</code> <code>zone->vm_stat[NR_VM_ZONE_STAT_ITEMS]</code> <code>vm_zone_stat[NR_VM_ZONE_STAT_ITEMS]</code> 是不同维度上，对同一类信息的统计 — vm 虚拟内存的使用情况的监控</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>enum zone_stat_item {</span></span>
+<span class="line"><span>	/* First 128 byte cacheline (assuming 64 bit words) */</span></span>
+<span class="line"><span>	NR_FREE_PAGES,</span></span>
+<span class="line"><span>	NR_ZONE_LRU_BASE, /* Used only for compaction and reclaim retry */</span></span>
+<span class="line"><span>	NR_ZONE_INACTIVE_ANON = NR_ZONE_LRU_BASE,</span></span>
+<span class="line"><span>	NR_ZONE_ACTIVE_ANON,</span></span>
+<span class="line"><span>	NR_ZONE_INACTIVE_FILE,</span></span>
+<span class="line"><span>	NR_ZONE_ACTIVE_FILE,</span></span>
+<span class="line"><span>	NR_ZONE_UNEVICTABLE,</span></span>
+<span class="line"><span>	NR_ZONE_WRITE_PENDING,	/* Count of dirty, writeback and unstable pages */</span></span>
+<span class="line"><span>	NR_MLOCK,		/* mlock()ed pages found and moved off LRU */</span></span>
+<span class="line"><span>	/* Second 128 byte cacheline */</span></span>
+<span class="line"><span>	NR_BOUNCE,</span></span>
+<span class="line"><span>#if IS_ENABLED(CONFIG_ZSMALLOC)</span></span>
+<span class="line"><span>	NR_ZSPAGES,		/* allocated in zsmalloc */</span></span>
+<span class="line"><span>#endif</span></span>
+<span class="line"><span>	NR_FREE_CMA_PAGES,</span></span>
+<span class="line"><span>	NR_VM_ZONE_STAT_ITEMS };</span></span></code></pre>
+<p>对应实际系统中<code>/proc/vmstat</code>的文件</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Inspiron-5548@ubuntu: ~/workspace# cat /proc/vmstat | grep zone</span></span>
+<span class="line"><span>nr_zone_inactive_anon 6569</span></span>
+<span class="line"><span>nr_zone_active_anon 317170</span></span>
+<span class="line"><span>nr_zone_inactive_file 211371</span></span>
+<span class="line"><span>nr_zone_active_file 138953</span></span>
+<span class="line"><span>nr_zone_unevictable 84539</span></span>
+<span class="line"><span>nr_zone_write_pending 35</span></span>
+<span class="line"><span>zone_reclaim_failed 0</span></span>
+<span class="line"><span>Inspiron-5548@ubuntu: ~/workspace#</span></span></code></pre>
+<p><code>struct per_cpu_pageset->vm_numa_stat_diff[NR_VM_NUMA_STAT_ITEMS]</code> <code>zone->vm_numa_stat[NR_VM_NUMA_STAT_ITEMS]</code> <code>vm_numa_stat[NR_VM_NUMA_STAT_ITEMS]</code> 也是不同维度上，对同一类信息的统计 — numa 内存分配行为的监控</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>enum numa_stat_item {</span></span>
+<span class="line"><span>	NUMA_HIT,		/* allocated in intended node */</span></span>
+<span class="line"><span>	NUMA_MISS,		/* allocated in non intended node */</span></span>
+<span class="line"><span>	NUMA_FOREIGN,		/* was intended here, hit elsewhere */</span></span>
+<span class="line"><span>	NUMA_INTERLEAVE_HIT,	/* interleaver preferred this zone */</span></span>
+<span class="line"><span>	NUMA_LOCAL,		/* allocation from local node */</span></span>
+<span class="line"><span>	NUMA_OTHER,		/* allocation from other node */</span></span>
+<span class="line"><span>	NR_VM_NUMA_STAT_ITEMS</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<p>对应实际系统中<code>/proc/vmstat</code>的文件</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Inspiron-5548@ubuntu: ~/workspace# cat /proc/vmstat | grep numa</span></span>
+<span class="line"><span>numa_hit 2605582</span></span>
+<span class="line"><span>numa_miss 0</span></span>
+<span class="line"><span>numa_foreign 0</span></span>
+<span class="line"><span>numa_interleave 45536</span></span>
+<span class="line"><span>numa_local 2605582</span></span>
+<span class="line"><span>numa_other 0</span></span>
+<span class="line"><span>numa_pte_updates 0</span></span>
+<span class="line"><span>numa_huge_pte_updates 0</span></span>
+<span class="line"><span>numa_hint_faults 0</span></span>
+<span class="line"><span>numa_hint_faults_local 0</span></span>
+<span class="line"><span>numa_pages_migrated 0</span></span>
+<span class="line"><span>Inspiron-5548@ubuntu: ~/workspace#</span></span></code></pre>
+<p>上面<code>/proc/vmstat</code> 是整个系统的情况，对应 <code>vm_zone_stat</code> 与 <code>vm_numa_stat</code>。</p>
+<p><code>/proc/zoneinfo</code>是 对应的是<code>zone</code> 和 <code>pcp</code>的情况，对应的是 <code>zone->vm_stat</code> 与 <code>zone->vm_numa_stat</code>， 和 <code>per_cpu_pageset->vm_stat_diff</code> 与 <code>per_cpu_pageset->vm_numa_stat_diff</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Inspiron-5548@ubuntu: ~/workspace# cat /proc/zoneinfo</span></span>
+<span class="line"><span>Node 0, zone   Normal</span></span>
+<span class="line"><span>  pages free     9557</span></span>
+<span class="line"><span>        min      6807</span></span>
+<span class="line"><span>        low      8508</span></span>
+<span class="line"><span>        high     10209</span></span>
+<span class="line"><span>        spanned  389120</span></span>
+<span class="line"><span>        present  389120</span></span>
+<span class="line"><span>        managed  370822</span></span>
+<span class="line"><span>        protection: (0, 0, 0, 0, 0)</span></span>
+<span class="line"><span>      nr_free_pages 9557</span></span>
+<span class="line"><span>      nr_zone_inactive_anon 224</span></span>
+<span class="line"><span>      nr_zone_active_anon 114422</span></span>
+<span class="line"><span>      nr_zone_inactive_file 120358</span></span>
+<span class="line"><span>      nr_zone_active_file 58547</span></span>
+<span class="line"><span>      nr_zone_unevictable 7191</span></span>
+<span class="line"><span>      nr_zone_write_pending 3</span></span>
+<span class="line"><span>      nr_mlock     4</span></span>
+<span class="line"><span>      nr_page_table_pages 2879</span></span>
+<span class="line"><span>      nr_kernel_stack 8016</span></span>
+<span class="line"><span>      nr_bounce    0</span></span>
+<span class="line"><span>      nr_zspages   0</span></span>
+<span class="line"><span>      nr_free_cma  0</span></span>
+<span class="line"><span>      numa_hit     870583</span></span>
+<span class="line"><span>      numa_miss    0</span></span>
+<span class="line"><span>      numa_foreign 0</span></span>
+<span class="line"><span>      numa_interleave 45534</span></span>
+<span class="line"><span>      numa_local   870583</span></span>
+<span class="line"><span>      numa_other   0</span></span>
+<span class="line"><span>  pagesets</span></span>
+<span class="line"><span>    cpu: 0</span></span>
+<span class="line"><span>              count: 293</span></span>
+<span class="line"><span>              high:  378</span></span>
+<span class="line"><span>              batch: 63</span></span>
+<span class="line"><span>  vm stats threshold: 30</span></span>
+<span class="line"><span>    cpu: 1</span></span>
+<span class="line"><span>              count: 293</span></span>
+<span class="line"><span>              high:  378</span></span>
+<span class="line"><span>              batch: 63</span></span>
+<span class="line"><span>  vm stats threshold: 30</span></span>
+<span class="line"><span>    cpu: 2</span></span>
+<span class="line"><span>              count: 234</span></span>
+<span class="line"><span>              high:  378</span></span>
+<span class="line"><span>              batch: 63</span></span>
+<span class="line"><span>  vm stats threshold: 30</span></span>
+<span class="line"><span>    cpu: 3</span></span>
+<span class="line"><span>              count: 338</span></span>
+<span class="line"><span>              high:  378</span></span>
+<span class="line"><span>              batch: 63</span></span>
+<span class="line"><span>  vm stats threshold: 30</span></span>
+<span class="line"><span>  node_unreclaimable:  0</span></span>
+<span class="line"><span>  start_pfn:           1048576</span></span></code></pre>
+<h2 id="全局统计的数据">全局统计的数据</h2>
+<p>可能和上面有些许冲突</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>atomic_long_t vm_zone_stat[NR_VM_ZONE_STAT_ITEMS] __cacheline_aligned_in_smp;</span></span>
+<span class="line"><span>atomic_long_t vm_numa_stat[NR_VM_NUMA_STAT_ITEMS] __cacheline_aligned_in_smp;</span></span>
+<span class="line"><span>atomic_long_t vm_node_stat[NR_VM_NODE_STAT_ITEMS] __cacheline_aligned_in_smp;</span></span></code></pre>
+<p>分别是 <code>zone</code> <code>numa</code> <code>node</code> 的统计信息，<code>zone</code> <code>numa</code> 上面都已经分析了
+这个 <code>node</code> 对应着 <code>/proc/zoneinfo</code> 开头信息</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Inspiron-5548@ubuntu: ~/workspace# cat /proc/zoneinfo</span></span>
+<span class="line"><span>Node 0, zone      DMA</span></span>
+<span class="line"><span>  per-node stats</span></span>
+<span class="line"><span>      nr_inactive_anon 6591</span></span>
+<span class="line"><span>      nr_active_anon 315599</span></span>
+<span class="line"><span>      nr_inactive_file 212218</span></span>
+<span class="line"><span>      nr_active_file 139142</span></span>
+<span class="line"><span>      nr_unevictable 84780</span></span>
+<span class="line"><span>      nr_slab_reclaimable 23493</span></span>
+<span class="line"><span>      nr_slab_unreclaimable 26794</span></span>
+<span class="line"><span>      nr_isolated_anon 0</span></span>
+<span class="line"><span>      nr_isolated_file 0</span></span>
+<span class="line"><span>      workingset_nodes 0</span></span>
+<span class="line"><span>      workingset_refault 0</span></span>
+<span class="line"><span>      workingset_activate 0</span></span>
+<span class="line"><span>      workingset_restore 0</span></span>
+<span class="line"><span>      workingset_nodereclaim 0</span></span>
+<span class="line"><span>      nr_anon_pages 332534</span></span>
+<span class="line"><span>      nr_mapped    104733</span></span>
+<span class="line"><span>      nr_file_pages 425795</span></span>
+<span class="line"><span>      nr_dirty     7</span></span>
+<span class="line"><span>      nr_writeback 0</span></span>
+<span class="line"><span>      nr_writeback_temp 0</span></span>
+<span class="line"><span>      nr_shmem     95530</span></span>
+<span class="line"><span>      nr_shmem_hugepages 0</span></span>
+<span class="line"><span>      nr_shmem_pmdmapped 0</span></span>
+<span class="line"><span>      nr_file_hugepages 0</span></span>
+<span class="line"><span>      nr_file_pmdmapped 0</span></span>
+<span class="line"><span>      nr_anon_transparent_hugepages 0</span></span>
+<span class="line"><span>      nr_vmscan_write 0</span></span>
+<span class="line"><span>      nr_vmscan_immediate_reclaim 0</span></span>
+<span class="line"><span>      nr_dirtied   81310</span></span>
+<span class="line"><span>      nr_written   72963</span></span>
+<span class="line"><span>      nr_kernel_misc_reclaimable 0</span></span>
+<span class="line"><span>      nr_foll_pin_acquired 0</span></span>
+<span class="line"><span>      nr_foll_pin_released 0</span></span>
+<span class="line"><span>  pages free     3788</span></span></code></pre>
+<p>与定义 也十分相符</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span></span></span>
+<span class="line"><span>enum node_stat_item {</span></span>
+<span class="line"><span>	NR_LRU_BASE,</span></span>
+<span class="line"><span>	NR_INACTIVE_ANON = NR_LRU_BASE, /* must match order of LRU_[IN]ACTIVE */</span></span>
+<span class="line"><span>	NR_ACTIVE_ANON,		/*  "     "     "   "       "         */</span></span>
+<span class="line"><span>	NR_INACTIVE_FILE,	/*  "     "     "   "       "         */</span></span>
+<span class="line"><span>	NR_ACTIVE_FILE,		/*  "     "     "   "       "         */</span></span>
+<span class="line"><span>	NR_UNEVICTABLE,		/*  "     "     "   "       "         */</span></span>
+<span class="line"><span>	NR_SLAB_RECLAIMABLE_B,</span></span>
+<span class="line"><span>	NR_SLAB_UNRECLAIMABLE_B,</span></span>
+<span class="line"><span>	NR_ISOLATED_ANON,	/* Temporary isolated pages from anon lru */</span></span>
+<span class="line"><span>	NR_ISOLATED_FILE,	/* Temporary isolated pages from file lru */</span></span>
+<span class="line"><span>	WORKINGSET_NODES,</span></span>
+<span class="line"><span>	WORKINGSET_REFAULT_BASE,</span></span>
+<span class="line"><span>	WORKINGSET_REFAULT_ANON = WORKINGSET_REFAULT_BASE,</span></span>
+<span class="line"><span>	WORKINGSET_REFAULT_FILE,</span></span>
+<span class="line"><span>	WORKINGSET_ACTIVATE_BASE,</span></span>
+<span class="line"><span>	WORKINGSET_ACTIVATE_ANON = WORKINGSET_ACTIVATE_BASE,</span></span>
+<span class="line"><span>	WORKINGSET_ACTIVATE_FILE,</span></span>
+<span class="line"><span>	WORKINGSET_RESTORE_BASE,</span></span>
+<span class="line"><span>	WORKINGSET_RESTORE_ANON = WORKINGSET_RESTORE_BASE,</span></span>
+<span class="line"><span>	WORKINGSET_RESTORE_FILE,</span></span>
+<span class="line"><span>	WORKINGSET_NODERECLAIM,</span></span>
+<span class="line"><span>	NR_ANON_MAPPED,	/* Mapped anonymous pages */</span></span>
+<span class="line"><span>	NR_FILE_MAPPED,	/* pagecache pages mapped into pagetables.</span></span>
+<span class="line"><span>			   only modified from process context */</span></span>
+<span class="line"><span>	NR_FILE_PAGES,</span></span>
+<span class="line"><span>	NR_FILE_DIRTY,</span></span>
+<span class="line"><span>	NR_WRITEBACK,</span></span>
+<span class="line"><span>	NR_WRITEBACK_TEMP,	/* Writeback using temporary buffers */</span></span>
+<span class="line"><span>	NR_SHMEM,		/* shmem pages (included tmpfs/GEM pages) */</span></span>
+<span class="line"><span>	NR_SHMEM_THPS,</span></span>
+<span class="line"><span>	NR_SHMEM_PMDMAPPED,</span></span>
+<span class="line"><span>	NR_FILE_THPS,</span></span>
+<span class="line"><span>	NR_FILE_PMDMAPPED,</span></span>
+<span class="line"><span>	NR_ANON_THPS,</span></span>
+<span class="line"><span>	NR_VMSCAN_WRITE,</span></span>
+<span class="line"><span>	NR_VMSCAN_IMMEDIATE,	/* Prioritise for reclaim when writeback ends */</span></span>
+<span class="line"><span>	NR_DIRTIED,		/* page dirtyings since bootup */</span></span>
+<span class="line"><span>	NR_WRITTEN,		/* page writings since bootup */</span></span>
+<span class="line"><span>	NR_KERNEL_MISC_RECLAIMABLE,	/* reclaimable non-slab kernel pages */</span></span>
+<span class="line"><span>	NR_FOLL_PIN_ACQUIRED,	/* via: pin_user_page(), gup flag: FOLL_PIN */</span></span>
+<span class="line"><span>	NR_FOLL_PIN_RELEASED,	/* pages returned via unpin_user_page() */</span></span>
+<span class="line"><span>	NR_KERNEL_STACK_KB,	/* measured in KiB */</span></span>
+<span class="line"><span>#if IS_ENABLED(CONFIG_SHADOW_CALL_STACK)</span></span>
+<span class="line"><span>	NR_KERNEL_SCS_KB,	/* measured in KiB */</span></span>
+<span class="line"><span>#endif</span></span>
+<span class="line"><span>	NR_PAGETABLE,		/* used for pagetables */</span></span>
+<span class="line"><span>	NR_VM_NODE_STAT_ITEMS</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<p>atomic_long_t vm_zone_stat[NR_VM_ZONE_STAT_ITEMS] __cacheline_aligned_in_smp;
+atomic_long_t vm_numa_stat[NR_VM_NUMA_STAT_ITEMS] __cacheline_aligned_in_smp;
+atomic_long_t vm_node_stat[NR_VM_NODE_STAT_ITEMS] __cacheline_aligned_in_smp;</p>
+<p><code>vm_zone_stat</code> 主要是 统计各个zone的各种 anon file active inactive page的数量。
+<code>vm_numa_stat</code> 主要是 统计各个 node 节点上内存分配行为，是从本节点分配的，还是跨节点分配了内存。
+<code>vm_node_stat</code> 主要是 统计各个 node节点 的各种 anon file active inactive page的数量，还有各种类型 shmem dirty writeback的page数量</p>
+<h2 id="migrate-type-是来定义什么的">migrate type 是来定义什么的？</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>enum migratetype {</span></span>
+<span class="line"><span>	MIGRATE_UNMOVABLE,</span></span>
+<span class="line"><span>	MIGRATE_MOVABLE,</span></span>
+<span class="line"><span>	MIGRATE_RECLAIMABLE,</span></span>
+<span class="line"><span>	MIGRATE_PCPTYPES,	/* the number of types on the pcp lists */</span></span>
+<span class="line"><span>	MIGRATE_HIGHATOMIC = MIGRATE_PCPTYPES,</span></span>
+<span class="line"><span>	MIGRATE_TYPES</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<p>很明显 <code>migratetype</code> 是用来定义 伙伴系统中页面的，<code>order相同</code>情况下根据是否可以 <code>移动</code>，分成了几条 list，方便了后面各种 内存迁移，内存规整。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>struct free_area {</span></span>
+<span class="line"><span>	struct list_head	free_list[MIGRATE_TYPES];</span></span>
+<span class="line"><span>	unsigned long		nr_free;</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>struct zone {</span></span>
+<span class="line"><span>    struct free_area	free_area[MAX_ORDER];</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<h2 id="lruvec-是在哪个维度上">lruvec 是在哪个维度上？</h2>
+<p>2016年之前 <code>lru</code> 是基于<code>zone</code>这个维度上的，现在都是基于 <code>node</code>这个维度的</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>commit 75ef7184053989118d3814c558a9af62e7376a58</span></span>
+<span class="line"><span>Author: Mel Gorman &#x3C;mgorman@techsingularity.net></span></span>
+<span class="line"><span>Date:   Thu Jul 28 15:45:24 2016 -0700</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>    mm, vmstat: add infrastructure for per-node vmstats</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>    Patchset: "Move LRU page reclaim from zones to nodes v9"</span></span></code></pre>
+<p>先看定义</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>enum lru_list {</span></span>
+<span class="line"><span>	LRU_INACTIVE_ANON = LRU_BASE,</span></span>
+<span class="line"><span>	LRU_ACTIVE_ANON = LRU_BASE + LRU_ACTIVE,</span></span>
+<span class="line"><span>	LRU_INACTIVE_FILE = LRU_BASE + LRU_FILE,</span></span>
+<span class="line"><span>	LRU_ACTIVE_FILE = LRU_BASE + LRU_FILE + LRU_ACTIVE,</span></span>
+<span class="line"><span>	LRU_UNEVICTABLE,</span></span>
+<span class="line"><span>	NR_LRU_LISTS</span></span>
+<span class="line"><span>};</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>struct lruvec {</span></span>
+<span class="line"><span>	struct list_head		lists[NR_LRU_LISTS];</span></span>
+<span class="line"><span>	/* per lruvec lru_lock for memcg */</span></span>
+<span class="line"><span>	spinlock_t			lru_lock;</span></span>
+<span class="line"><span>#ifdef CONFIG_MEMCG</span></span>
+<span class="line"><span>	struct pglist_data *pgdat;</span></span>
+<span class="line"><span>#endif</span></span>
+<span class="line"><span>};</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>typedef struct pglist_data {</span></span>
+<span class="line"><span>	struct lruvec		__lruvec;</span></span>
+<span class="line"><span>} pg_data_t;</span></span></code></pre>
+<p>代码定义大多来自于<code>Linux 5.10</code></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

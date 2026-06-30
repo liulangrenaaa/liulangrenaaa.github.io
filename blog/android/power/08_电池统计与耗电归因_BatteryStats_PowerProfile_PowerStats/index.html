@@ -1,0 +1,1150 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>电池统计与耗电归因：BatteryStats、PowerProfile、PowerStats | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>电池统计与耗电归因：BatteryStats、PowerProfile、PowerStats</h1><div class="post-meta"><time datetime="2026-05-31T11:08:00.000Z">2026年5月31日</time><span> / android / power</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">android</span><span class="tag">power</span><span class="tag">batterystats</span><span class="tag">PowerProfile</span></div></header><div class="article-body"><p>BatteryStats 是 Android 功耗分析里最常用、也最容易被误读的系统。它很重要，但它不是电流仪，也不是“真相本身”。它是一套<strong>活动统计 + 能耗模型 + 归因规则</strong>。</p>
+<p>先概括一下：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>BatteryStats 记录谁在什么时候做了什么；</span></span>
+<span class="line"><span>BatteryUsageStats 把这些活动转换成各 UID / 各组件的耗电估算；</span></span>
+<span class="line"><span>PowerProfile 或 PowerStats HAL 提供能耗模型或硬件能量数据；</span></span>
+<span class="line"><span>最终排行只是线索，根因还要靠时间线和交叉证据确认。</span></span></code></pre>
+<p>如果只看“耗电排行第一”，很容易误判。比如 <code>system_server</code> 高，不一定是 system_server 自己在耗电，可能是它替 App 工作而 WorkSource 不完整；比如 Screen 高，不一定是显示驱动 bug，可能只是亮度和白底画面；比如 Mobile radio 高，不一定是 modem bug，可能是某 UID 弱网轮询。</p>
+<h2 id="总览">总览</h2>
+<p>BatteryStats 的数据链路可以分成四段：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>阶段</th><th>作用</th><th>典型数据</th></tr></thead><tbody><tr><td>事件记录</td><td>系统服务把活动事件记入 BatteryStatsImpl</td><td>wakelock、alarm、job、sensor、network、screen、radio</td></tr><tr><td>外部同步</td><td>从 kernel/HAL/network stats 拉取统计</td><td>CPU time、controller activity、network bytes、energy</td></tr><tr><td>功耗估算</td><td>PowerCalculator 按组件计算 mAh</td><td>CPU、screen、wakelock、wifi、mobile、sensor、idle</td></tr><tr><td>展示/归因</td><td>BatteryUsageStats / dumpsys 输出</td><td>UID 排行、组件耗电、history 时间线</td></tr></tbody></table>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    PMS[PowerManagerService]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Alarm[AlarmManagerService]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Job[JobSchedulerService]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Sensor[SensorService]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Net[NetworkStatsService]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Telephony[Telephony and Radio]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Display[DisplayPowerController]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Kernel[Kernel stats]</span></span>
+<span class="line"><span style="color:#E1E4E8">    PStats[PowerStats HAL]</span></span>
+<span class="line"><span style="color:#E1E4E8">    BSS[BatteryStatsService]</span></span>
+<span class="line"><span style="color:#E1E4E8">    BSI[BatteryStatsImpl]</span></span>
+<span class="line"><span style="color:#E1E4E8">    BUSP[BatteryUsageStatsProvider]</span></span>
+<span class="line"><span style="color:#E1E4E8">    PPC[PowerCalculators]</span></span>
+<span class="line"><span style="color:#E1E4E8">    PP[PowerProfile]</span></span>
+<span class="line"><span style="color:#E1E4E8">    BUS[BatteryUsageStats]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Dump[dumpsys batterystats]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    PMS --> BSS</span></span>
+<span class="line"><span style="color:#E1E4E8">    Alarm --> BSS</span></span>
+<span class="line"><span style="color:#E1E4E8">    Job --> BSS</span></span>
+<span class="line"><span style="color:#E1E4E8">    Sensor --> BSS</span></span>
+<span class="line"><span style="color:#E1E4E8">    Net --> BSS</span></span>
+<span class="line"><span style="color:#E1E4E8">    Telephony --> BSS</span></span>
+<span class="line"><span style="color:#E1E4E8">    Display --> BSS</span></span>
+<span class="line"><span style="color:#E1E4E8">    Kernel --> BSS</span></span>
+<span class="line"><span style="color:#E1E4E8">    PStats --> BSS</span></span>
+<span class="line"><span style="color:#E1E4E8">    BSS --> BSI</span></span>
+<span class="line"><span style="color:#E1E4E8">    BSI --> BUSP</span></span>
+<span class="line"><span style="color:#E1E4E8">    PP --> PPC</span></span>
+<span class="line"><span style="color:#E1E4E8">    PStats --> PPC</span></span>
+<span class="line"><span style="color:#E1E4E8">    BUSP --> PPC</span></span>
+<span class="line"><span style="color:#E1E4E8">    PPC --> BUS</span></span>
+<span class="line"><span style="color:#E1E4E8">    BUS --> Dump</span></span></code></pre>
+<p>这张图里最关键的是：<strong>BatteryStats 的输入来自很多模块，输出经过模型计算，不是单一原始数据。</strong></p>
+<h2 id="源码入口">源码入口</h2>
+<p>AOSP14 / LOS21 相关核心入口：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>模块</th><th>源码</th></tr></thead><tbody><tr><td>BatteryStatsService</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/am/BatteryStatsService.java:164:1">BatteryStatsService.java line 164</a></td></tr><tr><td>getBatteryUsageStats</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/am/BatteryStatsService.java:892:1">BatteryStatsService.java line 892</a></td></tr><tr><td>noteStartWakelock</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/am/BatteryStatsService.java:1190:1">BatteryStatsService.java line 1190</a></td></tr><tr><td>noteStartWakelockFromSource</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/am/BatteryStatsService.java:1226:1">BatteryStatsService.java line 1226</a></td></tr><tr><td>BatteryStatsImpl</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/stats/BatteryStatsImpl.java:1:1">BatteryStatsImpl.java</a></td></tr><tr><td>BatteryUsageStatsProvider</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/stats/BatteryUsageStatsProvider.java:43:1">BatteryUsageStatsProvider.java line 43</a></td></tr><tr><td>getPowerCalculators</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/stats/BatteryUsageStatsProvider.java:67:1">BatteryUsageStatsProvider.java line 67</a></td></tr><tr><td>getCurrentBatteryUsageStats</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/stats/BatteryUsageStatsProvider.java:151:1">BatteryUsageStatsProvider.java line 151</a></td></tr><tr><td>PowerProfile</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/core/java/com/android/internal/os/PowerProfile.java:54:1">PowerProfile.java line 54</a></td></tr><tr><td>PowerProfile.getAveragePower</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/core/java/com/android/internal/os/PowerProfile.java:881:1">PowerProfile.java line 881</a></td></tr><tr><td>PowerStatsService</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/powerstats/PowerStatsService.java:73:1">PowerStatsService.java line 73</a></td></tr><tr><td>PowerStatsService.onStart</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/powerstats/PowerStatsService.java:290:1">PowerStatsService.java line 290</a></td></tr><tr><td>getEnergyConsumedAsync</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/powerstats/PowerStatsService.java:405:1">PowerStatsService.java line 405</a></td></tr><tr><td>getStateResidencyAsync</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/powerstats/PowerStatsService.java:419:1">PowerStatsService.java line 419</a></td></tr><tr><td>CpuPowerCalculator</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/stats/CpuPowerCalculator.java:1:1">CpuPowerCalculator.java</a></td></tr><tr><td>WakelockPowerCalculator</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/stats/WakelockPowerCalculator.java:1:1">WakelockPowerCalculator.java</a></td></tr><tr><td>ScreenPowerCalculator</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/stats/ScreenPowerCalculator.java:1:1">ScreenPowerCalculator.java</a></td></tr><tr><td>SystemServicePowerCalculator</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/stats/SystemServicePowerCalculator.java:1:1">SystemServicePowerCalculator.java</a></td></tr></tbody></table>
+<h2 id="batterystatsservice">BatteryStatsService</h2>
+<p><code>BatteryStatsService</code> 是 system_server 中对外提供 <code>IBatteryStats</code> 的服务。其他系统服务通过它把事件写进 <code>BatteryStatsImpl</code>。</p>
+<p>例如 wakelock：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>noteStartWakelock(uid, pid, name, historyName, type)</span></span>
+<span class="line"><span>    enforce UPDATE_DEVICE_STATS</span></span>
+<span class="line"><span>    record elapsedRealtime and uptime</span></span>
+<span class="line"><span>    post to BatteryStats handler</span></span>
+<span class="line"><span>    mStats.noteStartWakeLocked(...)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>noteStopWakelock(...)</span></span>
+<span class="line"><span>    record elapsedRealtime and uptime</span></span>
+<span class="line"><span>    post to BatteryStats handler</span></span>
+<span class="line"><span>    mStats.noteStopWakeLocked(...)</span></span></code></pre>
+<p>如果带 WorkSource：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>noteStartWakelockFromSource(WorkSource ws, ...)</span></span>
+<span class="line"><span>    copy WorkSource</span></span>
+<span class="line"><span>    post to BatteryStats handler</span></span>
+<span class="line"><span>    mStats.noteStartWakeFromSourceLocked(...)</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">sequenceDiagram</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant PMS as PowerManagerService</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant BSS as BatteryStatsService</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Handler as BatteryStats handler</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant BSI as BatteryStatsImpl</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    PMS->>BSS: noteStartWakelock uid/name/type</span></span>
+<span class="line"><span style="color:#E1E4E8">    BSS->>BSS: capture elapsedRealtime and uptime</span></span>
+<span class="line"><span style="color:#E1E4E8">    BSS->>Handler: post event</span></span>
+<span class="line"><span style="color:#E1E4E8">    Handler->>BSI: noteStartWakeLocked</span></span>
+<span class="line"><span style="color:#E1E4E8">    PMS->>BSS: noteStopWakelock</span></span>
+<span class="line"><span style="color:#E1E4E8">    BSS->>Handler: post stop event</span></span>
+<span class="line"><span style="color:#E1E4E8">    Handler->>BSI: noteStopWakeLocked</span></span></code></pre>
+<p>这里有两个细节：</p>
+<ol>
+<li>事件记录用的是 <code>elapsedRealtime</code> 和 <code>uptime</code>，不是 wall clock。</li>
+<li>很多事件通过 Handler 异步写入，所以 <code>getBatteryUsageStats()</code> 前会 <code>awaitCompletion()</code>，必要时还会 <code>syncStats()</code>。</li>
+</ol>
+<p><code>getBatteryUsageStats()</code> 的流程：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>getBatteryUsageStats(queries)</span></span>
+<span class="line"><span>    enforce permission</span></span>
+<span class="line"><span>    await pending writes</span></span>
+<span class="line"><span>    if stats should update:</span></span>
+<span class="line"><span>        sync external stats</span></span>
+<span class="line"><span>        collect PowerStats samples if enabled</span></span>
+<span class="line"><span>    return BatteryUsageStatsProvider.getBatteryUsageStats(mStats, queries)</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[getBatteryUsageStats]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B[awaitCompletion]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C{shouldUpdateStats}</span></span>
+<span class="line"><span style="color:#E1E4E8">    D[sync external stats]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E[collect PowerStats samples]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F[BatteryUsageStatsProvider]</span></span>
+<span class="line"><span style="color:#E1E4E8">    G[BatteryUsageStats]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    A --> B</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C</span></span>
+<span class="line"><span style="color:#E1E4E8">    C -->|yes| D</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E</span></span>
+<span class="line"><span style="color:#E1E4E8">    C -->|no| F</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> F</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> G</span></span></code></pre>
+<h2 id="batteryusagestatsprovider">BatteryUsageStatsProvider</h2>
+<p><code>BatteryUsageStatsProvider</code> 把 BatteryStatsImpl 中的活动统计转换成 BatteryUsageStats。</p>
+<p>它会创建一组 <code>PowerCalculator</code>：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>BatteryChargeCalculator</span></span>
+<span class="line"><span>CpuPowerCalculator</span></span>
+<span class="line"><span>MemoryPowerCalculator</span></span>
+<span class="line"><span>WakelockPowerCalculator</span></span>
+<span class="line"><span>MobileRadioPowerCalculator</span></span>
+<span class="line"><span>WifiPowerCalculator</span></span>
+<span class="line"><span>BluetoothPowerCalculator</span></span>
+<span class="line"><span>SensorPowerCalculator</span></span>
+<span class="line"><span>GnssPowerCalculator</span></span>
+<span class="line"><span>CameraPowerCalculator</span></span>
+<span class="line"><span>FlashlightPowerCalculator</span></span>
+<span class="line"><span>AudioPowerCalculator</span></span>
+<span class="line"><span>VideoPowerCalculator</span></span>
+<span class="line"><span>PhonePowerCalculator</span></span>
+<span class="line"><span>ScreenPowerCalculator</span></span>
+<span class="line"><span>AmbientDisplayPowerCalculator</span></span>
+<span class="line"><span>IdlePowerCalculator</span></span>
+<span class="line"><span>CustomEnergyConsumerPowerCalculator</span></span>
+<span class="line"><span>UserPowerCalculator</span></span>
+<span class="line"><span>SystemServicePowerCalculator</span></span></code></pre>
+<p>源码里还特别写了一个重要注释：<code>SystemServicePowerCalculator</code> 要最后执行，因为它会对其他 calculator 估出来的一部分功耗做重新归因。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[BatteryStatsImpl]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B[BatteryUsageStatsProvider]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C[BatteryUsageStats.Builder]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D[UidBatteryConsumer.Builder]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E[PowerCalculators]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F[CpuPowerCalculator]</span></span>
+<span class="line"><span style="color:#E1E4E8">    G[WakelockPowerCalculator]</span></span>
+<span class="line"><span style="color:#E1E4E8">    H[WifiPowerCalculator]</span></span>
+<span class="line"><span style="color:#E1E4E8">    I[MobileRadioPowerCalculator]</span></span>
+<span class="line"><span style="color:#E1E4E8">    J[ScreenPowerCalculator]</span></span>
+<span class="line"><span style="color:#E1E4E8">    K[SystemServicePowerCalculator]</span></span>
+<span class="line"><span style="color:#E1E4E8">    L[BatteryUsageStats]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    A --> B</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> D</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> E</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> F</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> G</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> H</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> I</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> J</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> K</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> C</span></span>
+<span class="line"><span style="color:#E1E4E8">    G --> C</span></span>
+<span class="line"><span style="color:#E1E4E8">    H --> C</span></span>
+<span class="line"><span style="color:#E1E4E8">    I --> C</span></span>
+<span class="line"><span style="color:#E1E4E8">    J --> C</span></span>
+<span class="line"><span style="color:#E1E4E8">    K --> C</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> L</span></span></code></pre>
+<p>构建过程大致是：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>getCurrentBatteryUsageStats(stats, query):</span></span>
+<span class="line"><span>    realtimeUs = elapsedRealtime * 1000</span></span>
+<span class="line"><span>    uptimeUs = uptime * 1000</span></span>
+<span class="line"><span>    create BatteryUsageStats.Builder</span></span>
+<span class="line"><span>    for each BatteryStats.Uid:</span></span>
+<span class="line"><span>        create UidBatteryConsumer.Builder</span></span>
+<span class="line"><span>        fill foreground/background/fg-service time</span></span>
+<span class="line"><span>    for each PowerCalculator:</span></span>
+<span class="line"><span>        if requested component matches:</span></span>
+<span class="line"><span>            calculator.calculate(...)</span></span>
+<span class="line"><span>    return builder.build()</span></span></code></pre>
+<p>因此 BatteryUsageStats 的结果不是简单“把 UID 的 CPU time 排序”，而是多个组件加总后得到的估算。</p>
+<h2 id="powerprofile">PowerProfile</h2>
+<p><code>PowerProfile</code> 是设备功耗模型。它从资源 XML 读取各种组件的平均电流，单位通常是 mA，然后 PowerCalculator 用它把“时间/次数/字节”换算成 mAh。</p>
+<p>典型字段：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>字段</th><th>含义</th></tr></thead><tbody><tr><td><code>cpu.suspend</code></td><td>CPU power collapse 时的功耗</td></tr><tr><td><code>cpu.idle</code></td><td>CPU awake 但 idle 的功耗</td></tr><tr><td><code>cpu.active</code></td><td>CPU active 基础功耗</td></tr><tr><td>CPU cluster/core power</td><td>不同 cluster / 频点的功耗</td></tr><tr><td><code>screen.on</code></td><td>屏幕点亮基础功耗，旧字段</td></tr><tr><td><code>screen.full</code></td><td>满亮度屏幕功耗，旧字段</td></tr><tr><td>display screen on/full</td><td>多显示设备的新 display power group</td></tr><tr><td><code>wifi.on</code> / <code>wifi.active</code></td><td>Wi-Fi 基础和活跃功耗</td></tr><tr><td><code>wifi.controller.*</code></td><td>Wi-Fi controller RX/TX/idle 电流</td></tr><tr><td><code>modem.controller.*</code></td><td>modem sleep/idle/RX/TX 电流</td></tr><tr><td><code>battery.capacity</code></td><td>电池容量，mAh</td></tr></tbody></table>
+<p>PowerProfile 源码里对 CPU 的模型有清楚说明：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>Total CPU power =</span></span>
+<span class="line"><span>    cpu.suspend</span></span>
+<span class="line"><span>  + cpu.idle</span></span>
+<span class="line"><span>  + cpu.active</span></span>
+<span class="line"><span>  + cluster power</span></span>
+<span class="line"><span>  + core power * running cores</span></span></code></pre>
+<p>这也是为什么 BatteryStats 的 CPU 耗电依赖：</p>
+<ul>
+<li>CPU time。</li>
+<li>频点 time in state。</li>
+<li>cluster/policy 映射。</li>
+<li>PowerProfile 中每个档位的平均电流。</li>
+</ul>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[CPU runtime]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B[CPU freq time in state]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C[Cluster and scaling policy]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D[PowerProfile cpu power]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E[CpuPowerCalculator]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F[UID CPU mAh]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    A --> E</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> E</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> E</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> F</span></span></code></pre>
+<p>PowerProfile 的局限：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>局限</th><th>影响</th></tr></thead><tbody><tr><td>平均电流来自配置</td><td>配错会导致估算整体偏</td></tr><tr><td>不一定覆盖所有 vendor 外设</td><td>某些耗电无法精确归因</td></tr><tr><td>CPU/GPU/DDR耦合复杂</td><td>模型可能简化</td></tr><tr><td>屏幕与内容相关</td><td>OLED 白底/HDR/HBM 可能难准确</td></tr><tr><td>弱网/射频环境复杂</td><td>modem 功耗估算会有偏差</td></tr></tbody></table>
+<p>所以 PowerProfile 适合做相对归因和趋势分析，不适合替代电源仪。</p>
+<h2 id="powerstats">PowerStats</h2>
+<p>PowerStats 是更接近硬件侧的能量/驻留统计接口。<code>PowerStatsService</code> 通过 PowerStats HAL 读取：</p>
+<ul>
+<li>energy consumer。</li>
+<li>energy meter。</li>
+<li>power entity。</li>
+<li>state residency。</li>
+</ul>
+<p><code>PowerStatsService.onStart()</code> 会在 HAL 初始化后发布本地服务和 binder 服务；boot completed 后启动 logger 和 trigger，把 meter/model/residency 数据落盘。</p>
+<p>核心接口：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>getEnergyConsumedAsync(ids)</span></span>
+<span class="line"><span>getPowerEntityInfo()</span></span>
+<span class="line"><span>getStateResidencyAsync(powerEntityIds)</span></span>
+<span class="line"><span>getEnergyMeterInfo()</span></span>
+<span class="line"><span>readEnergyMeterAsync(channelIds)</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">sequenceDiagram</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Client as BatteryStats or statsd</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant PSS as PowerStatsService</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant HAL as PowerStats HAL</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Store as PowerStatsLogger</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    Client->>PSS: getEnergyConsumedAsync</span></span>
+<span class="line"><span style="color:#E1E4E8">    PSS->>HAL: getEnergyConsumed</span></span>
+<span class="line"><span style="color:#E1E4E8">    HAL-->>PSS: EnergyConsumerResult</span></span>
+<span class="line"><span style="color:#E1E4E8">    PSS-->>Client: future complete</span></span>
+<span class="line"><span style="color:#E1E4E8">    PSS->>HAL: getStateResidency</span></span>
+<span class="line"><span style="color:#E1E4E8">    HAL-->>PSS: StateResidencyResult</span></span>
+<span class="line"><span style="color:#E1E4E8">    PSS->>Store: log samples after boot</span></span></code></pre>
+<p>PowerStats 和 PowerProfile 的区别：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>模型</th><th>来源</th><th>优点</th><th>缺点</th></tr></thead><tbody><tr><td>PowerProfile</td><td>静态平均电流配置</td><td>所有设备都能有基础估算</td><td>精度依赖配置</td></tr><tr><td>PowerStats HAL</td><td>硬件/平台报告能量或驻留</td><td>更贴近真实硬件</td><td>平台支持程度不一，归因仍可能粗</td></tr><tr><td>电源仪</td><td>外部测量整机电流</td><td>真实整机电流</td><td>不知道 UID，需要日志归因</td></tr></tbody></table>
+<p>正确姿势是：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>PowerStats/PowerProfile 给软件归因；</span></span>
+<span class="line"><span>电源仪给整机真实电流；</span></span>
+<span class="line"><span>Perfetto/wakeup_sources 给时间线和 kernel 证据；</span></span>
+<span class="line"><span>三者互相校验。</span></span></code></pre>
+<h2 id="命令体系">命令体系</h2>
+<p>重置统计：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --reset</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --enable</span><span style="color:#9ECBFF"> full-wake-history</span></span></code></pre>
+<p>抓文本：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --charged</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> batterystats_charged.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> batterystats.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --history</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> batterystats_history.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --history-start</span><span style="color:#79B8FF"> 0</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> history_start0.txt</span></span></code></pre>
+<p>抓 proto：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --proto</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> batterystats.pb</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --checkin</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> batterystats_checkin.txt</span></span></code></pre>
+<p>看模型和能量：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --power-profile</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> power_profile.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --measured-energy</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> measured_energy.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --cpu</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> cpu_stats.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --wakeups</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> wakeups.txt</span></span></code></pre>
+<p>看 PowerStats：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> powerstats</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> powerstats.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> powerstats</span><span style="color:#79B8FF"> --help</span></span></code></pre>
+<p>补充上下文：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> power</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> power.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> alarm</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> alarm.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> jobscheduler</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> jobs.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> deviceidle</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> deviceidle.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> thermalservice</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> thermal.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> display</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> display.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/kernel/debug/wakeup_sources</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> wakeup_sources.txt</span></span></code></pre>
+<h2 id="统计窗口">统计窗口</h2>
+<p>做 BatteryStats 分析，窗口非常重要。</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>方式</th><th>适用场景</th><th>风险</th></tr></thead><tbody><tr><td><code>--charged</code></td><td>从上次满电/重置以来</td><td>时间太长，噪声多</td></tr><tr><td><code>--reset</code> 后跑固定 case</td><td>复现实验</td><td>重置本身改变历史上下文</td></tr><tr><td>bugreport</td><td>现场问题保全</td><td>文件大，分析慢</td></tr><tr><td>history 时间线</td><td>找异常发生时刻</td><td>需要结合其他日志</td></tr><tr><td>proto + Historian</td><td>长周期可视化</td><td>需要工具</td></tr></tbody></table>
+<p>推荐 case 流程：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>1. 记录初始状态和测试条件</span></span>
+<span class="line"><span>2. dumpsys batterystats --reset</span></span>
+<span class="line"><span>3. 运行固定场景 10/30/60 分钟</span></span>
+<span class="line"><span>4. 抓 batterystats --charged / --history / --proto</span></span>
+<span class="line"><span>5. 同时抓 Perfetto 或 kernel wakeup_sources delta</span></span>
+<span class="line"><span>6. 对照电源仪或电量变化</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[Define scenario]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B[Record brightness network temperature]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C[Reset batterystats]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D[Run fixed window]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E[Dump batterystats]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F[Dump wakeup_sources and logs]</span></span>
+<span class="line"><span style="color:#E1E4E8">    G[Perfetto trace]</span></span>
+<span class="line"><span style="color:#E1E4E8">    H[Compare with current meter]</span></span>
+<span class="line"><span style="color:#E1E4E8">    I[Conclusion]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    A --> B</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> D</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> F</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> G</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> H</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> H</span></span>
+<span class="line"><span style="color:#E1E4E8">    G --> H</span></span>
+<span class="line"><span style="color:#E1E4E8">    H --> I</span></span></code></pre>
+<h2 id="读batterystats">读BatteryStats</h2>
+<p>读 BatteryStats 不要从“排行”直接跳结论，要按组件拆。</p>
+<p>常见关注项：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>项</th><th>问题方向</th></tr></thead><tbody><tr><td>CPU</td><td>线程运行、频率、后台计算</td></tr><tr><td>Wakelock</td><td>阻止 suspend 或让 CPU 保持 awake</td></tr><tr><td>Alarm</td><td>周期唤醒</td></tr><tr><td>Job</td><td>后台任务</td></tr><tr><td>Network</td><td>Wi-Fi/mobile 流量和 radio active</td></tr><tr><td>Sensor/GNSS</td><td>定位、传感器</td></tr><tr><td>Screen</td><td>亮度、亮屏时长、显示内容</td></tr><tr><td>Idle</td><td>设备基础待机</td></tr><tr><td>System service</td><td>system_server 代理工作或归因问题</td></tr></tbody></table>
+<p>建议先看：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --charged</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -Ei</span><span style="color:#9ECBFF"> "Estimated power use|Uid|Wake lock|Job|Alarm|Network|Sensor|Gnss|Wifi|Mobile|Screen|Idle"</span></span></code></pre>
+<p>但 grep 只是入口，最终要回到完整文件。</p>
+<h2 id="worksource">WorkSource</h2>
+<p>WorkSource 是耗电归因里绕不开的点。</p>
+<p>系统服务经常替 App 干活：</p>
+<ul>
+<li>LocationManager 替 App 做定位。</li>
+<li>AlarmManager 替 App 投递 alarm。</li>
+<li>JobScheduler 替 App 跑 job。</li>
+<li>Connectivity/Wi-Fi 替 App 建网络。</li>
+<li>Media/Audio/Camera 服务替 App 使用硬件。</li>
+</ul>
+<p>如果系统服务持有 wakelock 时没有传 WorkSource，BatteryStats 可能把耗电记到 system_server 或服务进程，而不是实际请求者。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[App requests service work]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B[System service]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C{WorkSource provided}</span></span>
+<span class="line"><span style="color:#E1E4E8">    D[BatteryStats attributes to App UID]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E[BatteryStats attributes to system_server]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F[Correct root cause]</span></span>
+<span class="line"><span style="color:#E1E4E8">    G[Misleading system_server high]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    A --> B</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C</span></span>
+<span class="line"><span style="color:#E1E4E8">    C -->|yes| D</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> F</span></span>
+<span class="line"><span style="color:#E1E4E8">    C -->|no| E</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> G</span></span></code></pre>
+<p>BatteryStatsService 中 <code>noteStartWakelockFromSource(WorkSource ws, ...)</code> 会复制 WorkSource，然后写入 <code>noteStartWakeFromSourceLocked()</code>。这就是系统服务替应用工作时正确归因的入口。</p>
+<p>排查 system_server 高耗电时，要问：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>问题</th><th>证据</th></tr></thead><tbody><tr><td>system_server 自己忙？</td><td>Perfetto 中 system_server 线程长期运行</td></tr><tr><td>system_server 代理 App？</td><td>BatteryStats 中 WorkSource/UID 关联</td></tr><tr><td>WorkSource 缺失？</td><td>系统服务 wakelock 名字高，但无对应 UID</td></tr><tr><td>归因被 SystemServicePowerCalculator 调整？</td><td>BatteryUsageStatsProvider 中 system service calculator 最后执行</td></tr></tbody></table>
+<h2 id="batterystats与perfetto">BatteryStats与Perfetto</h2>
+<p>BatteryStats 擅长长时间统计，Perfetto 擅长短时间真相。</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>工具</th><th>回答</th></tr></thead><tbody><tr><td>BatteryStats</td><td>谁在这个窗口内累计多</td></tr><tr><td>BatteryStats history</td><td>异常在什么时候发生</td></tr><tr><td>Perfetto</td><td>那一刻哪个线程在跑、频率和 idle 怎样</td></tr><tr><td>wakeup_sources</td><td>Kernel 谁阻止 suspend 或唤醒</td></tr><tr><td>dumpsys alarm/jobscheduler</td><td>哪个后台任务触发</td></tr><tr><td>电流仪</td><td>整机电流是否真实升高</td></tr></tbody></table>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart LR</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[BatteryStats ranking]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B[Find suspicious UID and component]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C[Battery history timestamp]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D[Perfetto around timestamp]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E[wakeup_sources delta]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F[Alarm Job Network Location evidence]</span></span>
+<span class="line"><span style="color:#E1E4E8">    G[Current meter]</span></span>
+<span class="line"><span style="color:#E1E4E8">    H[Root cause]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    A --> B</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> D</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> F</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> G</span></span>
+<span class="line"><span style="color:#E1E4E8">    G --> H</span></span></code></pre>
+<p>结论必须写成证据链，而不是“排行第一所以它有问题”。</p>
+<h2 id="battery-historian">Battery Historian</h2>
+<p>Battery Historian 通常用 bugreport 或 batterystats proto 来看长周期：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> bugreport</span><span style="color:#9ECBFF"> bugreport.zip</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --proto</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> batterystats.pb</span></span></code></pre>
+<p>Historian 适合看：</p>
+<ul>
+<li>屏幕开关。</li>
+<li>charging / unplugged。</li>
+<li>wakelock。</li>
+<li>wakeup alarm。</li>
+<li>job。</li>
+<li>Doze 状态。</li>
+<li>network / radio active。</li>
+<li>top UID。</li>
+<li>temperature。</li>
+</ul>
+<p>它不适合替代 Perfetto，因为 Historian 不能告诉你某 200ms 内线程调度、CPU 频率、IRQ、binder 的细节。</p>
+<h2 id="power-model判断">Power model判断</h2>
+<p>Android 的耗电可以来自不同 power model：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>模型</th><th>说明</th></tr></thead><tbody><tr><td>Power Profile</td><td>用活动时间/次数/字节乘以平均电流</td></tr><tr><td>Energy Consumption</td><td>使用硬件报告的能量消费者数据</td></tr><tr><td>Measured Energy</td><td>使用 measured energy 数据</td></tr><tr><td>Smearing</td><td>某些无法准确归因的耗电按规则摊到 UID</td></tr></tbody></table>
+<p>例如 ScreenPowerCalculator 里，屏幕耗电可能被按前台时间等方式摊到应用。移动网络也可能把一部分 radio active power 按 UID 网络活动摊分。</p>
+<p>所以看到某 UID 的 screen 或 mobile radio 高时，要理解：</p>
+<ul>
+<li>它不一定是该 UID 直接控制硬件的全部电流。</li>
+<li>可能是系统根据前台时间/流量/活动比例摊分。</li>
+<li>排行越靠前，越值得查，但不等于已经证明根因。</li>
+</ul>
+<h2 id="案例一uid-wakeup-alarm高">案例一：UID wakeup alarm高</h2>
+<p>现象：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>BatteryStats 显示 UID xxx wakeup alarm 次数高。</span></span>
+<span class="line"><span>wakeup_sources 中 alarmtimer wakeup_count 增长。</span></span>
+<span class="line"><span>Perfetto 显示每 60s resume 后目标进程运行。</span></span></code></pre>
+<p>排查：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --charged</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> bs.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --history</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> history.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> alarm</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> alarm.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/kernel/debug/wakeup_sources</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> ws.txt</span></span></code></pre>
+<p>报告写法：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>BatteryStats 中 UID xxx 的 wakeup alarm 次数在 30 分钟窗口内增长 xx 次。</span></span>
+<span class="line"><span>dumpsys alarm 显示该 UID 存在周期性 ELAPSED_REALTIME_WAKEUP。</span></span>
+<span class="line"><span>wakeup_sources 中 alarmtimer wakeup_count 同步增长。</span></span>
+<span class="line"><span>Perfetto 显示每次 alarm 后目标进程运行并发起网络请求。</span></span>
+<span class="line"><span>因此该问题属于高频 wakeup alarm 驱动的后台任务耗电。</span></span></code></pre>
+<p>不要写：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>AlarmManager 耗电高。</span></span></code></pre>
+<p>AlarmManager 是机制，目标 UID 和任务语义才是根因。</p>
+<h2 id="案例二system_server耗电高">案例二：system_server耗电高</h2>
+<p>现象：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>BatteryStats 排行 system_server 靠前。</span></span>
+<span class="line"><span>system_server CPU 或 wakelock 高。</span></span></code></pre>
+<p>分析要分三种：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>类型</th><th>证据</th><th>结论</th></tr></thead><tbody><tr><td>system_server 自己忙</td><td>Perfetto 中 system_server 线程高 CPU</td><td>查具体服务线程</td></tr><tr><td>代理 App 工作</td><td>WorkSource 指向 App UID</td><td>继续查 App 请求</td></tr><tr><td>归因缺失</td><td>服务 wakelock 高但无 UID</td><td>查 WorkSource 传递</td></tr></tbody></table>
+<p>命令：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --charged</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> bs.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> top</span><span style="color:#79B8FF"> -H</span><span style="color:#79B8FF"> -p</span><span style="color:#E1E4E8"> $(</span><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> pidof</span><span style="color:#9ECBFF"> system_server</span><span style="color:#E1E4E8">) </span><span style="color:#79B8FF">-n</span><span style="color:#79B8FF"> 1</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> perfetto</span><span style="color:#79B8FF"> -o</span><span style="color:#9ECBFF"> /data/misc/perfetto-traces/system_server_power.trace</span><span style="color:#79B8FF"> -t</span><span style="color:#9ECBFF"> 60s</span><span style="color:#9ECBFF"> sched</span><span style="color:#9ECBFF"> freq</span><span style="color:#9ECBFF"> idle</span><span style="color:#9ECBFF"> binder_driver</span><span style="color:#9ECBFF"> power</span><span style="color:#9ECBFF"> am</span></span></code></pre>
+<p>报告写法：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>system_server 在 BatteryStats 中靠前，但 Perfetto 显示主要 runtime 来自 xxx service 线程。</span></span>
+<span class="line"><span>该线程活动与 UID yyy 的请求时间一致，且相关 wakelock 使用 WorkSource 归因到 UID yyy。</span></span>
+<span class="line"><span>因此应继续分析 UID yyy 的业务触发，而不是简单归咎 system_server。</span></span></code></pre>
+<h2 id="案例三screen耗电第一">案例三：Screen耗电第一</h2>
+<p>现象：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>BatteryStats 中 Screen 是最大组件。</span></span>
+<span class="line"><span>用户反馈亮屏掉电快。</span></span></code></pre>
+<p>这很常见，不一定是 bug。要看：</p>
+<ul>
+<li>亮屏时长。</li>
+<li>亮度。</li>
+<li>HDR/HBM。</li>
+<li>OLED 画面内容。</li>
+<li>刷新率。</li>
+<li>是否持续合成。</li>
+<li>温度和降亮度策略。</li>
+</ul>
+<p>命令：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --charged</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> bs.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> display</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> display.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> SurfaceFlinger</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> sf.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> thermalservice</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> thermal.txt</span></span></code></pre>
+<p>报告写法：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>Screen 排名第一与测试场景一致：亮屏 xx 分钟、手动亮度 xxx、白底页面。</span></span>
+<span class="line"><span>Perfetto 未显示异常持续刷新，CPU/GPU 可降频。</span></span>
+<span class="line"><span>因此该数据更像正常显示发光成本，不是后台异常耗电。</span></span>
+<span class="line"><span>如需优化，应降低亮度、减少白底/HDR/HBM 或降低刷新率。</span></span></code></pre>
+<h2 id="案例四mobile-radio高">案例四：Mobile radio高</h2>
+<p>现象：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>BatteryStats 中 Mobile radio / Network 高。</span></span>
+<span class="line"><span>弱网场景掉电明显。</span></span></code></pre>
+<p>分析：</p>
+<p>Mobile radio 高通常要结合信号、流量、radio active、重传和 UID 网络行为。弱网下即使数据量不大，radio active time 也可能很高。</p>
+<p>命令：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --charged</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> bs.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> netstats</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> netstats.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> connectivity</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> connectivity.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> telephony.registry</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> telephony_registry.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> telephony</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> telephony.txt</span><span style="color:#F97583"> 2></span><span style="color:#9ECBFF">/dev/null</span></span></code></pre>
+<p>报告写法：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>UID xxx 在测试窗口内移动网络流量不大，但 radio active time 高。</span></span>
+<span class="line"><span>现场信号弱，Perfetto 中网络请求失败重试频繁。</span></span>
+<span class="line"><span>因此耗电主因不是单次大流量，而是弱网下后台轮询/重试导致 modem 长时间保持活跃。</span></span></code></pre>
+<h2 id="案例五wakelock高但cpu不高">案例五：Wakelock高但CPU不高</h2>
+<p>现象：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>BatteryStats partial wakelock 时间长。</span></span>
+<span class="line"><span>CPU runtime 不高。</span></span>
+<span class="line"><span>待机电流高。</span></span></code></pre>
+<p>分析：</p>
+<p>partial wakelock 高说明系统被要求保持 CPU awake，但不等于 CPU 一直忙。可能是：</p>
+<ul>
+<li>持锁等待 I/O。</li>
+<li>持锁等待网络。</li>
+<li>持锁期间线程睡眠。</li>
+<li>系统不能 suspend，但 CPU 只浅 idle。</li>
+</ul>
+<p>命令：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --charged</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -i</span><span style="color:#9ECBFF"> "wake lock"</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> power</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -i</span><span style="color:#9ECBFF"> "Wake Locks"</span><span style="color:#79B8FF"> -A80</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/kernel/debug/wakeup_sources</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> ws.txt</span></span></code></pre>
+<p>报告写法：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>UID xxx 的 partial wakelock 累计长，但 CPU runtime 不高。</span></span>
+<span class="line"><span>这说明问题主要是阻止 suspend，而不是持续计算。</span></span>
+<span class="line"><span>wakeup_sources 中 PowerManagerService.WakeLocks / 对应 kernel wakelock 在窗口内 prevent_suspend_time 增长。</span></span>
+<span class="line"><span>建议检查该 wakelock 的 acquire/release 生命周期。</span></span></code></pre>
+<h2 id="案例六wi-fi耗电高">案例六：Wi-Fi耗电高</h2>
+<p>现象：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>BatteryStats Wi-Fi 组件高。</span></span>
+<span class="line"><span>低流量场景仍掉电。</span></span></code></pre>
+<p>可能原因：</p>
+<ul>
+<li>Wi-Fi scan 频繁。</li>
+<li>Wi-Fi location / lowi-server 活跃。</li>
+<li>弱网重连。</li>
+<li>后台网络心跳。</li>
+<li>Wi-Fi controller active 时间高。</li>
+</ul>
+<p>命令：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> wifi</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> wifi.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> netstats</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> netstats.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --charged</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> bs.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/kernel/debug/wakeup_sources</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -Ei</span><span style="color:#9ECBFF"> "wlan|wifi|lowi"</span></span></code></pre>
+<p>报告写法：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>Wi-Fi 耗电高不是由大流量造成，netstats 显示数据量较小。</span></span>
+<span class="line"><span>但 wakeup_sources 中 lowi/wlan 相关项增长，dumpsys wifi 显示扫描频繁。</span></span>
+<span class="line"><span>结合定位开启 AB 对比，问题指向 Wi-Fi scan/location 场景。</span></span></code></pre>
+<h2 id="案例七batterystats和电流仪不一致">案例七：BatteryStats和电流仪不一致</h2>
+<p>现象：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>电源仪显示整机电流高。</span></span>
+<span class="line"><span>BatteryStats 没有明显异常 UID。</span></span></code></pre>
+<p>可能原因：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>原因</th><th>说明</th></tr></thead><tbody><tr><td>外设功耗未细分</td><td>PMIC、display、modem、sensor hub 可能无法准确 UID 归因</td></tr><tr><td>PowerProfile 配置偏差</td><td>模型估算低估</td></tr><tr><td>PowerStats HAL 不支持</td><td>缺少 measured energy</td></tr><tr><td>测试窗口不一致</td><td>BatteryStats 窗口和电流仪窗口没对齐</td></tr><tr><td>充电/USB/温度影响</td><td>整机电流包含额外因素</td></tr><tr><td>kernel/driver 常驻</td><td>用户态 UID 不明显</td></tr></tbody></table>
+<p>处理：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>先相信电源仪说明“整机确实高”；</span></span>
+<span class="line"><span>再用 BatteryStats 找软件嫌疑；</span></span>
+<span class="line"><span>如果 BatteryStats 无嫌疑，转向 Perfetto、wakeup_sources、thermal、display、modem、kernel IRQ。</span></span></code></pre>
+<p>报告写法：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>电源仪确认整机平均电流高，但 BatteryStats 未显示单一 UID 异常。</span></span>
+<span class="line"><span>因此该问题可能不是可准确 UID 归因的软件活动，后续转向外设/Kernel/Display/Radio 层排查。</span></span></code></pre>
+<h2 id="ab对比方法">AB对比方法</h2>
+<p>耗电归因最怕没有对照组。</p>
+<p>常用 AB：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>A</th><th>B</th><th>看什么</th></tr></thead><tbody><tr><td>App 安装</td><td>App 卸载/禁用</td><td>UID 是否消失，电流是否下降</td></tr><tr><td>定位开</td><td>定位关</td><td>GNSS/Loc_hal/lowi 是否下降</td></tr><tr><td>Wi-Fi 开</td><td>Wi-Fi 关</td><td>wlan/scan 是否下降</td></tr><tr><td>移动数据开</td><td>飞行模式</td><td>modem/radio active 是否下降</td></tr><tr><td>自动亮度</td><td>固定亮度</td><td>screen 估算是否稳定</td></tr><tr><td>高刷</td><td>60Hz</td><td>display/SF/CPU 是否下降</td></tr><tr><td>冷机</td><td>热机</td><td>thermal 是否改变归因</td></tr></tbody></table>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[Baseline case]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B[Change one variable]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C[Collect BatteryStats]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D[Collect Perfetto]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E[Collect wakeup_sources]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F[Compare deltas]</span></span>
+<span class="line"><span style="color:#E1E4E8">    G{Only one variable changed}</span></span>
+<span class="line"><span style="color:#E1E4E8">    H[Credible attribution]</span></span>
+<span class="line"><span style="color:#E1E4E8">    I[Redo experiment]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    A --> B</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> D</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> E</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> F</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> F</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> F</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> G</span></span>
+<span class="line"><span style="color:#E1E4E8">    G -->|yes| H</span></span>
+<span class="line"><span style="color:#E1E4E8">    G -->|no| I</span></span></code></pre>
+<h2 id="采集脚本">采集脚本</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#6A737D">#!/system/bin/sh</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">OUT</span><span style="color:#F97583">=</span><span style="color:#9ECBFF">/data/local/tmp/battery_attr_</span><span style="color:#E1E4E8">$(</span><span style="color:#B392F0">date</span><span style="color:#9ECBFF"> +%Y%m%d_%H%M%S</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">DURATION</span><span style="color:#F97583">=</span><span style="color:#FFAB70">${1</span><span style="color:#F97583">:-</span><span style="color:#FFAB70">1800}</span></span>
+<span class="line"><span style="color:#B392F0">mkdir</span><span style="color:#79B8FF"> -p</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">"</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">date</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/meta.txt"</span></span>
+<span class="line"><span style="color:#B392F0">getprop</span><span style="color:#9ECBFF"> ro.product.device</span><span style="color:#F97583"> >></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/meta.txt"</span></span>
+<span class="line"><span style="color:#B392F0">getprop</span><span style="color:#9ECBFF"> ro.board.platform</span><span style="color:#F97583"> >></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/meta.txt"</span></span>
+<span class="line"><span style="color:#B392F0">getprop</span><span style="color:#9ECBFF"> ro.build.version.release</span><span style="color:#F97583"> >></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/meta.txt"</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> battery</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/battery_before.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> power</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/power_before.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> deviceidle</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/deviceidle_before.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> display</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/display_before.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> alarm</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/alarm_before.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> jobscheduler</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/jobs_before.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> netstats</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/netstats_before.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> thermalservice</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/thermal_before.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --charged</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/batterystats_before.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --history</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/history_before.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> powerstats</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/powerstats_before.txt"</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">WS</span><span style="color:#F97583">=</span><span style="color:#9ECBFF">/sys/kernel/debug/wakeup_sources</span></span>
+<span class="line"><span style="color:#F97583">if</span><span style="color:#E1E4E8"> [ </span><span style="color:#F97583">!</span><span style="color:#F97583"> -f</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$WS</span><span style="color:#9ECBFF">"</span><span style="color:#E1E4E8"> ]; </span><span style="color:#F97583">then</span></span>
+<span class="line"><span style="color:#E1E4E8">    WS</span><span style="color:#F97583">=</span><span style="color:#9ECBFF">/d/wakeup_sources</span></span>
+<span class="line"><span style="color:#F97583">fi</span></span>
+<span class="line"><span style="color:#B392F0">cat</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$WS</span><span style="color:#9ECBFF">"</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/wakeup_sources_before.txt"</span><span style="color:#F97583"> 2></span><span style="color:#9ECBFF">/dev/null</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">sleep</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$DURATION</span><span style="color:#9ECBFF">"</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">date</span><span style="color:#F97583"> >></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/meta.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> battery</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/battery_after.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> power</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/power_after.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> deviceidle</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/deviceidle_after.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> display</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/display_after.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> alarm</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/alarm_after.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> jobscheduler</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/jobs_after.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> netstats</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/netstats_after.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> thermalservice</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/thermal_after.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --charged</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/batterystats_after.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --history</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/history_after.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --proto</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/batterystats.pb"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> powerstats</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/powerstats_after.txt"</span></span>
+<span class="line"><span style="color:#B392F0">cat</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$WS</span><span style="color:#9ECBFF">"</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/wakeup_sources_after.txt"</span><span style="color:#F97583"> 2></span><span style="color:#9ECBFF">/dev/null</span></span>
+<span class="line"><span style="color:#B392F0">logcat</span><span style="color:#79B8FF"> -b</span><span style="color:#9ECBFF"> events</span><span style="color:#79B8FF"> -d</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/events_logcat.txt"</span></span>
+<span class="line"><span style="color:#B392F0">logcat</span><span style="color:#79B8FF"> -b</span><span style="color:#9ECBFF"> system</span><span style="color:#79B8FF"> -d</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/system_logcat.txt"</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">tar</span><span style="color:#79B8FF"> -czf</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">.tar.gz"</span><span style="color:#79B8FF"> -C</span><span style="color:#9ECBFF"> "$(</span><span style="color:#B392F0">dirname</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">")"</span><span style="color:#9ECBFF"> "$(</span><span style="color:#B392F0">basename</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">")"</span></span>
+<span class="line"><span style="color:#79B8FF">echo</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">.tar.gz"</span></span></code></pre>
+<h2 id="复盘报告写法">复盘报告写法</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>1. 场景</span></span>
+<span class="line"><span>   设备：</span></span>
+<span class="line"><span>   平台：</span></span>
+<span class="line"><span>   Android版本：</span></span>
+<span class="line"><span>   测试时长：</span></span>
+<span class="line"><span>   USB/充电状态：</span></span>
+<span class="line"><span>   网络/定位/蓝牙：</span></span>
+<span class="line"><span>   亮度/刷新率：</span></span>
+<span class="line"><span>   温度起止：</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>2. BatteryStats窗口</span></span>
+<span class="line"><span>   是否reset：</span></span>
+<span class="line"><span>   stats start/end：</span></span>
+<span class="line"><span>   电量变化：</span></span>
+<span class="line"><span>   估算总耗电：</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>3. UID/组件排行</span></span>
+<span class="line"><span>   Top UID：</span></span>
+<span class="line"><span>   Top component：</span></span>
+<span class="line"><span>   power model：PowerProfile / measured energy：</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>4. 关键活动</span></span>
+<span class="line"><span>   wakelock：</span></span>
+<span class="line"><span>   alarm：</span></span>
+<span class="line"><span>   job：</span></span>
+<span class="line"><span>   network：</span></span>
+<span class="line"><span>   sensor/GNSS：</span></span>
+<span class="line"><span>   screen：</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>5. 交叉证据</span></span>
+<span class="line"><span>   Perfetto：</span></span>
+<span class="line"><span>   wakeup_sources：</span></span>
+<span class="line"><span>   dumpsys alarm/jobscheduler：</span></span>
+<span class="line"><span>   netstats：</span></span>
+<span class="line"><span>   thermal：</span></span>
+<span class="line"><span>   电源仪：</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>6. 结论</span></span>
+<span class="line"><span>   根因 UID/模块：</span></span>
+<span class="line"><span>   是直接耗电还是代理归因：</span></span>
+<span class="line"><span>   是模型估算还是硬件能量：</span></span>
+<span class="line"><span>   优化建议：</span></span></code></pre>
+<h2 id="我会这样说明">我会这样说明</h2>
+<p>如果被问到“BatteryStats 是怎么做耗电归因的”，我会这样回答：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>BatteryStats 首先记录系统活动事件，比如 wakelock、alarm、job、network、sensor、screen、radio 等。</span></span>
+<span class="line"><span>这些事件由 PowerManagerService、AlarmManagerService、JobSchedulerService 等系统服务通过 BatteryStatsService 写入 BatteryStatsImpl。</span></span>
+<span class="line"><span>当查询 BatteryUsageStats 时，BatteryUsageStatsProvider 会创建 UidBatteryConsumer 和 AggregateBatteryConsumer，并依次调用 Cpu/Wakelock/Wifi/MobileRadio/Screen 等 PowerCalculator。</span></span>
+<span class="line"><span>PowerCalculator 会结合 BatteryStats 中的活动时间、次数、流量，以及 PowerProfile 或 PowerStats HAL 的能量数据，估算每个 UID 和组件的 mAh。</span></span>
+<span class="line"><span>所以 BatteryStats 是软件统计和模型估算系统，不是电流仪。结论需要结合 Perfetto、wakeup_sources 和电源仪验证。</span></span></code></pre>
+<p>如果问“system_server 耗电高怎么办”，我会这样回答：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>我会先区分 system_server 自己忙、系统服务代理 App 工作、以及 WorkSource 缺失导致归因错误。</span></span>
+<span class="line"><span>如果 Perfetto 显示 system_server 某服务线程长期运行，那就查该服务逻辑。</span></span>
+<span class="line"><span>如果 BatteryStats 中有 WorkSource 指向某 UID，则继续查实际请求方。</span></span>
+<span class="line"><span>如果 wakelock 或网络活动集中在系统服务但没有合理 WorkSource，就要检查调用链是否正确传递 WorkSource。</span></span>
+<span class="line"><span>不能看到 system_server 排名高就直接认为 system_server 是根因。</span></span></code></pre>
+<h2 id="复盘">复盘</h2>
+<p>BatteryStats 的正确用法：</p>
+<ul>
+<li>把排行当入口，不当结论。</li>
+<li>明确统计窗口和测试条件。</li>
+<li>区分活动统计、模型估算、硬件能量和真实电流。</li>
+<li>关注 WorkSource 和 system_server 代理归因。</li>
+<li>用 Perfetto 验证时间线。</li>
+<li>用 wakeup_sources 验证 Kernel 唤醒/阻塞。</li>
+<li>用电源仪确认整机电流。</li>
+</ul>
+<p>我的判断口径：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>BatteryStats 告诉你“谁像嫌疑人”，Perfetto 和 kernel 证据告诉你“案发过程”，电源仪告诉你“损失是否真实”。</span></span></code></pre></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

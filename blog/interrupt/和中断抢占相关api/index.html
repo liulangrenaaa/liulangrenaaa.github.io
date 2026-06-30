@@ -1,0 +1,35 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>和中断抢占相关api | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>和中断抢占相关api</h1><div class="post-meta"><time datetime="2021-03-04T19:00:40.000Z">2021年3月4日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">intrrrupt</span><span class="tag">preemption</span></div></header><div class="article-body"><h2 id="开关关中断api">开关关中断api</h2>
+<p>api1:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>#define local_irq_enable()	do { raw_local_irq_enable(); } while (0)</span></span>
+<span class="line"><span>#define local_irq_disable()	do { raw_local_irq_disable(); } while (0)</span></span></code></pre>
+<p>api2:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>#define local_irq_save(flags)	do { raw_local_irq_save(flags); } while (0)</span></span>
+<span class="line"><span>#define local_irq_restore(flags) do { raw_local_irq_restore(flags); } while (0)</span></span></code></pre>
+<h2 id="__this_cpu_read--this_cpu_read">__this_cpu_read &#x26;&#x26; this_cpu_read</h2>
+<h3 id="中断上下文">中断上下文</h3>
+<p>可以在中断上下文中使用，无需考虑被中断或者进程强占</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/*</span></span>
+<span class="line"><span> * Operations for contexts that are safe from preemption/interrupts.  These</span></span>
+<span class="line"><span> * operations verify that preemption is disabled.</span></span>
+<span class="line"><span> */</span></span>
+<span class="line"><span>#define __this_cpu_read(pcp)						\</span></span>
+<span class="line"><span>({									\</span></span>
+<span class="line"><span>	__this_cpu_preempt_check("read");				\</span></span>
+<span class="line"><span>	raw_cpu_read(pcp);						\</span></span>
+<span class="line"><span>})</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>#define __this_cpu_write(pcp, val)					\</span></span>
+<span class="line"><span>({									\</span></span>
+<span class="line"><span>	__this_cpu_preempt_check("write");				\</span></span>
+<span class="line"><span>	raw_cpu_write(pcp, val);					\</span></span>
+<span class="line"><span>})</span></span></code></pre>
+<h3 id="进程上下文">进程上下文</h3>
+<p>可以在进程上下文中使用，实现了 强占、中断保护</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/*</span></span>
+<span class="line"><span> * Operations with implied preemption/interrupt protection.  These</span></span>
+<span class="line"><span> * operations can be used without worrying about preemption or interrupt.</span></span>
+<span class="line"><span> */</span></span>
+<span class="line"><span>#define this_cpu_read(pcp)		__pcpu_size_call_return(this_cpu_read_, pcp)</span></span>
+<span class="line"><span>#define this_cpu_write(pcp, val)	__pcpu_size_call(this_cpu_write_, pcp, val)</span></span></code></pre>
+<p>参考<a href="https://git.kernel.org/pub/scm/linux/kernel/git/next/linux-next.git/commit/?id=8afecaa68df1e94a9d634f1f961533a925f239fc">patch1</a>
+参考<a href="https://git.kernel.org/pub/scm/linux/kernel/git/next/linux-next.git/commit/?id=17c891ab349138e8d8a59ca2700f42ce8af96f4e">patch2</a></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

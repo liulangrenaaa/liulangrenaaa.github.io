@@ -1,0 +1,72 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>arm64 kernel 编译 + vscode解析 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>arm64 kernel 编译 + vscode解析</h1><div class="post-meta"><time datetime="2021-03-18T19:00:00.000Z">2021年3月18日</time><span> / 开发工具</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">开发工具</span></div></header><div class="article-body"><p>最近要换坑位了，下一家公司是做arm64手机芯片的，所以先熟悉一下arm64 kernel 开发环境的配置。</p>
+<h2 id="准备工作">准备工作</h2>
+<ol>
+<li>安装 aarch64 架构的gcc编译器。</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Inspiron-5548@100ubuntu: ~/workspace/linux-stable# sudo apt install gcc-aarch64-linux-gnu</span></span>
+<span class="line"><span>正在读取软件包列表... 完成</span></span>
+<span class="line"><span>正在分析软件包的依赖关系树</span></span>
+<span class="line"><span>正在读取状态信息... 完成</span></span>
+<span class="line"><span>下列软件包是自动安装的并且现在不需要了：</span></span>
+<span class="line"><span>  gir1.2-keybinder-3.0 libfprint-2-tod1 libkeybinder-3.0-0 python3-configobj python3-psutil</span></span>
+<span class="line"><span>使用'sudo apt autoremove'来卸载它(它们)。</span></span>
+<span class="line"><span>将会同时安装下列软件：</span></span>
+<span class="line"><span>  cpp-aarch64-linux-gnu</span></span>
+<span class="line"><span>建议安装：</span></span>
+<span class="line"><span>  cpp-doc gdb-aarch64-linux-gnu gcc-doc</span></span>
+<span class="line"><span>下列【新】软件包将被安装：</span></span>
+<span class="line"><span>  cpp-aarch64-linux-gnu gcc-aarch64-linux-gnu</span></span>
+<span class="line"><span>升级了 0 个软件包，新安装了 2 个软件包，要卸载 0 个软件包，有 80 个软件包未被升级。</span></span>
+<span class="line"><span>需要下载 4,852 B 的归档。</span></span>
+<span class="line"><span>解压缩后会消耗 56.3 kB 的额外空间。</span></span></code></pre>
+<ol start="2">
+<li>准备 defconfig</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Inspiron-5548@130ubuntu: ~/workspace/linux-stable# cp arch/arm64/configs/defconfig .config</span></span>
+<span class="line"><span>Inspiron-5548@ubuntu: ~/workspace/linux-stable#</span></span></code></pre>
+<h2 id="编译">编译</h2>
+<ol>
+<li>配置 config</li>
+</ol>
+<p><code>make ARCH=arm64 CROSS_COMPILE=/usr/bin/aarch64-linux-gnu- menuconfig</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Inspiron-5548@ubuntu: ~/workspace/linux-stable# make ARCH=arm64 CROSS_COMPILE=/usr/bin/aarch64-linux-gnu- menuconfig</span></span>
+<span class="line"><span>.config:745:warning: symbol value 'm' invalid for KVM</span></span>
+<span class="line"><span>configuration written to .config</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>*** End of the configuration.</span></span>
+<span class="line"><span>*** Execute 'make' to start the build or try 'make help'.</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Inspiron-5548@ubuntu: ~/workspace/linux-stable#</span></span></code></pre>
+<ol start="2">
+<li>编译
+<code>make ARCH=arm64 CROSS_COMPILE=/usr/bin/aarch64-linux-gnu- all -j4</code></li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Inspiron-5548@ubuntu: ~/workspace/linux-stable# make ARCH=arm64 CROSS_COMPILE=/usr/bin/aarch64-linux-gnu- all -j4 O=./out</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>  SYNC    include/config/auto.conf.cmd</span></span>
+<span class="line"><span>  HOSTCC  scripts/kconfig/conf.o</span></span>
+<span class="line"><span>  HOSTLD  scripts/kconfig/conf</span></span>
+<span class="line"><span>  WRAP    arch/arm64/include/generated/uapi/asm/kvm_para.h</span></span>
+<span class="line"><span>  WRAP    arch/arm64/include/generated/uapi/asm/errno.h</span></span>
+<span class="line"><span>  ......</span></span></code></pre>
+<ol start="3">
+<li>生成compile_commands.json</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span># 4.19 - 5.8 之前可以用</span></span>
+<span class="line"><span>./scripts/gen_compile_commands.py -d ./out/</span></span>
+<span class="line"><span># 5.9 之后可以用</span></span>
+<span class="line"><span>./scripts/clang-tools/gen_compile_commands.py -d ./out/</span></span></code></pre>
+<ol start="4">
+<li>配置 .vscode/c_cpp_properties.json</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>{</span></span>
+<span class="line"><span># 4.19 - 5.8 之前可以用</span></span>
+<span class="line"><span>    .....</span></span>
+<span class="line"><span>    "compileCommands": "${WorkspaceFolder}/out/compile_commands.json"</span></span>
+<span class="line"><span>    .....</span></span>
+<span class="line"><span># 5.9 之后可以用</span></span>
+<span class="line"><span>    .....</span></span>
+<span class="line"><span>    "compileCommands": "${WorkspaceFolder}/compile_commands.json"</span></span>
+<span class="line"><span>    .....</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>到此为止，基本上在浏览内核代码上不会有困难了</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

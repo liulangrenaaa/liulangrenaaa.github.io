@@ -1,0 +1,90 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>sync  相关 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>sync  相关</h1><div class="post-meta"><time datetime="2021-02-01T19:00:40.000Z">2021年2月1日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">sync</span><span class="tag">filesystem</span></div></header><div class="article-body"><h2 id="syscalls">syscalls</h2>
+<p>linux 关于 sync的系统调用很多，都在<code>fs/sync.c</code> 目录下：</p>
+<ul>
+<li>sync： sync整个系统中所有 <code>sb</code></li>
+<li>syncfs：sync 单个文件系统单个 <code>sb</code></li>
+<li>fsync: sync 单个文件，包括 mdata</li>
+<li>fdatasync: sync单个文件，不包括 mdata</li>
+<li>sync_file_range：sync文件某段内容，是否脏页，应用程序最清楚</li>
+<li>sync_file_range2：同 sync_file_range</li>
+</ul>
+<h2 id="代码分析">代码分析</h2>
+<h3 id="sync">sync</h3>
+<p>sync整个系统</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/*</span></span>
+<span class="line"><span> * Sync everything. We start by waking flusher threads so that most of</span></span>
+<span class="line"><span> * writeback runs on all devices in parallel. Then we sync all inodes reliably</span></span>
+<span class="line"><span> * which effectively also waits for all flusher threads to finish doing</span></span>
+<span class="line"><span> * writeback. At this point all data is on disk so metadata should be stable</span></span>
+<span class="line"><span> * and we tell filesystems to sync their metadata via ->sync_fs() calls.</span></span>
+<span class="line"><span> * Finally, we writeout all block devices because some filesystems (e.g. ext2)</span></span>
+<span class="line"><span> * just write metadata (such as inodes or bitmaps) to block device page cache</span></span>
+<span class="line"><span> * and do not sync it on their own in ->sync_fs().</span></span>
+<span class="line"><span> */</span></span>
+<span class="line"><span>void ksys_sync(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	int nowait = 0, wait = 1;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	wakeup_flusher_threads(WB_REASON_SYNC); // 唤醒 flusher 线程， 所有设备上的 大多数 writeback 可以并行发生</span></span>
+<span class="line"><span>	iterate_supers(sync_inodes_one_sb, NULL); // sync all inodes</span></span>
+<span class="line"><span>	iterate_supers(sync_fs_one_sb, &#x26;nowait);  // sync filesystem metdata</span></span>
+<span class="line"><span>	iterate_supers(sync_fs_one_sb, &#x26;wait);</span></span>
+<span class="line"><span>	iterate_bdevs(fdatawrite_one_bdev, NULL); // writeout all block devices</span></span>
+<span class="line"><span>	iterate_bdevs(fdatawait_one_bdev, NULL);</span></span>
+<span class="line"><span>	if (unlikely(laptop_mode))</span></span>
+<span class="line"><span>		laptop_sync_completion();</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>SYSCALL_DEFINE0(sync)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	ksys_sync();</span></span>
+<span class="line"><span>	return 0;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<h3 id="fsync--fdatasync">fsync 、 fdatasync</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/**</span></span>
+<span class="line"><span> * vfs_fsync - perform a fsync or fdatasync on a file</span></span>
+<span class="line"><span> * @file:		file to sync</span></span>
+<span class="line"><span> * @datasync:		only perform a fdatasync operation</span></span>
+<span class="line"><span> *</span></span>
+<span class="line"><span> * Write back data and metadata for @file to disk.  If @datasync is</span></span>
+<span class="line"><span> * set only metadata needed to access modified file data is written.</span></span>
+<span class="line"><span> */</span></span>
+<span class="line"><span>int vfs_fsync(struct file *file, int datasync)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	return vfs_fsync_range(file, 0, LLONG_MAX, datasync);</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static int do_fsync(unsigned int fd, int datasync)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	struct fd f = fdget(fd);</span></span>
+<span class="line"><span>	int ret = -EBADF;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (f.file) {</span></span>
+<span class="line"><span>		ret = vfs_fsync(f.file, datasync);</span></span>
+<span class="line"><span>		fdput(f);</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>	return ret;</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>SYSCALL_DEFINE1(fsync, unsigned int, fd)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	return do_fsync(fd, 0);</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>SYSCALL_DEFINE1(fdatasync, unsigned int, fd)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	return do_fsync(fd, 1);</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>来trace一下看看</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>tencent_clould@ubuntu: ~/workspace/tmp# sudo bpftrace -e 'tracepoint:vmscan:mm_shrink_slab_start {printf("[pid-%d:%s]: trace_mm_shrink_slab_start start\n", pid,comm)}'</span></span>
+<span class="line"><span>Attaching 1 probe...</span></span>
+<span class="line"><span>[pid-1747572:zsh]: trace_mm_shrink_slab_start start</span></span>
+<span class="line"><span>[pid-1747572:zsh]: trace_mm_shrink_slab_start start</span></span>
+<span class="line"><span></span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>tencent_clould@ubuntu: ~/workspace/tmp# sudo bpftrace -e 'tracepoint:vmscan:mm_shrink_slab_end {printf("[pid-%d:%s]: trace_mm_shrink_slab_end total_scan = %d\n", pid,comm, args->total_scan)}'</span></span>
+<span class="line"><span>Attaching 1 probe...</span></span>
+<span class="line"><span>[pid-1747572:zsh]: trace_mm_shrink_slab_end total_scan = 0</span></span>
+<span class="line"><span>[pid-1747572:zsh]: trace_mm_shrink_slab_end total_scan = 0</span></span>
+<span class="line"><span>[pid-1747572:zsh]: trace_mm_shrink_slab_end total_scan = 57</span></span>
+<span class="line"><span>[pid-1747572:zsh]: trace_mm_shrink_slab_end total_scan = 0</span></span>
+<span class="line"><span>[pid-1747572:zsh]: trace_mm_shrink_slab_end total_scan = 1</span></span></code></pre></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

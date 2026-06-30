@@ -1,0 +1,48 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>RemoteAnimation机制 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>RemoteAnimation机制</h1><div class="post-meta"><time datetime="2024-04-15T10:00:00.000Z">2024年4月15日</time><span> / android / wms窗口系统</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">android</span><span class="tag">WMS</span><span class="tag">RemoteAnimation</span><span class="tag">动画</span></div></header><div class="article-body"><h2 id="简介">简介</h2>
+<p>RemoteAnimation 允许第三方应用（如 Launcher）自定义窗口动画，常用于实现自定义的启动和返回动画。</p>
+<h2 id="核心接口">核心接口</h2>
+<h3 id="iremoteanimationrunner">IRemoteAnimationRunner</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="java"><code><span class="line"><span style="color:#F97583">public</span><span style="color:#F97583"> interface</span><span style="color:#B392F0"> IRemoteAnimationRunner</span><span style="color:#E1E4E8"> {</span></span>
+<span class="line"><span style="color:#F97583">    void</span><span style="color:#B392F0"> onAnimationStart</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">RemoteAnimationTarget</span><span style="color:#E1E4E8">[] </span><span style="color:#FFAB70">apps</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#F97583">                         RemoteAnimationTarget</span><span style="color:#E1E4E8">[] </span><span style="color:#FFAB70">wallpapers</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#E1E4E8">                         IRemoteAnimationFinishedCallback </span><span style="color:#FFAB70">callback</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#F97583">    void</span><span style="color:#B392F0"> onAnimationCancelled</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<h3 id="remoteanimationtarget">RemoteAnimationTarget</h3>
+<ul>
+<li>代表参与动画的窗口</li>
+<li>包含窗口的位置、大小、Surface 等信息</li>
+</ul>
+<h2 id="使用场景">使用场景</h2>
+<ol>
+<li><strong>Launcher 启动动画</strong></li>
+<li><strong>自定义返回手势动画</strong></li>
+<li><strong>多窗口切换动画</strong></li>
+</ol>
+<h2 id="实现流程">实现流程</h2>
+<h3 id="1-注册动画">1. 注册动画</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="java"><code><span class="line"><span style="color:#E1E4E8">WindowManager wm </span><span style="color:#F97583">=</span><span style="color:#B392F0"> getSystemService</span><span style="color:#E1E4E8">(WindowManager.class);</span></span>
+<span class="line"><span style="color:#E1E4E8">wm.</span><span style="color:#B392F0">registerRemoteAnimations</span><span style="color:#E1E4E8">(runner, definition);</span></span></code></pre>
+<h3 id="2-动画执行">2. 动画执行</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>WMS 检测到窗口变化</span></span>
+<span class="line"><span>    → 通知已注册的 RemoteAnimationRunner</span></span>
+<span class="line"><span>    → Runner 执行自定义动画</span></span>
+<span class="line"><span>    → 动画完成回调</span></span></code></pre>
+<h3 id="3-动画控制">3. 动画控制</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="java"><code><span class="line"><span style="color:#6A737D">// 获取 SurfaceControl</span></span>
+<span class="line"><span style="color:#E1E4E8">SurfaceControl leash </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> appInfo.leash;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">// 执行动画</span></span>
+<span class="line"><span style="color:#E1E4E8">SurfaceControl.Transaction t </span><span style="color:#F97583">=</span><span style="color:#F97583"> new</span><span style="color:#E1E4E8"> SurfaceControl.</span><span style="color:#B392F0">Transaction</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">t.</span><span style="color:#B392F0">setPosition</span><span style="color:#E1E4E8">(leash, x, y);</span></span>
+<span class="line"><span style="color:#E1E4E8">t.</span><span style="color:#B392F0">apply</span><span style="color:#E1E4E8">();</span></span></code></pre>
+<h2 id="与-shelltransition-的关系">与 ShellTransition 的关系</h2>
+<p>RemoteAnimation 与 ShellTransition 可以共存，ShellTransition 提供了更底层的动画能力。</p>
+<h2 id="注意事项">注意事项</h2>
+<ol>
+<li>需要系统权限</li>
+<li>动画执行期间窗口状态被冻结</li>
+<li>需要正确处理动画取消</li>
+</ol>
+<h2 id="总结">总结</h2>
+<p>RemoteAnimation 为第三方应用提供了自定义窗口动画的能力，是实现个性化动画效果的重要机制。</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

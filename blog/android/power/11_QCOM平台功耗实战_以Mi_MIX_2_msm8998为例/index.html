@@ -1,0 +1,447 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>QCOM平台功耗实战：以Mi MIX 2 msm8998为例 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>QCOM平台功耗实战：以Mi MIX 2 msm8998为例</h1><div class="post-meta"><time datetime="2026-05-31T11:11:00.000Z">2026年5月31日</time><span> / android / power</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">android</span><span class="tag">power</span><span class="tag">qcom</span><span class="tag">msm8998</span><span class="tag">case</span></div></header><div class="article-body"><p>这篇记录不讲大而全的 QCOM 架构，而是围绕一台真实外接设备做功耗实战：Mi MIX 2，平台 msm8998，Android 14 / LOS21，<code>adb root</code> 可用。它是一个很适合学习的平台：节点可见度高，老 QCOM 的 interactive governor、thermal sysfs、wakeup_sources 都能看到，同时又能和现代 AOSP Framework 机制对上。</p>
+<p>但先说结论：<strong>插着 USB 调试的设备，不是自然待机场景。</strong> 这台设备的第一课就是测试条件控制。</p>
+<h2 id="设备信息">设备信息</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>model: Mi MIX 2</span></span>
+<span class="line"><span>device: chiron</span></span>
+<span class="line"><span>hardware: qcom</span></span>
+<span class="line"><span>board: msm8998</span></span>
+<span class="line"><span>soc: MSM8998</span></span>
+<span class="line"><span>Android: 14</span></span>
+<span class="line"><span>adb: root</span></span></code></pre>
+<p>基础命令：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> devices</span><span style="color:#79B8FF"> -l</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> getprop</span><span style="color:#9ECBFF"> ro.product.model</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> getprop</span><span style="color:#9ECBFF"> ro.product.device</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> getprop</span><span style="color:#9ECBFF"> ro.hardware</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> getprop</span><span style="color:#9ECBFF"> ro.product.board</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> getprop</span><span style="color:#9ECBFF"> ro.soc.model</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> getprop</span><span style="color:#9ECBFF"> ro.build.version.release</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> id</span></span></code></pre>
+<h2 id="实战总图">实战总图</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[Mi MIX 2 msm8998]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B[Framework dumpsys]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C[Kernel sysfs]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D[Perfetto/ftrace]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E[BatteryStats]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F[External current meter]</span></span>
+<span class="line"><span style="color:#E1E4E8">    G[Conclusion]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    B --> G</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> G</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> G</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> G</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> G</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    B --> B1[dumpsys power battery thermalservice display]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> C1[wakeup_sources cpufreq cpuidle thermal power_supply]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> D1[sched freq idle irq power]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> E1[UID alarm wakelock job network]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> F1[real current]</span></span></code></pre>
+<p>实战原则：</p>
+<ul>
+<li>每次只改一个变量。</li>
+<li>所有结论都写测试条件。</li>
+<li>看 delta，不看单次绝对值。</li>
+<li>Framework、kernel、Perfetto、电流至少两类证据能互相解释。</li>
+<li>插 USB 数据只能做机制观察，不能伪装成自然待机。</li>
+</ul>
+<h2 id="初始基线">初始基线</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> battery</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> power</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> thermalservice</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/kernel/debug/wakeup_sources</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> head</span></span></code></pre>
+<p>曾观察到：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>dumpsys battery:</span></span>
+<span class="line"><span>    USB powered: true</span></span>
+<span class="line"><span>    level: 100</span></span>
+<span class="line"><span>    status: Full</span></span>
+<span class="line"><span>    voltage: 4282 mV</span></span>
+<span class="line"><span>    temperature: 370 = 37.0 C</span></span>
+<span class="line"><span>    max charging current: 500000 uA</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>dumpsys power:</span></span>
+<span class="line"><span>    mWakefulness=Awake</span></span>
+<span class="line"><span>    mIsPowered=true</span></span>
+<span class="line"><span>    mPlugType=2</span></span>
+<span class="line"><span>    mStayOn=true</span></span>
+<span class="line"><span>    mHalInteractiveModeEnabled=true</span></span>
+<span class="line"><span>    mHoldingDisplaySuspendBlocker=true</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>dumpsys thermalservice:</span></span>
+<span class="line"><span>    Thermal Status: 0</span></span>
+<span class="line"><span>    Cached temperatures:</span></span>
+<span class="line"><span>    HAL Ready: false</span></span></code></pre>
+<p>第一结论：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>当前是 USB 供电 + 满电 + stay awake + 亮屏/交互态。</span></span>
+<span class="line"><span>不能把这组数据当自然待机功耗基线。</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[USB connected]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B[mIsPowered true]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C[mPlugType USB]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D[mStayOn true]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E[mWakefulness Awake]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F[Display suspend blocker held]</span></span>
+<span class="line"><span style="color:#E1E4E8">    G[Not natural standby]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    A --> B</span></span>
+<span class="line"><span style="color:#E1E4E8">    A --> C</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> D</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> F</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> G</span></span></code></pre>
+<h2 id="目录地图">目录地图</h2>
+<p>常用节点：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> ls</span><span style="color:#9ECBFF"> /sys/class/power_supply</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> ls</span><span style="color:#9ECBFF"> /sys/class/thermal</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> ls</span><span style="color:#9ECBFF"> /sys/devices/system/cpu/cpufreq</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> ls</span><span style="color:#9ECBFF"> /sys/devices/system/cpu/cpu0/cpuidle</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> ls</span><span style="color:#9ECBFF"> /sys/kernel/debug/tracing/events</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> ls</span><span style="color:#9ECBFF"> /sys/kernel/tracing/events</span></span></code></pre>
+<p>QCOM 常见方向：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>方向</th><th>节点/命令</th></tr></thead><tbody><tr><td>CPU 调频</td><td><code>/sys/devices/system/cpu/cpufreq/policy*</code></td></tr><tr><td>CPU idle</td><td><code>/sys/devices/system/cpu/cpu*/cpuidle/state*</code></td></tr><tr><td>GPU</td><td><code>/sys/class/kgsl/kgsl-3d0/*</code></td></tr><tr><td>devfreq/DDR</td><td><code>/sys/class/devfreq/*</code></td></tr><tr><td>热</td><td><code>/sys/class/thermal/thermal_zone*</code>、<code>cooling_device*</code></td></tr><tr><td>充电</td><td><code>/sys/class/power_supply/*</code></td></tr><tr><td>唤醒源</td><td><code>/sys/kernel/debug/wakeup_sources</code></td></tr><tr><td>trace</td><td><code>/sys/kernel/tracing/events/*</code></td></tr></tbody></table>
+<p>先发现，再分析，不要假设节点一定存在。</p>
+<h2 id="cpu平台特征">CPU平台特征</h2>
+<p>观察命令：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for p in /sys/devices/system/cpu/cpufreq/policy*; do echo "== $p =="; cat $p/related_cpus; cat $p/scaling_governor; cat $p/scaling_min_freq; cat $p/scaling_cur_freq; cat $p/scaling_max_freq; done'</span></span></code></pre>
+<p>曾观察到：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>policy0: related small cores, governor=interactive, max around 1900800</span></span>
+<span class="line"><span>policy4: related big cores, governor=interactive, max around 2361600</span></span></code></pre>
+<p>意义：</p>
+<ul>
+<li>这不是现代 <code>schedutil</code> 路线。</li>
+<li>需要关注 interactive governor 参数。</li>
+<li>需要关注 QCOM vendor boost/perflock。</li>
+<li>需要关注 thermal-cpufreq cooling。</li>
+</ul>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[Thread runnable]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B[Scheduler]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C[small cluster policy0]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D[big cluster policy4]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E[interactive governor]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F[Vendor boost]</span></span>
+<span class="line"><span style="color:#E1E4E8">    G[Thermal cpufreq cooling]</span></span>
+<span class="line"><span style="color:#E1E4E8">    H[Actual frequency]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    A --> B</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> D</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> E</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> H</span></span>
+<span class="line"><span style="color:#E1E4E8">    G --> H</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> H</span></span></code></pre>
+<h2 id="thermal特征">Thermal特征</h2>
+<p>Framework：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> thermalservice</span></span></code></pre>
+<p>如果是：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>HAL Ready: false</span></span></code></pre>
+<p>下一步看 sysfs：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for z in /sys/class/thermal/thermal_zone*; do echo "== $z =="; cat $z/type; cat $z/temp; done'</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for c in /sys/class/thermal/cooling_device*; do echo "== $c =="; cat $c/type; cat $c/cur_state; cat $c/max_state; done'</span></span></code></pre>
+<p>曾观察到类型：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>battery</span></span>
+<span class="line"><span>pm8998_tz</span></span>
+<span class="line"><span>pmi8998_tz</span></span>
+<span class="line"><span>pm8005_tz</span></span>
+<span class="line"><span>msm_therm</span></span>
+<span class="line"><span>tsens_tz_sensor*</span></span>
+<span class="line"><span>thermal-cpufreq-0</span></span>
+<span class="line"><span>thermal-cpufreq-1</span></span></code></pre>
+<p>结论：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>Thermal HAL 不可用时，Framework 看不到 thermal 数据；</span></span>
+<span class="line"><span>但 kernel thermal_zone/cooling_device 仍可用于分析热和限频。</span></span></code></pre>
+<h2 id="wakeup_sources特征">wakeup_sources特征</h2>
+<p>命令：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/kernel/debug/wakeup_sources</span></span></code></pre>
+<p>曾看到 QCOM/vendor 相关名字：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>hal_bluetooth_lock</span></span>
+<span class="line"><span>Loc_hal</span></span>
+<span class="line"><span>lowi-server</span></span>
+<span class="line"><span>netmgrd</span></span>
+<span class="line"><span>DataModule</span></span>
+<span class="line"><span>qti</span></span></code></pre>
+<p>不能只看到名字就定责。正确做法是做固定窗口 delta：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/kernel/debug/wakeup_sources</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> ws_before.txt</span></span>
+<span class="line"><span style="color:#B392F0">sleep</span><span style="color:#79B8FF"> 600</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/kernel/debug/wakeup_sources</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> ws_after.txt</span></span></code></pre>
+<p>判断：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>字段</th><th>意义</th></tr></thead><tbody><tr><td><code>active_since</code> 增长</td><td>当前可能挡 suspend</td></tr><tr><td><code>prevent_suspend_time</code> 增长</td><td>阻止 suspend</td></tr><tr><td><code>wakeup_count</code> 增长</td><td>suspend 后唤醒系统</td></tr><tr><td><code>event_count</code> 增长</td><td>事件发生，不一定唤醒</td></tr><tr><td><code>total_time</code> 历史大</td><td>不代表当前问题</td></tr></tbody></table>
+<h2 id="case-1usb破坏待机测试">Case 1：USB破坏待机测试</h2>
+<p>目标：证明当前 adb USB 状态不是自然待机。</p>
+<p>采集：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> battery</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> battery_usb.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> power</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> power_usb.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> settings</span><span style="color:#9ECBFF"> get</span><span style="color:#9ECBFF"> global</span><span style="color:#9ECBFF"> stay_on_while_plugged_in</span></span></code></pre>
+<p>证据：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>USB powered=true</span></span>
+<span class="line"><span>mIsPowered=true</span></span>
+<span class="line"><span>mPlugType=2</span></span>
+<span class="line"><span>mStayOn=true</span></span>
+<span class="line"><span>mWakefulness=Awake</span></span></code></pre>
+<p>我会这样写结论：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>当前设备插 USB 后进入 powered 状态，并且 stay awake 生效。</span></span>
+<span class="line"><span>Framework 保持 Awake/Display blocker，不能代表自然灭屏待机。</span></span>
+<span class="line"><span>后续自然待机测试必须使用本地脚本落盘后拔 USB。</span></span></code></pre>
+<h2 id="case-2本地脚本拔线待机">Case 2：本地脚本拔线待机</h2>
+<p>脚本：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> push</span><span style="color:#9ECBFF"> collect_standby.sh</span><span style="color:#9ECBFF"> /data/local/tmp/</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> chmod</span><span style="color:#79B8FF"> 755</span><span style="color:#9ECBFF"> /data/local/tmp/collect_standby.sh</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'nohup /data/local/tmp/collect_standby.sh 600 >/data/local/tmp/collect_standby.nohup 2>&#x26;1 &#x26;'</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> input</span><span style="color:#9ECBFF"> keyevent</span><span style="color:#79B8FF"> 26</span></span></code></pre>
+<p>脚本内容：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#6A737D">#!/system/bin/sh</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">OUT</span><span style="color:#F97583">=</span><span style="color:#9ECBFF">/data/local/tmp/standby_</span><span style="color:#E1E4E8">$(</span><span style="color:#B392F0">date</span><span style="color:#9ECBFF"> +%Y%m%d_%H%M%S</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">DURATION</span><span style="color:#F97583">=</span><span style="color:#FFAB70">${1</span><span style="color:#F97583">:-</span><span style="color:#FFAB70">600}</span></span>
+<span class="line"><span style="color:#B392F0">mkdir</span><span style="color:#79B8FF"> -p</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">"</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> power</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/power_before.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> battery</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/battery_before.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> deviceidle</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/deviceidle_before.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> alarm</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/alarm_before.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> jobscheduler</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/jobs_before.txt"</span></span>
+<span class="line"><span style="color:#B392F0">cat</span><span style="color:#9ECBFF"> /sys/kernel/debug/wakeup_sources</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/ws_before.txt"</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">sleep</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$DURATION</span><span style="color:#9ECBFF">"</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> power</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/power_after.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> battery</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/battery_after.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> deviceidle</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/deviceidle_after.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> alarm</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/alarm_after.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> jobscheduler</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/jobs_after.txt"</span></span>
+<span class="line"><span style="color:#B392F0">cat</span><span style="color:#9ECBFF"> /sys/kernel/debug/wakeup_sources</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/ws_after.txt"</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">tar</span><span style="color:#79B8FF"> -czf</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">.tar.gz"</span><span style="color:#79B8FF"> -C</span><span style="color:#9ECBFF"> "$(</span><span style="color:#B392F0">dirname</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">")"</span><span style="color:#9ECBFF"> "$(</span><span style="color:#B392F0">basename</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">")"</span></span>
+<span class="line"><span style="color:#79B8FF">echo</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">.tar.gz"</span></span></code></pre>
+<p>执行后拔 USB，等待结束再插回拉取。</p>
+<h2 id="case-3thermal-hal缺失但cpu限频">Case 3：Thermal HAL缺失但CPU限频</h2>
+<p>采集：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> thermalservice</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for z in /sys/class/thermal/thermal_zone*; do echo "$(cat $z/type) $(cat $z/temp)"; done'</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for c in /sys/class/thermal/cooling_device*; do echo "$(cat $c/type) $(cat $c/cur_state)/$(cat $c/max_state)"; done'</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for p in /sys/devices/system/cpu/cpufreq/policy*; do echo "$p $(cat $p/scaling_max_freq) $(cat $p/scaling_cur_freq)"; done'</span></span></code></pre>
+<p>我会这样写报告：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>尽管 dumpsys thermalservice 显示 HAL Ready=false，kernel thermal_zone 可见 PMIC/battery/tsens 温度。</span></span>
+<span class="line"><span>当 thermal-cpufreq cur_state 变化时，policy scaling_max_freq 同步下降。</span></span>
+<span class="line"><span>因此该平台热限频分析应以 kernel thermal sysfs 和 cpufreq 变化为证据。</span></span></code></pre>
+<h2 id="case-4定位唤醒">Case 4：定位唤醒</h2>
+<p>AB：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Case</th><th>Wi-Fi</th><th>Location</th><th>Mobile data</th></tr></thead><tbody><tr><td>A</td><td>off</td><td>off</td><td>airplane</td></tr><tr><td>B</td><td>on</td><td>on</td><td>airplane</td></tr></tbody></table>
+<p>采集：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/kernel/debug/wakeup_sources</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> ws_before.txt</span></span>
+<span class="line"><span style="color:#B392F0">sleep</span><span style="color:#79B8FF"> 600</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/kernel/debug/wakeup_sources</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> ws_after.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> location</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> location.txt</span></span></code></pre>
+<p>观察目标：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>Loc_hal</span></span>
+<span class="line"><span>lowi-server</span></span>
+<span class="line"><span>wlan相关 wakeup source</span></span></code></pre>
+<p>我会这样写结论：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>定位开启后，Loc_hal/lowi-server 在固定窗口内 wakeup_count/event_count 增长明显高于 baseline。</span></span>
+<span class="line"><span>结合 dumpsys location 中后台 request，可判断该场景属于定位/Wi-Fi scan 驱动的周期唤醒。</span></span></code></pre>
+<h2 id="case-5蓝牙唤醒">Case 5：蓝牙唤醒</h2>
+<p>AB：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> svc</span><span style="color:#9ECBFF"> bluetooth</span><span style="color:#9ECBFF"> disable</span></span>
+<span class="line"><span style="color:#B392F0">sleep</span><span style="color:#79B8FF"> 60</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/kernel/debug/wakeup_sources</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> bt_off.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> svc</span><span style="color:#9ECBFF"> bluetooth</span><span style="color:#9ECBFF"> enable</span></span>
+<span class="line"><span style="color:#B392F0">sleep</span><span style="color:#79B8FF"> 600</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/kernel/debug/wakeup_sources</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> bt_on.txt</span></span></code></pre>
+<p>观察：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>hal_bluetooth_lock</span></span>
+<span class="line"><span>bt/wcnss相关 IRQ 或 wakeup source</span></span></code></pre>
+<p>结论：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>蓝牙开启后 hal_bluetooth_lock delta 明显增长，且 Perfetto 中蓝牙相关线程周期活动。</span></span>
+<span class="line"><span>需要继续确认是 BLE scan、设备重连还是 HAL 持锁异常。</span></span></code></pre>
+<h2 id="case-6移动网络modem唤醒">Case 6：移动网络/Modem唤醒</h2>
+<p>AB：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Case</th><th>移动数据</th><th>飞行模式</th></tr></thead><tbody><tr><td>A</td><td>off</td><td>on</td></tr><tr><td>B</td><td>on</td><td>off</td></tr></tbody></table>
+<p>关注：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>netmgrd</span></span>
+<span class="line"><span>DataModule</span></span>
+<span class="line"><span>qti</span></span>
+<span class="line"><span>modem相关 wakeup source</span></span>
+<span class="line"><span>radio active</span></span></code></pre>
+<p>命令：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> telephony.registry</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> telephony_registry.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> netstats</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> netstats.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/kernel/debug/wakeup_sources</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> ws.txt</span></span></code></pre>
+<p>结论：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>移动数据开启且弱网时，netmgrd/DataModule 相关 wakeup source 增长，同时 netstats/radio 活动增加。</span></span>
+<span class="line"><span>该类问题需要结合信号强度和重传，不应只按流量大小判断。</span></span></code></pre>
+<h2 id="case-7亮屏静置cpu不降频">Case 7：亮屏静置CPU不降频</h2>
+<p>采集：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> SurfaceFlinger</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> sf.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> gfxinfo</span><span style="color:#F97583"> &#x3C;</span><span style="color:#9ECBFF">packag</span><span style="color:#E1E4E8">e</span><span style="color:#F97583">></span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> gfxinfo.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> perfetto</span><span style="color:#79B8FF"> -o</span><span style="color:#9ECBFF"> /data/misc/perfetto-traces/display_cpu.trace</span><span style="color:#79B8FF"> -t</span><span style="color:#9ECBFF"> 60s</span><span style="color:#9ECBFF"> sched</span><span style="color:#9ECBFF"> freq</span><span style="color:#9ECBFF"> idle</span><span style="color:#9ECBFF"> gfx</span><span style="color:#9ECBFF"> view</span><span style="color:#9ECBFF"> power</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> pull</span><span style="color:#9ECBFF"> /data/misc/perfetto-traces/display_cpu.trace</span><span style="color:#9ECBFF"> .</span></span></code></pre>
+<p>我会这样写结论：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>目标页面静置但 RenderThread/SF 周期运行，policy4 频率长时间维持高位。</span></span>
+<span class="line"><span>该问题不是纯显示亮度，而是持续刷新导致 CPU/GPU/display pipeline 活跃。</span></span></code></pre>
+<h2 id="case-8充电发热限流">Case 8：充电发热限流</h2>
+<p>采集：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> battery</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for d in /sys/class/power_supply/*; do echo "== $d =="; cat $d/type 2>/dev/null; cat $d/current_now 2>/dev/null; cat $d/temp 2>/dev/null; done'</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for z in /sys/class/thermal/thermal_zone*; do echo "$(cat $z/type) $(cat $z/temp)"; done'</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for c in /sys/class/thermal/cooling_device*; do echo "$(cat $c/type) $(cat $c/cur_state)"; done'</span></span></code></pre>
+<p>我会这样写结论：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>充电电流下降与 battery/PMIC 温度上升同步，cooling state 出现变化。</span></span>
+<span class="line"><span>该现象属于 thermal 保护触发充电限流，需区分正常保护和阈值/散热异常。</span></span></code></pre>
+<h2 id="实战报告写法">实战报告写法</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>1. 设备</span></span>
+<span class="line"><span>   model/device/board/soc/android/root状态</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>2. 测试条件</span></span>
+<span class="line"><span>   USB是否连接</span></span>
+<span class="line"><span>   屏幕状态</span></span>
+<span class="line"><span>   亮度/刷新率</span></span>
+<span class="line"><span>   Wi-Fi/BT/定位/移动数据</span></span>
+<span class="line"><span>   温度起止</span></span>
+<span class="line"><span>   电量区间</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>3. Framework证据</span></span>
+<span class="line"><span>   dumpsys power</span></span>
+<span class="line"><span>   dumpsys battery</span></span>
+<span class="line"><span>   dumpsys thermalservice</span></span>
+<span class="line"><span>   dumpsys alarm/jobscheduler/deviceidle</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>4. Kernel证据</span></span>
+<span class="line"><span>   wakeup_sources delta</span></span>
+<span class="line"><span>   cpufreq/cpuidle delta</span></span>
+<span class="line"><span>   thermal_zone/cooling_device</span></span>
+<span class="line"><span>   power_supply</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>5. 时间线</span></span>
+<span class="line"><span>   Perfetto sched/freq/idle/power/irq/gfx</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>6. 结论</span></span>
+<span class="line"><span>   问题类型</span></span>
+<span class="line"><span>   根因模块</span></span>
+<span class="line"><span>   限制条件</span></span>
+<span class="line"><span>   下一步验证</span></span></code></pre>
+<h2 id="复盘">复盘</h2>
+<p>Mi MIX 2 / msm8998 的价值在于它把很多真实问题都暴露出来：</p>
+<ul>
+<li>USB 调试会破坏待机条件。</li>
+<li>老 QCOM 平台可能使用 interactive governor。</li>
+<li>Framework Thermal HAL 可能不可用，但 kernel thermal 仍可分析。</li>
+<li>wakeup_sources 里能看到 Bluetooth/Location/Network vendor 名字，但必须看 delta。</li>
+<li>功耗结论必须由 Framework、kernel、Perfetto、电流/温度互相支撑。</li>
+</ul>
+<p>我的判断口径：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>真机功耗实战不只是多跑命令，而是把每条命令放回测试条件和因果链里。</span></span></code></pre></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

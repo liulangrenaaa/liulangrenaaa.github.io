@@ -1,0 +1,39 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>AMS-ATMS-WMS职责边界 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>AMS-ATMS-WMS职责边界</h1><div class="post-meta"><time datetime="2023-10-01T10:00:00.000Z">2023年10月1日</time><span> / android / framework基础</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">android</span><span class="tag">framework</span><span class="tag">AMS</span><span class="tag">ATMS</span><span class="tag">WMS</span></div></header><div class="article-body"><h2 id="简介">简介</h2>
+<p>AMS（ActivityManagerService）、ATMS（ActivityTaskManagerService）和 WMS（WindowManagerService）是 Android 系统中最重要的三个服务，它们共同管理着应用的界面和交互。</p>
+<h2 id="职责划分">职责划分</h2>
+<h3 id="ams-activitymanagerservice">AMS (ActivityManagerService)</h3>
+<ul>
+<li>管理 Activity、Service、BroadcastReceiver、ContentProvider 的生命周期</li>
+<li>进程管理（创建、销毁、优先级调整）</li>
+<li>任务栈管理</li>
+</ul>
+<h3 id="atms-activitytaskmanagerservice">ATMS (ActivityTaskManagerService)</h3>
+<ul>
+<li>Android 10 从 AMS 中分离出来</li>
+<li>专门负责 Activity 和 Task 的管理</li>
+<li>窗口模式管理（分屏、画中画等）</li>
+</ul>
+<h3 id="wms-windowmanagerservice">WMS (WindowManagerService)</h3>
+<ul>
+<li>窗口的添加、删除、更新</li>
+<li>窗口层级管理</li>
+<li>窗口动画</li>
+<li>输入事件分发</li>
+</ul>
+<h2 id="协作关系">协作关系</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>App 进程</span></span>
+<span class="line"><span>    ↓ Binder</span></span>
+<span class="line"><span>ATMS (Activity 管理)</span></span>
+<span class="line"><span>    ↓</span></span>
+<span class="line"><span>WMS (窗口管理)</span></span>
+<span class="line"><span>    ↓</span></span>
+<span class="line"><span>SurfaceFlinger (显示)</span></span></code></pre>
+<h2 id="典型流程">典型流程</h2>
+<h3 id="activity-启动流程中的协作">Activity 启动流程中的协作</h3>
+<ol>
+<li>ATMS：处理 Activity 启动请求，管理 Task</li>
+<li>AMS：管理进程生命周期</li>
+<li>WMS：创建窗口，管理窗口层级</li>
+</ol>
+<h2 id="总结">总结</h2>
+<p>AMS 负责组件和进程管理，ATMS 负责 Activity 和任务管理，WMS 负责窗口管理。三者各司其职，共同保证 Android 界面系统的正常运行。</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

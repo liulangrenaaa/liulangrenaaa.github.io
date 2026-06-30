@@ -1,0 +1,118 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>android12 gdb64调试进程 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>android12 gdb64调试进程</h1><div class="post-meta"><time datetime="2021-09-23T19:00:00.000Z">2021年9月23日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">android12 gdb64调试进程</span><span class="tag">android framework</span></div></header><div class="article-body"><h1 id="背景">背景</h1>
+<p>在研究<code>pixel6</code> 双X1调度策略时，发现在render_thread 中最后会通过 reportworkduration
+来设置 task的uclamp_min。
+在游戏场景下，由于没有走安卓标准绘制流程，不存在 render_thread，所以肯定不是走的应用滑动场景的 SetUclamp 的代码路径</p>
+<p>有两种方式确定，一是读代码，但是这种可能会有多个代码路径。并不能确定到底是具体哪一个代码路径；二是通过gdb调试，打断点，然后查看backtrace，这种方式可以确定实际代码路径，但是较为繁琐。</p>
+<h1 id="gdb-调试">gdb 调试</h1>
+<h2 id="确定需要被-gdb-断点的进程">确定需要被 gdb 断点的进程</h2>
+<p>可以发现 uclamp_min 值不为0的时候，<code>pid</code>为 552的 <code>android.hardware.power-service.pixel-libperffmgr</code> 进程输出的 <code>adpf.2731-10090-d010-min</code> val也是 210。</p>
+<p>说明 此次我们需要trace的进程就是 552</p>
+<h2 id="设备之间的关系">设备之间的关系</h2>
+<p><code>windows</code> <code>wsl</code> <code>android phone</code> 三个设备</p>
+<p>我们可以只用两个设备, <code>android phone</code> 是必须的， <code>wsl</code> <code>windows phone</code> 是随便选一个作为host 主机。我们选 <code>wsl</code> 作为host主机，来gdb调试 <code>android phone</code>。</p>
+<p>正常gdb调试中，host主机 与 被调试代码都是在 同一个设备上，但是在 调试<code>android phone</code>中，host主机 和 被调试的<code>android phone</code>的代码不在一个设备上，gdb是通过 tcp通信的，所以需要在host主机中将设备的 gdbserver 端口号进行一次转发，这样才能可以debug。</p>
+<h2 id="debug步骤">debug步骤</h2>
+<h3 id="wsl-主机转发-android-phone的端口">wsl 主机转发 android phone的端口</h3>
+<p>可以直接使用 <code>adb forward</code> 来进行转发。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@wsl:~ $ adb forward tcp:23946 tcp:23946</span></span>
+<span class="line"><span>23946</span></span>
+<span class="line"><span>ubuntu@wsl:~ $</span></span></code></pre>
+<h3 id="android-phone-gdbserver-attach-被调试的程序">android phone gdbserver attach 被调试的程序</h3>
+<p>正常直接 grep出 需要attach的进程的pid即可，然后使用 <code>gdbserver64</code> 进行attach
+如：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>raven:/ # ps -e | grep power</span></span>
+<span class="line"><span>system         735     1 10852056  5948 binder_wait_for_work 0 S android.hardware.power.stats-service.pixel</span></span>
+<span class="line"><span>root         11621     2       0      0 worker_thread       0 I [kworker/u17:0-kbase_pm_poweroff_wait]</span></span>
+<span class="line"><span>root         11956     2       0      0 worker_thread       0 I [kworker/u17:1-kbase_pm_poweroff_wait]</span></span>
+<span class="line"><span>root         11973     1 10902368  5760 binder_wait_for_work 0 S android.hardware.power-service.pixel-libperfmgr</span></span>
+<span class="line"><span>raven:/ # gdbserver64 :23946 --attach 11973</span></span>
+<span class="line"><span>Attached; pid = 11973</span></span>
+<span class="line"><span>Listening on port 23946</span></span>
+<span class="line"><span>Remote debugging from host 127.0.0.1, port 57517</span></span></code></pre>
+<p>android设备上需要安装<code>gdbserver/gdbserver64</code>（调试arm64程序需要使用
+<code>userdebug</code>固件可能会自带gdbserver/gdbserver64程序，
+而<code>user</code>版android固件并没有把gdbserver编译到系统中，需要我们手动push。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>raven:/ # gdbserver64 --help</span></span>
+<span class="line"><span>Usage:  gdbserver [OPTIONS] COMM PROG [ARGS ...]</span></span>
+<span class="line"><span>        gdbserver [OPTIONS] --attach COMM PID</span></span>
+<span class="line"><span>        gdbserver [OPTIONS] --multi COMM</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>COMM may either be a tty device (for serial debugging),</span></span>
+<span class="line"><span>HOST:PORT to listen for a TCP connection, or '-' or 'stdio' to use</span></span>
+<span class="line"><span>stdin/stdout of gdbserver.</span></span>
+<span class="line"><span>PROG is the executable program.  ARGS are arguments passed to inferior.</span></span>
+<span class="line"><span>PID is the process ID to attach to, when --attach is specified.</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Operating modes:</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>  --attach              Attach to running process PID.</span></span>
+<span class="line"><span>  --multi               Start server without a specific program, and</span></span>
+<span class="line"><span>                        only quit when explicitly commanded.</span></span>
+<span class="line"><span>  --once                Exit after the first connection has closed.</span></span>
+<span class="line"><span>  --help                Print this message and then exit.</span></span>
+<span class="line"><span>  --version             Display version information and exit.</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Other options:</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>  --wrapper WRAPPER --  Run WRAPPER to start new programs.</span></span>
+<span class="line"><span>  --disable-randomization</span></span>
+<span class="line"><span>                        Run PROG with address space randomization disabled.</span></span>
+<span class="line"><span>  --no-disable-randomization</span></span>
+<span class="line"><span>                        Don't disable address space randomization when</span></span>
+<span class="line"><span>                        starting PROG.</span></span>
+<span class="line"><span>  --startup-with-shell</span></span>
+<span class="line"><span>                        Start PROG using a shell.  I.e., execs a shell that</span></span>
+<span class="line"><span>                        then execs PROG.  (default)</span></span>
+<span class="line"><span>  --no-startup-with-shell</span></span>
+<span class="line"><span>                        Exec PROG directly instead of using a shell.</span></span>
+<span class="line"><span>                        Disables argument globbing and variable substitution</span></span>
+<span class="line"><span>                        on UNIX-like systems.</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Debug options:</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>  --debug               Enable general debugging output.</span></span>
+<span class="line"><span>  --debug-format=opt1[,opt2,...]</span></span>
+<span class="line"><span>                        Specify extra content in debugging output.</span></span>
+<span class="line"><span>                          Options:</span></span>
+<span class="line"><span>                            all</span></span>
+<span class="line"><span>                            none</span></span>
+<span class="line"><span>                            timestamp</span></span>
+<span class="line"><span>  --remote-debug        Enable remote protocol debugging output.</span></span>
+<span class="line"><span>  --disable-packet=opt1[,opt2,...]</span></span>
+<span class="line"><span>                        Disable support for RSP packets or features.</span></span>
+<span class="line"><span>                          Options:</span></span>
+<span class="line"><span>                            vCont, Tthread, qC, qfThreadInfo and</span></span>
+<span class="line"><span>                            threads (disable all threading packets).</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>For more information, consult the GDB manual (available as on-line</span></span>
+<span class="line"><span>info or a printed manual).</span></span>
+<span class="line"><span>Report bugs to "&#x3C;http://www.gnu.org/software/gdb/bugs/>".</span></span></code></pre>
+<h3 id="host-主机运行gdb-准备调试">host 主机运行gdb 准备调试</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@wsl:/mnt/d/Users/50001309/AppData/Local/Android/Sdk/ndk/23.1.7779620/prebuilt/windows-x86_64/bin $ ./gdb.exe</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>D:\Users\50001309\AppData\Local\Android\Sdk\ndk\23.1.7779620\prebuilt\windows-x86_64\bin\gdb-orig.exe: warning: Couldn't determine a path for</span></span>
+<span class="line"><span>the index cache d</span></span>
+<span class="line"><span>irectory.</span></span>
+<span class="line"><span>GNU gdb (GDB) 8.3</span></span>
+<span class="line"><span>Copyright (C) 2019 Free Software Foundation, Inc.</span></span>
+<span class="line"><span>License GPLv3+: GNU GPL version 3 or later &#x3C;http://gnu.org/licenses/gpl.html></span></span>
+<span class="line"><span>This is free software: you are free to change and redistribute it.</span></span>
+<span class="line"><span>There is NO WARRANTY, to the extent permitted by law.</span></span>
+<span class="line"><span>Type "show copying" and "show warranty" for details.</span></span>
+<span class="line"><span>This GDB was configured as "x86_64-w64-mingw32".</span></span>
+<span class="line"><span>Type "show configuration" for configuration details.</span></span>
+<span class="line"><span>--Type &#x3C;RET> for more, q to quit, c to continue without paging--</span></span>
+<span class="line"><span>For bug reporting instructions, please see:</span></span>
+<span class="line"><span>&#x3C;http://www.gnu.org/software/gdb/bugs/>.</span></span>
+<span class="line"><span>(gdb) file /mnt/d/Users/50001309/Downloads/debug/vendor/bin/hw/android.hardware.power-service.pixel-libperfmgr</span></span>
+<span class="line"><span>/mnt/d/Users/50001309/Downloads/debug/vendor/bin/hw/android.hardware.power-service.pixel-libperfmgr: No such file or directory.</span></span>
+<span class="line"><span>(gdb) target remote :23946</span></span>
+<span class="line"><span>Remote debugging using :23946</span></span>
+<span class="line"><span>Reading /vendor/bin/hw/android.hardware.power-service.pixel-libperfmgr from remote target...</span></span>
+<span class="line"><span>warning: File transfers from remote targets can be slow. Use "set sysroot" to access files locally instead.</span></span>
+<span class="line"><span>BFD: target:/vendor/bin/hw/android.hardware.power-service.pixel-libperfmgr: unknown type [0x13] section `.relr.dyn'</span></span>
+<span class="line"><span>Reading /vendor/bin/hw/android.hardware.power-service.pixel-libperfmgr from remote target...</span></span>
+<span class="line"><span>BFD: target:/vendor/bin/hw/android.hardware.power-service.pixel-libperfmgr: unknown type [0x13] section `.relr.dyn'</span></span>
+<span class="line"><span>Reading symbols from target:/vendor/bin/hw/android.hardware.power-service.pixel-libperfmgr...</span></span></code></pre>
+<p>然后直接 就是 <code>b</code> <code>c</code> <code>info b</code> 等常见的gdb调试的步骤。</p>
+<p>参考<a href="https://blog.csdn.net/rikeyone/article/details/80284115">使用gdb远程调试android native程序</a></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

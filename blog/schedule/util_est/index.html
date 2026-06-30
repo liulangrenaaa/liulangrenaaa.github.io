@@ -1,0 +1,243 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>util_est | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>util_est</h1><div class="post-meta"><time datetime="2021-04-30T19:00:00.000Z">2021年4月30日</time><span> / linux kernel / linux schedule</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">linux kernel</span></div></header><div class="article-body"><h2 id="what">WHAT?</h2>
+<p><code>struct util_est - Estimation utilization of FAIR tasks</code>
+这是一个评估 <code>fair</code> task的 utilization的结构</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>   It's worth noting that the estimated utilization is tracked only for</span></span>
+<span class="line"><span>    objects of interests, specifically:</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>     - Tasks: to better support tasks placement decisions</span></span>
+<span class="line"><span>     - root cfs_rqs: to better support both tasks placement decisions as</span></span>
+<span class="line"><span>                     well as frequencies selection</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>   Moreover, the PELT utilization of a task can be updated every [ms], thus</span></span>
+<span class="line"><span>    making it a continuously changing value for certain longer running</span></span>
+<span class="line"><span>    tasks. This means that the instantaneous PELT utilization of a RUNNING</span></span>
+<span class="line"><span>    task is not really meaningful to properly support scheduler decisions.</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>    For all these reasons, a more stable signal can do a better job of</span></span>
+<span class="line"><span>    representing the expected/estimated utilization of a task/cfs_rq.</span></span>
+<span class="line"><span>    Such a signal can be easily created on top of PELT by still using it as</span></span>
+<span class="line"><span>    an estimator which produces values to be aggregated on meaningful</span></span>
+<span class="line"><span>    events.</span></span></code></pre>
+<h2 id="数据结构">数据结构</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/**</span></span>
+<span class="line"><span> * struct util_est - Estimation utilization of FAIR tasks</span></span>
+<span class="line"><span> * @enqueued: instantaneous estimated utilization of a task/cpu -- task的 瞬时的 util</span></span>
+<span class="line"><span> * @ewma:     the Exponential Weighted Moving Average (EWMA)</span></span>
+<span class="line"><span> *            utilization of a task                             -- task的 EWMA（移动加权平均） 的 util</span></span>
+<span class="line"><span> *</span></span>
+<span class="line"><span> * Support data structure to track an Exponential Weighted Moving Average</span></span>
+<span class="line"><span> * (EWMA) of a FAIR task's utilization. New samples are added to the moving</span></span>
+<span class="line"><span> * average each time a task completes an activation. Sample's weight is chosen</span></span>
+<span class="line"><span> * so that the EWMA will be relatively insensitive to transient changes to the</span></span>
+<span class="line"><span> * task's workload.</span></span>
+<span class="line"><span> *</span></span>
+<span class="line"><span> * The enqueued attribute has a slightly different meaning for tasks and cpus:</span></span>
+<span class="line"><span> * - task:   the task's util_avg at last task dequeue time</span></span>
+<span class="line"><span> * - cfs_rq: the sum of util_est.enqueued for each RUNNABLE task on that CPU</span></span>
+<span class="line"><span> * Thus, the util_est.enqueued of a task represents the contribution on the</span></span>
+<span class="line"><span> * estimated utilization of the CPU where that task is currently enqueued.</span></span>
+<span class="line"><span> *</span></span>
+<span class="line"><span> * Only for tasks we track a moving average of the past instantaneous</span></span>
+<span class="line"><span> * estimated utilization. This allows to absorb sporadic drops in utilization</span></span>
+<span class="line"><span> * of an otherwise almost periodic task.</span></span>
+<span class="line"><span> */</span></span>
+<span class="line"><span>struct util_est {</span></span>
+<span class="line"><span>	unsigned int			enqueued;</span></span>
+<span class="line"><span>	unsigned int			ewma;</span></span>
+<span class="line"><span>#define UTIL_EST_WEIGHT_SHIFT		2</span></span>
+<span class="line"><span>} __attribute__((__aligned__(sizeof(u64))));</span></span></code></pre>
+<p>当一个 <code>task</code> 完成一次激活（？？enqueue?）的时候，最新的采样会被 加权之后添加到 EWMA中；因为会对 <code>sample</code> 做一个加权，所以 <code>EWMA</code> 对 <code>task workload</code>的瞬时量不会态敏感。</p>
+<p><code>.enqueue</code> 这个含义对 <code>task</code> 与 <code>cpu</code> 有些不一样:
+<code>task</code>: 在上次 dequeue时刻，task的 util_avg
+<code>cfs_rq</code>: 在 这个cpu上 所有 <code>RUNNABLE task</code>的 <code>util_est.enqueued</code>之和</p>
+<p>我们只对 <code>tasks</code> 跟踪 过去瞬时的 util，不会对 <code>cpu</code>跟踪这个。</p>
+<h2 id="api">API</h2>
+<p><code>util_est</code> 对外部只提供了四个API</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static inline void util_est_enqueue(struct cfs_rq *cfs_rq,</span></span>
+<span class="line"><span>				    struct task_struct *p);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static inline void util_est_dequeue(struct cfs_rq *cfs_rq,</span></span>
+<span class="line"><span>				    struct task_struct *p);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static inline void util_est_update(struct cfs_rq *cfs_rq,</span></span>
+<span class="line"><span>				   struct task_struct *p,</span></span>
+<span class="line"><span>				   bool task_sleep);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static inline void cfs_se_util_change(struct sched_avg *avg);</span></span></code></pre>
+<p><code>util_est_enqueue</code> <code>util_est_dequeue</code> 都是只在 <code>enqueue_task_fair</code> <code>dequeue_task_fair</code> 中使用。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static void</span></span>
+<span class="line"><span>enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	struct cfs_rq *cfs_rq;</span></span>
+<span class="line"><span>	struct sched_entity *se = &#x26;p->se;</span></span>
+<span class="line"><span>	int idle_h_nr_running = task_has_idle_policy(p);</span></span>
+<span class="line"><span>	int task_new = !(flags &#x26; ENQUEUE_WAKEUP);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	/*</span></span>
+<span class="line"><span>	 * The code below (indirectly) updates schedutil which looks at</span></span>
+<span class="line"><span>	 * the cfs_rq utilization to select a frequency.</span></span>
+<span class="line"><span>	 * Let's add the task's estimated utilization to the cfs_rq's</span></span>
+<span class="line"><span>	 * estimated utilization, before we update schedutil.</span></span>
+<span class="line"><span>	 */</span></span>
+<span class="line"><span>	util_est_enqueue(&#x26;rq->cfs, p);</span></span>
+<span class="line"><span>    ......</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	struct cfs_rq *cfs_rq;</span></span>
+<span class="line"><span>	struct sched_entity *se = &#x26;p->se;</span></span>
+<span class="line"><span>	int task_sleep = flags &#x26; DEQUEUE_SLEEP;</span></span>
+<span class="line"><span>	int idle_h_nr_running = task_has_idle_policy(p);</span></span>
+<span class="line"><span>	bool was_sched_idle = sched_idle_rq(rq);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	util_est_dequeue(&#x26;rq->cfs, p);</span></span>
+<span class="line"><span>    ......</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>dequeue_throttle:</span></span>
+<span class="line"><span>	util_est_update(&#x26;rq->cfs, p, task_sleep);</span></span>
+<span class="line"><span>	hrtick_update(rq);</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p><code>enqueue_task_fair</code> 中调用 <code>util_est_enqueue</code> 时，此时 task->entity 还未 入队
+<code>dequeue_task_fair</code> 中调用 <code>util_est_dequeue</code> 时，此时 task->entity 还未 出队</p>
+<p>在 <code>enqueue_task_fair</code> <code>dequeue_task_fair</code> 中，会对 <code>entity</code> 进行 <code>enqueue_entity</code> 和 <code>dequeue_entity</code>，两个过程都需要 <code>update_load_avg</code>，</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static inline void cfs_se_util_change(struct sched_avg *avg)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	unsigned int enqueued;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (!sched_feat(UTIL_EST))</span></span>
+<span class="line"><span>		return;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	/* Avoid store if the flag has been already set */</span></span>
+<span class="line"><span>	enqueued = avg->util_est.enqueued;</span></span>
+<span class="line"><span>	if (!(enqueued &#x26; UTIL_AVG_UNCHANGED))</span></span>
+<span class="line"><span>		return;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	/* Reset flag to report util_avg has been updated */</span></span>
+<span class="line"><span>	enqueued &#x26;= ~UTIL_AVG_UNCHANGED;</span></span>
+<span class="line"><span>	WRITE_ONCE(avg->util_est.enqueued, enqueued);</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>int __update_load_avg_se(u64 now, struct cfs_rq *cfs_rq, struct sched_entity *se)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	if (___update_load_sum(now, &#x26;se->avg, !!se->on_rq, se_runnable(se),</span></span>
+<span class="line"><span>				cfs_rq->curr == se)) {</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>		___update_load_avg(&#x26;se->avg, se_weight(se));</span></span>
+<span class="line"><span>		cfs_se_util_change(&#x26;se->avg);</span></span>
+<span class="line"><span>		trace_pelt_se_tp(se);</span></span>
+<span class="line"><span>		return 1;</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	return 0;</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static inline void update_load_avg(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	u64 now = cfs_rq_clock_pelt(cfs_rq);</span></span>
+<span class="line"><span>	int decayed;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	/*</span></span>
+<span class="line"><span>	 * Track task load average for carrying it to new CPU after migrated, and</span></span>
+<span class="line"><span>	 * track group sched_entity load average for task_h_load calc in migration</span></span>
+<span class="line"><span>	 */</span></span>
+<span class="line"><span>	if (se->avg.last_update_time &#x26;&#x26; !(flags &#x26; SKIP_AGE_LOAD))</span></span>
+<span class="line"><span>		__update_load_avg_se(now, cfs_rq, se);</span></span>
+<span class="line"><span>    ......</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>所以一个 task <code>enqueue</code> <code>dequeue</code> 两个过程 和 util_est相关的流程是</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>enqueue_task_fair</span></span>
+<span class="line"><span>    |</span></span>
+<span class="line"><span>    util_est_enqueue</span></span>
+<span class="line"><span>    |</span></span>
+<span class="line"><span>    enqueue_entity</span></span>
+<span class="line"><span>        |</span></span>
+<span class="line"><span>        update_load_avg</span></span>
+<span class="line"><span>            |</span></span>
+<span class="line"><span>            __update_load_avg_se</span></span>
+<span class="line"><span>                |</span></span>
+<span class="line"><span>                cfs_se_util_change</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>......</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>dequeue_task_fair</span></span>
+<span class="line"><span>    |</span></span>
+<span class="line"><span>    util_est_dequeue</span></span>
+<span class="line"><span>    |</span></span>
+<span class="line"><span>    enqueue_entity</span></span>
+<span class="line"><span>        |</span></span>
+<span class="line"><span>        update_load_avg</span></span>
+<span class="line"><span>            |</span></span>
+<span class="line"><span>            __update_load_avg_se</span></span>
+<span class="line"><span>                |</span></span>
+<span class="line"><span>                cfs_se_util_change</span></span>
+<span class="line"><span>    |</span></span>
+<span class="line"><span>    util_est_update</span></span></code></pre>
+<p>都是先要经过 <code>cfs_se_util_change</code> 然后再经过 <code>dequeue_task_fair</code> 中的<code>util_est_update</code> ，在 <code>util_est_update</code> 中更新 EWMA的值。</p>
+<p>内部实现使用了 <code>UTIL_AVG_UNCHANGED</code> 这个变量来同步这两个过程。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/*</span></span>
+<span class="line"><span> * When a task is dequeued, its estimated utilization should not be update if</span></span>
+<span class="line"><span> * its util_avg has not been updated at least once.</span></span>
+<span class="line"><span> * This flag is used to synchronize util_avg updates with util_est updates.</span></span>
+<span class="line"><span> * We map this information into the LSB bit of the utilization saved at</span></span>
+<span class="line"><span> * dequeue time (i.e. util_est.dequeued).</span></span>
+<span class="line"><span> */</span></span></code></pre>
+<h2 id="ewma是啥">EWMA是啥？</h2>
+<p>参考<a href="https://baike.baidu.com/item/EWMA">EWMA</a></p>
+<p>EWMA - Exponential Weighted Moving Average 指数加权移动平均。</p>
+<p>ewma(t) = w *  task_util(p) + (1-w) * ewma(t-1)
+= w *  task_util(p) +         ewma(t-1)  - w * ewma(t-1)
+= w * (task_util(p) -         ewma(t-1)) +     ewma(t-1)
+= w * (      last_ewma_diff            ) +     ewma(t-1)
+= w * (last_ewma_diff  +  ewma(t-1) / w)</p>
+<p>其中 w = 0.25 = 1 / 4</p>
+<p>ewma(t) = (last_ewma_diff + ewma(t-1) &#x3C;&#x3C; 2)   >> 2
+= (last_ewma_diff + ewma(t-1) &#x3C;&#x3C; UTIL_EST_WEIGHT_SHIFT)   >> UTIL_EST_WEIGHT_SHIFT</p>
+<p>当前 采样周期只占用到了 (1 / 4) 权重</p>
+<h2 id="优化">优化</h2>
+<p>为了更快追踪负载的变化，util_est 作者引入了另一个 feature <code>UTIL_EST_FASTUP</code>, 用来加速 util上升</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>    sched/fair/util_est: Implement faster ramp-up EWMA on utilization increases</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>    The estimated utilization for a task:</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>       util_est = max(util_avg, est.enqueue, est.ewma)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>    is defined based on:</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>     - util_avg: the PELT defined utilization</span></span>
+<span class="line"><span>     - est.enqueued: the util_avg at the end of the last activation</span></span>
+<span class="line"><span>     - est.ewma:     a exponential moving average on the est.enqueued samples</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>    According to this definition, when a task suddenly changes its bandwidth</span></span>
+<span class="line"><span>    requirements from small to big, the EWMA will need to collect multiple</span></span>
+<span class="line"><span>    samples before converging up to track the new big utilization.</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>    This slow convergence towards bigger utilization values is not</span></span>
+<span class="line"><span>    aligned to the default scheduler behavior, which is to optimize for</span></span>
+<span class="line"><span>    performance. Moreover, the est.ewma component fails to compensate for</span></span>
+<span class="line"><span>    temporarely utilization drops which spans just few est.enqueued samples.</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>    To let util_est do a better job in the scenario depicted above, change</span></span>
+<span class="line"><span>    its definition by making util_est directly follow upward motion and</span></span>
+<span class="line"><span>    only decay the est.ewma on downward.</span></span></code></pre>
+<p>主要改动是这里</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>--- a/kernel/sched/fair.c</span></span>
+<span class="line"><span>+++ b/kernel/sched/fair.c</span></span>
+<span class="line"><span>@@ -3768,11 +3768,22 @@ util_est_dequeue(struct cfs_rq *cfs_rq, struct task_struct *p, bool task_sleep)</span></span>
+<span class="line"><span>        if (ue.enqueued &#x26; UTIL_AVG_UNCHANGED)</span></span>
+<span class="line"><span>                return;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>+       /*</span></span>
+<span class="line"><span>+        * Reset EWMA on utilization increases, the moving average is used only</span></span>
+<span class="line"><span>+        * to smooth utilization decreases.</span></span>
+<span class="line"><span>+        */</span></span>
+<span class="line"><span>+       ue.enqueued = (task_util(p) | UTIL_AVG_UNCHANGED);</span></span>
+<span class="line"><span>+       if (sched_feat(UTIL_EST_FASTUP)) {</span></span>
+<span class="line"><span>+               if (ue.ewma &#x3C; ue.enqueued) {</span></span>
+<span class="line"><span>+                       ue.ewma = ue.enqueued;</span></span>
+<span class="line"><span>+                       goto done;</span></span>
+<span class="line"><span>+               }</span></span>
+<span class="line"><span>+       }</span></span>
+<span class="line"><span>+</span></span></code></pre>
+<p>开启 <code>UTIL_EST_FASTUP</code> 之后， 如果检测到 ewma(t-1) &#x3C; .enqueued 直接用当前的 负载util 替换掉
+历史负载 ewma.</p>
+<p>这样task 在 <code>small_to_big</code> 的时候可以更快的跟踪负载，从而更好地 调频与 升核。</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

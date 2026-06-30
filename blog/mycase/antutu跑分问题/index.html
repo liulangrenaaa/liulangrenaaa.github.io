@@ -1,0 +1,10 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>antutu 跑分问题 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>antutu 跑分问题</h1><div class="post-meta"><time datetime="2024-11-10T19:00:40.000Z">2024年11月10日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">安兔兔跑分</span><span class="tag">cpu性能</span></div></header><div class="article-body"><h1 id="问题">问题</h1>
+<p>最近遇到一个安兔兔跑分问题，貌似某个版本之后 分数衰退10w分
+测试反馈之后，本地烧录版本测试，和测试说的一样，少了10w分
+确认衰退项：</p>
+<ul>
+<li>确认主要衰退在 CPU跑分上, CPU跑分衰退 10w分</li>
+<li>CPU跑分分 <code>算术运算</code> <code>常用算法</code> <code>多核性能</code> 三个方面， 衰退主要集中于多核性能上，a版本可以跑到 13w分， b版本只能跑到3w分</li>
+</ul>
+<h1 id="确认衰退项">确认衰退项</h1>
+<h1 id="衰退跑分">衰退跑分</h1></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

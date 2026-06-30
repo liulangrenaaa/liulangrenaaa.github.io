@@ -1,0 +1,41 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>StartingWindow与SplashScreen | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>StartingWindow与SplashScreen</h1><div class="post-meta"><time datetime="2024-01-01T10:00:00.000Z">2024年1月1日</time><span> / android / app启动与生命周期</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">android</span><span class="tag">StartingWindow</span><span class="tag">SplashScreen</span><span class="tag">启动优化</span></div></header><div class="article-body"><h2 id="简介">简介</h2>
+<p>StartingWindow（启动窗口）和 SplashScreen（闪屏）是应用启动过程中用户最先看到的界面，用于改善用户体验。</p>
+<h2 id="startingwindow">StartingWindow</h2>
+<h3 id="作用">作用</h3>
+<ul>
+<li>在应用进程创建期间显示，避免用户看到空白屏幕</li>
+<li>由 WMS 直接创建，不需要应用进程参与</li>
+</ul>
+<h3 id="类型">类型</h3>
+<ol>
+<li><strong>Snapshot Window</strong>：使用上次退出时的截图</li>
+<li><strong>Splash Screen Window</strong>：使用主题配置的背景</li>
+</ol>
+<h3 id="创建时机">创建时机</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ATMS.startActivity()</span></span>
+<span class="line"><span>    → addStartingWindow()</span></span>
+<span class="line"><span>    → WMS.addWindow()</span></span></code></pre>
+<h2 id="splashscreen-android-12">SplashScreen (Android 12+)</h2>
+<h3 id="新特性">新特性</h3>
+<ul>
+<li>品牌化启动画面</li>
+<li>支持动画效果</li>
+<li>可自定义图标和背景</li>
+</ul>
+<h3 id="配置方式">配置方式</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="xml"><code><span class="line"><span style="color:#E1E4E8">&#x3C;</span><span style="color:#85E89D">style</span><span style="color:#B392F0"> name</span><span style="color:#E1E4E8">=</span><span style="color:#9ECBFF">"AppTheme"</span><span style="color:#B392F0"> parent</span><span style="color:#E1E4E8">=</span><span style="color:#9ECBFF">"Theme.MaterialComponents"</span><span style="color:#E1E4E8">></span></span>
+<span class="line"><span style="color:#E1E4E8">    &#x3C;</span><span style="color:#85E89D">item</span><span style="color:#B392F0"> name</span><span style="color:#E1E4E8">=</span><span style="color:#9ECBFF">"android:windowSplashScreenBackground"</span><span style="color:#E1E4E8">>@color/white&#x3C;/</span><span style="color:#85E89D">item</span><span style="color:#E1E4E8">></span></span>
+<span class="line"><span style="color:#E1E4E8">    &#x3C;</span><span style="color:#85E89D">item</span><span style="color:#B392F0"> name</span><span style="color:#E1E4E8">=</span><span style="color:#9ECBFF">"android:windowSplashScreenAnimatedIcon"</span><span style="color:#E1E4E8">>@drawable/icon&#x3C;/</span><span style="color:#85E89D">item</span><span style="color:#E1E4E8">></span></span>
+<span class="line"><span style="color:#E1E4E8">&#x3C;/</span><span style="color:#85E89D">style</span><span style="color:#E1E4E8">></span></span></code></pre>
+<h2 id="消除时机">消除时机</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Activity.onResume()</span></span>
+<span class="line"><span>    → WMS.removeStartingWindow()</span></span>
+<span class="line"><span>    → 显示真正的 Activity 界面</span></span></code></pre>
+<h2 id="最佳实践">最佳实践</h2>
+<ol>
+<li>保持启动窗口简洁</li>
+<li>避免启动窗口与主界面差异过大</li>
+<li>合理配置 SplashScreen 属性</li>
+</ol>
+<h2 id="总结">总结</h2>
+<p>StartingWindow 和 SplashScreen 是启动体验的重要组成部分，合理配置可以显著改善用户感知的启动速度。</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

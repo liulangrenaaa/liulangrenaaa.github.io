@@ -1,0 +1,268 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>task_struct 和 thread_info结构 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>task_struct 和 thread_info结构</h1><div class="post-meta"><time datetime="2021-02-19T19:00:00.000Z">2021年2月19日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">进程调度</span><span class="tag">task_struct</span><span class="tag">thread_info</span></div></header><div class="article-body"><p>本文基于 <code>Linux 5.10</code> 代码，由于相关结构变化较大，不去考古以前代码了。</p>
+<h2 id="什么是内核栈">什么是内核栈？</h2>
+<p>进程在内核态运行时需要自己的堆栈信息，因此linux内核为每个进程都提供了一个内核栈<code>kernel stack</code>(这里的stack就是这个进程在内核态的堆栈信息！！！)。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>struct task_struct {</span></span>
+<span class="line"><span>#ifdef CONFIG_THREAD_INFO_IN_TASK</span></span>
+<span class="line"><span>	/*</span></span>
+<span class="line"><span>	 * For reasons of header soup (see current_thread_info()), this</span></span>
+<span class="line"><span>	 * must be the first element of task_struct.</span></span>
+<span class="line"><span>	 */</span></span>
+<span class="line"><span>	struct thread_info		thread_info;</span></span>
+<span class="line"><span>#endif</span></span>
+<span class="line"><span>	void				*stack;</span></span>
+<span class="line"><span>    ......</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>这个 <code>void *stack</code> 就是栈指针，指针指向哪里呢？</p>
+<p>内核态的进程访问处于内核数据段的栈，这个栈不同于用户态的进程所用的栈。
+用户态进程所用的栈，是在进程线性地址空间中；</p>
+<p>而内核栈是当进程从用户空间进入内核空间时，特权级发生变化，需要切换堆栈，内核空间中使用的就是这个内核栈。
+因为内核控制路径使用很少的栈空间，所以只需要几千个字节的内核态堆栈。</p>
+<h2 id="thread_info">thread_info</h2>
+<p>内核栈还需要存储每个进程的PCB信息,linux内核是支持不同体系的,但是不同的体系结构可能进程需要存储
+的信息不尽相同,这就需要我们实现一种通用的方式,我们将体系结构相关的部分和无关的部分进行分离。</p>
+<ol>
+<li>用一种通用的方式来描述进程, 这就是struct task_struct</li>
+<li>而thread_info就保存了特定体系结构的汇编代码段需要访问的那部分进程的数据
+目前基本的配置中（x86_64、我们公司arm64平台都是开启了这个<code>CONFIG_THREAD_INFO_IN_TASK</code>）</li>
+</ol>
+<p>想通过 从 <code>task_struct</code> 找到 <code>thread_info</code> 就很简单了，直接结构体访问变量：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>#ifdef CONFIG_THREAD_INFO_IN_TASK</span></span>
+<span class="line"><span>static inline struct thread_info *task_thread_info(struct task_struct *task)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	return &#x26;task->thread_info;</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span>#endif</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>#define current_thread_info() ((struct thread_info *)current)</span></span></code></pre>
+<p>x86 架构中</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>struct thread_info {</span></span>
+<span class="line"><span>	unsigned long		flags;		/* low level flags */</span></span>
+<span class="line"><span>	unsigned long		syscall_work;	/* SYSCALL_WORK_ flags */</span></span>
+<span class="line"><span>	u32			status;		/* thread synchronous flags */</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<p>arm64架构中</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>struct thread_info {</span></span>
+<span class="line"><span>	unsigned long		flags;		/* low level flags */</span></span>
+<span class="line"><span>#ifdef CONFIG_ARM64_SW_TTBR0_PAN</span></span>
+<span class="line"><span>	u64			ttbr0;		/* saved TTBR0_EL1 */</span></span>
+<span class="line"><span>#endif</span></span>
+<span class="line"><span>	union {</span></span>
+<span class="line"><span>		u64		preempt_count;	/* 0 => preemptible, &#x3C;0 => bug */</span></span>
+<span class="line"><span>		struct {</span></span>
+<span class="line"><span>			u32	count;</span></span>
+<span class="line"><span>			u32	need_resched;</span></span>
+<span class="line"><span>		} preempt;</span></span>
+<span class="line"><span>	};</span></span>
+<span class="line"><span>#ifdef CONFIG_SHADOW_CALL_STACK</span></span>
+<span class="line"><span>	void			*scs_base;</span></span>
+<span class="line"><span>	void			*scs_sp;</span></span>
+<span class="line"><span>#endif</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<h2 id="如何直接找到-task_struct">如何直接找到 <code>task_struct</code></h2>
+<p>这就涉及到<code>thread_union</code>这个结构了</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>union thread_union {</span></span>
+<span class="line"><span>#ifndef CONFIG_ARCH_TASK_STRUCT_ON_STACK</span></span>
+<span class="line"><span>	struct task_struct task;</span></span>
+<span class="line"><span>#endif</span></span>
+<span class="line"><span>	unsigned long stack[THREAD_SIZE/sizeof(long)];</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<p>我们大部分平台都是开启这个<code>CONFIG_ARCH_TASK_STRUCT_ON_STACK</code>宏定义的
+<code>arm64</code> <code>x86</code> 栈都是向下生长，这个结构大概是这样：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>            +---------------------+</span></span>
+<span class="line"><span> stack[8k]  |---------------------|  +</span></span>
+<span class="line"><span>            ||                   ||  |</span></span>
+<span class="line"><span>            ||                   ||  |</span></span>
+<span class="line"><span>            ||                   ||  |</span></span>
+<span class="line"><span>            ||                   ||  | Grow Down</span></span>
+<span class="line"><span>            ||                   ||  |</span></span>
+<span class="line"><span>            ||                   ||  |</span></span>
+<span class="line"><span>            ||                   ||  |</span></span>
+<span class="line"><span>            ||                   ||  |</span></span>
+<span class="line"><span>            ||                   ||  |</span></span>
+<span class="line"><span>            ||                   ||  |</span></span>
+<span class="line"><span>  sp&#x3C;----   +---------------------+  |</span></span>
+<span class="line"><span>            |                     |  |</span></span>
+<span class="line"><span>            |                     |  |</span></span>
+<span class="line"><span>            |                     |  |</span></span>
+<span class="line"><span>            |                     |  |</span></span>
+<span class="line"><span>            |                     |  |</span></span>
+<span class="line"><span>            |                     |  v</span></span>
+<span class="line"><span>            |                     |</span></span>
+<span class="line"><span>            |                     |</span></span>
+<span class="line"><span>            |                     |</span></span>
+<span class="line"><span>            |                     |</span></span>
+<span class="line"><span>            | +-----------------+ |</span></span>
+<span class="line"><span>            | |                 | |</span></span>
+<span class="line"><span>            | |                 | |</span></span>
+<span class="line"><span>            | |                 | |</span></span>
+<span class="line"><span>            | |                 | | +------>   struct task_struct</span></span>
+<span class="line"><span>            | |                 | |</span></span>
+<span class="line"><span>            | |                 | |</span></span>
+<span class="line"><span>            | |                 | |</span></span>
+<span class="line"><span>            | |                 | |</span></span>
+<span class="line"><span>            | |                 | |</span></span>
+<span class="line"><span>            | +-----------------+ |</span></span>
+<span class="line"><span>            | |                 | |</span></span>
+<span class="line"><span>            | |                 | | +------>   struct thread_info</span></span>
+<span class="line"><span>stack[0]    | +-----------------+ |</span></span>
+<span class="line"><span>            +---------------------+</span></span></code></pre>
+<p>有个细节没有体现出来，就是task->stack应该指向 最下面。</p>
+<p>我们可以通过 <code>current()</code> 获得当前正在运行的线程的 <code>task_struct</code> 结构：
+arm64 平台</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static __always_inline struct task_struct *get_current(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	unsigned long sp_el0;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	asm ("mrs %0, sp_el0" : "=r" (sp_el0));</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	return (struct task_struct *)sp_el0;</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>#define current get_current()</span></span></code></pre>
+<p>ARM64增加了很多通用寄存器，使用寄存器传递进程描述符显然效率更高。
+因此在ARM64架构里，current宏不再通过栈偏移量得到进程描述符地址，而是借用专门的寄存器 <code>sp_el0</code>。</p>
+<p>ARM64使用sp_el0，在进程切换时暂存进程描述符地址。</p>
+<p>可以看arm64 进程切换arch相关代码(arch/arm64/kernel/entry.S)</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/*</span></span>
+<span class="line"><span> * Register switch for AArch64. The callee-saved registers need to be saved</span></span>
+<span class="line"><span> * and restored. On entry:</span></span>
+<span class="line"><span> *   x0 = previous task_struct (must be preserved across the switch)</span></span>
+<span class="line"><span> *   x1 = next task_struct</span></span>
+<span class="line"><span> * Previous and next are guaranteed not to be the same.</span></span>
+<span class="line"><span> *</span></span>
+<span class="line"><span> */</span></span>
+<span class="line"><span>SYM_FUNC_START(cpu_switch_to)</span></span>
+<span class="line"><span>	mov	x10, #THREAD_CPU_CONTEXT</span></span>
+<span class="line"><span>	add	x8, x0, x10</span></span>
+<span class="line"><span>	mov	x9, sp</span></span>
+<span class="line"><span>	stp	x19, x20, [x8], #16		// store callee-saved registers</span></span>
+<span class="line"><span>	stp	x21, x22, [x8], #16</span></span>
+<span class="line"><span>	stp	x23, x24, [x8], #16</span></span>
+<span class="line"><span>	stp	x25, x26, [x8], #16</span></span>
+<span class="line"><span>	stp	x27, x28, [x8], #16</span></span>
+<span class="line"><span>	stp	x29, x9, [x8], #16</span></span>
+<span class="line"><span>	str	lr, [x8]</span></span>
+<span class="line"><span>	add	x8, x1, x10</span></span>
+<span class="line"><span>	ldp	x19, x20, [x8], #16		// restore callee-saved registers</span></span>
+<span class="line"><span>	ldp	x21, x22, [x8], #16</span></span>
+<span class="line"><span>	ldp	x23, x24, [x8], #16</span></span>
+<span class="line"><span>	ldp	x25, x26, [x8], #16</span></span>
+<span class="line"><span>	ldp	x27, x28, [x8], #16</span></span>
+<span class="line"><span>	ldp	x29, x9, [x8], #16</span></span>
+<span class="line"><span>	ldr	lr, [x8]</span></span>
+<span class="line"><span>	mov	sp, x9</span></span>
+<span class="line"><span>	msr	sp_el0, x1</span></span>
+<span class="line"><span>	ptrauth_keys_install_kernel x1, x8, x9, x10</span></span>
+<span class="line"><span>	scs_save x0, x8</span></span>
+<span class="line"><span>	scs_load x1, x8</span></span>
+<span class="line"><span>	ret</span></span>
+<span class="line"><span>SYM_FUNC_END(cpu_switch_to)</span></span>
+<span class="line"><span>NOKPROBE(cpu_switch_to)</span></span></code></pre>
+<p>线程切换的时候
+THREAD_CPU_CONTEXT —> x10
+x8 保存的压栈大小
+x10 + x8 —> x1
+x1 —> sp_el0</p>
+<p><code>THREAD_CPU_CONTEXT</code> 是什么？</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>DEFINE(THREAD_CPU_CONTEXT,	offsetof(struct task_struct, thread.cpu_context));</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>struct task_struct {</span></span>
+<span class="line"><span>	/* CPU-specific state of this task: */</span></span>
+<span class="line"><span>	struct thread_struct		thread;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	/*</span></span>
+<span class="line"><span>	 * WARNING: on x86, 'thread_struct' contains a variable-sized</span></span>
+<span class="line"><span>	 * structure.  It *MUST* be at the end of 'task_struct'.</span></span>
+<span class="line"><span>	 *</span></span>
+<span class="line"><span>	 * Do not put anything below here!</span></span>
+<span class="line"><span>	 */</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>struct thread_struct {</span></span>
+<span class="line"><span>	struct cpu_context	cpu_context;	/* cpu context */</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	/*</span></span>
+<span class="line"><span>	 * Whitelisted fields for hardened usercopy:</span></span>
+<span class="line"><span>	 * Maintainers must ensure manually that this contains no</span></span>
+<span class="line"><span>	 * implicit padding.</span></span>
+<span class="line"><span>	 */</span></span>
+<span class="line"><span>	struct {</span></span>
+<span class="line"><span>		unsigned long	tp_value;	/* TLS register */</span></span>
+<span class="line"><span>		unsigned long	tp2_value;</span></span>
+<span class="line"><span>		struct user_fpsimd_state fpsimd_state;</span></span>
+<span class="line"><span>	} uw;</span></span>
+<span class="line"><span>    ......</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>struct cpu_context {</span></span>
+<span class="line"><span>	unsigned long x19;</span></span>
+<span class="line"><span>	unsigned long x20;</span></span>
+<span class="line"><span>	unsigned long x21;</span></span>
+<span class="line"><span>	unsigned long x22;</span></span>
+<span class="line"><span>	unsigned long x23;</span></span>
+<span class="line"><span>	unsigned long x24;</span></span>
+<span class="line"><span>	unsigned long x25;</span></span>
+<span class="line"><span>	unsigned long x26;</span></span>
+<span class="line"><span>	unsigned long x27;</span></span>
+<span class="line"><span>	unsigned long x28;</span></span>
+<span class="line"><span>	unsigned long fp;</span></span>
+<span class="line"><span>	unsigned long sp;</span></span>
+<span class="line"><span>	unsigned long pc;</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<p>后面需要更加详细 分析，有空再学习一下然后写。</p>
+<p>struct thread_struct &#x26; struct pt_regs的区别
+thread_struct结构体主要是在内核态两个进程发生切换时，thread_struct用来保存上一个进程的相关寄存器。
+pt_regs结构体主要是当用户态的进程陷入到内核态时，需要使用pt_regs来保存用户态进程的寄存器状态。</p>
+<p>x86 平台</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>DECLARE_PER_CPU(struct task_struct *, current_task);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static __always_inline struct task_struct *get_current(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	return this_cpu_read_stable(current_task);</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>#define current get_current()</span></span></code></pre>
+<p>在 x86 平台中，直接使用了 一个 <code>percpu</code> 变量来缓存 <code>current_task</code> 指针</p>
+<p>example: (x86 架构)</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>WARNING: kernel relocated [512MB]: patching 137921 gdb minimal_symbol values                                                        [26/162]</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>      KERNEL: vmlinux</span></span>
+<span class="line"><span>    DUMPFILE: dump.202103011631  [PARTIAL DUMP]</span></span>
+<span class="line"><span>        CPUS: 4</span></span>
+<span class="line"><span>        DATE: Mon Mar  1 16:31:27 CST 2021</span></span>
+<span class="line"><span>      UPTIME: 00:02:00</span></span>
+<span class="line"><span>LOAD AVERAGE: 1.63, 0.53, 0.19</span></span>
+<span class="line"><span>       TASKS: 449</span></span>
+<span class="line"><span>    NODENAME: rlk-Standard-PC-i440FX-PIIX-1996</span></span>
+<span class="line"><span>     RELEASE: 5.12.0-rc1</span></span>
+<span class="line"><span>     VERSION: #24 SMP Mon Mar 1 14:25:47 CST 2021</span></span>
+<span class="line"><span>     MACHINE: x86_64  (3693 Mhz)</span></span>
+<span class="line"><span>      MEMORY: 4 GB</span></span>
+<span class="line"><span>       PANIC: "Kernel panic - not syncing: softlockup: hung tasks"</span></span>
+<span class="line"><span>         PID: 13</span></span>
+<span class="line"><span>     COMMAND: "kworker/0:1"</span></span>
+<span class="line"><span>        TASK: ffff91344081b240  [THREAD_INFO: ffff91344081b240]</span></span>
+<span class="line"><span>         CPU: 0</span></span>
+<span class="line"><span>       STATE: TASK_RUNNING (PANIC)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>crash> bt</span></span>
+<span class="line"><span>PID: 13     TASK: ffff91344081b240  CPU: 0   COMMAND: "kworker/0:1"</span></span>
+<span class="line"><span>bt: seek error: kernel virtual address: ffff98357ffffff8  type: "stack contents"</span></span>
+<span class="line"><span>bt: read of stack at ffff98357ffffff8 failed</span></span>
+<span class="line"><span>crash> struct task_struct ffff91344081b240</span></span>
+<span class="line"><span>struct task_struct {</span></span>
+<span class="line"><span>  thread_info = {</span></span>
+<span class="line"><span>    flags = 16392,</span></span>
+<span class="line"><span>    syscall_work = 0,</span></span>
+<span class="line"><span>    status = 0</span></span>
+<span class="line"><span>  },</span></span>
+<span class="line"><span>  state = 0,</span></span>
+<span class="line"><span>  stack = 0xffff983580070000,</span></span>
+<span class="line"><span>  usage = {</span></span>
+<span class="line"><span>......</span></span></code></pre>
+<p>可以看到 <code>task</code> <code>thread_info</code> 地址都是 <code>ffff91344081b240</code>。
+stack地址是<code>0xffff983580070000</code>。</p>
+<p>参考<a href="https://zhuanlan.zhihu.com/p/296750228">linux 进程内核栈</a>
+参考<a href="http://linux.laoqinren.net/kernel/sched/current/">Linux调度——神奇的current</a>
+参考<a href="https://cloud.tencent.com/developer/article/1492374">Linux syscall过程分析</a>
+参考<a href="https://cloud.tencent.com/developer/article/1603966">do_fork实现—下</a></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

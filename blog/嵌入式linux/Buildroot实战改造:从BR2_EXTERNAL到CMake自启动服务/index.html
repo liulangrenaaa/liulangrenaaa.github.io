@@ -1,0 +1,421 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>Buildroot 实战改造：从 BR2_EXTERNAL 到 CMake 自启动服务 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>Buildroot 实战改造：从 BR2_EXTERNAL 到 CMake 自启动服务</h1><div class="post-meta"><time datetime="2022-10-12T20:10:00.000Z">2022年10月12日</time><span> / 嵌入式linux</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">Buildroot</span><span class="tag">BR2_EXTERNAL</span><span class="tag">QEMU</span><span class="tag">嵌入式Linux</span></div></header><div class="article-body"><h1 id="buildroot-实战改造从-br2_external-到-cmake-自启动服务">Buildroot 实战改造：从 BR2_EXTERNAL 到 CMake 自启动服务</h1>
+<blockquote>
+<p>实践时间：2022-10-12<br>
+实验平台：Buildroot 2022.08，<code>qemu_x86_64</code><br>
+实验目标：通过 <code>BR2_EXTERNAL</code> 管理板级配置、rootfs overlay、自定义程序包和 BusyBox init 自启动服务，并用 QEMU 完成启动验证。</p>
+</blockquote>
+<p>这篇文章记录一次完整的 Buildroot 实战：基于 <code>Buildroot 2022.08</code> 和 <code>qemu_x86_64</code> 平台，从最小系统构建开始，逐步完成 <code>BR2_EXTERNAL</code> 外部树、自定义 rootfs overlay、手写 C 程序包、CMake 程序包、BusyBox init 开机自启动服务，以及 QEMU 启动验证。</p>
+<p>我没有直接修改 Buildroot 上游主树，而是把所有业务相关内容放进独立的 <code>br2-external-lucas</code> 外部树中。这种做法更接近实际项目维护方式：Buildroot 主树保持干净，板级配置、业务包、overlay 和复现用 defconfig 都放在外部树里统一管理。</p>
+<h2 id="目标">目标</h2>
+<p>本次实战目标如下：</p>
+<ul>
+<li>使用 <code>Buildroot 2022.08</code> 构建 QEMU x86_64 镜像。</li>
+<li>使用 <code>BR2_EXTERNAL</code> 管理自定义板级内容和业务包。</li>
+<li>使用 rootfs overlay 注入 <code>/etc/motd</code>。</li>
+<li>新增 <code>hello-buildroot</code>，演示 <code>generic-package</code> 的最小 C 程序集成。</li>
+<li>新增 <code>device-agent</code>，演示 <code>cmake-package</code> 的 CMake 程序集成。</li>
+<li>通过 <code>/etc/init.d/S50device-agent</code> 实现 BusyBox init 开机自启动。</li>
+<li>在目标系统内确认程序、日志、PID 文件和关机 stop 流程。</li>
+</ul>
+<!-- more -->
+<h2 id="集成路线图">集成路线图</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[Buildroot 主树] --> B[BR2_EXTERNAL 外部树]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C[defconfig 固化配置]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> D[rootfs overlay 注入文件]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> E[hello-buildroot generic-package]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> F[device-agent cmake-package]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> G[S50device-agent init 脚本]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> H[make 生成镜像]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> H</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> H</span></span>
+<span class="line"><span style="color:#E1E4E8">    G --> H</span></span>
+<span class="line"><span style="color:#E1E4E8">    H --> I[bzImage 和 rootfs.ext2]</span></span>
+<span class="line"><span style="color:#E1E4E8">    I --> J[QEMU 启动验证]</span></span>
+<span class="line"><span style="color:#E1E4E8">    J --> K[进程 日志 PID stop 验证]</span></span></code></pre>
+<h2 id="工作区结构">工作区结构</h2>
+<p>工作目录：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">/var/lib/lucas/mycodespace/buildroot</span></span></code></pre>
+<p>关键目录：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>.</span></span>
+<span class="line"><span>├── br2-external-lucas/</span></span>
+<span class="line"><span>├── buildroot-2022.08/</span></span>
+<span class="line"><span>├── dl/</span></span>
+<span class="line"><span>├── docs/</span></span>
+<span class="line"><span>└── output-lucas/</span></span></code></pre>
+<p>外部树最终结构：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>br2-external-lucas/</span></span>
+<span class="line"><span>├── Config.in</span></span>
+<span class="line"><span>├── external.desc</span></span>
+<span class="line"><span>├── external.mk</span></span>
+<span class="line"><span>├── configs/lucas_qemu_x86_64_defconfig</span></span>
+<span class="line"><span>├── board/qemu-x86_64/rootfs-overlay/etc/motd</span></span>
+<span class="line"><span>├── package/hello-buildroot/</span></span>
+<span class="line"><span>│   ├── Config.in</span></span>
+<span class="line"><span>│   ├── hello-buildroot.c</span></span>
+<span class="line"><span>│   └── hello-buildroot.mk</span></span>
+<span class="line"><span>└── package/device-agent/</span></span>
+<span class="line"><span>    ├── CMakeLists.txt</span></span>
+<span class="line"><span>    ├── Config.in</span></span>
+<span class="line"><span>    ├── S50device-agent</span></span>
+<span class="line"><span>    ├── device-agent.c</span></span>
+<span class="line"><span>    └── device-agent.mk</span></span></code></pre>
+<h2 id="关键配置">关键配置</h2>
+<p>最终项目通过 <code>br2-external-lucas/configs/lucas_qemu_x86_64_defconfig</code> 固化配置，核心配置如下：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>BR2_x86_64=y</span></span>
+<span class="line"><span>BR2_PACKAGE_HOST_LINUX_HEADERS_CUSTOM_5_15=y</span></span>
+<span class="line"><span>BR2_DL_DIR="/var/lib/lucas/mycodespace/buildroot/dl"</span></span>
+<span class="line"><span>BR2_ROOTFS_OVERLAY="$(BR2_EXTERNAL_LUCAS_PATH)/board/qemu-x86_64/rootfs-overlay"</span></span>
+<span class="line"><span>BR2_LINUX_KERNEL=y</span></span>
+<span class="line"><span>BR2_LINUX_KERNEL_CUSTOM_VERSION=y</span></span>
+<span class="line"><span>BR2_LINUX_KERNEL_CUSTOM_VERSION_VALUE="5.15"</span></span>
+<span class="line"><span>BR2_LINUX_KERNEL_USE_CUSTOM_CONFIG=y</span></span>
+<span class="line"><span>BR2_LINUX_KERNEL_CUSTOM_CONFIG_FILE="board/qemu/x86_64/linux.config"</span></span>
+<span class="line"><span>BR2_TARGET_ROOTFS_EXT2=y</span></span>
+<span class="line"><span>BR2_PACKAGE_HOST_QEMU=y</span></span>
+<span class="line"><span>BR2_PACKAGE_HOST_QEMU_SYSTEM_MODE=y</span></span>
+<span class="line"><span>BR2_PACKAGE_HELLO_BUILDROOT=y</span></span>
+<span class="line"><span>BR2_PACKAGE_DEVICE_AGENT=y</span></span></code></pre>
+<p>实际输出目录中的 <code>.config</code> 也确认了这些配置已经生效：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>BR2_EXTERNAL_NAMES="LUCAS"</span></span>
+<span class="line"><span>BR2_EXTERNAL_LUCAS_PATH="/var/lib/lucas/mycodespace/buildroot/br2-external-lucas"</span></span>
+<span class="line"><span>BR2_DL_DIR="/var/lib/lucas/mycodespace/buildroot/dl"</span></span>
+<span class="line"><span>BR2_ROOTFS_OVERLAY="/var/lib/lucas/mycodespace/buildroot/br2-external-lucas/board/qemu-x86_64/rootfs-overlay"</span></span>
+<span class="line"><span>BR2_LINUX_KERNEL=y</span></span>
+<span class="line"><span>BR2_LINUX_KERNEL_CUSTOM_VERSION_VALUE="5.15"</span></span>
+<span class="line"><span>BR2_LINUX_KERNEL_VERSION="5.15"</span></span>
+<span class="line"><span>BR2_TARGET_ROOTFS_EXT2=y</span></span>
+<span class="line"><span>BR2_TARGET_ROOTFS_EXT2_SIZE="60M"</span></span>
+<span class="line"><span>BR2_PACKAGE_HOST_QEMU=y</span></span>
+<span class="line"><span>BR2_PACKAGE_HELLO_BUILDROOT=y</span></span>
+<span class="line"><span>BR2_PACKAGE_DEVICE_AGENT=y</span></span></code></pre>
+<h2 id="阶段一br2_external-和-rootfs-overlay">阶段一：BR2_EXTERNAL 和 rootfs overlay</h2>
+<p>外部树描述文件 <code>external.desc</code>：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>name: LUCAS</span></span>
+<span class="line"><span>desc: Lucas Buildroot learning external tree</span></span></code></pre>
+<p>外部树统一引入自定义 package：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="make"><code><span class="line"><span style="color:#6A737D"># br2-external-lucas/external.mk</span></span>
+<span class="line"><span style="color:#F97583">include</span><span style="color:#9ECBFF"> $(</span><span style="color:#79B8FF">sort</span><span style="color:#9ECBFF"> $(</span><span style="color:#79B8FF">wildcard</span><span style="color:#9ECBFF"> $(</span><span style="color:#E1E4E8">BR2_EXTERNAL_LUCAS_PATH</span><span style="color:#9ECBFF">)/package/</span><span style="color:#79B8FF">*</span><span style="color:#9ECBFF">/</span><span style="color:#79B8FF">*</span><span style="color:#9ECBFF">.mk))</span></span></code></pre>
+<p>Kconfig 入口：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span># br2-external-lucas/Config.in</span></span>
+<span class="line"><span>source "$BR2_EXTERNAL_LUCAS_PATH/package/hello-buildroot/Config.in"</span></span>
+<span class="line"><span>source "$BR2_EXTERNAL_LUCAS_PATH/package/device-agent/Config.in"</span></span></code></pre>
+<p>rootfs overlay 注入的 <code>/etc/motd</code>：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>Welcome to Lucas Buildroot learning image.</span></span>
+<span class="line"><span>This /etc/motd comes from a br2-external rootfs overlay.</span></span></code></pre>
+<p>目标系统登录后可以直接看到这段内容，说明文件不是手工拷进 <code>output/target</code>，而是通过 Buildroot rootfs 生成流程进入镜像。</p>
+<h2 id="阶段二hello-buildroot-的-generic-package-集成">阶段二：hello-buildroot 的 generic-package 集成</h2>
+<p><code>hello-buildroot</code> 是一个最小 C 程序，用来验证本地源码包、交叉编译、安装到 rootfs 这一套流程。</p>
+<p>核心源码：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="c"><code><span class="line"><span style="color:#F97583">#include</span><span style="color:#9ECBFF"> &#x3C;stdio.h></span></span>
+<span class="line"><span style="color:#F97583">#include</span><span style="color:#9ECBFF"> &#x3C;sys/utsname.h></span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">int</span><span style="color:#B392F0"> main</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">void</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#F97583">	struct</span><span style="color:#E1E4E8"> utsname uts;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">	puts</span><span style="color:#E1E4E8">(</span><span style="color:#9ECBFF">"hello-buildroot: custom C program from br2-external"</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">	if</span><span style="color:#E1E4E8"> (</span><span style="color:#B392F0">uname</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">&#x26;</span><span style="color:#E1E4E8">uts) </span><span style="color:#F97583">==</span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#B392F0">		printf</span><span style="color:#E1E4E8">(</span><span style="color:#9ECBFF">"kernel: </span><span style="color:#79B8FF">%s</span><span style="color:#79B8FF"> %s</span><span style="color:#9ECBFF"> on </span><span style="color:#79B8FF">%s\n</span><span style="color:#9ECBFF">"</span><span style="color:#E1E4E8">, uts.sysname, uts.release, uts.machine);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">	return</span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>package mk 文件：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="make"><code><span class="line"><span style="color:#E1E4E8">HELLO_BUILDROOT_SITE = </span><span style="color:#9ECBFF">$(</span><span style="color:#E1E4E8">BR2_EXTERNAL_LUCAS_PATH</span><span style="color:#9ECBFF">)</span><span style="color:#E1E4E8">/package/hello-buildroot</span></span>
+<span class="line"><span style="color:#E1E4E8">HELLO_BUILDROOT_SITE_METHOD = local</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">define</span><span style="color:#E1E4E8"> HELLO_BUILDROOT_BUILD_CMDS</span></span>
+<span class="line"><span style="color:#9ECBFF">	$(</span><span style="color:#E1E4E8">TARGET_CC</span><span style="color:#9ECBFF">)</span><span style="color:#9ECBFF"> $(</span><span style="color:#E1E4E8">TARGET_CFLAGS</span><span style="color:#9ECBFF">)</span><span style="color:#9ECBFF"> $(</span><span style="color:#E1E4E8">TARGET_LDFLAGS</span><span style="color:#9ECBFF">)</span><span style="color:#E1E4E8"> \</span></span>
+<span class="line"><span style="color:#E1E4E8">		-o </span><span style="color:#9ECBFF">$(</span><span style="color:#E1E4E8">@D</span><span style="color:#9ECBFF">)</span><span style="color:#E1E4E8">/hello-buildroot </span><span style="color:#9ECBFF">$(</span><span style="color:#E1E4E8">@D</span><span style="color:#9ECBFF">)</span><span style="color:#E1E4E8">/hello-buildroot.c</span></span>
+<span class="line"><span style="color:#F97583">endef</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">define</span><span style="color:#E1E4E8"> HELLO_BUILDROOT_INSTALL_TARGET_CMDS</span></span>
+<span class="line"><span style="color:#9ECBFF">	$(</span><span style="color:#E1E4E8">INSTALL</span><span style="color:#9ECBFF">)</span><span style="color:#E1E4E8"> -D -m 0755 </span><span style="color:#9ECBFF">$(</span><span style="color:#E1E4E8">@D</span><span style="color:#9ECBFF">)</span><span style="color:#E1E4E8">/hello-buildroot \</span></span>
+<span class="line"><span style="color:#9ECBFF">		$(</span><span style="color:#E1E4E8">TARGET_DIR</span><span style="color:#9ECBFF">)</span><span style="color:#E1E4E8">/usr/bin/hello-buildroot</span></span>
+<span class="line"><span style="color:#F97583">endef</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#9ECBFF">$(</span><span style="color:#79B8FF">eval</span><span style="color:#9ECBFF"> $(</span><span style="color:#E1E4E8">generic-package</span><span style="color:#9ECBFF">))</span></span></code></pre>
+<p>这里我使用的是 <code>generic-package</code>。它适合这种非常小的本地源码包：自己定义 build 命令，自己定义 install 命令，由 Buildroot 负责源码同步、stamp 文件、目标目录管理和整体构建编排。</p>
+<p><code>hello-buildroot-rebuild</code> 的关键日志：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>>>> hello-buildroot  Syncing from source dir /var/lib/lucas/mycodespace/buildroot/br2-external-lucas/package/hello-buildroot</span></span>
+<span class="line"><span>>>> hello-buildroot  Building</span></span>
+<span class="line"><span>/var/lib/lucas/mycodespace/buildroot/output-lucas/host/bin/x86_64-buildroot-linux-gnu-gcc \</span></span>
+<span class="line"><span>  -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64 -O2 -g0 -D_FORTIFY_SOURCE=1 \</span></span>
+<span class="line"><span>  -o /var/lib/lucas/mycodespace/buildroot/output-lucas/build/hello-buildroot/hello-buildroot \</span></span>
+<span class="line"><span>  /var/lib/lucas/mycodespace/buildroot/output-lucas/build/hello-buildroot/hello-buildroot.c</span></span>
+<span class="line"><span>>>> hello-buildroot  Installing to target</span></span>
+<span class="line"><span>/usr/bin/install -D -m 0755 .../hello-buildroot .../target/usr/bin/hello-buildroot</span></span></code></pre>
+<p>这段日志能说明它不是宿主机随便编译后拷进去的，而是走了 Buildroot 生成的交叉工具链：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>x86_64-buildroot-linux-gnu-gcc</span></span></code></pre>
+<h2 id="阶段三device-agent-的-cmake-package-集成">阶段三：device-agent 的 CMake package 集成</h2>
+<p><code>device-agent</code> 是本次更接近业务形态的程序：它可以一次性输出设备状态，也可以用 <code>--daemon</code> 常驻运行。</p>
+<p>功能包括：</p>
+<ul>
+<li>输出启动标记。</li>
+<li>输出当前时间戳。</li>
+<li>输出 hostname。</li>
+<li>输出 kernel 名称和版本。</li>
+<li>输出机器架构。</li>
+<li>输出 uptime。</li>
+<li>支持 <code>--daemon</code> 每 30 秒周期上报。</li>
+</ul>
+<p>核心源码：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="c"><code><span class="line"><span style="color:#F97583">static</span><span style="color:#F97583"> void</span><span style="color:#B392F0"> print_status</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">void</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#F97583">	struct</span><span style="color:#E1E4E8"> utsname uts;</span></span>
+<span class="line"><span style="color:#F97583">	struct</span><span style="color:#E1E4E8"> sysinfo info;</span></span>
+<span class="line"><span style="color:#F97583">	char</span><span style="color:#FFAB70"> hostname</span><span style="color:#E1E4E8">[</span><span style="color:#79B8FF">128</span><span style="color:#E1E4E8">] </span><span style="color:#F97583">=</span><span style="color:#9ECBFF"> "unknown"</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#F97583">	time_t</span><span style="color:#E1E4E8"> now;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">	(</span><span style="color:#F97583">void</span><span style="color:#E1E4E8">)</span><span style="color:#B392F0">gethostname</span><span style="color:#E1E4E8">(hostname, </span><span style="color:#F97583">sizeof</span><span style="color:#E1E4E8">(hostname) </span><span style="color:#F97583">-</span><span style="color:#79B8FF"> 1</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#FFAB70">	hostname</span><span style="color:#E1E4E8">[</span><span style="color:#F97583">sizeof</span><span style="color:#E1E4E8">(hostname) </span><span style="color:#F97583">-</span><span style="color:#79B8FF"> 1</span><span style="color:#E1E4E8">] </span><span style="color:#F97583">=</span><span style="color:#9ECBFF"> '</span><span style="color:#79B8FF">\0</span><span style="color:#9ECBFF">'</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">	now </span><span style="color:#F97583">=</span><span style="color:#B392F0"> time</span><span style="color:#E1E4E8">(</span><span style="color:#79B8FF">NULL</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">	puts</span><span style="color:#E1E4E8">(</span><span style="color:#9ECBFF">"device-agent: status report"</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#B392F0">	printf</span><span style="color:#E1E4E8">(</span><span style="color:#9ECBFF">"time: </span><span style="color:#79B8FF">%ld\n</span><span style="color:#9ECBFF">"</span><span style="color:#E1E4E8">, (</span><span style="color:#F97583">long</span><span style="color:#E1E4E8">)now);</span></span>
+<span class="line"><span style="color:#B392F0">	printf</span><span style="color:#E1E4E8">(</span><span style="color:#9ECBFF">"hostname: </span><span style="color:#79B8FF">%s\n</span><span style="color:#9ECBFF">"</span><span style="color:#E1E4E8">, hostname);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">	if</span><span style="color:#E1E4E8"> (</span><span style="color:#B392F0">uname</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">&#x26;</span><span style="color:#E1E4E8">uts) </span><span style="color:#F97583">==</span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">) {</span></span>
+<span class="line"><span style="color:#B392F0">		printf</span><span style="color:#E1E4E8">(</span><span style="color:#9ECBFF">"kernel: </span><span style="color:#79B8FF">%s</span><span style="color:#79B8FF"> %s\n</span><span style="color:#9ECBFF">"</span><span style="color:#E1E4E8">, uts.sysname, uts.release);</span></span>
+<span class="line"><span style="color:#B392F0">		printf</span><span style="color:#E1E4E8">(</span><span style="color:#9ECBFF">"machine: </span><span style="color:#79B8FF">%s\n</span><span style="color:#9ECBFF">"</span><span style="color:#E1E4E8">, uts.machine);</span></span>
+<span class="line"><span style="color:#E1E4E8">	}</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">	if</span><span style="color:#E1E4E8"> (</span><span style="color:#B392F0">sysinfo</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">&#x26;</span><span style="color:#E1E4E8">info) </span><span style="color:#F97583">==</span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#B392F0">		printf</span><span style="color:#E1E4E8">(</span><span style="color:#9ECBFF">"uptime: </span><span style="color:#79B8FF">%ld</span><span style="color:#9ECBFF"> seconds</span><span style="color:#79B8FF">\n</span><span style="color:#9ECBFF">"</span><span style="color:#E1E4E8">, info.uptime);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">	fflush</span><span style="color:#E1E4E8">(stdout);</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>CMakeLists.txt：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="cmake"><code><span class="line"><span style="color:#F97583">cmake_minimum_required</span><span style="color:#E1E4E8">(</span><span style="color:#B392F0">VERSION</span><span style="color:#E1E4E8"> 3.16)</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">project</span><span style="color:#E1E4E8">(device-agent C)</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">add_executable</span><span style="color:#E1E4E8">(device-agent device-agent.c)</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">install</span><span style="color:#E1E4E8">(TARGETS device-agent DESTINATION bin)</span></span></code></pre>
+<p>注意这里写的是 <code>DESTINATION bin</code>，不是 <code>DESTINATION usr/bin</code>。Buildroot 调用 CMake 时会设置：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>CMAKE_INSTALL_PREFIX:PATH=/usr</span></span>
+<span class="line"><span>CMAKE_TOOLCHAIN_FILE:FILEPATH=/var/lib/lucas/mycodespace/buildroot/output-lucas/host/share/buildroot/toolchainfile.cmake</span></span>
+<span class="line"><span>CMAKE_BUILD_TYPE:STRING=Release</span></span></code></pre>
+<p>所以 <code>DESTINATION bin</code> 最终安装到目标系统的 <code>/usr/bin/device-agent</code>。如果写成 <code>DESTINATION usr/bin</code>，实际路径会变成 <code>/usr/usr/bin</code>，这是嵌入式根文件系统定制中很常见的路径错误。</p>
+<p>Buildroot package mk：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="make"><code><span class="line"><span style="color:#E1E4E8">DEVICE_AGENT_SITE = </span><span style="color:#9ECBFF">$(</span><span style="color:#E1E4E8">BR2_EXTERNAL_LUCAS_PATH</span><span style="color:#9ECBFF">)</span><span style="color:#E1E4E8">/package/device-agent</span></span>
+<span class="line"><span style="color:#E1E4E8">DEVICE_AGENT_SITE_METHOD = local</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">define</span><span style="color:#E1E4E8"> DEVICE_AGENT_INSTALL_INIT_SYSV</span></span>
+<span class="line"><span style="color:#9ECBFF">	$(</span><span style="color:#E1E4E8">INSTALL</span><span style="color:#9ECBFF">)</span><span style="color:#E1E4E8"> -D -m 0755 </span><span style="color:#9ECBFF">$(</span><span style="color:#E1E4E8">@D</span><span style="color:#9ECBFF">)</span><span style="color:#E1E4E8">/S50device-agent \</span></span>
+<span class="line"><span style="color:#9ECBFF">		$(</span><span style="color:#E1E4E8">TARGET_DIR</span><span style="color:#9ECBFF">)</span><span style="color:#E1E4E8">/etc/init.d/S50device-agent</span></span>
+<span class="line"><span style="color:#F97583">endef</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#9ECBFF">$(</span><span style="color:#79B8FF">eval</span><span style="color:#9ECBFF"> $(</span><span style="color:#E1E4E8">cmake-package</span><span style="color:#9ECBFF">))</span></span></code></pre>
+<p>这里使用 <code>$(eval $(cmake-package))</code>。相比手写编译命令，CMake package 的好处是 Buildroot 会自动准备交叉编译 toolchain file、安装前缀、构建目录和安装流程，更适合真实项目里的 CMake 工程。</p>
+<h2 id="busybox-init-自启动脚本">BusyBox init 自启动脚本</h2>
+<p>安装到目标系统的脚本路径是：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>/etc/init.d/S50device-agent</span></span></code></pre>
+<p>脚本核心逻辑：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="sh"><code><span class="line"><span style="color:#E1E4E8">DAEMON</span><span style="color:#F97583">=</span><span style="color:#9ECBFF">/usr/bin/device-agent</span></span>
+<span class="line"><span style="color:#E1E4E8">PIDFILE</span><span style="color:#F97583">=</span><span style="color:#9ECBFF">/var/run/device-agent.pid</span></span>
+<span class="line"><span style="color:#E1E4E8">LOGFILE</span><span style="color:#F97583">=</span><span style="color:#9ECBFF">/var/log/device-agent.log</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">start</span><span style="color:#E1E4E8">() {</span></span>
+<span class="line"><span style="color:#F97583">	if</span><span style="color:#E1E4E8"> [ </span><span style="color:#F97583">-f</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$PIDFILE</span><span style="color:#9ECBFF">"</span><span style="color:#E1E4E8"> ] &#x26;&#x26; </span><span style="color:#79B8FF">kill</span><span style="color:#79B8FF"> -0</span><span style="color:#9ECBFF"> "$(</span><span style="color:#B392F0">cat</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$PIDFILE</span><span style="color:#9ECBFF">")"</span><span style="color:#F97583"> 2></span><span style="color:#9ECBFF">/dev/null</span><span style="color:#E1E4E8">; </span><span style="color:#F97583">then</span></span>
+<span class="line"><span style="color:#79B8FF">		echo</span><span style="color:#9ECBFF"> "device-agent already running"</span></span>
+<span class="line"><span style="color:#F97583">		return</span><span style="color:#79B8FF"> 0</span></span>
+<span class="line"><span style="color:#F97583">	fi</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">	mkdir</span><span style="color:#79B8FF"> -p</span><span style="color:#9ECBFF"> /var/log</span><span style="color:#9ECBFF"> /var/run</span></span>
+<span class="line"><span style="color:#79B8FF">	echo</span><span style="color:#9ECBFF"> "Starting device-agent"</span></span>
+<span class="line"><span style="color:#B392F0">	"</span><span style="color:#E1E4E8">$DAEMON</span><span style="color:#B392F0">"</span><span style="color:#79B8FF"> --daemon</span><span style="color:#F97583"> >></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$LOGFILE</span><span style="color:#9ECBFF">"</span><span style="color:#F97583"> 2>&#x26;1</span><span style="color:#E1E4E8"> &#x26;</span></span>
+<span class="line"><span style="color:#79B8FF">	echo</span><span style="color:#9ECBFF"> "</span><span style="color:#79B8FF">$!</span><span style="color:#9ECBFF">"</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$PIDFILE</span><span style="color:#9ECBFF">"</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>这个脚本通过 <code>DEVICE_AGENT_INSTALL_INIT_SYSV</code> hook 安装进目标根文件系统。Buildroot 的 BusyBox init 会按 <code>/etc/init.d/Sxx</code> 顺序启动服务，所以 <code>S50device-agent</code> 会在系统启动过程中被执行。</p>
+<h2 id="patch-记录">Patch 记录</h2>
+<p>为了方便之后复盘，我把 <code>device-agent</code> 这部分改动保存成了 patch：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>docs/patches/buildroot-device-agent-cmake-init.patch</span></span></code></pre>
+<p>patch 统计：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>br2-external-lucas/Config.in                                  |   1</span></span>
+<span class="line"><span>br2-external-lucas/configs/lucas_qemu_x86_64_defconfig     |  22</span></span>
+<span class="line"><span>br2-external-lucas/package/device-agent/CMakeLists.txt        |   7</span></span>
+<span class="line"><span>br2-external-lucas/package/device-agent/Config.in             |   4</span></span>
+<span class="line"><span>br2-external-lucas/package/device-agent/S50device-agent        |  49</span></span>
+<span class="line"><span>br2-external-lucas/package/device-agent/device-agent.c         |  51</span></span>
+<span class="line"><span>br2-external-lucas/package/device-agent/device-agent.mk        |  15</span></span>
+<span class="line"><span>docs/Buildroot开机自启动服务与CMake包实战.md                     | 415</span></span>
+<span class="line"><span>8 files changed, 564 insertions(+)</span></span></code></pre>
+<p>关键 hunk 之一：把 <code>device-agent</code> 挂进外部树 Kconfig。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="diff"><code><span class="line"><span style="color:#FDAEB7"><span style="user-select: none;">-</span>-- a/br2-external-lucas/Config.in</span></span>
+<span class="line"><span style="color:#85E89D"><span style="user-select: none;">+</span>++ b/br2-external-lucas/Config.in</span></span>
+<span class="line"><span style="color:#B392F0;font-weight:bold">@@ -1 +1,2 @@</span></span>
+<span class="line"><span style="color:#E1E4E8"> source "$BR2_EXTERNAL_LUCAS_PATH/package/hello-buildroot/Config.in"</span></span>
+<span class="line"><span style="color:#85E89D"><span style="user-select: none;">+</span>source "$BR2_EXTERNAL_LUCAS_PATH/package/device-agent/Config.in"</span></span></code></pre>
+<p>关键 hunk 之二：新增 CMake package。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="diff"><code><span class="line"><span style="color:#85E89D"><span style="user-select: none;">+</span>++ b/br2-external-lucas/package/device-agent/device-agent.mk</span></span>
+<span class="line"><span style="color:#B392F0;font-weight:bold">@@ -0,0 +1,15 @@</span></span>
+<span class="line"><span style="color:#85E89D"><span style="user-select: none;">+</span>DEVICE_AGENT_SITE = $(BR2_EXTERNAL_LUCAS_PATH)/package/device-agent</span></span>
+<span class="line"><span style="color:#85E89D"><span style="user-select: none;">+</span>DEVICE_AGENT_SITE_METHOD = local</span></span>
+<span class="line"><span style="color:#85E89D"><span style="user-select: none;">+</span></span></span>
+<span class="line"><span style="color:#85E89D"><span style="user-select: none;">+</span>define DEVICE_AGENT_INSTALL_INIT_SYSV</span></span>
+<span class="line"><span style="color:#85E89D"><span style="user-select: none;">+</span>	$(INSTALL) -D -m 0755 $(@D)/S50device-agent \</span></span>
+<span class="line"><span style="color:#85E89D"><span style="user-select: none;">+</span>		$(TARGET_DIR)/etc/init.d/S50device-agent</span></span>
+<span class="line"><span style="color:#85E89D"><span style="user-select: none;">+</span>endef</span></span>
+<span class="line"><span style="color:#85E89D"><span style="user-select: none;">+</span></span></span>
+<span class="line"><span style="color:#85E89D"><span style="user-select: none;">+</span>$(eval $(cmake-package))</span></span></code></pre>
+<p>关键 hunk 之三：固化可复现 defconfig。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="diff"><code><span class="line"><span style="color:#85E89D"><span style="user-select: none;">+</span>++ b/br2-external-lucas/configs/lucas_qemu_x86_64_defconfig</span></span>
+<span class="line"><span style="color:#B392F0;font-weight:bold">@@ -0,0 +1,22 @@</span></span>
+<span class="line"><span style="color:#85E89D"><span style="user-select: none;">+</span>BR2_x86_64=y</span></span>
+<span class="line"><span style="color:#85E89D"><span style="user-select: none;">+</span>BR2_PACKAGE_HOST_LINUX_HEADERS_CUSTOM_5_15=y</span></span>
+<span class="line"><span style="color:#85E89D"><span style="user-select: none;">+</span>BR2_DL_DIR="/var/lib/lucas/mycodespace/buildroot/dl"</span></span>
+<span class="line"><span style="color:#85E89D"><span style="user-select: none;">+</span>BR2_ROOTFS_OVERLAY="$(BR2_EXTERNAL_LUCAS_PATH)/board/qemu-x86_64/rootfs-overlay"</span></span>
+<span class="line"><span style="color:#85E89D"><span style="user-select: none;">+</span>BR2_LINUX_KERNEL=y</span></span>
+<span class="line"><span style="color:#85E89D"><span style="user-select: none;">+</span>BR2_LINUX_KERNEL_CUSTOM_VERSION=y</span></span>
+<span class="line"><span style="color:#85E89D"><span style="user-select: none;">+</span>BR2_LINUX_KERNEL_CUSTOM_VERSION_VALUE="5.15"</span></span>
+<span class="line"><span style="color:#85E89D"><span style="user-select: none;">+</span>BR2_TARGET_ROOTFS_EXT2=y</span></span>
+<span class="line"><span style="color:#85E89D"><span style="user-select: none;">+</span>BR2_PACKAGE_HOST_QEMU=y</span></span>
+<span class="line"><span style="color:#85E89D"><span style="user-select: none;">+</span>BR2_PACKAGE_HOST_QEMU_SYSTEM_MODE=y</span></span>
+<span class="line"><span style="color:#85E89D"><span style="user-select: none;">+</span>BR2_PACKAGE_HELLO_BUILDROOT=y</span></span>
+<span class="line"><span style="color:#85E89D"><span style="user-select: none;">+</span>BR2_PACKAGE_DEVICE_AGENT=y</span></span></code></pre>
+<h2 id="构建日志">构建日志</h2>
+<p>最终构建命令：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#79B8FF">cd</span><span style="color:#9ECBFF"> /var/lib/lucas/mycodespace/buildroot/buildroot-2022.08</span></span>
+<span class="line"><span style="color:#B392F0">make</span><span style="color:#9ECBFF"> O=/var/lib/lucas/mycodespace/buildroot/output-lucas</span><span style="color:#79B8FF"> -j$(</span><span style="color:#B392F0">nproc</span><span style="color:#79B8FF">)</span></span></code></pre>
+<p>最终镜像生成的关键日志：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>>>>   Finalizing target directory</span></span>
+<span class="line"><span>>>>   Copying overlay /var/lib/lucas/mycodespace/buildroot/br2-external-lucas/board/qemu-x86_64/rootfs-overlay</span></span>
+<span class="line"><span>>>>   Executing post-build script board/qemu/x86_64/post-build.sh</span></span>
+<span class="line"><span>>>>   Generating root filesystems common tables</span></span>
+<span class="line"><span>>>>   Generating filesystem image rootfs.ext2</span></span>
+<span class="line"><span>mke2fs 1.46.5 (30-Dec-2021)</span></span>
+<span class="line"><span>Creating regular file /var/lib/lucas/mycodespace/buildroot/output-lucas/images/rootfs.ext2</span></span>
+<span class="line"><span>Creating filesystem with 61440 1k blocks and 15360 inodes</span></span>
+<span class="line"><span>Copying files into the device: done</span></span>
+<span class="line"><span>Writing superblocks and filesystem accounting information: done</span></span>
+<span class="line"><span>>>>   Executing post-image script board/qemu/post-image.sh</span></span></code></pre>
+<p>最终产物：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>output-lucas/images/bzImage      6198272 bytes</span></span>
+<span class="line"><span>output-lucas/images/rootfs.ext2  62914560 bytes</span></span>
+<span class="line"><span>output-lucas/images/start-qemu.sh 771 bytes</span></span></code></pre>
+<p>目标根文件系统中的关键文件：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>-rw-r--r-- output-lucas/target/etc/motd</span></span>
+<span class="line"><span>-rwxr-xr-x output-lucas/target/usr/bin/hello-buildroot</span></span>
+<span class="line"><span>-rwxr-xr-x output-lucas/target/usr/bin/device-agent</span></span>
+<span class="line"><span>-rwxr-xr-x output-lucas/target/etc/init.d/S50device-agent</span></span></code></pre>
+<p>ELF 和镜像类型确认：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>output-lucas/target/usr/bin/device-agent:</span></span>
+<span class="line"><span>  ELF 64-bit LSB pie executable, x86-64, dynamically linked,</span></span>
+<span class="line"><span>  interpreter /lib64/ld-linux-x86-64.so.2, for GNU/Linux 5.15.0, stripped</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>output-lucas/target/usr/bin/hello-buildroot:</span></span>
+<span class="line"><span>  ELF 64-bit LSB pie executable, x86-64, dynamically linked,</span></span>
+<span class="line"><span>  interpreter /lib64/ld-linux-x86-64.so.2, for GNU/Linux 5.15.0, stripped</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>output-lucas/images/bzImage:</span></span>
+<span class="line"><span>  Linux kernel x86 boot executable bzImage, version 5.15.68</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>output-lucas/images/rootfs.ext2:</span></span>
+<span class="line"><span>  Linux rev 1.0 ext2 filesystem data, volume name "rootfs"</span></span></code></pre>
+<h2 id="qemu-启动验证">QEMU 启动验证</h2>
+<p>启动命令：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#79B8FF">cd</span><span style="color:#9ECBFF"> /var/lib/lucas/mycodespace/buildroot/output-lucas/images</span></span>
+<span class="line"><span style="color:#B392F0">./start-qemu.sh</span><span style="color:#79B8FF"> --serial-only</span></span></code></pre>
+<p>启动日志关键片段：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>Linux version 5.15.68 (lucas@ubuntu-A520I-AC)</span></span>
+<span class="line"><span>  (x86_64-buildroot-linux-gnu-gcc.br_real (Buildroot 2022.08) 11.3.0,</span></span>
+<span class="line"><span>  GNU ld (GNU Binutils) 2.38)</span></span>
+<span class="line"><span>Command line: rootwait root=/dev/vda console=tty1 console=ttyS0</span></span>
+<span class="line"><span>VFS: Mounted root (ext2 filesystem) readonly on device 254:0.</span></span>
+<span class="line"><span>Run /sbin/init as init process</span></span>
+<span class="line"><span>Starting syslogd: OK</span></span>
+<span class="line"><span>Starting klogd: OK</span></span>
+<span class="line"><span>Starting network: udhcpc: started, v1.35.0</span></span>
+<span class="line"><span>udhcpc: lease of 10.0.2.15 obtained from 10.0.2.2, lease time 86400</span></span>
+<span class="line"><span>Starting crond: OK</span></span>
+<span class="line"><span>Starting device-agent</span></span>
+<span class="line"><span>Welcome to Buildroot</span></span>
+<span class="line"><span>buildroot login:</span></span></code></pre>
+<p>登录后首先能看到 overlay 注入的 <code>/etc/motd</code>：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>Welcome to Lucas Buildroot learning image.</span></span>
+<span class="line"><span>This /etc/motd comes from a br2-external rootfs overlay.</span></span></code></pre>
+<p>执行 <code>hello-buildroot</code>：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span># hello-buildroot</span></span>
+<span class="line"><span>hello-buildroot: custom C program from br2-external</span></span>
+<span class="line"><span>kernel: Linux 5.15.68 on x86_64</span></span></code></pre>
+<p>执行一次性 <code>device-agent</code>：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span># /usr/bin/device-agent</span></span>
+<span class="line"><span>device-agent: started</span></span>
+<span class="line"><span>device-agent: status report</span></span>
+<span class="line"><span>time: 1663601350</span></span>
+<span class="line"><span>hostname: buildroot</span></span>
+<span class="line"><span>kernel: Linux 5.15.68</span></span>
+<span class="line"><span>machine: x86_64</span></span>
+<span class="line"><span>uptime: 34 seconds</span></span></code></pre>
+<p>确认开机自启动的后台进程和 PID 文件：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span># cat /var/run/device-agent.pid</span></span>
+<span class="line"><span>113</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span># ps | grep device-agent | grep -v grep</span></span>
+<span class="line"><span>  113 root     /usr/bin/device-agent --daemon</span></span></code></pre>
+<p>查看服务日志：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span># cat /var/log/device-agent.log</span></span>
+<span class="line"><span>device-agent: started</span></span>
+<span class="line"><span>device-agent: status report</span></span>
+<span class="line"><span>time: 1663601319</span></span>
+<span class="line"><span>hostname: buildroot</span></span>
+<span class="line"><span>kernel: Linux 5.15.68</span></span>
+<span class="line"><span>machine: x86_64</span></span>
+<span class="line"><span>uptime: 3 seconds</span></span>
+<span class="line"><span>device-agent: status report</span></span>
+<span class="line"><span>time: 1663601349</span></span>
+<span class="line"><span>hostname: buildroot</span></span>
+<span class="line"><span>kernel: Linux 5.15.68</span></span>
+<span class="line"><span>machine: x86_64</span></span>
+<span class="line"><span>uptime: 33 seconds</span></span></code></pre>
+<p>确认内核和架构：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span># uname -a</span></span>
+<span class="line"><span>Linux buildroot 5.15.68 #1 SMP PREEMPT_DYNAMIC Mon Sep 19 21:12:10 CST 2022 x86_64 GNU/Linux</span></span></code></pre>
+<p>关机时也能看到 init 脚本的 stop 流程：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span># poweroff</span></span>
+<span class="line"><span>Stopping device-agent</span></span>
+<span class="line"><span>Stopping crond: OK</span></span>
+<span class="line"><span>Stopping network: OK</span></span>
+<span class="line"><span>Stopping klogd: OK</span></span>
+<span class="line"><span>Stopping syslogd: OK</span></span>
+<span class="line"><span>Requesting system poweroff</span></span>
+<span class="line"><span>reboot: Power down</span></span></code></pre>
+<h2 id="复现步骤">复现步骤</h2>
+<p>从外部树 defconfig 复现一个新输出目录：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#79B8FF">cd</span><span style="color:#9ECBFF"> /var/lib/lucas/mycodespace/buildroot/buildroot-2022.08</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">make</span><span style="color:#9ECBFF"> O=/var/lib/lucas/mycodespace/buildroot/output-lucas-rebuild</span><span style="color:#79B8FF"> \</span></span>
+<span class="line"><span style="color:#9ECBFF">  BR2_EXTERNAL=/var/lib/lucas/mycodespace/buildroot/br2-external-lucas</span><span style="color:#79B8FF"> \</span></span>
+<span class="line"><span style="color:#9ECBFF">  lucas_qemu_x86_64_defconfig</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">make</span><span style="color:#9ECBFF"> O=/var/lib/lucas/mycodespace/buildroot/output-lucas-rebuild</span><span style="color:#79B8FF"> -j$(</span><span style="color:#B392F0">nproc</span><span style="color:#79B8FF">)</span></span></code></pre>
+<p>启动新镜像：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#79B8FF">cd</span><span style="color:#9ECBFF"> /var/lib/lucas/mycodespace/buildroot/output-lucas-rebuild/images</span></span>
+<span class="line"><span style="color:#B392F0">./start-qemu.sh</span><span style="color:#79B8FF"> --serial-only</span></span></code></pre>
+<h2 id="踩坑与经验">踩坑与经验</h2>
+<p>第一，<code>BR2_EXTERNAL</code> 比直接改 Buildroot 主树更适合长期维护。外部树可以独立保存板级配置、业务包、overlay、patch 和 defconfig，Buildroot 升级时也更容易迁移。</p>
+<p>第二，rootfs overlay 应该作为构建输入，而不是构建完成后手工改 <code>output/target</code>。手工改 <code>target</code> 很容易在下一次构建、清理或重新生成 rootfs 时丢失。</p>
+<p>第三，<code>generic-package</code> 和 <code>cmake-package</code> 应该按项目复杂度选择。一个单文件 C 程序用 <code>generic-package</code> 很直接；真实 CMake 工程则用 <code>cmake-package</code>，让 Buildroot 自动处理 toolchain file 和安装前缀。</p>
+<p>第四，CMake 安装路径要理解 <code>CMAKE_INSTALL_PREFIX=/usr</code>。在 Buildroot 中 <code>install(TARGETS xxx DESTINATION bin)</code> 才会进入 <code>/usr/bin</code>，不要写成 <code>usr/bin</code>。</p>
+<p>第五，自启动服务不要只验证“文件存在”，还要验证启动日志、PID 文件、进程列表、服务日志和 stop 流程。这次我同时验证了：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>/usr/bin/device-agent</span></span>
+<span class="line"><span>/etc/init.d/S50device-agent</span></span>
+<span class="line"><span>/var/run/device-agent.pid</span></span>
+<span class="line"><span>/var/log/device-agent.log</span></span>
+<span class="line"><span>poweroff 时的 Stopping device-agent</span></span></code></pre>
+<h2 id="总结">总结</h2>
+<p>这次 Buildroot 实战从“能编出镜像”推进到了“能工程化集成业务程序并完成启动验证”。关键收获不是某一个 C 程序本身，而是完整掌握了 Buildroot 项目常用的几条主线：</p>
+<ul>
+<li>用 <code>BR2_EXTERNAL</code> 管理项目私有内容。</li>
+<li>用 <code>defconfig</code> 固化可复现配置。</li>
+<li>用 rootfs overlay 注入目标系统文件。</li>
+<li>用 <code>generic-package</code> 集成简单本地程序。</li>
+<li>用 <code>cmake-package</code> 集成 CMake 项目。</li>
+<li>用 BusyBox init 脚本实现开机自启动。</li>
+<li>用 QEMU 串口日志和目标端命令验证最终结果。</li>
+</ul>
+<p>对嵌入式 Linux 项目来说，这比单纯跑通一次 <code>make</code> 更有价值：它证明了配置、构建、安装、启动、运行和日志验证是闭环的。</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

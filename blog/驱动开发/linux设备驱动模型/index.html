@@ -1,0 +1,100 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>linux设备驱动模型 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>linux设备驱动模型</h1><div class="post-meta"><time datetime="2024-10-11T19:00:00.000Z">2024年10月11日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">drivers</span><span class="tag">device</span></div></header><div class="article-body"><h2 id="为什么需要设备驱动模型">为什么需要设备驱动模型</h2>
+<p>对于网卡或者某一个外设来说，驱动的方法是固定的（往某个寄存器中写值，接受某个中断等），
+但是 不同厂商的SOC设计的时候，外设的基地、中断号址往往都会不一样。</p>
+<p>可以理解为设备-device是soc平台，甚至是mach板子的特有属性，这些信息是板子特有的数据，是会变化的。
+但是驱动-driver是逻辑，和设备匹配上，拿到基地址、中端号之后，可以按照逻辑去驱动设备。</p>
+<p>很早之前(arm32的时候)是没有设备树的，设备都是定义再 arch/arm/mach-xxx/board-xx.c中
+<code>arch/arm/mach-pxa/zeus.c</code> 就是一个很典型的例子：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static struct platform_device zeus_dm9k0_device = {</span></span>
+<span class="line"><span>	.name		= "dm9000",</span></span>
+<span class="line"><span>	.id		= 0,</span></span>
+<span class="line"><span>	.num_resources	= ARRAY_SIZE(zeus_dm9k0_resource),</span></span>
+<span class="line"><span>	.resource	= zeus_dm9k0_resource,</span></span>
+<span class="line"><span>	.dev		= {</span></span>
+<span class="line"><span>		.platform_data = &#x26;zeus_dm9k_platdata,</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>};</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static struct platform_device zeus_dm9k1_device = {</span></span>
+<span class="line"><span>	.name		= "dm9000",</span></span>
+<span class="line"><span>	.id		= 1,</span></span>
+<span class="line"><span>	.num_resources	= ARRAY_SIZE(zeus_dm9k1_resource),</span></span>
+<span class="line"><span>	.resource	= zeus_dm9k1_resource,</span></span>
+<span class="line"><span>	.dev		= {</span></span>
+<span class="line"><span>		.platform_data = &#x26;zeus_dm9k_platdata,</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>};</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static struct platform_device *zeus_devices[] __initdata = {</span></span>
+<span class="line"><span>	&#x26;zeus_dm9k0_device,</span></span>
+<span class="line"><span>	&#x26;zeus_dm9k1_device,</span></span>
+<span class="line"><span>};</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static void __init zeus_init(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>    ......</span></span>
+<span class="line"><span>	platform_add_devices(zeus_devices, ARRAY_SIZE(zeus_devices));</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>设备最后注册到某一个bus_type中，等待驱动加载。
+然后在驱动-driver中使用 api 获得 设备-device的信息</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static int dm9000_probe(struct platform_device *pdev)  </span></span>
+<span class="line"><span>{  </span></span>
+<span class="line"><span>    …  </span></span>
+<span class="line"><span>db->addr_res = platform_get_resource(pdev, IORESOURCE_MEM, 0);  </span></span>
+<span class="line"><span>db->data_res = platform_get_resource(pdev, IORESOURCE_MEM, 1);  </span></span>
+<span class="line"><span>db->irq_res  = platform_get_resource(pdev, IORESOURCE_IRQ, 0);  </span></span>
+<span class="line"><span>…  </span></span>
+<span class="line"><span>}  </span></span></code></pre>
+<p>但是还不够优雅,我们仍然看到大量的arch/arm/mach-yyy/board-a.c这样的代码，充斥着描述板级信息的细节代码，尽管它本身已经和驱动解耦了。
+参考<a href="https://segmentfault.com/a/1190000020993722">让天堂的归天堂，让尘土的归尘土——谈Linux的总线、设备、驱动模型</a>
+我们有理由，把这些设备端的信息，用一个非C的脚本语言来描述，这个脚本文件，就是传说中的Device Tree（设备树）。</p>
+<h2 id="驱动和设备都是什么时候产生的">驱动和设备都是什么时候产生的？</h2>
+<h3 id="device_driver">device_driver</h3>
+<p>静态定义于module 里面， module_init的时候:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>xxx_driver_register --> driver_register --> bus_add_driver --> drv->bus->p->drivers_autoprobe --> driver_attach --> bus_for_each_dev</span></span></code></pre>
+<h3 id="device">device</h3>
+<p>来自解析于dts中，dtb —> device_node —> device</p>
+<h2 id="设备树">设备树</h2>
+<h3 id="设备树语法">设备树语法</h3>
+<p>compatible 可以有多个， 会先匹配第一个，然后再匹配后续的</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>bluetooth {</span></span>
+<span class="line"><span>	compatible = "brcm,bcm43438-bt", "arm,ble24";</span></span>
+<span class="line"><span>	max-speed = &#x3C;2000000>;</span></span>
+<span class="line"><span>	shutdown-gpios = &#x3C;&#x26;expgpio 0 GPIO_ACTIVE_HIGH>;</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<h3 id="设备树编译与反编译">设备树编译与反编译</h3>
+<p>编译就需要编译器，dts编译器是dtc(device tree compiler),有多种途径可以获得</p>
+<ol>
+<li><code>scripts/dtc/</code> 目录下有dtc工具源码</li>
+<li>ubuntu 下可以命令行安装 <code>sudo apt-get install device-tree-compiler</code></li>
+</ol>
+<p>编译：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>dtc –I dts –O dtb –o xxx.dtb xxx.dts</span></span></code></pre>
+<p>反编译：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>dtc –I dtb –O dts –o xxx.dts xxx.dtb</span></span></code></pre>
+<p>还提供了一个fdtdump的工具，可以dump dtb文件,方便查看信息</p>
+<h4 id="tips">tips</h4>
+<ol>
+<li>boot_command_line
+在dts的 chosen节点中的 bootargs 属性中</li>
+</ol>
+<h3 id="设备树解析">设备树解析</h3>
+<h3 id="dts与-sysfs关系">dts与 sysfs关系</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>cd /sys/firmware/devicetree/base</span></span></code></pre>
+<h2 id="如何检查probe函数不跑">如何检查probe函数不跑？</h2>
+<p>probe函数被调用的条件：</p>
+<ul>
+<li>driver和device要在同一级总线-bus_type下，比如i2c_bus_type、platform_bus_type等</li>
+<li>driver和device的compatible属性要相同</li>
+</ul>
+<p>假如发现我们驱动的probe函数没有跑，如何排查:</p>
+<ol>
+<li>/sys/bus 目录下 drivers &#x26; devices 目录下的设备和驱动是不是都注册成功</li>
+<li>如果drivers &#x26; devices 都存在，那肯定是 compatible 属性不对，或者driver的name不对</li>
+<li>一般都是 device没注册，有几种情况</li>
+</ol>
+<ul>
+<li>确认dts修改是否生效：目录在 /sys/firmware/devicetree/base/</li>
+<li></li>
+</ul>
+<p>参考<a href="https://zhuanlan.zhihu.com/p/393839930">linux设备驱动：一站式解决probe不跑问题</a></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

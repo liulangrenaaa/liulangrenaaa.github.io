@@ -1,0 +1,146 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>arm64 memory layout | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>arm64 memory layout</h1><div class="post-meta"><time datetime="2022-07-01T19:00:40.000Z">2022年7月1日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">mm</span><span class="tag">arm64</span><span class="tag">memory layout</span></div></header><div class="article-body"><h2 id="arm64-支持的虚拟地址位数">arm64 支持的虚拟地址位数</h2>
+<p>AArch64 Linux通常使用以下配置：</p>
+<ol>
+<li>4KB页面， 使用3级或4级转换表，支持39位（512GB）或48位（256TB）的虚拟地址。</li>
+<li>64KB页面，使用2级转换表，支持42位（4TB）虚拟地址。</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>                             PAGE_SIZE             PAGE_SHIFT       PTE_SHIFT       PMD_SHIFT       VA_BITS      PGTABLE_LEVELS</span></span>
+<span class="line"><span>ARM64_4K_PAGES        4K  == 2^12 == 2^2 * 2^10       12               4               4               48             4</span></span>
+<span class="line"><span>ARM64_64K_PAGES       64K == 2^16 == 2^6 * 2^10       16               5               5               42             3</span></span></code></pre>
+<p>参考 <code>arch/arm64/Kconfig</code> 中</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>config ARM64_PAGE_SHIFT</span></span>
+<span class="line"><span>	int</span></span>
+<span class="line"><span>	default 16 if ARM64_64K_PAGES</span></span>
+<span class="line"><span>	default 14 if ARM64_16K_PAGES</span></span>
+<span class="line"><span>	default 12</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>config ARM64_CONT_PTE_SHIFT</span></span>
+<span class="line"><span>	int</span></span>
+<span class="line"><span>	default 5 if ARM64_64K_PAGES</span></span>
+<span class="line"><span>	default 7 if ARM64_16K_PAGES</span></span>
+<span class="line"><span>	default 4</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>config ARM64_CONT_PMD_SHIFT</span></span>
+<span class="line"><span>	int</span></span>
+<span class="line"><span>	default 5 if ARM64_64K_PAGES</span></span>
+<span class="line"><span>	default 5 if ARM64_16K_PAGES</span></span>
+<span class="line"><span>	default 4</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>config ARCH_MMAP_RND_BITS_MIN</span></span>
+<span class="line"><span>	default 14 if ARM64_64K_PAGES</span></span>
+<span class="line"><span>	default 16 if ARM64_16K_PAGES</span></span>
+<span class="line"><span>	default 18</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>......</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>config PGTABLE_LEVELS</span></span>
+<span class="line"><span>	int</span></span>
+<span class="line"><span>	default 2 if ARM64_16K_PAGES &#x26;&#x26; ARM64_VA_BITS_36</span></span>
+<span class="line"><span>	default 2 if ARM64_64K_PAGES &#x26;&#x26; ARM64_VA_BITS_42</span></span>
+<span class="line"><span>	default 3 if ARM64_64K_PAGES &#x26;&#x26; (ARM64_VA_BITS_48 || ARM64_VA_BITS_52)</span></span>
+<span class="line"><span>	default 3 if ARM64_4K_PAGES &#x26;&#x26; ARM64_VA_BITS_39</span></span>
+<span class="line"><span>	default 3 if ARM64_16K_PAGES &#x26;&#x26; ARM64_VA_BITS_47</span></span>
+<span class="line"><span>	default 4 if !ARM64_64K_PAGES &#x26;&#x26; ARM64_VA_BITS_48</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>......</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>choice</span></span>
+<span class="line"><span>	prompt "Page size"</span></span>
+<span class="line"><span>	default ARM64_4K_PAGES</span></span>
+<span class="line"><span>	help</span></span>
+<span class="line"><span>	  Page size (translation granule) configuration.</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>config ARM64_4K_PAGES</span></span>
+<span class="line"><span>	bool "4KB"</span></span>
+<span class="line"><span>	help</span></span>
+<span class="line"><span>	  This feature enables 4KB pages support.</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>config ARM64_16K_PAGES</span></span>
+<span class="line"><span>	bool "16KB"</span></span>
+<span class="line"><span>	help</span></span>
+<span class="line"><span>	  The system will use 16KB pages support. AArch32 emulation</span></span>
+<span class="line"><span>	  requires applications compiled with 16K (or a multiple of 16K)</span></span>
+<span class="line"><span>	  aligned segments.</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>config ARM64_64K_PAGES</span></span>
+<span class="line"><span>	bool "64KB"</span></span>
+<span class="line"><span>	help</span></span>
+<span class="line"><span>	  This feature enables 64KB pages support (4KB by default)</span></span>
+<span class="line"><span>	  allowing only two levels of page tables and faster TLB</span></span>
+<span class="line"><span>	  look-up. AArch32 emulation requires applications compiled</span></span>
+<span class="line"><span>	  with 64K aligned segments.</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>endchoice</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>......</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>choice</span></span>
+<span class="line"><span>	prompt "Virtual address space size"</span></span>
+<span class="line"><span>	default ARM64_VA_BITS_39 if ARM64_4K_PAGES</span></span>
+<span class="line"><span>	default ARM64_VA_BITS_47 if ARM64_16K_PAGES</span></span>
+<span class="line"><span>	default ARM64_VA_BITS_42 if ARM64_64K_PAGES</span></span>
+<span class="line"><span>	help</span></span>
+<span class="line"><span>	  Allows choosing one of multiple possible virtual address</span></span>
+<span class="line"><span>	  space sizes. The level of translation table is determined by</span></span>
+<span class="line"><span>	  a combination of page size and virtual address space size.</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>......</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>config ARM64_VA_BITS_39</span></span>
+<span class="line"><span>	bool "39-bit"</span></span>
+<span class="line"><span>	depends on ARM64_4K_PAGES</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>config ARM64_VA_BITS_42</span></span>
+<span class="line"><span>	bool "42-bit"</span></span>
+<span class="line"><span>	depends on ARM64_64K_PAGES</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>config ARM64_VA_BITS_47</span></span>
+<span class="line"><span>	bool "47-bit"</span></span>
+<span class="line"><span>	depends on ARM64_16K_PAGES</span></span></code></pre>
+<p>原本 kernel 在 bootup阶段会打印虚拟内存的布局，后续已经删除参考 patch</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>commit 071929dbdd865f779a89ba3f1e06ba8d17dd3743</span></span>
+<span class="line"><span>Author: Laura Abbott &#x3C;labbott@redhat.com></span></span>
+<span class="line"><span>Date:   Tue Dec 19 11:28:10 2017 -0800</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>    arm64: Stop printing the virtual memory layout</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>    Printing kernel addresses should be done in limited circumstances, mostly</span></span>
+<span class="line"><span>    for debugging purposes. Printing out the virtual memory layout at every</span></span>
+<span class="line"><span>    kernel bootup doesn't really fall into this category so delete the prints.</span></span>
+<span class="line"><span>    There are other ways to get the same information.</span></span></code></pre>
+<h2 id="4k-page">4K page</h2>
+<p>以4K Page为例
+<code>User addresses have bits 63:48 set to 0 while the kernel addresses have the same bits set to 1.</code>
+userspace都在低地址，kernelspace都在高地址。</p>
+<p><code>virtual memory space layout</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span> Start                 End                     Size            Use</span></span>
+<span class="line"><span> -----------------------------------------------------------------------</span></span>
+<span class="line"><span> 0000000000000000      0000ffffffffffff         256TB          user</span></span>
+<span class="line"><span> ffff000000000000      ffff7fffffffffff         128TB          kernel logical memory map</span></span>
+<span class="line"><span>[ffff600000000000      ffff7fffffffffff]         32TB          [kasan shadow region]</span></span>
+<span class="line"><span> ffff800000000000      ffff800007ffffff         128MB          modules</span></span>
+<span class="line"><span> ffff800008000000      fffffbffefffffff         124TB          vmalloc</span></span>
+<span class="line"><span> fffffbfff0000000      fffffbfffdffffff         224MB          fixed mappings (top down)</span></span>
+<span class="line"><span> fffffbfffe000000      fffffbfffe7fffff           8MB          [guard region]</span></span>
+<span class="line"><span> fffffbfffe800000      fffffbffff7fffff          16MB          PCI I/O space</span></span>
+<span class="line"><span> fffffbffff800000      fffffbffffffffff           8MB          [guard region]</span></span>
+<span class="line"><span> fffffc0000000000      fffffdffffffffff           2TB          vmemmap</span></span>
+<span class="line"><span> fffffe0000000000      ffffffffffffffff           2TB          [guard region]</span></span></code></pre>
+<p><code>Translation table lookup with 4KB pages</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>+--------+--------+--------+--------+--------+--------+--------+--------+</span></span>
+<span class="line"><span>|63    56|55    48|47    40|39    32|31    24|23    16|15     8|7      0|</span></span>
+<span class="line"><span>+--------+--------+--------+--------+--------+--------+--------+--------+</span></span>
+<span class="line"><span> |                 |         |         |         |         |</span></span>
+<span class="line"><span> |                 |         |         |         |         v</span></span>
+<span class="line"><span> |                 |         |         |         |   [11:0]  in-page offset - 12</span></span>
+<span class="line"><span> |                 |         |         |         +-> [20:12] L3 index ------- 9</span></span>
+<span class="line"><span> |                 |         |         +-----------> [29:21] L2 index ------- 9</span></span>
+<span class="line"><span> |                 |         +---------------------> [38:30] L1 index ------- 9</span></span>
+<span class="line"><span> |                 +-------------------------------> [47:39] L0 index ------- 9</span></span>
+<span class="line"><span> +-------------------------------------------------> [63] TTBR0/1</span></span></code></pre>
+<p>参考<a href="https://blog.csdn.net/yhb1047818384/article/details/104621500">arm64内核内存布局</a>
+参考<a href="https://www.kernel.org/doc/html/latest/arm64/memory.html">Memory Layout on AArch64 Linux</a>
+参考<a href=""></a>
+参考<a href=""></a></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

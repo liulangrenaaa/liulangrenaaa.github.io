@@ -1,0 +1,1096 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>系统休眠链路与Kernel wakeup source | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>系统休眠链路与Kernel wakeup source</h1><div class="post-meta"><time datetime="2026-05-31T11:04:00.000Z">2026年5月31日</time><span> / android / power</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">android</span><span class="tag">power</span><span class="tag">suspend</span><span class="tag">wakeup_source</span></div></header><div class="article-body"><p>这篇记录只讲一个问题：<strong>Android 灭屏之后，系统到底怎样从 Framework 走到 Kernel suspend？如果没睡下去，应该看哪一层？</strong></p>
+<p>很多功耗问题会被一句“灭屏后耗电高”盖住，但这句话其实太粗。灭屏以后至少可能处在三种状态：</p>
+<ul>
+<li>Display 已经 off，但 AP 还在 awake。</li>
+<li>CPU 正在反复进入 cpuidle，但整机没有 suspend。</li>
+<li>AP 已经进入 suspend，只是被某个 wakeup source 周期性唤醒。</li>
+</ul>
+<p>这三种状态的排查方向完全不一样。第一种要看 Framework wakelock、display suspend blocker、Power HAL interactive；第二种要看 scheduler、timer、IRQ、cpuidle residency；第三种才重点看 Kernel <code>wakeup_sources</code>、suspend/resume 日志和外设唤醒源。</p>
+<h2 id="先拆概念">先拆概念</h2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>概念</th><th>发生层级</th><th>代表含义</th><th>常见误判</th></tr></thead><tbody><tr><td>灭屏</td><td>Framework / Display</td><td>屏幕内容不再显示，背光和显示链路进入低功耗</td><td>灭屏不等于整机 suspend</td></tr><tr><td>interactive false</td><td>Framework / Power HAL</td><td>告诉 HAL 系统不再处于交互态</td><td>HAL 收到 false 不等于 Kernel 立刻 suspend</td></tr><tr><td>autosuspend enable</td><td>Native / SystemSuspend</td><td>允许系统自动尝试 suspend</td><td>允许尝试不等于尝试成功</td></tr><tr><td>cpuidle</td><td>Kernel scheduler / cpuidle</td><td>某些 CPU core 进入 idle state</td><td>cpuidle 是 CPU 空闲，不是整机 suspend</td></tr><tr><td>suspend</td><td>Kernel PM core</td><td>AP 暂停执行，等待唤醒事件</td><td>suspend 后仍可能被 alarm、modem、wlan、sensor 唤醒</td></tr><tr><td>wakeup source</td><td>Kernel / driver</td><td>能阻止 suspend 或从 suspend 唤醒系统的对象</td><td>名字出现不等于它就是问题，要看 delta</td></tr></tbody></table>
+<p>可以把它理解成一条门禁链：灭屏只是第一道门，Framework suspend blocker 是第二道门，autosuspend 是第三道门，Kernel wakeup source 和 driver suspend callback 是最后几道门。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[Screen off]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B[Display power state changes]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C[PowerManagerService recalculates state]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D[Release display suspend blocker]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E[Release wakelock suspend blocker]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F[Enable autosuspend]</span></span>
+<span class="line"><span style="color:#E1E4E8">    G[Kernel checks wakeup sources]</span></span>
+<span class="line"><span style="color:#E1E4E8">    H[Driver suspend callbacks]</span></span>
+<span class="line"><span style="color:#E1E4E8">    I[AP suspend]</span></span>
+<span class="line"><span style="color:#E1E4E8">    J[Wakeup IRQ or timer]</span></span>
+<span class="line"><span style="color:#E1E4E8">    K[Resume]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    A --> B</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> D</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> E</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> F</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> F</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> G</span></span>
+<span class="line"><span style="color:#E1E4E8">    G --> H</span></span>
+<span class="line"><span style="color:#E1E4E8">    H --> I</span></span>
+<span class="line"><span style="color:#E1E4E8">    I --> J</span></span>
+<span class="line"><span style="color:#E1E4E8">    J --> K</span></span></code></pre>
+<h2 id="这篇结论">这篇结论</h2>
+<p>排查待机功耗时，先不要急着对 <code>wakeup_sources</code> 某一行下结论。正确顺序是：</p>
+<ol>
+<li><code>dumpsys power</code> 确认 Framework 是否还持有 <code>mHoldingWakeLockSuspendBlocker</code>、<code>mHoldingDisplaySuspendBlocker</code>。</li>
+<li><code>dumpsys power</code> 确认 <code>mHalAutoSuspendModeEnabled</code>、<code>mHalInteractiveModeEnabled</code> 的状态是否符合灭屏预期。</li>
+<li><code>wakeup_sources</code> 做前后差值，看谁在测试窗口内增长，而不是只看绝对值。</li>
+<li><code>dmesg</code> 或 kernel log 看 suspend 是否真正发生，以及是否被立即唤醒。</li>
+<li>如果 suspend 根本没发生，先回头看 Framework、HAL、active wakeup source；如果 suspend 发生但很快 resume，再分析 wakeup IRQ、alarm、modem、wlan、sensor。</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[待机耗电高]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B{是否真正灭屏}</span></span>
+<span class="line"><span style="color:#E1E4E8">    C{PMS是否仍持有suspend blocker}</span></span>
+<span class="line"><span style="color:#E1E4E8">    D{autosuspend是否enabled}</span></span>
+<span class="line"><span style="color:#E1E4E8">    E{Kernel是否出现suspend entry}</span></span>
+<span class="line"><span style="color:#E1E4E8">    F{是否频繁resume}</span></span>
+<span class="line"><span style="color:#E1E4E8">    G[查Display和用户活动]</span></span>
+<span class="line"><span style="color:#E1E4E8">    H[查wakelock和display blocker]</span></span>
+<span class="line"><span style="color:#E1E4E8">    I[查Power HAL和SystemSuspend]</span></span>
+<span class="line"><span style="color:#E1E4E8">    J[查active wakeup source和driver suspend失败]</span></span>
+<span class="line"><span style="color:#E1E4E8">    K[查wakeup_count和唤醒IRQ]</span></span>
+<span class="line"><span style="color:#E1E4E8">    L[分析非suspend场景下的CPU idle和timer]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    A --> B</span></span>
+<span class="line"><span style="color:#E1E4E8">    B -->|否| G</span></span>
+<span class="line"><span style="color:#E1E4E8">    B -->|是| C</span></span>
+<span class="line"><span style="color:#E1E4E8">    C -->|是| H</span></span>
+<span class="line"><span style="color:#E1E4E8">    C -->|否| D</span></span>
+<span class="line"><span style="color:#E1E4E8">    D -->|否| I</span></span>
+<span class="line"><span style="color:#E1E4E8">    D -->|是| E</span></span>
+<span class="line"><span style="color:#E1E4E8">    E -->|否| J</span></span>
+<span class="line"><span style="color:#E1E4E8">    E -->|是| F</span></span>
+<span class="line"><span style="color:#E1E4E8">    F -->|是| K</span></span>
+<span class="line"><span style="color:#E1E4E8">    F -->|否| L</span></span></code></pre>
+<h2 id="framework入口">Framework入口</h2>
+<p>AOSP14 / LOS21 的核心入口仍然是 <code>PowerManagerService</code>。</p>
+<p>源码位置：</p>
+<ul>
+<li><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/PowerManagerService.java:2600:1">PowerManagerService.updatePowerStateLocked line 2600</a></li>
+<li><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/PowerManagerService.java:3961:1">PowerManagerService.updateSuspendBlockerLocked line 3961</a></li>
+<li><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/PowerManagerService.java:4031:1">PowerManagerService.needSuspendBlockerLocked line 4031</a></li>
+<li><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/PowerManagerService.java:4062:1">PowerManagerService.setHalAutoSuspendModeLocked line 4062</a></li>
+<li><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/PowerManagerService.java:4078:1">PowerManagerService.setHalInteractiveModeLocked line 4078</a></li>
+</ul>
+<p><code>updatePowerStateLocked()</code> 不是只做一件事，它是 PMS 的状态收敛函数。只要电源相关状态变脏，比如 wakelock 变化、插拔电、用户活动、display ready、wakefulness 切换，它就会重新计算一遍。</p>
+<p>简化后的阶段如下：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>Phase 0: 更新是否插电、stay on、亮度boost</span></span>
+<span class="line"><span>Phase 1: 更新wakelock summary、user activity、wakefulness</span></span>
+<span class="line"><span>Phase 2: 更新profile活跃状态</span></span>
+<span class="line"><span>Phase 3: 更新所有PowerGroup的display power state</span></span>
+<span class="line"><span>Phase 4: 更新dream/doze</span></span>
+<span class="line"><span>Phase 5: 发送wakefulness相关通知</span></span>
+<span class="line"><span>Phase 6: 更新suspend blocker</span></span></code></pre>
+<p>这里最关键的是 Phase 6。源码注释已经点明：因为这里可能释放最后一个 suspend blocker，所以必须放到其他事情都完成之后。否则系统可能在通知没发完、display 状态没稳定、Doze 还没拿到锁的时候就睡下去。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[updatePowerStateLocked]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B[Phase 0 powered and stay-on]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C[Phase 1 wakelock and wakefulness]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D[Phase 3 power groups and display state]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E[Phase 4 dream and doze]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F[Phase 5 notifications]</span></span>
+<span class="line"><span style="color:#E1E4E8">    G[Phase 6 update suspend blocker]</span></span>
+<span class="line"><span style="color:#E1E4E8">    H[May release last blocker]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    A --> B</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> D</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> F</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> G</span></span>
+<span class="line"><span style="color:#E1E4E8">    G --> H</span></span></code></pre>
+<p>所以看到“屏幕已经黑了”，不能直接说“系统应该 suspend”。PMS 可能还在等待 display ready，可能还在处理 Doze 切换，也可能有 PARTIAL_WAKE_LOCK 仍然要求 CPU 保持运行。</p>
+<h2 id="suspend-blocker是什么">suspend blocker是什么</h2>
+<p>Android Framework 里说的 suspend blocker，本质是 Framework 用来阻止系统进入 suspend 的对象。它不是普通 Java 锁，也不是 Linux mutex。它最终会通过 native 层变成 kernel/system suspend 侧能看懂的 wakelock。</p>
+<p>在 PMS 里常见的 blocker 有三类：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>blocker</th><th>典型名字</th><th>作用</th></tr></thead><tbody><tr><td>Booting suspend blocker</td><td><code>PowerManagerService.Booting</code></td><td>开机未完成前阻止 suspend</td></tr><tr><td>WakeLock suspend blocker</td><td><code>PowerManagerService.WakeLocks</code></td><td>有 CPU wakelock 时阻止 suspend</td></tr><tr><td>Display suspend blocker</td><td><code>PowerManagerService.Display</code></td><td>display 状态未准备好、亮屏、Doze 切换等场景阻止 suspend</td></tr></tbody></table>
+<p><code>updateSuspendBlockerLocked()</code> 的逻辑可以翻译成这段伪代码：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>needWakeLockSuspendBlocker = wakeLockSummary contains WAKE_LOCK_CPU</span></span>
+<span class="line"><span>needDisplaySuspendBlocker = needSuspendBlockerLocked()</span></span>
+<span class="line"><span>autoSuspend = not needDisplaySuspendBlocker</span></span>
+<span class="line"><span>interactive = any power group is bright or dim</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>if autoSuspend is false:</span></span>
+<span class="line"><span>    setHalAutoSuspend(false)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>acquire booting blocker if boot not completed</span></span>
+<span class="line"><span>acquire wakelock blocker if CPU wakelock exists</span></span>
+<span class="line"><span>acquire display blocker if display still needs it</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>setHalInteractive(interactive)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>release booting blocker when boot completed</span></span>
+<span class="line"><span>release wakelock blocker when no CPU wakelock</span></span>
+<span class="line"><span>release display blocker when display no longer needs it</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>if autoSuspend is true:</span></span>
+<span class="line"><span>    setHalAutoSuspend(true)</span></span></code></pre>
+<p>源码里有一个细节非常重要：<strong>先 acquire 需要的 blocker，再 release 不需要的 blocker</strong>。这不是随手写的顺序，而是为了避免中间出现一个短暂窗口，让系统误以为已经没有任何 blocker，然后提前 suspend。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">sequenceDiagram</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant PMS as PowerManagerService</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Wake as WakeLockSuspendBlocker</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Display as DisplaySuspendBlocker</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant HAL as Power HAL</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Native as Native autosuspend</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    PMS->>PMS: calculate needWakeLockSuspendBlocker</span></span>
+<span class="line"><span style="color:#E1E4E8">    PMS->>PMS: calculate needDisplaySuspendBlocker</span></span>
+<span class="line"><span style="color:#E1E4E8">    PMS->>Native: disable autosuspend if display still blocks</span></span>
+<span class="line"><span style="color:#E1E4E8">    PMS->>Wake: acquire if CPU wakelock exists</span></span>
+<span class="line"><span style="color:#E1E4E8">    PMS->>Display: acquire if display still not ready</span></span>
+<span class="line"><span style="color:#E1E4E8">    PMS->>HAL: set interactive true or false</span></span>
+<span class="line"><span style="color:#E1E4E8">    PMS->>Wake: release if CPU wakelock cleared</span></span>
+<span class="line"><span style="color:#E1E4E8">    PMS->>Display: release if display ready/off</span></span>
+<span class="line"><span style="color:#E1E4E8">    PMS->>Native: enable autosuspend if display no longer blocks</span></span></code></pre>
+<h2 id="needsuspendblockerlocked">needSuspendBlockerLocked</h2>
+<p><code>needSuspendBlockerLocked()</code> 决定是否还需要 display suspend blocker。它主要看几个条件：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>判断条件</th><th>为什么会阻止 suspend</th></tr></thead><tbody><tr><td>PowerGroup 没有全部 ready</td><td>display 状态还没稳定，不能睡</td></tr><tr><td>brightness boost 正在进行</td><td>临时亮度提升过程中不能睡</td></tr><tr><td>正在进入 Doze 且 Doze wakelock 还没接上</td><td>防止 Doze 切换过程中掉进 suspend</td></tr><tr><td>某个 PowerGroup 仍要求 blocker</td><td>例如亮屏、dim、近距离传感器等 display policy 场景</td></tr></tbody></table>
+<p>这也解释了一个常见现象：<code>dumpsys power</code> 里没有明显应用 wakelock，但设备还是不 suspend。原因可能不是 <code>PowerManagerService.WakeLocks</code>，而是 <code>PowerManagerService.Display</code>。</p>
+<p>可以用下面的命令直接看 PMS 当前判断结果：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> power</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> sed</span><span style="color:#79B8FF"> -n</span><span style="color:#9ECBFF"> '/Power Manager State:/,/Suspend Blockers:/p'</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> power</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -E</span><span style="color:#9ECBFF"> "mWakefulness|mHolding.*SuspendBlocker|mHalAutoSuspend|mHalInteractive|mDisplayReady|mStayOn|mIsPowered|mPlugType"</span></span></code></pre>
+<p>典型输出的解释：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>字段</th><th>正常待机倾向</th><th>异常线索</th></tr></thead><tbody><tr><td><code>mWakefulness</code></td><td><code>Asleep</code> 或 Doze 相关状态</td><td>一直 <code>Awake</code> 说明 Framework 还没进入待机语义</td></tr><tr><td><code>mHoldingWakeLockSuspendBlocker</code></td><td><code>false</code></td><td><code>true</code> 说明有 CPU wakelock 或 PMS 认为需要 CPU</td></tr><tr><td><code>mHoldingDisplaySuspendBlocker</code></td><td>灭屏稳定后通常应为 <code>false</code></td><td><code>true</code> 说明 display/power group 还在挡 suspend</td></tr><tr><td><code>mHalAutoSuspendModeEnabled</code></td><td>灭屏稳定后通常应为 <code>true</code></td><td><code>false</code> 说明 autosuspend 没放开</td></tr><tr><td><code>mHalInteractiveModeEnabled</code></td><td>灭屏后通常为 <code>false</code></td><td><code>true</code> 说明 HAL 仍按交互态处理</td></tr><tr><td><code>mStayOn</code></td><td>测试自然待机时应为 <code>false</code></td><td><code>true</code> 常见于插 USB + stay awake 设置</td></tr><tr><td><code>mIsPowered</code> / <code>mPlugType</code></td><td>自然待机应未充电</td><td>插 USB 会改变充电、热、调度、wakelock 条件</td></tr></tbody></table>
+<h2 id="java到native">Java到Native</h2>
+<p><code>SuspendBlockerImpl</code> 是 PMS 里真正执行 acquire/release 的内部类。</p>
+<p>源码位置：</p>
+<ul>
+<li><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/PowerManagerService.java:5741:1">PowerManagerService.SuspendBlockerImpl line 5741</a></li>
+<li><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/PowerManagerService.java:5774:1">SuspendBlockerImpl.acquire line 5774</a></li>
+<li><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/PowerManagerService.java:5793:1">SuspendBlockerImpl.release line 5793</a></li>
+</ul>
+<p>这里要抓住两个点：</p>
+<ol>
+<li><code>mReferenceCount</code> 从 0 变成 1 时才会真正调用 native acquire。</li>
+<li><code>mReferenceCount</code> 从 1 变成 0 时才会真正调用 native release。</li>
+</ol>
+<p>也就是说，同一个 suspend blocker 可以被多处引用。看问题时不能只问“有没有 acquire”，还要问“有没有完全 release 到 0”。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart LR</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[Java caller]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B[SuspendBlockerImpl.acquire]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C{reference count from 0 to 1}</span></span>
+<span class="line"><span style="color:#E1E4E8">    D[nativeAcquireSuspendBlocker]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E[Kernel wake lock held]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F[SuspendBlockerImpl.release]</span></span>
+<span class="line"><span style="color:#E1E4E8">    G{reference count from 1 to 0}</span></span>
+<span class="line"><span style="color:#E1E4E8">    H[nativeReleaseSuspendBlocker]</span></span>
+<span class="line"><span style="color:#E1E4E8">    I[Kernel wake lock released]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    A --> B</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C</span></span>
+<span class="line"><span style="color:#E1E4E8">    C -->|yes| D</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E</span></span>
+<span class="line"><span style="color:#E1E4E8">    A --> F</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> G</span></span>
+<span class="line"><span style="color:#E1E4E8">    G -->|yes| H</span></span>
+<span class="line"><span style="color:#E1E4E8">    H --> I</span></span></code></pre>
+<p>JNI 文件在这里：</p>
+<ul>
+<li><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/jni/com_android_server_power_PowerManagerService.cpp:214:1">com_android_server_power_PowerManagerService.cpp nativeAcquireSuspendBlocker line 214</a></li>
+<li><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/jni/com_android_server_power_PowerManagerService.cpp:224:1">com_android_server_power_PowerManagerService.cpp nativeSetAutoSuspend line 224</a></li>
+</ul>
+<p>native suspend blocker 的核心动作很直接：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>nativeAcquireSuspendBlocker(name)</span></span>
+<span class="line"><span>    acquire_wake_lock(PARTIAL_WAKE_LOCK, name)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>nativeReleaseSuspendBlocker(name)</span></span>
+<span class="line"><span>    release_wake_lock(name)</span></span></code></pre>
+<p>autosuspend 的逻辑则走 SystemSuspend：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>nativeSetAutoSuspend(true)</span></span>
+<span class="line"><span>    enableAutoSuspend()</span></span>
+<span class="line"><span>    release PowerManager.SuspendLockout</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>nativeSetAutoSuspend(false)</span></span>
+<span class="line"><span>    disableAutoSuspend()</span></span>
+<span class="line"><span>    acquire PowerManager.SuspendLockout</span></span></code></pre>
+<p><code>PowerManager.SuspendLockout</code> 这个名字很关键。它表达的是“Framework 目前不允许系统 autosuspend”。如果你在 <code>wakeup_sources</code> 或相关日志里看到它，应该回到 <code>dumpsys power</code> 看 PMS 为什么还没 enable autosuspend。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[PowerManagerService]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B[nativeSetAutoSuspend true]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C[enableAutoSuspend]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D[release PowerManager.SuspendLockout]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E[SystemSuspend may enter suspend]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F[nativeSetAutoSuspend false]</span></span>
+<span class="line"><span style="color:#E1E4E8">    G[disableAutoSuspend]</span></span>
+<span class="line"><span style="color:#E1E4E8">    H[acquire PowerManager.SuspendLockout]</span></span>
+<span class="line"><span style="color:#E1E4E8">    I[SystemSuspend blocked by Framework]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    A --> B</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> D</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E</span></span>
+<span class="line"><span style="color:#E1E4E8">    A --> F</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> G</span></span>
+<span class="line"><span style="color:#E1E4E8">    G --> H</span></span>
+<span class="line"><span style="color:#E1E4E8">    H --> I</span></span></code></pre>
+<h2 id="kernel-wakeup_source">Kernel wakeup_source</h2>
+<p>Framework 把 blocker 放开以后，Kernel 还要看 <code>wakeup_sources</code>。常用路径是：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/kernel/debug/wakeup_sources</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /d/wakeup_sources</span></span></code></pre>
+<p>有些内核或 Android 版本也可能在：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/kernel/tracing/../debug/wakeup_sources</span></span></code></pre>
+<p>实际工作时先判断哪个路径存在：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for p in /sys/kernel/debug/wakeup_sources /d/wakeup_sources; do [ -f "$p" ] &#x26;&#x26; echo "$p"; done'</span></span></code></pre>
+<p><code>wakeup_sources</code> 的字段很多，但功耗分析最常用的是这些：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>字段</th><th>含义</th><th>排查价值</th></tr></thead><tbody><tr><td><code>name</code></td><td>wakeup source 名字</td><td>关联 driver、HAL、daemon 或硬件模块</td></tr><tr><td><code>active_count</code></td><td>变成 active 的次数</td><td>看某个源是否频繁活动</td></tr><tr><td><code>event_count</code></td><td>记录到的事件次数</td><td>看事件输入是否密集</td></tr><tr><td><code>wakeup_count</code></td><td>真正把系统从 suspend 唤醒的次数</td><td>判断是不是 suspend 后的唤醒源</td></tr><tr><td><code>expire_count</code></td><td>timeout 到期次数</td><td>常见于带超时的 wakeup source</td></tr><tr><td><code>active_since</code></td><td>当前 active 持续时间</td><td>如果非 0 且一直增加，可能正阻止 suspend</td></tr><tr><td><code>total_time</code></td><td>累计 active 时间</td><td>看长期占用</td></tr><tr><td><code>max_time</code></td><td>单次最长 active 时间</td><td>看是否有长时间卡住</td></tr><tr><td><code>last_change</code></td><td>最近变化时间</td><td>判断是否刚刚活动过</td></tr><tr><td><code>prevent_suspend_time</code></td><td>阻止 suspend 的累计时间</td><td>直接指向阻塞 suspend 的价值很高</td></tr></tbody></table>
+<p>不能只看绝对值，要看测试窗口内的增量：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>delta_active_count = after.active_count - before.active_count</span></span>
+<span class="line"><span>delta_event_count = after.event_count - before.event_count</span></span>
+<span class="line"><span>delta_wakeup_count = after.wakeup_count - before.wakeup_count</span></span>
+<span class="line"><span>delta_total_time = after.total_time - before.total_time</span></span>
+<span class="line"><span>delta_prevent_suspend_time = after.prevent_suspend_time - before.prevent_suspend_time</span></span></code></pre>
+<p>判断口径可以这样定：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>现象</th><th>更可能的问题</th></tr></thead><tbody><tr><td><code>active_since</code> 持续非 0</td><td>某个 wakeup source 当前 active，可能直接挡住 suspend</td></tr><tr><td><code>prevent_suspend_time</code> 快速增加</td><td>它在测试窗口内持续阻止 suspend</td></tr><tr><td><code>wakeup_count</code> 快速增加</td><td>设备已经能 suspend，但被它反复唤醒</td></tr><tr><td><code>event_count</code> 增加但 <code>wakeup_count</code> 不增加</td><td>事件发生在 awake 期间，不一定是 suspend 唤醒源</td></tr><tr><td><code>total_time</code> 很大但 delta 很小</td><td>历史累计高，不代表当前问题</td></tr><tr><td>名字很像某模块但 delta 没变化</td><td>先保留，不作为当前窗口根因</td></tr></tbody></table>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[Read wakeup_sources before]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B[Run fixed idle window]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C[Read wakeup_sources after]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D[Calculate delta]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E{active_since still increasing}</span></span>
+<span class="line"><span style="color:#E1E4E8">    F{wakeup_count increased}</span></span>
+<span class="line"><span style="color:#E1E4E8">    G{prevent_suspend_time increased}</span></span>
+<span class="line"><span style="color:#E1E4E8">    H[Current active blocker]</span></span>
+<span class="line"><span style="color:#E1E4E8">    I[Real suspend wakeup source]</span></span>
+<span class="line"><span style="color:#E1E4E8">    J[Suspend prevention source]</span></span>
+<span class="line"><span style="color:#E1E4E8">    K[Probably historical or awake-only activity]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    A --> B</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> D</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E</span></span>
+<span class="line"><span style="color:#E1E4E8">    E -->|yes| H</span></span>
+<span class="line"><span style="color:#E1E4E8">    E -->|no| F</span></span>
+<span class="line"><span style="color:#E1E4E8">    F -->|yes| I</span></span>
+<span class="line"><span style="color:#E1E4E8">    F -->|no| G</span></span>
+<span class="line"><span style="color:#E1E4E8">    G -->|yes| J</span></span>
+<span class="line"><span style="color:#E1E4E8">    G -->|no| K</span></span></code></pre>
+<h2 id="usb命令悖论">USB命令悖论</h2>
+<p>功耗测试里有一个非常现实的问题：<strong>USB 连接会破坏待机场景，但很多命令又需要 adb。</strong></p>
+<p>这不矛盾，因为“调试观察”和“最终定量测试”本来就是两个阶段：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>阶段</th><th>是否允许 USB</th><th>目的</th></tr></thead><tbody><tr><td>机制定位</td><td>可以连接 USB，但必须记录限制</td><td>快速抓 <code>dumpsys</code>、<code>wakeup_sources</code>、log，确认方向</td></tr><tr><td>造 case</td><td>可以短时间连接，然后断开</td><td>推脚本、设置闹钟、准备日志落盘</td></tr><tr><td>定量待机</td><td>尽量断开 USB</td><td>获取接近真实用户场景的数据</td></tr><tr><td>回收数据</td><td>重新连接 USB</td><td>拉取落盘日志和统计结果</td></tr></tbody></table>
+<p>插 USB 时抓到的数据不能直接写成“自然待机”。插 USB 会影响：</p>
+<ul>
+<li><code>mIsPowered</code> 和 <code>mPlugType</code>。</li>
+<li>充电 IC、PMIC、battery thermal zone。</li>
+<li>stay awake 开发者选项。</li>
+<li>USB gadget、adbd、kernel wakelock。</li>
+<li>设备温度和充电电流。</li>
+<li>某些平台的 modem、USB PHY、Type-C/charger driver 状态。</li>
+</ul>
+<p>更靠谱的做法是把采集脚本放到手机本地执行：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> push</span><span style="color:#9ECBFF"> collect_suspend_window.sh</span><span style="color:#9ECBFF"> /data/local/tmp/</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> chmod</span><span style="color:#79B8FF"> 755</span><span style="color:#9ECBFF"> /data/local/tmp/collect_suspend_window.sh</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'nohup /data/local/tmp/collect_suspend_window.sh 600 >/data/local/tmp/collect_suspend_window.nohup 2>&#x26;1 &#x26;'</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> input</span><span style="color:#9ECBFF"> keyevent</span><span style="color:#79B8FF"> 26</span></span></code></pre>
+<p>然后拔掉 USB，等待窗口结束后再插回 USB 拉数据。</p>
+<p>脚本示例：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#6A737D">#!/system/bin/sh</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">OUT</span><span style="color:#F97583">=</span><span style="color:#9ECBFF">/data/local/tmp/suspend_case_</span><span style="color:#E1E4E8">$(</span><span style="color:#B392F0">date</span><span style="color:#9ECBFF"> +%Y%m%d_%H%M%S</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">DURATION</span><span style="color:#F97583">=</span><span style="color:#FFAB70">${1</span><span style="color:#F97583">:-</span><span style="color:#FFAB70">600}</span></span>
+<span class="line"><span style="color:#B392F0">mkdir</span><span style="color:#79B8FF"> -p</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">"</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">WS</span><span style="color:#F97583">=</span><span style="color:#9ECBFF">/sys/kernel/debug/wakeup_sources</span></span>
+<span class="line"><span style="color:#F97583">if</span><span style="color:#E1E4E8"> [ </span><span style="color:#F97583">!</span><span style="color:#F97583"> -f</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$WS</span><span style="color:#9ECBFF">"</span><span style="color:#E1E4E8"> ]; </span><span style="color:#F97583">then</span></span>
+<span class="line"><span style="color:#E1E4E8">    WS</span><span style="color:#F97583">=</span><span style="color:#9ECBFF">/d/wakeup_sources</span></span>
+<span class="line"><span style="color:#F97583">fi</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">date</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/meta.txt"</span></span>
+<span class="line"><span style="color:#B392F0">getprop</span><span style="color:#9ECBFF"> ro.product.device</span><span style="color:#F97583"> >></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/meta.txt"</span></span>
+<span class="line"><span style="color:#B392F0">getprop</span><span style="color:#9ECBFF"> ro.board.platform</span><span style="color:#F97583"> >></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/meta.txt"</span></span>
+<span class="line"><span style="color:#B392F0">getprop</span><span style="color:#9ECBFF"> ro.hardware</span><span style="color:#F97583"> >></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/meta.txt"</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> power</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/power_before.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> battery</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/battery_before.txt"</span></span>
+<span class="line"><span style="color:#B392F0">cat</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$WS</span><span style="color:#9ECBFF">"</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/wakeup_sources_before.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dmesg</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/dmesg_before.txt"</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">sleep</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$DURATION</span><span style="color:#9ECBFF">"</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">date</span><span style="color:#F97583"> >></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/meta.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> power</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/power_after.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> battery</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/battery_after.txt"</span></span>
+<span class="line"><span style="color:#B392F0">cat</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$WS</span><span style="color:#9ECBFF">"</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/wakeup_sources_after.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dmesg</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/dmesg_after.txt"</span></span>
+<span class="line"><span style="color:#B392F0">logcat</span><span style="color:#79B8FF"> -b</span><span style="color:#9ECBFF"> kernel</span><span style="color:#79B8FF"> -d</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/kernel_logcat_after.txt"</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">tar</span><span style="color:#79B8FF"> -czf</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">.tar.gz"</span><span style="color:#79B8FF"> -C</span><span style="color:#9ECBFF"> "$(</span><span style="color:#B392F0">dirname</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">")"</span><span style="color:#9ECBFF"> "$(</span><span style="color:#B392F0">basename</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">")"</span></span>
+<span class="line"><span style="color:#79B8FF">echo</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">.tar.gz"</span></span></code></pre>
+<p>这个脚本不完美，因为 shell 自身和 <code>sleep</code> 也会引入一点活动，但比全程插 USB 盯着 adb 要干净得多。它适合做问题定位，不适合替代专业电源仪表的最终电流数据。</p>
+<h2 id="如何做delta">如何做delta</h2>
+<p><code>wakeup_sources</code> 是列式文本，字段在不同内核上可能略有差异。简单分析可以先用 <code>awk</code> 做 top：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/kernel/debug/wakeup_sources</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> ws_before.txt</span></span>
+<span class="line"><span style="color:#B392F0">sleep</span><span style="color:#79B8FF"> 300</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/kernel/debug/wakeup_sources</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> ws_after.txt</span></span></code></pre>
+<p>本地用 Python 做差值更稳：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="python"><code><span class="line"><span style="color:#6A737D">#!/usr/bin/env python3</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">import</span><span style="color:#E1E4E8"> sys</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">def</span><span style="color:#B392F0"> load</span><span style="color:#E1E4E8">(path):</span></span>
+<span class="line"><span style="color:#E1E4E8">    rows </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> {}</span></span>
+<span class="line"><span style="color:#F97583">    with</span><span style="color:#79B8FF"> open</span><span style="color:#E1E4E8">(path, </span><span style="color:#9ECBFF">"r"</span><span style="color:#E1E4E8">, </span><span style="color:#FFAB70">encoding</span><span style="color:#F97583">=</span><span style="color:#9ECBFF">"utf-8"</span><span style="color:#E1E4E8">, </span><span style="color:#FFAB70">errors</span><span style="color:#F97583">=</span><span style="color:#9ECBFF">"ignore"</span><span style="color:#E1E4E8">) </span><span style="color:#F97583">as</span><span style="color:#E1E4E8"> f:</span></span>
+<span class="line"><span style="color:#E1E4E8">        header </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> f.readline().split()</span></span>
+<span class="line"><span style="color:#F97583">        for</span><span style="color:#E1E4E8"> line </span><span style="color:#F97583">in</span><span style="color:#E1E4E8"> f:</span></span>
+<span class="line"><span style="color:#E1E4E8">            cols </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> line.split()</span></span>
+<span class="line"><span style="color:#F97583">            if</span><span style="color:#79B8FF"> len</span><span style="color:#E1E4E8">(cols) </span><span style="color:#F97583">&#x3C;</span><span style="color:#79B8FF"> len</span><span style="color:#E1E4E8">(header):</span></span>
+<span class="line"><span style="color:#F97583">                continue</span></span>
+<span class="line"><span style="color:#E1E4E8">            item </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> dict</span><span style="color:#E1E4E8">(</span><span style="color:#79B8FF">zip</span><span style="color:#E1E4E8">(header, cols))</span></span>
+<span class="line"><span style="color:#E1E4E8">            rows[item[</span><span style="color:#9ECBFF">"name"</span><span style="color:#E1E4E8">]] </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> item</span></span>
+<span class="line"><span style="color:#F97583">    return</span><span style="color:#E1E4E8"> rows</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">def</span><span style="color:#B392F0"> to_int</span><span style="color:#E1E4E8">(value):</span></span>
+<span class="line"><span style="color:#F97583">    try</span><span style="color:#E1E4E8">:</span></span>
+<span class="line"><span style="color:#F97583">        return</span><span style="color:#79B8FF"> int</span><span style="color:#E1E4E8">(value)</span></span>
+<span class="line"><span style="color:#F97583">    except</span><span style="color:#79B8FF"> ValueError</span><span style="color:#E1E4E8">:</span></span>
+<span class="line"><span style="color:#F97583">        return</span><span style="color:#79B8FF"> 0</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">before </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> load(sys.argv[</span><span style="color:#79B8FF">1</span><span style="color:#E1E4E8">])</span></span>
+<span class="line"><span style="color:#E1E4E8">after </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> load(sys.argv[</span><span style="color:#79B8FF">2</span><span style="color:#E1E4E8">])</span></span>
+<span class="line"><span style="color:#E1E4E8">fields </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> [</span><span style="color:#9ECBFF">"active_count"</span><span style="color:#E1E4E8">, </span><span style="color:#9ECBFF">"event_count"</span><span style="color:#E1E4E8">, </span><span style="color:#9ECBFF">"wakeup_count"</span><span style="color:#E1E4E8">, </span><span style="color:#9ECBFF">"total_time"</span><span style="color:#E1E4E8">, </span><span style="color:#9ECBFF">"prevent_suspend_time"</span><span style="color:#E1E4E8">]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">result </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> []</span></span>
+<span class="line"><span style="color:#F97583">for</span><span style="color:#E1E4E8"> name, a </span><span style="color:#F97583">in</span><span style="color:#E1E4E8"> after.items():</span></span>
+<span class="line"><span style="color:#E1E4E8">    b </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> before.get(name, {})</span></span>
+<span class="line"><span style="color:#E1E4E8">    delta </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> {field: to_int(a.get(field, </span><span style="color:#9ECBFF">"0"</span><span style="color:#E1E4E8">)) </span><span style="color:#F97583">-</span><span style="color:#E1E4E8"> to_int(b.get(field, </span><span style="color:#9ECBFF">"0"</span><span style="color:#E1E4E8">)) </span><span style="color:#F97583">for</span><span style="color:#E1E4E8"> field </span><span style="color:#F97583">in</span><span style="color:#E1E4E8"> fields}</span></span>
+<span class="line"><span style="color:#E1E4E8">    score </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> delta[</span><span style="color:#9ECBFF">"wakeup_count"</span><span style="color:#E1E4E8">] </span><span style="color:#F97583">*</span><span style="color:#79B8FF"> 1000000</span><span style="color:#F97583"> +</span><span style="color:#E1E4E8"> delta[</span><span style="color:#9ECBFF">"prevent_suspend_time"</span><span style="color:#E1E4E8">] </span><span style="color:#F97583">+</span><span style="color:#E1E4E8"> delta[</span><span style="color:#9ECBFF">"total_time"</span><span style="color:#E1E4E8">]</span></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> score </span><span style="color:#F97583">></span><span style="color:#79B8FF"> 0</span><span style="color:#F97583"> or</span><span style="color:#E1E4E8"> delta[</span><span style="color:#9ECBFF">"active_count"</span><span style="color:#E1E4E8">] </span><span style="color:#F97583">></span><span style="color:#79B8FF"> 0</span><span style="color:#F97583"> or</span><span style="color:#E1E4E8"> delta[</span><span style="color:#9ECBFF">"event_count"</span><span style="color:#E1E4E8">] </span><span style="color:#F97583">></span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">:</span></span>
+<span class="line"><span style="color:#E1E4E8">        result.append((score, name, delta))</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">for</span><span style="color:#E1E4E8"> _, name, delta </span><span style="color:#F97583">in</span><span style="color:#79B8FF"> sorted</span><span style="color:#E1E4E8">(result, </span><span style="color:#FFAB70">reverse</span><span style="color:#F97583">=</span><span style="color:#79B8FF">True</span><span style="color:#E1E4E8">)[:</span><span style="color:#79B8FF">30</span><span style="color:#E1E4E8">]:</span></span>
+<span class="line"><span style="color:#79B8FF">    print</span><span style="color:#E1E4E8">(name, delta)</span></span></code></pre>
+<p>用法：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">python3</span><span style="color:#9ECBFF"> diff_wakeup_sources.py</span><span style="color:#9ECBFF"> ws_before.txt</span><span style="color:#9ECBFF"> ws_after.txt</span></span></code></pre>
+<p>如果你要写报告，建议同时贴三类 top：</p>
+<ul>
+<li>按 <code>delta_wakeup_count</code> 排序。</li>
+<li>按 <code>delta_prevent_suspend_time</code> 排序。</li>
+<li>按 <code>delta_total_time</code> 排序。</li>
+</ul>
+<p>因为它们回答的是不同问题：谁唤醒了系统、谁阻止了 suspend、谁活跃时间最长。</p>
+<h2 id="kernel日志怎么看">Kernel日志怎么看</h2>
+<p>只看 <code>wakeup_sources</code> 还不够。你还要确认 Kernel 是否真的进入过 suspend。</p>
+<p>常用命令：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dmesg</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -Ei</span><span style="color:#9ECBFF"> "PM: suspend|PM: resume|suspend entry|suspend exit|wakeup|abort"</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> logcat</span><span style="color:#79B8FF"> -b</span><span style="color:#9ECBFF"> kernel</span><span style="color:#79B8FF"> -d</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -Ei</span><span style="color:#9ECBFF"> "PM: suspend|PM: resume|wakeup|abort"</span></span></code></pre>
+<p>不同内核日志格式差别很大，但常见模式可以这样读：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>日志现象</th><th>解释</th></tr></thead><tbody><tr><td>只有灭屏日志，没有 suspend entry</td><td>Framework/HAL/Kernel active source 可能还在阻止 suspend</td></tr><tr><td>出现 suspend entry，马上 resume</td><td>有唤醒源立即触发，查 IRQ/wakeup_count</td></tr><tr><td>出现 suspend abort</td><td>driver suspend callback 失败或有 active wakeup source</td></tr><tr><td>suspend 时间长，resume 次数少</td><td>系统睡眠质量较好，再看静态电流和外设低功耗</td></tr></tbody></table>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">sequenceDiagram</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant User as User action</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant PMS as PowerManagerService</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant SS as SystemSuspend</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Kernel as Kernel PM</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Driver as Device driver</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant IRQ as Wakeup IRQ</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    User->>PMS: screen off</span></span>
+<span class="line"><span style="color:#E1E4E8">    PMS->>PMS: release blockers</span></span>
+<span class="line"><span style="color:#E1E4E8">    PMS->>SS: enable autosuspend</span></span>
+<span class="line"><span style="color:#E1E4E8">    SS->>Kernel: request suspend</span></span>
+<span class="line"><span style="color:#E1E4E8">    Kernel->>Driver: suspend callbacks</span></span>
+<span class="line"><span style="color:#E1E4E8">    Driver-->>Kernel: success</span></span>
+<span class="line"><span style="color:#E1E4E8">    Kernel->>Kernel: enter suspend</span></span>
+<span class="line"><span style="color:#E1E4E8">    IRQ->>Kernel: wakeup event</span></span>
+<span class="line"><span style="color:#E1E4E8">    Kernel->>Driver: resume callbacks</span></span>
+<span class="line"><span style="color:#E1E4E8">    Kernel-->>SS: resume complete</span></span></code></pre>
+<p>如果日志中能看到 suspend/resume，但待机电流还是高，问题不一定在“睡不下去”，可能是：</p>
+<ul>
+<li>suspend 期间外设 rail 没掉。</li>
+<li>modem、wlan、sensor hub 保持高功耗工作。</li>
+<li>PMIC 配置或 regulator vote 没释放。</li>
+<li>充电、热管理、USB 连接改变了场景。</li>
+<li>设备频繁被唤醒，平均电流被拉高。</li>
+</ul>
+<h2 id="perfetto和ftrace">Perfetto和ftrace</h2>
+<p>如果要把时间线讲清楚，<code>dumpsys</code> 和 <code>wakeup_sources</code> 是点状证据，Perfetto/ftrace 是时间线证据。</p>
+<p>AOSP 里 atrace 已经包含一些与 suspend 相关的事件入口：</p>
+<ul>
+<li><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/native/cmds/atrace/atrace.cpp:179:1">atrace.cpp suspend_resume line 179</a></li>
+<li><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/native/cmds/atrace/atrace.cpp:188:1">atrace.cpp cpu_idle line 188</a></li>
+<li><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/native/cmds/atrace/atrace.cpp:171:1">atrace.cpp cpu_frequency line 171</a></li>
+<li><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/native/cmds/atrace/atrace.cpp:135:1">atrace.cpp sched_switch line 135</a></li>
+</ul>
+<p>可以先看设备支持哪些 event：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'ls /sys/kernel/debug/tracing/events/power 2>/dev/null'</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'ls /sys/kernel/tracing/events/power 2>/dev/null'</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'ls /sys/kernel/debug/tracing/events/sched 2>/dev/null | head'</span></span></code></pre>
+<p>短 trace 示例：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> atrace</span><span style="color:#79B8FF"> --async_start</span><span style="color:#79B8FF"> -b</span><span style="color:#79B8FF"> 8192</span><span style="color:#9ECBFF"> power</span><span style="color:#9ECBFF"> sched</span><span style="color:#9ECBFF"> freq</span><span style="color:#9ECBFF"> idle</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> input</span><span style="color:#9ECBFF"> keyevent</span><span style="color:#79B8FF"> 26</span></span>
+<span class="line"><span style="color:#B392F0">sleep</span><span style="color:#79B8FF"> 60</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> atrace</span><span style="color:#79B8FF"> --async_stop</span><span style="color:#79B8FF"> -z</span><span style="color:#79B8FF"> -o</span><span style="color:#9ECBFF"> /data/local/tmp/suspend_trace.html</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> pull</span><span style="color:#9ECBFF"> /data/local/tmp/suspend_trace.html</span><span style="color:#9ECBFF"> .</span></span></code></pre>
+<p>如果走 Perfetto，可以关注：</p>
+<ul>
+<li><code>power/suspend_resume</code></li>
+<li><code>power/cpu_idle</code></li>
+<li><code>power/cpu_frequency</code></li>
+<li><code>sched/sched_switch</code></li>
+<li><code>irq/irq_handler_entry</code></li>
+<li><code>timer/timer_expire_entry</code></li>
+</ul>
+<p>trace 里要回答的问题是：</p>
+<ol>
+<li>灭屏点在哪里？</li>
+<li><code>setHalInteractive(false)</code> 或相关 power state 变化在哪里？</li>
+<li>是否出现 suspend entry？</li>
+<li>suspend 后多久 resume？</li>
+<li>resume 前后哪个 IRQ、哪个线程、哪个 daemon 活跃？</li>
+</ol>
+<h2 id="qcom设备现象">QCOM设备现象</h2>
+<p>当前外接的 QCOM 设备是 msm8998 类平台，设备侧能看到类似 wakeup source 名字：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>hal_bluetooth_lock</span></span>
+<span class="line"><span>Loc_hal</span></span>
+<span class="line"><span>lowi-server</span></span>
+<span class="line"><span>netmgrd</span></span>
+<span class="line"><span>DataModule</span></span>
+<span class="line"><span>qti</span></span></code></pre>
+<p>这些名字很有价值，但也很容易误判。</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>名字特征</th><th>可能关联</th><th>不能直接下的结论</th></tr></thead><tbody><tr><td><code>hal_bluetooth_lock</code></td><td>Bluetooth HAL 或 controller 交互</td><td>不能只因出现它就说蓝牙耗电</td></tr><tr><td><code>Loc_hal</code></td><td>定位 HAL、GNSS、融合定位</td><td>需要看定位开关和 delta</td></tr><tr><td><code>lowi-server</code></td><td>Wi-Fi location / scan 相关服务</td><td>要结合 Wi-Fi scan、定位、后台扫描</td></tr><tr><td><code>netmgrd</code></td><td>modem data / 网络管理</td><td>要结合数据业务、IMS、信号环境</td></tr><tr><td><code>DataModule</code></td><td>vendor data path</td><td>要看飞行模式、SIM、移动数据对比</td></tr><tr><td><code>qti</code></td><td>Qualcomm vendor 组件</td><td>名字太泛，必须回到日志和进程</td></tr></tbody></table>
+<p>对 QCOM 平台，建议用开关矩阵造 case：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Case</th><th>Wi-Fi</th><th>Bluetooth</th><th>Location</th><th>Mobile data</th><th>USB</th><th>目的</th></tr></thead><tbody><tr><td>Baseline</td><td>off</td><td>off</td><td>off</td><td>airplane</td><td>disconnected</td><td>看最干净待机</td></tr><tr><td>Wi-Fi only</td><td>on</td><td>off</td><td>off</td><td>airplane</td><td>disconnected</td><td>看 wlan/lowi 增量</td></tr><tr><td>BT only</td><td>off</td><td>on</td><td>off</td><td>airplane</td><td>disconnected</td><td>看 bluetooth lock 增量</td></tr><tr><td>Location only</td><td>on</td><td>off</td><td>on</td><td>airplane</td><td>disconnected</td><td>看 Loc_hal/lowi/GNSS 增量</td></tr><tr><td>Modem only</td><td>off</td><td>off</td><td>off</td><td>mobile on</td><td>disconnected</td><td>看 netmgrd/DataModule 增量</td></tr><tr><td>USB debug</td><td>keep original</td><td>keep original</td><td>keep original</td><td>keep original</td><td>connected</td><td>只用于机制观察</td></tr></tbody></table>
+<p>每个 case 至少记录：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>测试时间窗口</span></span>
+<span class="line"><span>电量起止</span></span>
+<span class="line"><span>电池温度起止</span></span>
+<span class="line"><span>是否插USB</span></span>
+<span class="line"><span>Wi-Fi/Bluetooth/Location/Mobile data状态</span></span>
+<span class="line"><span>dumpsys power before/after</span></span>
+<span class="line"><span>dumpsys battery before/after</span></span>
+<span class="line"><span>wakeup_sources before/after</span></span>
+<span class="line"><span>dmesg before/after</span></span></code></pre>
+<h2 id="案例一usb导致看不到自然待机">案例一：USB导致看不到自然待机</h2>
+<p>现象：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>dumpsys power:</span></span>
+<span class="line"><span>    mWakefulness=Awake</span></span>
+<span class="line"><span>    mIsPowered=true</span></span>
+<span class="line"><span>    mPlugType=2</span></span>
+<span class="line"><span>    mStayOn=true</span></span>
+<span class="line"><span>    mHalInteractiveModeEnabled=true</span></span>
+<span class="line"><span>    mHoldingDisplaySuspendBlocker=true</span></span></code></pre>
+<p>分析：</p>
+<ul>
+<li><code>mIsPowered=true</code> 和 <code>mPlugType=2</code> 表示 USB 供电。</li>
+<li><code>mStayOn=true</code> 说明开发者选项或系统策略可能要求插电保持唤醒。</li>
+<li><code>mHoldingDisplaySuspendBlocker=true</code> 表示 display 侧仍然阻止 suspend。</li>
+<li>这时看 <code>wakeup_sources</code> 里的 vendor 名字，意义有限，因为 Framework 根本还没放系统睡。</li>
+</ul>
+<p>正确结论：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>当前不是自然待机场景。</span></span>
+<span class="line"><span>先关闭Stay awake，断开USB，或者使用本地脚本落盘后拔线测试。</span></span>
+<span class="line"><span>在Framework blocker释放之前，不应把wakeup_sources中的某个外设名字判为根因。</span></span></code></pre>
+<p>排查命令：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> settings</span><span style="color:#9ECBFF"> get</span><span style="color:#9ECBFF"> global</span><span style="color:#9ECBFF"> stay_on_while_plugged_in</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> power</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -E</span><span style="color:#9ECBFF"> "mIsPowered|mPlugType|mStayOn|mWakefulness|mHolding.*SuspendBlocker|mHal"</span></span></code></pre>
+<p>如果只是为了临时造自然待机场景，可以关闭插电常亮：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> settings</span><span style="color:#9ECBFF"> put</span><span style="color:#9ECBFF"> global</span><span style="color:#9ECBFF"> stay_on_while_plugged_in</span><span style="color:#79B8FF"> 0</span></span></code></pre>
+<p>但报告里仍要写清楚 USB 是否连接，因为 USB 本身还会影响 charger/PMIC/adbd。</p>
+<h2 id="案例二没有应用wakelock但仍不suspend">案例二：没有应用wakelock但仍不suspend</h2>
+<p>现象：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>dumpsys power:</span></span>
+<span class="line"><span>    Wake Locks: size=0</span></span>
+<span class="line"><span>    mHoldingWakeLockSuspendBlocker=false</span></span>
+<span class="line"><span>    mHoldingDisplaySuspendBlocker=true</span></span>
+<span class="line"><span>    mHalAutoSuspendModeEnabled=false</span></span></code></pre>
+<p>很多人看到 <code>Wake Locks: size=0</code> 就会说“Framework 没问题”。这不够严谨。<code>Wake Locks</code> 为空只说明没有普通应用或系统服务持有 PMS 统计里的 wakelock，但 display suspend blocker 仍可能挡住 suspend。</p>
+<p>可能原因：</p>
+<ul>
+<li>屏幕状态还没 ready。</li>
+<li>正在 AWAKE 到 DOZING 的切换过程中。</li>
+<li>近距离传感器策略要求暂时保持 blocker。</li>
+<li>brightness boost 或 display policy 未收敛。</li>
+<li>多 PowerGroup 场景下某个 display group 仍为 bright/dim。</li>
+</ul>
+<p>下一步：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> power</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> power.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> display</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> display.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> sensorservice</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> sensorservice.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> logcat</span><span style="color:#79B8FF"> -d</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -Ei</span><span style="color:#9ECBFF"> "PowerManagerService|DisplayPowerController|DisplayManagerService|doze|proximity"</span></span></code></pre>
+<p>我的判断写法：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>本case中应用wakelock为空，但mHoldingDisplaySuspendBlocker=true。</span></span>
+<span class="line"><span>因此根因暂不在第三方PARTIAL_WAKE_LOCK，而在display power state未收敛或Framework display blocker未释放。</span></span>
+<span class="line"><span>后续需要结合DisplayPowerController、PowerGroup、Doze/proximity状态继续定位。</span></span></code></pre>
+<h2 id="案例三能suspend但被定位wi-fi反复唤醒">案例三：能suspend但被定位/Wi-Fi反复唤醒</h2>
+<p>现象：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>wakeup_sources delta:</span></span>
+<span class="line"><span>    lowi-server: wakeup_count +25, event_count +80</span></span>
+<span class="line"><span>    Loc_hal: wakeup_count +18, event_count +45</span></span>
+<span class="line"><span>    PowerManagerService.WakeLocks: delta small</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>dmesg:</span></span>
+<span class="line"><span>    suspend entry</span></span>
+<span class="line"><span>    resume</span></span>
+<span class="line"><span>    suspend entry</span></span>
+<span class="line"><span>    resume</span></span></code></pre>
+<p>这类 case 和“睡不下去”不同。它已经能 suspend，但睡眠被频繁打断。平均电流高来自“睡一会儿就醒”，而不是一直 awake。</p>
+<p>验证方式：</p>
+<ol>
+<li>关闭定位，保留 Wi-Fi，跑 10 分钟。</li>
+<li>打开定位，保留 Wi-Fi，跑 10 分钟。</li>
+<li>打开飞行模式并关闭 Wi-Fi/BT/定位，跑 10 分钟。</li>
+<li>对比 <code>wakeup_count</code> 和 <code>prevent_suspend_time</code> delta。</li>
+</ol>
+<p>报告应该这样写：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>在定位开启场景，Loc_hal/lowi-server的delta_wakeup_count明显高于baseline。</span></span>
+<span class="line"><span>Kernel日志显示系统能够进入suspend，但resume频率随定位开启显著增加。</span></span>
+<span class="line"><span>因此该问题属于周期性唤醒导致的待机平均电流升高，不属于Framework blocker长期未释放。</span></span></code></pre>
+<p>这种写法不够：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>看到lowi-server，所以Wi-Fi有问题。</span></span></code></pre>
+<p>因为没有 delta、没有对照组、没有 suspend/resume 时间线，这个结论站不住。</p>
+<h2 id="案例四wakeup-source一直active">案例四：wakeup source一直active</h2>
+<p>现象：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>wakeup_sources:</span></span>
+<span class="line"><span>    some_vendor_lock active_since持续增加</span></span>
+<span class="line"><span>    prevent_suspend_time持续增加</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>dmesg:</span></span>
+<span class="line"><span>    no successful suspend entry</span></span></code></pre>
+<p>这时方向是“阻止 suspend”，不是“从 suspend 唤醒”。</p>
+<p>排查方法：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'cat /sys/kernel/debug/wakeup_sources | head -1'</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'cat /sys/kernel/debug/wakeup_sources | sort -k9 -nr | head -20'</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'cat /sys/kernel/debug/wakeup_sources | sort -k10 -nr | head -20'</span></span></code></pre>
+<p>字段列数可能因内核不同而变化，排序前先看 header。通常要重点看 <code>active_since</code> 和 <code>prevent_suspend_time</code>。</p>
+<p>下一步按名字关联：</p>
+<ul>
+<li>像 <code>PowerManagerService.*</code>：回到 <code>dumpsys power</code>。</li>
+<li>像 <code>alarmtimer</code>：回到 <code>dumpsys alarm</code>、<code>cmd jobscheduler</code>、后台任务。</li>
+<li>像 <code>wlan</code> / <code>lowi</code>：回到 Wi-Fi scan、网络保活、定位扫描。</li>
+<li>像 <code>qcom_rx_wakelock</code> / data path：回到 modem、网络、信号环境。</li>
+<li>像 <code>sensor</code>：回到 sensorservice、抬腕、计步、接近传感器。</li>
+</ul>
+<h2 id="案例五suspend失败但wakeup_sources不明显">案例五：suspend失败但wakeup_sources不明显</h2>
+<p>有时 <code>wakeup_sources</code> delta 看不出明显嫌疑，但内核日志里有 suspend abort 或 driver suspend failed。这类问题通常不在 Framework wakelock，而在 driver suspend callback、设备电源域、regulator、IRQ 配置。</p>
+<p>排查方向：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dmesg</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -Ei</span><span style="color:#9ECBFF"> "failed to suspend|suspend abort|PM: Device|wakeup pending|Freezing of tasks"</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> logcat</span><span style="color:#79B8FF"> -b</span><span style="color:#9ECBFF"> kernel</span><span style="color:#79B8FF"> -d</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -Ei</span><span style="color:#9ECBFF"> "failed to suspend|suspend abort|PM: Device|wakeup pending"</span></span></code></pre>
+<p>报告里要分清：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>类型</th><th>证据</th><th>后续 owner</th></tr></thead><tbody><tr><td>Framework blocker</td><td><code>dumpsys power</code> 显示 PMS blocker 未释放</td><td>Framework / System service</td></tr><tr><td>active wakeup source</td><td><code>active_since</code> 或 <code>prevent_suspend_time</code> 增长</td><td>Driver / HAL / daemon</td></tr><tr><td>suspend callback fail</td><td>kernel log 指向具体 device suspend fail</td><td>Kernel driver</td></tr><tr><td>resume storm</td><td>suspend 成功但 <code>wakeup_count</code> 快速增长</td><td>IRQ owner / modem / wlan / sensor</td></tr></tbody></table>
+<h2 id="一套完整排查命令">一套完整排查命令</h2>
+<p>第一次定位可以这样抓：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">mkdir</span><span style="color:#79B8FF"> -p</span><span style="color:#9ECBFF"> suspend_case</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> power</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> suspend_case/power_before.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> battery</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> suspend_case/battery_before.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> alarm</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> suspend_case/alarm_before.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> jobscheduler</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> suspend_case/jobs_before.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/kernel/debug/wakeup_sources</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> suspend_case/ws_before.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dmesg</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> suspend_case/dmesg_before.txt</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> input</span><span style="color:#9ECBFF"> keyevent</span><span style="color:#79B8FF"> 26</span></span>
+<span class="line"><span style="color:#B392F0">sleep</span><span style="color:#79B8FF"> 300</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> power</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> suspend_case/power_after.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> battery</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> suspend_case/battery_after.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> alarm</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> suspend_case/alarm_after.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> jobscheduler</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> suspend_case/jobs_after.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/kernel/debug/wakeup_sources</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> suspend_case/ws_after.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dmesg</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> suspend_case/dmesg_after.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> logcat</span><span style="color:#79B8FF"> -b</span><span style="color:#9ECBFF"> kernel</span><span style="color:#79B8FF"> -d</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> suspend_case/kernel_logcat_after.txt</span></span></code></pre>
+<p>如果 <code>/sys/kernel/debug/wakeup_sources</code> 不存在：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'cat /d/wakeup_sources'</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> suspend_case/ws_before.txt</span></span></code></pre>
+<p>如果设备没有 root，很多 kernel 节点读不到，这时至少保留：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> power</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --history</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> alarm</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> jobscheduler</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> bugreport</span><span style="color:#9ECBFF"> /sdcard/bugreport.zip</span></span></code></pre>
+<h2 id="复盘报告写法">复盘报告写法</h2>
+<p>建议每个 suspend 问题都按这几个判断写，避免一上来就贴一堆日志：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>1. 场景</span></span>
+<span class="line"><span>   设备：Mi MIX 2 / msm8998 / Android 14</span></span>
+<span class="line"><span>   条件：USB断开/连接，Wi-Fi/BT/定位/移动数据状态</span></span>
+<span class="line"><span>   时间窗口：10分钟</span></span>
+<span class="line"><span>   电池温度：开始xx.xC，结束xx.xC</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>2. Framework状态</span></span>
+<span class="line"><span>   mWakefulness=</span></span>
+<span class="line"><span>   mHoldingWakeLockSuspendBlocker=</span></span>
+<span class="line"><span>   mHoldingDisplaySuspendBlocker=</span></span>
+<span class="line"><span>   mHalAutoSuspendModeEnabled=</span></span>
+<span class="line"><span>   mHalInteractiveModeEnabled=</span></span>
+<span class="line"><span>   Wake Locks size=</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>3. Kernel suspend状态</span></span>
+<span class="line"><span>   是否出现suspend entry：</span></span>
+<span class="line"><span>   是否出现resume：</span></span>
+<span class="line"><span>   是否有suspend abort或driver failed：</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>4. wakeup_sources delta</span></span>
+<span class="line"><span>   Top delta_wakeup_count:</span></span>
+<span class="line"><span>   Top delta_prevent_suspend_time:</span></span>
+<span class="line"><span>   Top delta_total_time:</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>5. 初步结论</span></span>
+<span class="line"><span>   是Framework blocker未释放？</span></span>
+<span class="line"><span>   是Kernel active wakeup source阻止suspend？</span></span>
+<span class="line"><span>   是能suspend但被频繁唤醒？</span></span>
+<span class="line"><span>   是driver suspend失败？</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>6. 下一步</span></span>
+<span class="line"><span>   需要关闭哪个模块做AB对比？</span></span>
+<span class="line"><span>   需要哪个owner看日志？</span></span>
+<span class="line"><span>   是否需要电源仪表复测？</span></span></code></pre>
+<h2 id="我会这样说明">我会这样说明</h2>
+<p>如果被问到“Android 灭屏后怎么进入 suspend”，我会这样回答：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>灭屏只是 display policy 进入低功耗，不等于 AP suspend。</span></span>
+<span class="line"><span>Framework 侧 PowerManagerService 会在 updatePowerStateLocked 的最后阶段更新 suspend blocker。</span></span>
+<span class="line"><span>如果还有 CPU wakelock，会持有 PowerManagerService.WakeLocks；</span></span>
+<span class="line"><span>如果 display 状态未 ready、Doze 切换未完成或 PowerGroup 仍需要保持唤醒，会持有 PowerManagerService.Display。</span></span>
+<span class="line"><span>当这些 blocker 释放后，PMS 会通过 nativeSetAutoSuspend(true) 放开 autosuspend，同时通过 Power HAL 设置 interactive false。</span></span>
+<span class="line"><span>Native 层再走 SystemSuspend，Kernel PM core 才有机会尝试 suspend。</span></span>
+<span class="line"><span>Kernel 侧还要检查 wakeup_sources 和 driver suspend callback。</span></span>
+<span class="line"><span>所以排查时要先看 dumpsys power 判断 Framework 是否放行，再看 wakeup_sources delta 和 kernel suspend/resume 日志判断 Kernel 是否睡下去以及被谁唤醒。</span></span></code></pre>
+<p>如果问“wakeup_sources 里看到某个名字很大，能不能说它是根因”，我会这样回答：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>不能只看绝对值。</span></span>
+<span class="line"><span>wakeup_sources 是累计统计，必须做固定时间窗口的 before/after delta。</span></span>
+<span class="line"><span>如果 wakeup_count 增长，说明它可能是 suspend 后的唤醒源；</span></span>
+<span class="line"><span>如果 prevent_suspend_time 或 active_since 增长，说明它可能阻止 suspend；</span></span>
+<span class="line"><span>如果只是 total_time 历史值大但当前 delta 不明显，不能判定为当前问题。</span></span>
+<span class="line"><span>还要结合 dmesg 里的 suspend/resume/abort 日志和场景开关AB对比。</span></span></code></pre>
+<h2 id="复盘">复盘</h2>
+<p>系统休眠链路可以压缩成我的判断口径：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>灭屏 -> PMS状态收敛 -> 释放Framework suspend blocker -> enable autosuspend -> Kernel检查wakeup source和driver -> suspend -> 被wakeup source唤醒resume</span></span></code></pre>
+<p>实际排查时按层推进：</p>
+<ul>
+<li><code>mHoldingWakeLockSuspendBlocker=true</code>：先查 wakelock。</li>
+<li><code>mHoldingDisplaySuspendBlocker=true</code>：先查 display power state、Doze、proximity、PowerGroup ready。</li>
+<li><code>mHalAutoSuspendModeEnabled=false</code>：先查 PMS 为什么没放 autosuspend。</li>
+<li>Kernel 没有 suspend entry：查 active wakeup source 或 driver suspend abort。</li>
+<li>Kernel 有 suspend/resume 且 <code>wakeup_count</code> 增长：查频繁唤醒源。</li>
+<li>USB 连接场景：只能作为机制定位，不能直接当自然待机功耗结论。</li>
+</ul>
+<p>这篇的重点不是背命令，而是建立判断顺序。顺序对了，<code>wakeup_sources</code> 是利器；顺序错了，它会变成一张很会骗人的名单。</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

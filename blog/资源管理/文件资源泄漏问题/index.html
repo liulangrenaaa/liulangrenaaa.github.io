@@ -1,0 +1,139 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>文件资源泄漏问题 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>文件资源泄漏问题</h1><div class="post-meta"><time datetime="2021-01-15T19:00:00.000Z">2021年1月15日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">资源泄漏</span><span class="tag">文件描述符泄漏</span></div></header><div class="article-body"><h2 id="资源泄漏">资源泄漏</h2>
+<p>资源泄漏在实际编程中是一不小心就会遇到的一个问题，最常见的就是 <code>内存泄漏</code>。
+内存泄漏：对于短时间存在的进程，线程即使存在内存泄漏，往往也不会变现出来，开发人员也很难感知到。
+但是一旦是长时间运行的进程，线程存在内存泄漏的问题，那将是一个灾难，要么过一会被OOM KILL，要么
+自己重启，更严重的就是重启机器。</p>
+<p>内存泄漏是指内存被分配出来，但是后续一直未使用，且失去了这个内存的引用，一直无法释放的问题。</p>
+<p>但是除了最常见内存泄漏之外，还有其他各种资源泄漏的问题，比如这次的 <code>进程文件资源泄漏</code>。</p>
+<h2 id="场景">场景</h2>
+<p>虽然是嵌入式平台，也有一些业务需要做压力测试连续几天到一个月不关机长时间跑测试。</p>
+<p>某个业务在运行两天之后就会出现进程挂掉的问题。</p>
+<h2 id="代码复现">代码复现</h2>
+<p>如果能用简单代码复现的问题，都不大</p>
+<p><a href="https://github.com/liulangrenaaa/test_modules/tree/main">代码</a></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>#include &#x3C;stdio.h></span></span>
+<span class="line"><span>#include &#x3C;stdlib.h></span></span>
+<span class="line"><span>#include &#x3C;string.h></span></span>
+<span class="line"><span>#include &#x3C;sys/types.h></span></span>
+<span class="line"><span>#include &#x3C;dirent.h></span></span>
+<span class="line"><span>#include &#x3C;unistd.h></span></span>
+<span class="line"><span>#include &#x3C;sys/types.h></span></span>
+<span class="line"><span>#include &#x3C;sys/stat.h></span></span>
+<span class="line"><span>#include &#x3C;fcntl.h></span></span>
+<span class="line"><span>#define DIR_NAME        "/tmp/asdf"</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>int sync_dir(char *dir)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>        if(!dir) return -1;</span></span>
+<span class="line"><span>        int fd = open(dir, O_ASYNC);</span></span>
+<span class="line"><span>        if (-1 == fd) return -1;</span></span>
+<span class="line"><span>        return 0;</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>void main(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>        int i = 0;</span></span>
+<span class="line"><span>        int ret = -1;</span></span>
+<span class="line"><span>        for (i = 0; i &#x3C; 1024 * 1024 * 64; i++) {</span></span>
+<span class="line"><span>                ret = sync_dir(DIR_NAME);</span></span>
+<span class="line"><span>                if (ret)        printf("sync_dir failed. i = %d, ret = %d\n", i, ret);</span></span>
+<span class="line"><span>                else            printf("sync_dir sucess. i = %d\n", i);</span></span>
+<span class="line"><span>                usleep(1000 * 10);</span></span>
+<span class="line"><span>        }</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>嵌入式设备上的资源限制</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>root@device_gls:/proc/sys/fs # cat file-nr</span></span>
+<span class="line"><span>800     0       21378</span></span>
+<span class="line"><span>root@device_gls:/proc/sys/fs #</span></span></code></pre>
+<p>意思是当前系统允许打开 <code>21378</code> 个文件，已经打开了 <code>800</code>个文件了</p>
+<p>我选择用 <code>ubuntu</code> 系统去复现，先将 系统 fd上限制调制与设备一样的水平</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>tencent_clould@ubuntu: /proc/sys/fs# cat file-max</span></span>
+<span class="line"><span>9223372036854775807</span></span>
+<span class="line"><span>tencent_clould@1ubuntu: /proc/sys/fs# sudo su</span></span>
+<span class="line"><span>VM-0-11-ubuntu# echo 21378 > file-max</span></span>
+<span class="line"><span>VM-0-11-ubuntu# exit</span></span>
+<span class="line"><span>tencent_clould@ubuntu: /proc/sys/fs# cat file-max</span></span>
+<span class="line"><span>21378</span></span>
+<span class="line"><span>tencent_clould@ubuntu: /proc/sys/fs#</span></span></code></pre>
+<p>尝试复现</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>tencent_clould@130ubuntu: ~/workspace/blog_workspace/posts/资源管理# ./a.out</span></span>
+<span class="line"><span>sync_dir sucess. i = 0</span></span>
+<span class="line"><span>sync_dir sucess. i = 1</span></span>
+<span class="line"><span>....</span></span>
+<span class="line"><span>sync_dir sucess. i = 5</span></span>
+<span class="line"><span>sync_dir sucess. i = 18194</span></span>
+<span class="line"><span>sync_dir sucess. i = 18195</span></span>
+<span class="line"><span>...</span></span>
+<span class="line"><span>sync_dir failed. i = 18196, ret = -1</span></span></code></pre>
+<p>同时观察 <code> /proc/sys/fs/file-nr</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>tencent_clould@ubuntu: /proc/sys/fs# cat file-nr</span></span>
+<span class="line"><span>4704    0       21378</span></span>
+<span class="line"><span>tencent_clould@ubuntu: /proc/sys/fs# cat file-nr</span></span>
+<span class="line"><span>9824    0       21378</span></span>
+<span class="line"><span>tencent_clould@ubuntu: /proc/sys/fs# cat file-nr</span></span>
+<span class="line"><span>17760   0       21378</span></span>
+<span class="line"><span>tencent_clould@ubuntu: /proc/sys/fs# cat file-nr</span></span>
+<span class="line"><span>20224   0       21378</span></span>
+<span class="line"><span>tencent_clould@ubuntu: /proc/sys/fs# cat file-nr</span></span>
+<span class="line"><span>21024   0       21378</span></span>
+<span class="line"><span>tencent_clould@ubuntu: /proc/sys/fs# cat file-nr</span></span>
+<span class="line"><span>21216   0       21378</span></span>
+<span class="line"><span>tencent_clould@ubuntu: /proc/sys/fs# cat file-nr</span></span>
+<span class="line"><span>zsh: pipe failed: too many open files in system</span></span>
+<span class="line"><span>tencent_clould@ubuntu: /proc/sys/fs# cat file-nr</span></span>
+<span class="line"><span>zsh: pipe failed: too many open files in system</span></span></code></pre>
+<p>可以看到 <code>a.out</code> 最后无法 通过 <code>open</code> 打开文件了，且同时 <code>zsh</code> shell 都无法打开
+<code>file-nr</code>了。</p>
+<p>与此同时，看到 <code>dmesg</code> 的信息</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>[57615.006011] VFS: file-max limit 21378 reached</span></span>
+<span class="line"><span>[57616.671617] VFS: file-max limit 21378 reached</span></span></code></pre>
+<p>也可以比较容易定位出来。</p>
+<p>这个问题困扰了当时开发同事很久，最后发现原来是 系统 <code>fd</code> 资源全部泄漏殆尽导致的。</p>
+<h2 id="其他限制资源使用的方式">其他限制资源使用的方式</h2>
+<ol>
+<li>其实还有其他方式限制资源 如 <code>ulimit</code></li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>tencent_clould@ubuntu: /proc/sys/fs# ulimit -a</span></span>
+<span class="line"><span>-t: cpu time (seconds)              unlimited</span></span>
+<span class="line"><span>-f: file size (blocks)              unlimited</span></span>
+<span class="line"><span>-d: data seg size (kbytes)          unlimited</span></span>
+<span class="line"><span>-s: stack size (kbytes)             8192</span></span>
+<span class="line"><span>-c: core file size (blocks)         0</span></span>
+<span class="line"><span>-m: resident set size (kbytes)      unlimited</span></span>
+<span class="line"><span>-u: processes                       7582</span></span>
+<span class="line"><span>-n: file descriptors                1024</span></span>
+<span class="line"><span>-l: locked-in-memory size (kbytes)  65536</span></span>
+<span class="line"><span>-v: address space (kbytes)          unlimited</span></span>
+<span class="line"><span>-x: file locks                      unlimited</span></span>
+<span class="line"><span>-i: pending signals                 7582</span></span>
+<span class="line"><span>-q: bytes in POSIX msg queues       819200</span></span>
+<span class="line"><span>-e: max nice                        0</span></span>
+<span class="line"><span>-r: max rt priority                 0</span></span>
+<span class="line"><span>-N 15:                              unlimited</span></span>
+<span class="line"><span>tencent_clould@ubuntu: /proc/sys/fs#</span></span></code></pre>
+<ol start="2">
+<li>/proc/pid/limits</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>tencent_clould@ubuntu: /proc/sys/fs# cat /proc/4833/limits</span></span>
+<span class="line"><span>Limit                     Soft Limit           Hard Limit           Units</span></span>
+<span class="line"><span>Max cpu time              unlimited            unlimited            seconds</span></span>
+<span class="line"><span>Max file size             unlimited            unlimited            bytes</span></span>
+<span class="line"><span>Max data size             unlimited            unlimited            bytes</span></span>
+<span class="line"><span>Max stack size            8388608              unlimited            bytes</span></span>
+<span class="line"><span>Max core file size        0                    unlimited            bytes</span></span>
+<span class="line"><span>Max resident set          unlimited            unlimited            bytes</span></span>
+<span class="line"><span>Max processes             7582                 7582                 processes</span></span>
+<span class="line"><span>Max open files            1024                 1048576              files</span></span>
+<span class="line"><span>Max locked memory         67108864             67108864             bytes</span></span>
+<span class="line"><span>Max address space         unlimited            unlimited            bytes</span></span>
+<span class="line"><span>Max file locks            unlimited            unlimited            locks</span></span>
+<span class="line"><span>Max pending signals       7582                 7582                 signals</span></span>
+<span class="line"><span>Max msgqueue size         819200               819200               bytes</span></span>
+<span class="line"><span>Max nice priority         0                    0</span></span>
+<span class="line"><span>Max realtime priority     0                    0</span></span>
+<span class="line"><span>Max realtime timeout      unlimited            unlimited            us</span></span>
+<span class="line"><span>tencent_clould@ubuntu: /proc/sys/fs#</span></span></code></pre>
+<ol start="3">
+<li><code>/etc/security/limits.conf</code></li>
+</ol>
+<p>这里可以预先配置。</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

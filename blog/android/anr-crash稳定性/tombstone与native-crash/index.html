@@ -1,0 +1,84 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>tombstone与native-crash | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>tombstone与native-crash</h1><div class="post-meta"><time datetime="2025-06-01T10:00:00.000Z">2025年6月1日</time><span> / android / anr-crash稳定性</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">android</span><span class="tag">native crash</span><span class="tag">tombstone</span><span class="tag">稳定性</span></div></header><div class="article-body"><h2 id="简介">简介</h2>
+<p>tombstone 是 Android 系统中记录 Native Crash 信息的文件，本文介绍如何分析 Native Crash。</p>
+<h2 id="什么是-tombstone">什么是 tombstone</h2>
+<h3 id="定义">定义</h3>
+<ul>
+<li>Native Crash 的核心转储文件</li>
+<li>包含崩溃时的寄存器、堆栈、内存等信息</li>
+<li>保存在 /data/tombstones/ 目录</li>
+</ul>
+<h3 id="触发条件">触发条件</h3>
+<ul>
+<li>SIGSEGV（段错误）</li>
+<li>SIGABRT（中止）</li>
+<li>SIGBUS（总线错误）</li>
+<li>其他信号</li>
+</ul>
+<h2 id="tombstone-结构">tombstone 结构</h2>
+<h3 id="头部信息">头部信息</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>pid: 12345, tid: 12345, name: main  >>> com.example.app &#x3C;&#x3C;&#x3C;</span></span>
+<span class="line"><span>uid: 10001</span></span>
+<span class="line"><span>signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x0</span></span></code></pre>
+<h3 id="寄存器信息">寄存器信息</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>    x0  0000000000000000  x1  0000007b12345678  x2  0000000000000001  x3  0000000000000002</span></span>
+<span class="line"><span>    ...</span></span></code></pre>
+<h3 id="堆栈信息">堆栈信息</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>backtrace:</span></span>
+<span class="line"><span>    #00 pc 0000000000001234  /system/lib64/libc.so (strlen+16)</span></span>
+<span class="line"><span>    #01 pc 0000000000005678  /data/app/com.example.app/lib/arm64/libnative.so (Java_com_example_app_NativeMethod+100)</span></span></code></pre>
+<h2 id="分析步骤">分析步骤</h2>
+<h3 id="1-获取-tombstone">1. 获取 tombstone</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> pull</span><span style="color:#9ECBFF"> /data/tombstones/tombstone_00</span></span></code></pre>
+<h3 id="2-分析信号类型">2. 分析信号类型</h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>信号</th><th>说明</th></tr></thead><tbody><tr><td>SIGSEGV</td><td>段错误，访问无效内存</td></tr><tr><td>SIGABRT</td><td>主动中止，assert 失败</td></tr><tr><td>SIGBUS</td><td>总线错误，内存对齐问题</td></tr></tbody></table>
+<h3 id="3-分析堆栈">3. 分析堆栈</h3>
+<ul>
+<li>定位崩溃函数</li>
+<li>查找崩溃原因</li>
+</ul>
+<h3 id="4-使用-addr2line-解析地址">4. 使用 addr2line 解析地址</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">aarch64-linux-android-addr2line</span><span style="color:#79B8FF"> -C</span><span style="color:#79B8FF"> -f</span><span style="color:#79B8FF"> -e</span><span style="color:#9ECBFF"> libnative.so</span><span style="color:#79B8FF"> 0000000000001234</span></span></code></pre>
+<h2 id="常见场景">常见场景</h2>
+<h3 id="1-空指针访问">1. 空指针访问</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x0</span></span></code></pre>
+<h3 id="2-内存越界">2. 内存越界</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0xdeadbeef</span></span></code></pre>
+<h3 id="3-assert-失败">3. assert 失败</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>signal 6 (SIGABRT), code -1 (SI_QUEUE)</span></span></code></pre>
+<h2 id="调试命令">调试命令</h2>
+<h3 id="查看-tombstone-列表">查看 tombstone 列表</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> ls</span><span style="color:#79B8FF"> -la</span><span style="color:#9ECBFF"> /data/tombstones/</span></span></code></pre>
+<h3 id="清除-tombstone">清除 tombstone</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> rm</span><span style="color:#9ECBFF"> /data/tombstones/</span><span style="color:#79B8FF">*</span></span></code></pre>
+<h3 id="设置-tombstone-保存数量">设置 tombstone 保存数量</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> setprop</span><span style="color:#9ECBFF"> persist.sys.tombstones.max</span><span style="color:#79B8FF"> 50</span></span></code></pre>
+<h2 id="预防措施">预防措施</h2>
+<ol>
+<li>进行充分的内存检查</li>
+<li>使用内存检测工具（ASan、HWASan）</li>
+<li>避免野指针和悬空指针</li>
+<li>进行充分的测试</li>
+</ol>
+<h2 id="总结">总结</h2>
+<p>tombstone 是分析 Native Crash 的重要工具，通过分析堆栈和寄存器信息可以定位崩溃原因。</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

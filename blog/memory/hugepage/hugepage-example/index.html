@@ -1,0 +1,162 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>hugepage example | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>hugepage example</h1><div class="post-meta"><time datetime="2021-02-01T19:00:40.000Z">2021年2月1日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">hugepage</span><span class="tag">memory</span></div></header><div class="article-body"><p>熟悉一项技术的最简单方式就是去使用他，而不是蒙头去看源代码。</p>
+<h2 id="概念">概念</h2>
+<p>这只是我当前的理解，TIME: 2021-06-09</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>huge page: 对大页的统称，相对于 4k 的小页来说</span></span>
+<span class="line"><span>hugetlb  : hugetlb 是 huge page 的一种使用机制，静态分配预留机制</span></span>
+<span class="line"><span>hugetlbfs: 是一个文件系统，为用户提供使用 预留的 hugetlb 的文件系统</span></span></code></pre>
+<h2 id="环境准备">环境准备</h2>
+<p>需要安装 <code>libhugetlbfs</code>，源码在 <a href="https://github.com/libhugetlbfs/libhugetlbfs">github</a></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:/tmp/test $ sudo apt-cache search libhugetlbfs</span></span>
+<span class="line"><span>libhugetlbfs-bin - Tools to ease use of hugetlbfs</span></span>
+<span class="line"><span>libhugetlbfs-dev - Development files to build programs using libhugetlbfs</span></span>
+<span class="line"><span>libhugetlbfs0 - Preload library to back program memory with hugepages</span></span>
+<span class="line"><span>ubuntu@zeku_server:/tmp/test $</span></span></code></pre>
+<p><code>mount</code> 检查 <code>hugetlbfs</code> 是否挂载</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:~ $ mount | grep huge</span></span>
+<span class="line"><span>cgroup on /sys/fs/cgroup/hugetlb type cgroup (rw,nosuid,nodev,noexec,relatime,hugetlb)</span></span>
+<span class="line"><span>hugetlbfs on /dev/hugepages type hugetlbfs (rw,relatime,pagesize=2M)</span></span></code></pre>
+<h3 id="设置-huge-page-的数量">设置 <code>huge page</code> 的数量</h3>
+<p>设置 <code>huge page</code> 数量前</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:~ $ cat /proc/meminfo  | grep Huge</span></span>
+<span class="line"><span>AnonHugePages:         0 kB</span></span>
+<span class="line"><span>ShmemHugePages:        0 kB</span></span>
+<span class="line"><span>FileHugePages:         0 kB</span></span>
+<span class="line"><span>HugePages_Total:       0</span></span>
+<span class="line"><span>HugePages_Free:        0</span></span>
+<span class="line"><span>HugePages_Rsvd:        0</span></span>
+<span class="line"><span>HugePages_Surp:        0</span></span>
+<span class="line"><span>Hugepagesize:       2048 kB</span></span>
+<span class="line"><span>Hugetlb:               0 kB</span></span>
+<span class="line"><span>ubuntu@zeku_server:~ $</span></span></code></pre>
+<p>设置 <code>huge page</code> 数量</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:~ $ cat /proc/sys/vm/nr_hugepages</span></span>
+<span class="line"><span>0</span></span>
+<span class="line"><span>ubuntu@zeku_server:~ $ sudo su</span></span>
+<span class="line"><span>root@ubuntu-HP-ProDesk-680-G4-MT:/home/ubuntu# echo 128 > /proc/sys/vm/nr_hugepages</span></span>
+<span class="line"><span>root@ubuntu-HP-ProDesk-680-G4-MT:/home/ubuntu# exit</span></span>
+<span class="line"><span>exit</span></span>
+<span class="line"><span>ubuntu@zeku_server:~ $ cat /proc/sys/vm/nr_hugepages</span></span>
+<span class="line"><span>128</span></span>
+<span class="line"><span>ubuntu@zeku_server:~ $</span></span></code></pre>
+<p>设置 <code>huge page</code> 数量后</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:~ $ cat /proc/meminfo  | grep Huge</span></span>
+<span class="line"><span>AnonHugePages:         0 kB</span></span>
+<span class="line"><span>ShmemHugePages:        0 kB</span></span>
+<span class="line"><span>FileHugePages:         0 kB</span></span>
+<span class="line"><span>HugePages_Total:     128</span></span>
+<span class="line"><span>HugePages_Free:      128</span></span>
+<span class="line"><span>HugePages_Rsvd:        0</span></span>
+<span class="line"><span>HugePages_Surp:        0</span></span>
+<span class="line"><span>Hugepagesize:       2048 kB</span></span>
+<span class="line"><span>Hugetlb:          262144 kB</span></span>
+<span class="line"><span>ubuntu@zeku_server:~ $</span></span></code></pre>
+<h2 id="test-code">test code</h2>
+<p>准备代码</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>#include &#x3C;stdio.h></span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>int main()</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	int i, len;</span></span>
+<span class="line"><span>	int *mem;</span></span>
+<span class="line"><span>	len = 98 * 1024 * 1024;</span></span>
+<span class="line"><span>	mem = (int*)malloc(sizeof(int) * len);</span></span>
+<span class="line"><span>	for(i = 0; i &#x3C; len; i++)</span></span>
+<span class="line"><span>		mem[i] = i;</span></span>
+<span class="line"><span>	getchar();</span></span>
+<span class="line"><span>	free(mem);</span></span>
+<span class="line"><span>	return 0;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>虽然会一开始直接申请 <code>13M</code> 大小的 memory，不做特殊处理情况下，这个程序也不会使用到 <code>huge page</code>。</p>
+<h3 id="直接运行">直接运行</h3>
+<p>直接编译运行之后，查看 <code>/proc/meminfo</code>:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:/dev/hugepages $ cat /proc/meminfo  | grep Huge</span></span>
+<span class="line"><span>AnonHugePages:         0 kB</span></span>
+<span class="line"><span>ShmemHugePages:        0 kB</span></span>
+<span class="line"><span>FileHugePages:         0 kB</span></span>
+<span class="line"><span>HugePages_Total:     256</span></span>
+<span class="line"><span>HugePages_Free:      256</span></span>
+<span class="line"><span>HugePages_Rsvd:        0</span></span>
+<span class="line"><span>HugePages_Surp:        0</span></span>
+<span class="line"><span>Hugepagesize:       2048 kB</span></span>
+<span class="line"><span>Hugetlb:          524288 kB</span></span>
+<span class="line"><span>ubuntu@zeku_server:/dev/hugepages $</span></span></code></pre>
+<p>为了与 hugetlb 对比性能差距，需要查看 cache miss数据</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:~/workspace/share/test_modules/memory/hugepage/hugetlb $ sudo perf stat -e dtlb_load_misses.miss_causes_a_walk ./a.out</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span></span></span>
+<span class="line"><span> Performance counter stats for './a.out':</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>           109,129      dtlb_load_misses.miss_causes_a_walk</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>       1.194155646 seconds time elapsed</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>       0.149356000 seconds user</span></span>
+<span class="line"><span>       0.076465000 seconds sys</span></span></code></pre>
+<h3 id="使用-huge-page">使用 huge page</h3>
+<p>这里涉及到 <code>LD_PRELOAD</code>：
+LD_PRELOAD，是个环境变量，用于动态库的加载，动态库加载的优先级最高，一般情况下，其加载顺序为LD_PRELOAD>LD_LIBRARY_PATH>/etc/ld.so.cache>/lib>/usr/lib。程序中我们经常要调用一些外部库的函数，以malloc为例，如果我们有个自定义的malloc函数，把它编译成动态库后，通过LD_PRELOAD加载，当程序中调用malloc函数时，调用的其实是我们自定义的函数，下面以一个例子说明。
+参考<a href="https://blog.csdn.net/iEearth/article/details/49952047">LD_PRELOAD用法</a></p>
+<p>使用 <code>libhugetlbfs.so</code> 重载 libc中的 一些函数。如 <code>malloc</code> <code>free</code> 等;
+<code>HUGETLB_MORECORE</code> 是讲</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>LD_PRELOAD=libhugetlbfs.so HUGETLB_MORECORE=yes ./a.out</span></span></code></pre>
+<p>运行之后,查看 <code>/proc/meminfo</code>:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:/dev/hugepages $ cat /proc/meminfo  | grep Huge</span></span>
+<span class="line"><span>AnonHugePages:         0 kB</span></span>
+<span class="line"><span>ShmemHugePages:        0 kB</span></span>
+<span class="line"><span>FileHugePages:         0 kB</span></span>
+<span class="line"><span>HugePages_Total:     256</span></span>
+<span class="line"><span>HugePages_Free:       58</span></span>
+<span class="line"><span>HugePages_Rsvd:        0</span></span>
+<span class="line"><span>HugePages_Surp:        0</span></span>
+<span class="line"><span>Hugepagesize:       2048 kB</span></span>
+<span class="line"><span>Hugetlb:          524288 kB</span></span>
+<span class="line"><span>ubuntu@zeku_server:/dev/hugepages $</span></span></code></pre>
+<p>perf 查看 cache miss 等数据</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:~/workspace/share/test_modules/memory/hugepage/hugetlb $ export LD_PRELOAD=libhugetlbfs.so</span></span>
+<span class="line"><span>ubuntu@zeku_server:~/workspace/share/test_modules/memory/hugepage/hugetlb $ export HUGETLB_MORECORE=yes</span></span>
+<span class="line"><span>root@ubuntu-HP-ProDesk-680-G4-MT:/home/ubuntu/workspace/share/test_modules/memory/hugepage/hugetlb# perf stat -e dtlb_load_misses.miss_causes_a_walk ./a.out</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span></span></span>
+<span class="line"><span> Performance counter stats for './a.out':</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>             2,495      dtlb_load_misses.miss_causes_a_walk</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>       1.644226237 seconds time elapsed</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>       0.105609000 seconds user</span></span>
+<span class="line"><span>       0.040619000 seconds sys</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>root@ubuntu-HP-ProDesk-680-G4-MT:/home/ubuntu/workspace/share/test_modules/memory/hugepage/hugetlb#</span></span></code></pre>
+<p>对比 <code>normal memory</code> <code>hugetlb</code> 两个场景时间:</p>
+<p><code>user time</code></p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>normal memory</th><th>hugetlb</th></tr></thead><tbody><tr><td>0.149356000</td><td>0.105609000</td></tr></tbody></table>
+<p><code>sys time</code></p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>normal memory</th><th>hugetlb</th></tr></thead><tbody><tr><td>0.076465000</td><td>0.040619000</td></tr></tbody></table>
+<p>不管 <code>sys</code> <code>user</code> 时间，hugetlb 性能都是大大领先的。</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

@@ -1,0 +1,32 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>ext2文件系统 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>ext2文件系统</h1><div class="post-meta"><time datetime="2021-02-01T19:00:40.000Z">2021年2月1日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">filesystem</span><span class="tag">ext2</span></div></header><div class="article-body"><p>可以直接运行此脚本，会报错</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>#!/bin/bash</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>touch a</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>f() {</span></span>
+<span class="line"><span>        let i=0</span></span>
+<span class="line"><span>        while true; do</span></span>
+<span class="line"><span>                let i++</span></span>
+<span class="line"><span>                rm -f b</span></span>
+<span class="line"><span>                strace -o /tmp/cp${BASHPID}.trace cp a b || break</span></span>
+<span class="line"><span>                echo $i</span></span>
+<span class="line"><span>        done</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>cleanup() {</span></span>
+<span class="line"><span>        kill -9 %1 %2</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>f &#x26;</span></span>
+<span class="line"><span>f &#x26;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>trap cleanup exit</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>wait</span></span></code></pre>
+<p>报错如下：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:/tmp $ ./cp.sh</span></span>
+<span class="line"><span>1</span></span>
+<span class="line"><span>cp: 无法创建普通文件'b': 文件已存在</span></span>
+<span class="line"><span>2</span></span>
+<span class="line"><span>3</span></span></code></pre>
+<p>参考<a href="https://www.cnblogs.com/zqb-all/p/12942556.html">cp:无法创建普通文件:文件已存在</a></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

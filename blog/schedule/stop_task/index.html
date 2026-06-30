@@ -1,0 +1,139 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>stop_task | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>stop_task</h1><div class="post-meta"><time datetime="2021-05-19T19:00:00.000Z">2021年5月19日</time><span> / linux kernel / linux schedule</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">linux kernel</span></div></header><div class="article-body"><h2 id="stop_task">stop_task</h2>
+<p><code>stop_task</code> 实现在 <code>kernel/sched/stop_task.c</code> 中，在所有调度类中
+<code>stop_sched_class</code>的优先级是最高的。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>#define SCHED_DATA				\</span></span>
+<span class="line"><span>	STRUCT_ALIGN();				\</span></span>
+<span class="line"><span>	__begin_sched_classes = .;		\</span></span>
+<span class="line"><span>	*(__idle_sched_class)			\</span></span>
+<span class="line"><span>	*(__fair_sched_class)			\</span></span>
+<span class="line"><span>	*(__rt_sched_class)			\</span></span>
+<span class="line"><span>	*(__dl_sched_class)			\</span></span>
+<span class="line"><span>	*(__stop_sched_class)			\</span></span>
+<span class="line"><span>	__end_sched_classes = .;</span></span></code></pre>
+<p>其实在 linux中一个 per cpu的 rq中，每个rq只会有一个 stop task</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>struct rq {</span></span>
+<span class="line"><span>	/* runqueue lock: */</span></span>
+<span class="line"><span>	raw_spinlock_t		lock;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	struct task_struct __rcu	*curr;</span></span>
+<span class="line"><span>	struct task_struct	*idle;</span></span>
+<span class="line"><span>	struct task_struct	*stop;</span></span>
+<span class="line"><span>        ......</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>且 <code>stop task</code> never migrates，不会迁移，只会固定在某个 cpu上跑，所以 select_task_rq_stop 实现:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static int</span></span>
+<span class="line"><span>select_task_rq_stop(struct task_struct *p, int cpu, int flags)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	return task_cpu(p); /* stop tasks as never migrate */</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>且 <code>stop task</code> can not be preempted，不会被抢占，check_preempt_curr_stop 实现：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static void</span></span>
+<span class="line"><span>check_preempt_curr_stop(struct rq *rq, struct task_struct *p, int flags)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	/* we're never preempted */</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>因为 <code>stop_task</code>， rq上只有一个stop_sched_class的 task，所以 pick_next_task_stop 实现很简单：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static struct task_struct *pick_next_task_stop(struct rq *rq)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	if (!sched_stop_runnable(rq))</span></span>
+<span class="line"><span>		return NULL;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	set_next_task_stop(rq, rq->stop, true);</span></span>
+<span class="line"><span>	return rq->stop;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<h2 id="外部模块使用">外部模块使用</h2>
+<p>在 soft lockup 检测模块中，就利用了stop_class 这个调度类。
+<code>watchdog.c</code> 中使用</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/* watchdog kicker functions */</span></span>
+<span class="line"><span>static enum hrtimer_restart watchdog_timer_fn(struct hrtimer *hrtimer)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	unsigned long touch_ts, period_ts, now;</span></span>
+<span class="line"><span>	struct pt_regs *regs = get_irq_regs();</span></span>
+<span class="line"><span>	int duration;</span></span>
+<span class="line"><span>	int softlockup_all_cpu_backtrace = sysctl_softlockup_all_cpu_backtrace;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (!watchdog_enabled)</span></span>
+<span class="line"><span>		return HRTIMER_NORESTART;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	/* kick the hardlockup detector */</span></span>
+<span class="line"><span>	watchdog_interrupt_count();</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	/* kick the softlockup detector */</span></span>
+<span class="line"><span>	if (completion_done(this_cpu_ptr(&#x26;softlockup_completion))) {</span></span>
+<span class="line"><span>		reinit_completion(this_cpu_ptr(&#x26;softlockup_completion));</span></span>
+<span class="line"><span>		stop_one_cpu_nowait(smp_processor_id(),</span></span>
+<span class="line"><span>				softlockup_fn, NULL,</span></span>
+<span class="line"><span>				this_cpu_ptr(&#x26;softlockup_stop_work));</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>	......</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>其中 <code>stop_one_cpu_nowait</code> 并不直接调用 <code>softlockup_fn</code>函数，只是将他 queue work 而已</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/* queue @work to @stopper.  if offline, @work is completed immediately */</span></span>
+<span class="line"><span>static bool cpu_stop_queue_work(unsigned int cpu, struct cpu_stop_work *work)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	struct cpu_stopper *stopper = &#x26;per_cpu(cpu_stopper, cpu);</span></span>
+<span class="line"><span>	DEFINE_WAKE_Q(wakeq);</span></span>
+<span class="line"><span>	unsigned long flags;</span></span>
+<span class="line"><span>	bool enabled;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	preempt_disable();</span></span>
+<span class="line"><span>	raw_spin_lock_irqsave(&#x26;stopper->lock, flags);</span></span>
+<span class="line"><span>	enabled = stopper->enabled;</span></span>
+<span class="line"><span>	if (enabled)</span></span>
+<span class="line"><span>		__cpu_stop_queue_work(stopper, work, &#x26;wakeq);</span></span>
+<span class="line"><span>	else if (work->done)</span></span>
+<span class="line"><span>		cpu_stop_signal_done(work->done);</span></span>
+<span class="line"><span>	raw_spin_unlock_irqrestore(&#x26;stopper->lock, flags);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	wake_up_q(&#x26;wakeq);</span></span>
+<span class="line"><span>	preempt_enable();</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	return enabled;</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>bool stop_one_cpu_nowait(unsigned int cpu, cpu_stop_fn_t fn, void *arg,</span></span>
+<span class="line"><span>			struct cpu_stop_work *work_buf)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	*work_buf = (struct cpu_stop_work){ .fn = fn, .arg = arg, .caller = _RET_IP_, };</span></span>
+<span class="line"><span>	return cpu_stop_queue_work(cpu, work_buf);</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>可以看到 stopper 是 <code>&#x26;per_cpu(cpu_stopper, cpu)</code>, 定义是</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>struct cpu_stopper {</span></span>
+<span class="line"><span>	struct task_struct	*thread;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	raw_spinlock_t		lock;</span></span>
+<span class="line"><span>	bool			enabled;	/* is this stopper enabled? */</span></span>
+<span class="line"><span>	struct list_head	works;		/* list of pending works */</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	struct cpu_stop_work	stop_work;	/* for stop_cpus */</span></span>
+<span class="line"><span>	unsigned long		caller;</span></span>
+<span class="line"><span>	cpu_stop_fn_t		fn;</span></span>
+<span class="line"><span>};</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static DEFINE_PER_CPU(struct cpu_stopper, cpu_stopper);</span></span></code></pre>
+<p>在 每个 CPU 上的 stop_class 进程是 <code>migration/x</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static struct smp_hotplug_thread cpu_stop_threads = {</span></span>
+<span class="line"><span>	.store			= &#x26;cpu_stopper.thread,</span></span>
+<span class="line"><span>	.thread_should_run	= cpu_stop_should_run,</span></span>
+<span class="line"><span>	.thread_fn		= cpu_stopper_thread,</span></span>
+<span class="line"><span>	.thread_comm		= "migration/%u",</span></span>
+<span class="line"><span>	.create			= cpu_stop_create,</span></span>
+<span class="line"><span>	.park			= cpu_stop_park,</span></span>
+<span class="line"><span>	.selfparking		= true,</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<p>shell 可以看到</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:~/workspace/linux $ ps -aux | grep migration</span></span>
+<span class="line"><span>root          14  0.0  0.0      0     0 ?        S    9月03   0:05 [migration/0]</span></span>
+<span class="line"><span>root          19  0.0  0.0      0     0 ?        S    9月03   0:05 [migration/1]</span></span>
+<span class="line"><span>root          25  0.0  0.0      0     0 ?        S    9月03   0:05 [migration/2]</span></span>
+<span class="line"><span>root          31  0.0  0.0      0     0 ?        S    9月03   0:04 [migration/3]</span></span>
+<span class="line"><span>root          37  0.0  0.0      0     0 ?        S    9月03   0:04 [migration/4]</span></span>
+<span class="line"><span>root          43  0.0  0.0      0     0 ?        S    9月03   0:05 [migration/5]</span></span>
+<span class="line"><span>root          49  0.0  0.0      0     0 ?        S    9月03   0:05 [migration/6]</span></span>
+<span class="line"><span>root          55  0.0  0.0      0     0 ?        S    9月03   0:05 [migration/7]</span></span>
+<span class="line"><span>root          61  0.0  0.0      0     0 ?        S    9月03   0:05 [migration/8]</span></span>
+<span class="line"><span>root          67  0.0  0.0      0     0 ?        S    9月03   0:05 [migration/9]</span></span>
+<span class="line"><span>root          73  0.0  0.0      0     0 ?        S    9月03   0:05 [migration/10]</span></span>
+<span class="line"><span>root          79  0.0  0.0      0     0 ?        S    9月03   0:05 [migration/11]</span></span>
+<span class="line"><span>ubuntu     35458  0.0  0.0  12224   836 pts/0    S+   15:26   0:00 grep --color=auto migration</span></span>
+<span class="line"><span>ubuntu@zeku_server:~/workspace/linux $</span></span></code></pre></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

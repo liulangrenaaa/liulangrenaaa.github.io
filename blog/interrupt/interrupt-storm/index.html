@@ -1,0 +1,47 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>interrupt storm | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>interrupt storm</h1><div class="post-meta"><time datetime="2021-03-01T19:00:40.000Z">2021年3月1日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">intrrrupt</span><span class="tag">intrrrupt storm</span></div></header><div class="article-body"><p>记录一下<code>hrtimer</code>使用问题导致的 <code>interrupt storm</code> （中断风暴）。</p>
+<h2 id="hrtimer使用">hrtimer使用</h2>
+<ol>
+<li>只想使用一次</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>init -> start -> [return HRTIMER_NORESTART;]</span></span></code></pre>
+<ol start="2">
+<li>想使用多次，timer 一直存在</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>init -> start -> [hrtimer_forward_now; return HRTIMER_NORESTART;]</span></span></code></pre>
+<p>参考<a href="https://github.com/liulangrenaaa/test_modules/blob/main/misc/hrtimer/hrtimer.c">代码</a></p>
+<p>init:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>	hrtimer_init( &#x26;hr_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);</span></span>
+<span class="line"><span>	hr_timer.function = &#x26;my_hrtimer_callback;</span></span></code></pre>
+<p>start:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>	hrtimer_start(&#x26;hr_timer, ms_to_ktime(500), HRTIMER_MODE_REL);</span></span></code></pre>
+<p>callback: (产生中断风暴)</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>int once_timer = 1;</span></span>
+<span class="line"><span>int interrupt_storm = 0;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>enum hrtimer_restart my_hrtimer_callback( struct hrtimer *hr_timer)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	printk("my_hrtimer_callback called (%ld).\n", jiffies );</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (interrupt_storm) {</span></span>
+<span class="line"><span>		if (once_timer) {</span></span>
+<span class="line"><span>			return HRTIMER_NORESTART;</span></span>
+<span class="line"><span>		}</span></span>
+<span class="line"><span>		hrtimer_forward_now(hr_timer, ms_to_ktime(500));</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	return HRTIMER_RESTART;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<h2 id="中断风暴">中断风暴</h2>
+<p>安装这个模块</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>stable_kernel@kernel: /tmp/share/test_modules/misc/hrtimer# sudo insmod hrtimer.ko</span></span></code></pre>
+<p>产生如下警告：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>[ 1130.893739] rcu: INFO: rcu_sched detected stalls on CPUs/tasks:</span></span>
+<span class="line"><span>[ 1130.893750] rcu: 	3-...0: (5 GPs behind) idle=b3e/0/0x1 softirq=17149/17149 fqs=6500</span></span>
+<span class="line"><span>[ 1208.887926] rcu: INFO: rcu_sched detected stalls on CPUs/tasks:</span></span>
+<span class="line"><span>[ 1208.888716] rcu: 	3-...0: (5 GPs behind) idle=b3e/0/0x1 softirq=17149/17149 fqs=24703</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>rlk-Standard-PC-i440FX-PIIX-1996 login:</span></span>
+<span class="line"><span>rlk-Standard-PC-i440FX-PIIX-1996 login: [ 1286.883226] rcu: INFO: rcu_sched detected stalls on CPUs/tasks:</span></span>
+<span class="line"><span>[ 1286.884781] rcu: 	3-...0: (5 GPs behind) idle=b3e/0/0x1 softirq=17149/17149 fqs=42700</span></span></code></pre>
+<p>然后<code>crash</code>,看现场信息</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span></span></span></code></pre></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

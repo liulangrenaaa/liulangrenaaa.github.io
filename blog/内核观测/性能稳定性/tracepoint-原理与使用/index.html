@@ -1,0 +1,39 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>tracepoint 原理与使用 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>tracepoint 原理与使用</h1><div class="post-meta"><time datetime="2021-09-14T19:00:00.000Z">2021年9月14日</time><span> / kernel debug</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">tracepoint</span><span class="tag">aarch64</span></div></header><div class="article-body"><h2 id="使用">使用</h2>
+<h2 id="数据结构">数据结构</h2>
+<p>每个 <code>tracepoint</code> 对应一个 <code>struct tracepoint</code> 结构：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>struct tracepoint {</span></span>
+<span class="line"><span>	const char *name;		/* Tracepoint name */</span></span>
+<span class="line"><span>	struct static_key key;</span></span>
+<span class="line"><span>	struct static_call_key *static_call_key;</span></span>
+<span class="line"><span>	void *static_call_tramp;</span></span>
+<span class="line"><span>	void *iterator;</span></span>
+<span class="line"><span>	int (*regfunc)(void);</span></span>
+<span class="line"><span>	void (*unregfunc)(void);</span></span>
+<span class="line"><span>	struct tracepoint_func __rcu *funcs;</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>enum {</span></span>
+<span class="line"><span>	TRACE_EVENT_FL_FILTERED		= (1 &#x3C;&#x3C; TRACE_EVENT_FL_FILTERED_BIT),</span></span>
+<span class="line"><span>	TRACE_EVENT_FL_CAP_ANY		= (1 &#x3C;&#x3C; TRACE_EVENT_FL_CAP_ANY_BIT),</span></span>
+<span class="line"><span>	TRACE_EVENT_FL_NO_SET_FILTER	= (1 &#x3C;&#x3C; TRACE_EVENT_FL_NO_SET_FILTER_BIT),</span></span>
+<span class="line"><span>	TRACE_EVENT_FL_IGNORE_ENABLE	= (1 &#x3C;&#x3C; TRACE_EVENT_FL_IGNORE_ENABLE_BIT),</span></span>
+<span class="line"><span>	TRACE_EVENT_FL_TRACEPOINT	= (1 &#x3C;&#x3C; TRACE_EVENT_FL_TRACEPOINT_BIT),</span></span>
+<span class="line"><span>	TRACE_EVENT_FL_DYNAMIC		= (1 &#x3C;&#x3C; TRACE_EVENT_FL_DYNAMIC_BIT),</span></span>
+<span class="line"><span>	TRACE_EVENT_FL_KPROBE		= (1 &#x3C;&#x3C; TRACE_EVENT_FL_KPROBE_BIT),</span></span>
+<span class="line"><span>	TRACE_EVENT_FL_UPROBE		= (1 &#x3C;&#x3C; TRACE_EVENT_FL_UPROBE_BIT),</span></span>
+<span class="line"><span>	TRACE_EVENT_FL_EPROBE		= (1 &#x3C;&#x3C; TRACE_EVENT_FL_EPROBE_BIT),</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>enum {</span></span>
+<span class="line"><span>	EVENT_FILE_FL_ENABLED		= (1 &#x3C;&#x3C; EVENT_FILE_FL_ENABLED_BIT),</span></span>
+<span class="line"><span>	EVENT_FILE_FL_RECORDED_CMD	= (1 &#x3C;&#x3C; EVENT_FILE_FL_RECORDED_CMD_BIT),</span></span>
+<span class="line"><span>	EVENT_FILE_FL_RECORDED_TGID	= (1 &#x3C;&#x3C; EVENT_FILE_FL_RECORDED_TGID_BIT),</span></span>
+<span class="line"><span>	EVENT_FILE_FL_FILTERED		= (1 &#x3C;&#x3C; EVENT_FILE_FL_FILTERED_BIT),</span></span>
+<span class="line"><span>	EVENT_FILE_FL_NO_SET_FILTER	= (1 &#x3C;&#x3C; EVENT_FILE_FL_NO_SET_FILTER_BIT),</span></span>
+<span class="line"><span>	EVENT_FILE_FL_SOFT_MODE		= (1 &#x3C;&#x3C; EVENT_FILE_FL_SOFT_MODE_BIT),</span></span>
+<span class="line"><span>	EVENT_FILE_FL_SOFT_DISABLED	= (1 &#x3C;&#x3C; EVENT_FILE_FL_SOFT_DISABLED_BIT),</span></span>
+<span class="line"><span>	EVENT_FILE_FL_TRIGGER_MODE	= (1 &#x3C;&#x3C; EVENT_FILE_FL_TRIGGER_MODE_BIT),</span></span>
+<span class="line"><span>	EVENT_FILE_FL_TRIGGER_COND	= (1 &#x3C;&#x3C; EVENT_FILE_FL_TRIGGER_COND_BIT),</span></span>
+<span class="line"><span>	EVENT_FILE_FL_PID_FILTER	= (1 &#x3C;&#x3C; EVENT_FILE_FL_PID_FILTER_BIT),</span></span>
+<span class="line"><span>	EVENT_FILE_FL_WAS_ENABLED	= (1 &#x3C;&#x3C; EVENT_FILE_FL_WAS_ENABLED_BIT),</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<p><a href="https://www.cnblogs.com/honpey/p/9256279.html">https://www.cnblogs.com/honpey/p/9256279.html</a></p>
+<p><a href="https://www.cnblogs.com/honpey/p/9012016.html">https://www.cnblogs.com/honpey/p/9012016.html</a></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

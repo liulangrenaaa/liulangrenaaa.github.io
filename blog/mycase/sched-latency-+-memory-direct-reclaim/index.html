@@ -1,0 +1,18 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>sched latency + memory direct reclaim | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>sched latency + memory direct reclaim</h1><div class="post-meta"><time datetime="2021-02-22T19:00:40.000Z">2021年2月22日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">sched latency</span><span class="tag">memory direct reclaim</span></div></header><div class="article-body"><h2 id="现象">现象</h2>
+<p>UAV在空中悬停，同时下载拍摄的视频到手机中，会导致飞机漂移较多。
+飞控反馈说是感知的深度图数据频率不对，导致姿态问题。
+感知深度图传输流程是linux侧的一个 hrtimer 中释放一个信号量给一个线程，驱动内核线程中会处理相关的数据然后给Cortex M核发送一个中断，飞控从中断中获得数据。
+异构SOC上，Cortex-M核心反馈说 linux上送出去的数据延迟不确定，有时候会很大。</p>
+<h2 id="case">case</h2>
+<ol>
+<li>首先看了 hrtimer的配置，基本没有问题，排除hrtimer频率不稳定导致的问题</li>
+<li>怀疑是 hrtimer中，release sema之后，由于系统调度延迟很大，导致的线程没有及时投入运行，最后导致时间很不稳定</li>
+<li>使用 <code>perf sched</code>抓取实际的调度相关数据，发现在未在空中飞行的时候<code>sched latency</code>是一个比较正常的值，由于 <code>perf</code> 运行时的overhead 较大，也不能直接将 perf部署之后飞上天。</li>
+<li>寻找了 <code>bytedance</code>的开源工具<code>trace_noschedule</code>，其实就是一个内核模块；原理主要是一个hrtimer一直在采样，可以设置一个阈值a，可以将调度延迟大于多少的进程stack直接记录下来。</li>
+<li>部署之后看了调度延迟之后，同场景测试之后，还是会出现飞机漂移，但是没有调度延迟特别高的线程。</li>
+<li>只能关注系统其他类型的资源了，比如 memory io等，使用 <code>sar -B 1</code>在实际场景中测试发现他的
+直接内存回收指标非常高</li>
+<li>怀疑是 处理的驱动线程，在处理图像数据的时候，会申请较多内存导致的内存分配延迟较高，最后处理深度图时间从原来2ms，直接延长到10ms以上，导致linux -> rtos中断不及时。</li>
+<li>bpftrace vmscan_direct_reclaim_[begin,end] 相关接口，果然是 触发了内存直接回收，且看时间戳，延迟时间有10ms以上，找到问题根源</li>
+<li>可以调整 vm_free_kbytes，使得 min 与 low水位之间间距变大，更早触发 kswapd 内存回收，更难触发 <code>direct reclaim</code>。</li>
+</ol></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

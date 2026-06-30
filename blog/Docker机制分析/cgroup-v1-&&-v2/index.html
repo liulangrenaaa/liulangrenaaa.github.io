@@ -1,0 +1,75 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>cgroup v1 v2 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>cgroup v1 v2</h1><div class="post-meta"><time datetime="2021-07-06T19:00:00.000Z">2021年7月6日</time><span> / cgroup v1 / cgroup v2</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">cgroup v1</span><span class="tag">cgroup v2</span></div></header><div class="article-body"><ol>
+<li>cgroup v1 与 v2 可以同时并存吗？</li>
+</ol>
+<p>cgroup v1 v2 在编译时，是同时被编译进 kernel Image的</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:~/workspace/linux $ cat kernel/cgroup/Makefile</span></span>
+<span class="line"><span># SPDX-License-Identifier: GPL-2.0</span></span>
+<span class="line"><span>obj-y := cgroup.o rstat.o namespace.o cgroup-v1.o freezer.o</span></span></code></pre>
+<ol start="2">
+<li>ubuntu 如何区分当前正在使用的是 cgroup v1 还是 v2
+cgroup v1:</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>tencent_clould@ubuntu: ~/workspace# mount | grep cgroup</span></span>
+<span class="line"><span>tmpfs on /sys/fs/cgroup type tmpfs (ro,nosuid,nodev,noexec,mode=755)</span></span>
+<span class="line"><span>cgroup2 on /sys/fs/cgroup/unified type cgroup2 (rw,nosuid,nodev,noexec,relatime)</span></span>
+<span class="line"><span>cgroup on /sys/fs/cgroup/systemd type cgroup (rw,nosuid,nodev,noexec,relatime,xattr,name=systemd)</span></span>
+<span class="line"><span>cgroup on /sys/fs/cgroup/cpu,cpuacct type cgroup (rw,nosuid,nodev,noexec,relatime,cpu,cpuacct)</span></span>
+<span class="line"><span>cgroup on /sys/fs/cgroup/devices type cgroup (rw,nosuid,nodev,noexec,relatime,devices)</span></span>
+<span class="line"><span>cgroup on /sys/fs/cgroup/cpuset type cgroup (rw,nosuid,nodev,noexec,relatime,cpuset,clone_children)</span></span>
+<span class="line"><span>cgroup on /sys/fs/cgroup/blkio type cgroup (rw,nosuid,nodev,noexec,relatime,blkio)</span></span>
+<span class="line"><span>cgroup on /sys/fs/cgroup/memory type cgroup (rw,nosuid,nodev,noexec,relatime,memory)</span></span>
+<span class="line"><span>cgroup on /sys/fs/cgroup/perf_event type cgroup (rw,nosuid,nodev,noexec,relatime,perf_event)</span></span>
+<span class="line"><span>cgroup on /sys/fs/cgroup/hugetlb type cgroup (rw,nosuid,nodev,noexec,relatime,hugetlb)</span></span>
+<span class="line"><span>cgroup on /sys/fs/cgroup/net_cls,net_prio type cgroup (rw,nosuid,nodev,noexec,relatime,net_cls,net_prio)</span></span>
+<span class="line"><span>cgroup on /sys/fs/cgroup/freezer type cgroup (rw,nosuid,nodev,noexec,relatime,freezer)</span></span>
+<span class="line"><span>cgroup on /sys/fs/cgroup/rdma type cgroup (rw,nosuid,nodev,noexec,relatime,rdma)</span></span>
+<span class="line"><span>cgroup on /sys/fs/cgroup/pids type cgroup (rw,nosuid,nodev,noexec,relatime,pids)</span></span></code></pre>
+<p>cgroup v2:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:~/workspace/linux $ mount | grep cgroup</span></span>
+<span class="line"><span>cgroup2 on /sys/fs/cgroup type cgroup2 (rw,nosuid,nodev,noexec,relatime,nsdelegate)</span></span>
+<span class="line"><span>ubuntu@zeku_server:~/workspace/linux $</span></span></code></pre>
+<ol start="3">
+<li>如何是的默认开启 cgroup v2
+a. 修改 command line</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:~/workspace/linux $ cat /etc/default/grub | grep LINE</span></span>
+<span class="line"><span>GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"</span></span>
+<span class="line"><span>GRUB_CMDLINE_LINUX="systemd.unified_cgroup_hierarchy=1"</span></span></code></pre>
+<p>b. 修改 command line, 来disable 所有 cgroup v1 的 feature</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>cgroup_no_v1=all</span></span></code></pre>
+<p>对应 <code>kernel/cgroup/cgroup-v1.c</code> 中 <code>cgroup_no_v1</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static int __init cgroup_no_v1(char *str);</span></span></code></pre>
+<p>c. 可以在 其他挂载点，重新挂载 cgroup2</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>mount -t cgroup2 none /sys/fs/cgroup</span></span></code></pre>
+<ol start="4">
+<li>cgroup v1、v2 中task 是如何加入 cgroup的？
+cgroup v1:</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>tencent_clould@ubuntu: ~/workspace# cat  /proc/$$/cgroup</span></span>
+<span class="line"><span>12:pids:/user.slice/user-1000.slice/session-99270.scope</span></span>
+<span class="line"><span>11:rdma:/</span></span>
+<span class="line"><span>10:freezer:/user/ubuntu/0</span></span>
+<span class="line"><span>9:net_cls,net_prio:/</span></span>
+<span class="line"><span>8:hugetlb:/</span></span>
+<span class="line"><span>7:perf_event:/</span></span>
+<span class="line"><span>6:memory:/user.slice/user-1000.slice/session-99270.scope</span></span>
+<span class="line"><span>5:blkio:/user.slice</span></span>
+<span class="line"><span>4:cpuset:/</span></span>
+<span class="line"><span>3:devices:/user.slice</span></span>
+<span class="line"><span>2:cpu,cpuacct:/user.slice</span></span>
+<span class="line"><span>1:name=systemd:/user.slice/user-1000.slice/session-99270.scope</span></span>
+<span class="line"><span>0::/user.slice/user-1000.slice/session-99270.scope</span></span>
+<span class="line"><span>tencent_clould@ubuntu: ~/workspace#</span></span></code></pre>
+<p>cgroup v1:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:~/workspace/linux $ cat /proc/$$/cgroup</span></span>
+<span class="line"><span>0::/user.slice/user-1000.slice/session-166.scope</span></span>
+<span class="line"><span>ubuntu@zeku_server:~/workspace/linux $</span></span></code></pre>
+<p>可以看到 cgroup v1中，一个 task会存在多个 子系统的目录下，即使这个子系统没有起作用（在子系统根目录）；在 cgroup v2 中，一个 task 只会存在一个 目录下，简洁（一个目录根据 cgoups.controller 来使能相关的 子系统）</p>
+<ol start="5">
+<li>
+<p>a</p>
+</li>
+<li>
+<p>aa</p>
+</li>
+</ol></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

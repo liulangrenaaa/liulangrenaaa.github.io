@@ -1,0 +1,38 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>跟踪文件异常删除、修改 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>跟踪文件异常删除、修改</h1><div class="post-meta"><time datetime="2020-09-14T19:00:00.000Z">2020年9月14日</time><span> / kernel debug</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">bpf</span><span class="tag">bpftrace</span><span class="tag">问题系统</span></div></header><div class="article-body"><h2 id="场景">场景</h2>
+<p>实际工作中经常会遇到一些某个业务的重要的配置文件被删除了，或者某个重要的配置文件被串改了，而这个文件目录 往往又隐藏很深，不太可能被别的业务删除或者篡改，那么如何找到删除文件或者篡改文件的真凶呢。</p>
+<h2 id="bpftrace-工具使用">bpftrace 工具使用</h2>
+<p>首先删除一个文件我们一般会使用rm 来做，对应vfs层的就是 unlink方法，可以对unlink跟踪。
+这里当然可以使用 ftrace工具，但是我已经习惯使用 bpftrace了
+如下对 unlink的操作进行跟踪</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sh@ubuntu[root]:/home/rlk/workspace/test# bpftrace -e 'kprobe:vfs_unlink {printf("pid: [%d], comm: [%s]\n", pid, comm)}'</span></span>
+<span class="line"><span>Attaching 1 probe...</span></span>
+<span class="line"><span>pid: [95301], comm: [rm]</span></span></code></pre>
+<p>这样的打印信息会很多，如果是在生产环境上，有用的信息往往来不及筛选就会被淹没掉，这时可以加上对删除文件名的限制过滤</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sh@ubuntu[root]:/sys/kernel/debug/tracing# cd events/syscalls/sys_enter_unlinkat</span></span>
+<span class="line"><span>sh@ubuntu[root]:/sys/kernel/debug/tracing/events/syscalls/sys_enter_unlinkat# ls</span></span>
+<span class="line"><span>enable  filter  format  hist  id  trigger</span></span>
+<span class="line"><span>sh@ubuntu[root]:/sys/kernel/debug/tracing/events/syscalls/sys_enter_unlinkat# cat format</span></span>
+<span class="line"><span>name: sys_enter_unlinkat</span></span>
+<span class="line"><span>ID: 722</span></span>
+<span class="line"><span>format:</span></span>
+<span class="line"><span>	field:unsigned short common_type;	offset:0;	size:2;	signed:0;</span></span>
+<span class="line"><span>	field:unsigned char common_flags;	offset:2;	size:1;	signed:0;</span></span>
+<span class="line"><span>	field:unsigned char common_preempt_count;	offset:3;	size:1;	signed:0;</span></span>
+<span class="line"><span>	field:int common_pid;	offset:4;	size:4;	signed:1;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	field:int __syscall_nr;	offset:8;	size:4;	signed:1;</span></span>
+<span class="line"><span>	field:int dfd;	offset:16;	size:8;	signed:0;</span></span>
+<span class="line"><span>	field:const char * pathname;	offset:24;	size:8;	signed:0;</span></span>
+<span class="line"><span>	field:int flag;	offset:32;	size:8;	signed:0;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>print fmt: "dfd: 0x%08lx, pathname: 0x%08lx, flag: 0x%08lx", ((unsigned long)(REC->dfd)), ((unsigned long)(REC->pathname)), ((unsigned long)(REC->flag))</span></span></code></pre>
+<p>可以看出 pathname 就是文件名，下面我们添加对文件名是asdf文件删除的监控，可以清晰的看到pid, comm, 删除的文件名</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sh@ubuntu[root]:/home/rlk/workspace/test# bpftrace -e 'tracepoint:syscalls:sys_enter_unlinkat /str(args->pathname) == "asdf"/ {printf("pid: [%d], comm: [%s], rm [%s]\n", pid, comm, str(args->pathname))}'</span></span>
+<span class="line"><span>Attaching 1 probe...</span></span>
+<span class="line"><span>pid: [95566], comm: [rm], rm [asdf]</span></span></code></pre>
+<p>这里需要注意 <code>str(args->pathname)</code> 的用法</p>
+<p>这里我们使用的是tracepoint来跟踪的，如果你的机器上支持BTF，使用kprobe来跟踪也是可以的，过滤相关条件的时候比较复杂。</p>
+<p>同理记录篡改文件也很好办，可以跟踪有哪些进程写入了这个文件或者打开了这个文件，都是有嫌疑的。</p>
+<h2 id="其他工具">其他工具</h2>
+<h3 id="perf">perf</h3>
+<h3 id="fanotify-机制">fanotify 机制</h3></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

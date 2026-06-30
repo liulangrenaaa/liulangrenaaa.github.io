@@ -1,0 +1,253 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>gdb 使用 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>gdb 使用</h1><div class="post-meta"><time datetime="2022-03-28T19:00:00.000Z">2022年3月28日</time><span> / 开发工具</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">开发工具</span><span class="tag">gdb</span></div></header><div class="article-body"><h2 id="简介">简介</h2>
+<p>GDB是一个由GNU开源组织发布的、UNIX/LINUX操作系统下的、基于命令行的、功能强大的程序调试工具。不仅仅可以用来调试 应用程序，也可以用来调试 linux kernel。</p>
+<h2 id="tips">tips</h2>
+<p>记录几个 gdb 重要的技巧</p>
+<ol>
+<li>gdb 启动初始化
+用户可以设置 启动gdb 时加载个性化配置，类似于 .bashrc or .vimrc那样
+gdb初始化文件 位于 ~/.gdbinit 下
+常用的 ~/.gdbinit 内容</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span> # 保存历史命令</span></span>
+<span class="line"><span>set history filename ~/.gdb_history</span></span>
+<span class="line"><span>set history save on</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span># 退出时不显示提示信息</span></span>
+<span class="line"><span>set confirm off</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span># 按照派生类型打印对象</span></span>
+<span class="line"><span>set print object on</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span># 打印数组的索引下标</span></span>
+<span class="line"><span>set print array-indexes on</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span># 每行打印一个结构体成员</span></span>
+<span class="line"><span>set print pretty on</span></span></code></pre>
+<ol start="2">
+<li>保存gdb 日志
+有时候debug现场很难复现，就需要将gdb debug的现场保留下来，后续查看</li>
+</ol>
+<ul>
+<li>开启 gdb 日志</li>
+</ul>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>set logging on</span></span></code></pre>
+<ul>
+<li>设置保存gdb日志的文件</li>
+</ul>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>set logging file log.txt</span></span></code></pre>
+<ol start="3">
+<li>
+<p>gdb 执行shell 命令
+在 gdb 窗口中，可以直接 <code>shell cmd</code> 来执行 shell 命令</p>
+</li>
+<li>
+<p>gdb 不显示启动信息</p>
+</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>gdb -q</span></span></code></pre>
+<ol start="5">
+<li>gdb 不显示退出信息</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>set confirm off</span></span></code></pre>
+<ol start="6">
+<li>gdb 输出多余一屏幕信息时不会暂停输出</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>set height 0</span></span></code></pre>
+<ol start="7">
+<li>只是退出当前执行的函数</li>
+</ol>
+<p><code>fin</code></p>
+<ol start="8">
+<li>gdb load kernel module 的symbols
+如果仅仅是running的 kernel insmod了 ko，但是gdb中没有 Load symbols，那样是无法debug ko的。
+<code>b sched_get_cpu_util</code> 就会显示</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>-exec b sched_get_cpu_util</span></span>
+<span class="line"><span>Function "sched_get_cpu_util" not defined.</span></span>
+<span class="line"><span>Make breakpoint pending on future shared library load? (y or [n]) [answered N; input not from terminal]</span></span></code></pre>
+<p>直接提示 <code>not defined</code>…</p>
+<p>通过</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>-exec add-symbol-file /remote/swg/users/hsu/workspace/z3_g13/common/out/vendor/modules/sched/sched-walt.ko 0xffffffc0012e7000</span></span></code></pre>
+<p>加载 kernel module ko的symbols之后
+显示</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>-exec b sched_get_cpu_util</span></span>
+<span class="line"><span>Breakpoint 10 at 0xffffffc0012f3544: file ../../vendor/modules/sched/sched_avg.c, line 253.</span></span></code></pre>
+<p>关于这个 ko 之后之后的 地址 <code>0xffffffc0012e7000</code>, 是从
+<code>cat /sys/module/sched-walt/sections/.text</code> 中读取的</p>
+<p>参考<a href="https://www.elinux.org/Debugging_The_Linux_Kernel_Using_Gdb">Debugging The Linux Kernel Using Gdb</a></p>
+<ol start="9">
+<li></li>
+</ol>
+<h2 id="vscode--qemu--gdb--taskjson--launchjson-调试-linux-kernel">vscode + qemu + gdb + task.json + launch.json 调试 linux kernel</h2>
+<p>在 terminal 中使用 gdb命令时需要添加 前缀 <code>-exec</code></p>
+<ul>
+<li>task.json 配置</li>
+</ul>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>{</span></span>
+<span class="line"><span>        // See https://go.microsoft.com/fwlink/?LinkId=733558</span></span>
+<span class="line"><span>        // for the documentation about the tasks.json format</span></span>
+<span class="line"><span>        "version": "2.0.0",</span></span>
+<span class="line"><span>        "tasks": [</span></span>
+<span class="line"><span>                {</span></span>
+<span class="line"><span>                        "label": "start-biscuitos",</span></span>
+<span class="line"><span>                        "type": "shell",</span></span>
+<span class="line"><span>                        "command": "/BiscuitOS/output/linux-5.10-aarch/RunBiscuitOS.sh",</span></span>
+<span class="line"><span>                        "presentation": {</span></span>
+<span class="line"><span>                                "echo": true,</span></span>
+<span class="line"><span>                                "clear": true,</span></span>
+<span class="line"><span>                                "group": "vm"</span></span>
+<span class="line"><span>                        },</span></span>
+<span class="line"><span>                        "problemMatcher": []</span></span>
+<span class="line"><span>                },</span></span>
+<span class="line"><span>                {</span></span>
+<span class="line"><span>                        "label": "debug-biscuitos",</span></span>
+<span class="line"><span>                        "type": "shell",</span></span>
+<span class="line"><span>                        "command": "/BiscuitOS/output/linux-5.10-aarch/RunBiscuitOS.sh debug",</span></span>
+<span class="line"><span>                        "presentation": {</span></span>
+<span class="line"><span>                                "echo": true,</span></span>
+<span class="line"><span>                                "clear": true,</span></span>
+<span class="line"><span>                                "group": "vm"</span></span>
+<span class="line"><span>                        },</span></span>
+<span class="line"><span>                        "problemMatcher": []</span></span>
+<span class="line"><span>                },</span></span>
+<span class="line"><span>                {</span></span>
+<span class="line"><span>                        "label": "start-arm64-ubuntu",</span></span>
+<span class="line"><span>                        "type": "shell",</span></span>
+<span class="line"><span>                        "command": " sudo /BiscuitOS/output/linux-5.10-aarch/qemu-system/qemu-4.0.0/aarch64-softmmu/qemu-system-aarch64 -hda /root/myspace/qemu_build/ubuntu/aarch64_ubuntu.img -kernel /root/workspace/linux-5.10/out/arch/arm64/boot/Image -append 'console=ttyAMA0 root=/dev/vda1' -m 2048M -smp 8 -M virt -cpu cortex-a72 -net nic -net user,hostfwd=tcp::2222-:22 -nographic -fsdev local,id=fs1,path=/root/workspace/share,security_model=none -device virtio-9p-pci,fsdev=fs1,mount_tag=host_share",</span></span>
+<span class="line"><span>                        "presentation": {</span></span>
+<span class="line"><span>                                "echo": true,</span></span>
+<span class="line"><span>                                "clear": true,</span></span>
+<span class="line"><span>                                "group": "vm"</span></span>
+<span class="line"><span>                        },</span></span>
+<span class="line"><span>                        "problemMatcher": []</span></span>
+<span class="line"><span>                },</span></span>
+<span class="line"><span>                {</span></span>
+<span class="line"><span>                        "label": "vm-stop",</span></span>
+<span class="line"><span>                        "type": "shell",</span></span>
+<span class="line"><span>                        "command": "sudo pkill qemu ; echo 'qemu stoped'",</span></span>
+<span class="line"><span>                        "presentation": {</span></span>
+<span class="line"><span>                                "echo": true,</span></span>
+<span class="line"><span>                                "clear": true,</span></span>
+<span class="line"><span>                                "group": "vm_stop"</span></span>
+<span class="line"><span>                        }</span></span>
+<span class="line"><span>                },</span></span>
+<span class="line"><span>                {</span></span>
+<span class="line"><span>                        "label": "make",</span></span>
+<span class="line"><span>                        "type": "shell",</span></span>
+<span class="line"><span>                        "command": "make -j12 ARCH=arm64 CROSS_COMPILE=/usr/bin/aarch64-linux-gnu- Image O=./out/ &#x26;&#x26; echo '****************make is ready**************'",</span></span>
+<span class="line"><span>                        "group": {</span></span>
+<span class="line"><span>                                "kind": "build",</span></span>
+<span class="line"><span>                                "isDefault": true</span></span>
+<span class="line"><span>                        },</span></span>
+<span class="line"><span>                        "presentation": {</span></span>
+<span class="line"><span>                                "echo": false,</span></span>
+<span class="line"><span>                                "group": "build"</span></span>
+<span class="line"><span>                        }</span></span>
+<span class="line"><span>                },</span></span>
+<span class="line"><span>                {</span></span>
+<span class="line"><span>                        "label": "gen label",</span></span>
+<span class="line"><span>                        "type": "shell",</span></span>
+<span class="line"><span>                        "command": "python ./scripts/clang-tools/gen_compile_commands.py -d ./out/",</span></span>
+<span class="line"><span>                        "group": {</span></span>
+<span class="line"><span>                                "kind": "build",</span></span>
+<span class="line"><span>                                "isDefault": true</span></span>
+<span class="line"><span>                        },</span></span>
+<span class="line"><span>                        "presentation": {</span></span>
+<span class="line"><span>                                "echo": false,</span></span>
+<span class="line"><span>                                "group": "label"</span></span>
+<span class="line"><span>                        }</span></span>
+<span class="line"><span>                }</span></span>
+<span class="line"><span>        ]</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<ul>
+<li>launch.json 配置</li>
+</ul>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>{</span></span>
+<span class="line"><span>        // Use IntelliSense to learn about possible attributes.</span></span>
+<span class="line"><span>        // Hover to view descriptions of existing attributes.</span></span>
+<span class="line"><span>        // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387</span></span>
+<span class="line"><span>        "version": "0.2.0",</span></span>
+<span class="line"><span>        "configurations": [</span></span>
+<span class="line"><span>            {</span></span>
+<span class="line"><span>                "name": "kernel-debug",</span></span>
+<span class="line"><span>                "type": "cppdbg",</span></span>
+<span class="line"><span>                "request": "launch",</span></span>
+<span class="line"><span>                "miDebuggerServerAddress": "127.0.0.1:1234",</span></span>
+<span class="line"><span>                "miDebuggerPath": "/usr/bin/gdb-multiarch",</span></span>
+<span class="line"><span>                "program": "${workspaceFolder}/out/vmlinux",</span></span>
+<span class="line"><span>                "args": [],</span></span>
+<span class="line"><span>                "stopAtEntry": false,</span></span>
+<span class="line"><span>                "cwd": "${workspaceFolder}",</span></span>
+<span class="line"><span>                "environment": [],</span></span>
+<span class="line"><span>                "externalConsole": true,</span></span>
+<span class="line"><span>                "hardwareBreakpoints": {},</span></span>
+<span class="line"><span>                "logging": {</span></span>
+<span class="line"><span>                    "engineLogging": false</span></span>
+<span class="line"><span>                },</span></span>
+<span class="line"><span>                "MIMode": "gdb",</span></span>
+<span class="line"><span>                "postRemoteConnectCommands": [</span></span>
+<span class="line"><span>                        {</span></span>
+<span class="line"><span>                                "text": "dir /remote/swg/users/hsu/workspace/z3_g13/common/common"</span></span>
+<span class="line"><span>                        },</span></span>
+<span class="line"><span>                        {</span></span>
+<span class="line"><span>                                "text": "add-symbol-file /remote/swg/users/hsu/workspace/z3_g13/common/out/vendor/modules/sched/sched-walt.ko 0xffffffc0012e7000"</span></span>
+<span class="line"><span>                        },</span></span>
+<span class="line"><span>                ],</span></span>
+<span class="line"><span>                "setupCommands": [</span></span>
+<span class="line"><span>                        {</span></span>
+<span class="line"><span>                                "text": "source /remote/swg/users/hsu/.gdbinit"</span></span>
+<span class="line"><span>                        }</span></span>
+<span class="line"><span>                ],</span></span>
+<span class="line"><span>            }</span></span>
+<span class="line"><span>        ]</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>上面配置了</p>
+<ul>
+<li>建立连接之前：setupCommands 设置了 .gdbinit 脚本。在gdbinit脚本中添加很多命令，包含linux kernel 自己的 vmlinux-gdb.py</li>
+</ul>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>add-auto-load-safe-path /path/vmlinux-gdb.py</span></span></code></pre>
+<p>.gdbinit 是 github 上开源的。</p>
+<ul>
+<li>端口： 设置了链接本机 127.0.0.1:1234 端口</li>
+<li>建立连接之后： 设置源码目录，加载模块symbols 到指定地址</li>
+<li>设置 源码符号： program</li>
+</ul>
+<p>上面是 vscode 两个 json文件的配置，配置之后可以很快的进行debug。</p>
+<p>我是用的 <code>RunBiscuitOS</code> 的环境，可以使用他的 docker 来进行构建，中间遇到过几个权限问题（具体什么问题忘了。。不过都好解决，以后配置机会不多，一个环境应该可以长期用下去），但是用物理机环境搞我是遇到过很多问题，建议用 docker搞。</p>
+<p>debug 启动时用的 qemu, 在 docker 环境中直接使用 <code>/BiscuitOS/output/linux-5.10-aarch/RunBiscuitOS.sh debug</code> 即可，也可以使用qemu去启动tools 更加全面的 ubuntu image。</p>
+<p>vscode debug 过程中的有不一样的是</p>
+<ul>
+<li>左边 堆栈可以看到每个 cpu core 的堆栈，很方便了解各个cpu执行流程</li>
+<li>监视视图： 可以输入 <code>fair_tmp_i > 10</code> 等这种 表达式</li>
+<li>关于断点: 可以在每一行最左边右击鼠标 选择 <code>添加断点</code> or <code>添加条件断点</code> or <code>添加记录点</code></li>
+<li>在 debug console 中，执行所有命令都是报错<code>-var-create: unable to create variable object</code>，因为是设计使然（by design）。要是想在 调试控制台上直接输入命令，需要 加一个前缀 <code>-exec cmd</code></li>
+</ul>
+<p>for example</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>watch fair_tmp_i > 1350</span></span>
+<span class="line"><span>-var-create: unable to create variable object</span></span>
+<span class="line"><span>watch fair_tmp_i > 1350</span></span>
+<span class="line"><span>-var-create: unable to create variable object</span></span>
+<span class="line"><span>exec watch fair_tmp_i > 1350</span></span>
+<span class="line"><span>-var-create: unable to create variable object</span></span>
+<span class="line"><span>-exec watch fair_tmp_i > 1350</span></span>
+<span class="line"><span>Hardware watchpoint 12: fair_tmp_i > 1350</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>r</span></span>
+<span class="line"><span>-var-create: unable to create variable object</span></span>
+<span class="line"><span>-exec r</span></span>
+<span class="line"><span>The "remote" target does not support "run".  Try "help target" or "continue".</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>-exec c</span></span>
+<span class="line"><span>Continuing.</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Thread 2 hit Hardware watchpoint 12: fair_tmp_i > 1350</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Old value = 0</span></span>
+<span class="line"><span>New value = 1</span></span>
+<span class="line"><span>select_task_rq_fair (p=0xffff000003076040, prev_cpu=1, sd_flag=8, wake_flags=0) at ../kernel/sched/fair.c:6739</span></span>
+<span class="line"><span>6739		if (sd_flag &#x26; SD_BALANCE_WAKE) {</span></span></code></pre>
+<p>问题可以看 <a href="https://github.com/microsoft/vscode-cpptools/issues/7400">github 记录</a></p>
+<p>参考 <a href="https://www.bilibili.com/video/BV1zv411G7j8?p=7&#x26;spm_id_from=pageDriver">b站视频1</a>
+参考 <a href="https://www.bilibili.com/video/BV1EK411g7Li?spm_id_from=333.999.0.0">b站视频2</a>
+参考 <a href="https://wizardforcel.gitbooks.io/100-gdb-tips/content/config-gdbinit.html">100个gdb小技巧</a>
+参考 <a href="">b站视频</a></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

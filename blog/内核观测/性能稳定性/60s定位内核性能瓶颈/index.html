@@ -1,0 +1,160 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>60s定位内核性能瓶颈 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>60s定位内核性能瓶颈</h1><div class="post-meta"><time datetime="2020-09-13T19:00:00.000Z">2020年9月13日</time><span> / kernel debug</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">性能稳定性</span></div></header><div class="article-body"><p>这篇主要是翻译Brendan的文章<a href="http://www.brendangregg.com/blog/2015-12-03/linux-perf-60s-video.html">perf in 60s</a>和自己见解。主要是在linux性能分析前60s，你应该做什么。</p>
+<ol>
+<li>uptime
+通过 <code>uptime</code> 可以看到系统的最近1min,5min,15min的平均负载load情况，可以知道此时系统的繁忙情况，也可以看出一段时间内系统变得 busier 或者 quiter.</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sh@ubuntu[root]:~# uptime</span></span>
+<span class="line"><span> 02:29:52 up 6 days, 14:34,  2 users,  load average: 0.00, 0.01, 0.00</span></span></code></pre>
+<ol start="2">
+<li>dmesg | tail
+通过 <code>dmesg | tail</code> 可以看到系统的最近有没有有用的错误日志信息</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sh@ubuntu[root]:~# dmesg | tail</span></span>
+<span class="line"><span>[527247.600091] e1000: ens33 NIC Link is Down</span></span>
+<span class="line"><span>[527259.696854] e1000: ens33 NIC Link is Up 1000 Mbps Full Duplex, Flow Control: None</span></span>
+<span class="line"><span>[534840.083000] e1000: ens33 NIC Link is Down</span></span>
+<span class="line"><span>[534844.115753] e1000: ens33 NIC Link is Up 1000 Mbps Full Duplex, Flow Control: None</span></span>
+<span class="line"><span>[534846.131190] e1000: ens33 NIC Link is Down</span></span>
+<span class="line"><span>[534850.162855] e1000: ens33 NIC Link is Up 1000 Mbps Full Duplex, Flow Control: None</span></span>
+<span class="line"><span>[534906.610317] e1000: ens33 NIC Link is Down</span></span>
+<span class="line"><span>[534910.643119] e1000: ens33 NIC Link is Up 1000 Mbps Full Duplex, Flow Control: None</span></span>
+<span class="line"><span>[534912.657953] e1000: ens33 NIC Link is Down</span></span>
+<span class="line"><span>[534916.690646] e1000: ens33 NIC Link is Up 1000 Mbps Full Duplex, Flow Control: None</span></span></code></pre>
+<ol start="3">
+<li>vmstat
+通过 <code>vmstat</code> 可以看到系统一个overall的视图，包括 CPU MEM IO Inturrupts</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sh@ubuntu[root]:~# vmstat 1</span></span>
+<span class="line"><span>procs -----------memory---------- ---swap-- -----io---- -system-- ------cpu-----</span></span>
+<span class="line"><span> r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa st</span></span>
+<span class="line"><span> 0  0 590592 150108 202604 766576    0    0     6     3   13   15  0  0 100  0  0</span></span>
+<span class="line"><span> 0  0 590592 150108 202604 766576    0    0     0     0  289  523  0  0 100  0  0</span></span>
+<span class="line"><span> 0  0 590592 150068 202604 766616    0    0     0     0  320  581  0  0 100  0  0</span></span></code></pre>
+<ol start="4">
+<li>mpstat</li>
+</ol>
+<p>通过 <code>mpstat -P ALL 1</code> 可以看到系统的每个 CPU的状态，看看CPU使用是否balance，有时候会有线程绑核出现一些问题</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sh@ubuntu[root]:~# mpstat -P ALL 1</span></span>
+<span class="line"><span>Linux 5.4.44 (rlk)      2020年09月13日  _x86_64_        (4 CPU)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>02时36分15秒  CPU    %usr   %nice    %sys %iowait    %irq   %soft  %steal  %guest  %gnice   %idle</span></span>
+<span class="line"><span>02时36分16秒  all    0.00    0.00    0.00    0.00    0.00    0.25    0.00    0.00    0.00   99.75</span></span>
+<span class="line"><span>02时36分16秒    0    0.00    0.00    0.00    0.00    0.00    0.00    0.00    0.00    0.00  100.00</span></span>
+<span class="line"><span>02时36分16秒    1    0.00    0.00    0.00    0.00    0.00    0.00    0.00    0.00    0.00  100.00</span></span>
+<span class="line"><span>02时36分16秒    2    0.00    0.00    0.00    0.00    0.00    0.00    0.00    0.00    0.00  100.00</span></span>
+<span class="line"><span>02时36分16秒    3    0.00    0.00    0.00    0.00    0.00    0.99    0.00    0.00    0.00   99.01</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>02时36分16秒  CPU    %usr   %nice    %sys %iowait    %irq   %soft  %steal  %guest  %gnice   %idle</span></span>
+<span class="line"><span>02时36分17秒  all    0.00    0.00    0.00    0.00    0.00    0.00    0.00    0.00    0.00  100.00</span></span>
+<span class="line"><span>02时36分17秒    0    0.00    0.00    0.00    0.00    0.00    0.00    0.00    0.00    0.00  100.00</span></span>
+<span class="line"><span>02时36分17秒    1    0.00    0.00    0.00    0.00    0.00    0.00    0.00    0.00    0.00  100.00</span></span>
+<span class="line"><span>02时36分17秒    2    0.00    0.00    0.00    0.00    0.00    0.00    0.00    0.00    0.00  100.00</span></span>
+<span class="line"><span>02时36分17秒    3    0.00    0.00    0.00    0.00    0.00    0.00    0.00    0.00    0.00  100.00</span></span></code></pre>
+<ol start="5">
+<li>pidstat
+通过 <code>pidstat 1</code> 可以看到系统中最繁忙的几个进程</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sh@ubuntu[root]:~# pidstat 1</span></span>
+<span class="line"><span>Linux 5.4.44 (rlk)      2020年09月13日  _x86_64_        (4 CPU)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>02时38分37秒   UID       PID    %usr %system  %guest   %wait    %CPU   CPU  Command</span></span>
+<span class="line"><span>02时38分38秒     0       943    0.93    0.93    0.00    0.00    1.87     0  containerd</span></span>
+<span class="line"><span>02时38分38秒  1000      3282    0.00    0.93    0.00    0.00    0.93     3  sshd</span></span>
+<span class="line"><span>02时38分38秒     0     78276    0.00    1.87    0.00    0.00    1.87     2  pidstat</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>02时38分38秒   UID       PID    %usr %system  %guest   %wait    %CPU   CPU  Command</span></span>
+<span class="line"><span>02时38分39秒  1000     15201    0.00    1.00    0.00    0.00    1.00     0  node</span></span>
+<span class="line"><span>02时38分39秒     0     77927    0.00    1.00    0.00    0.00    1.00     2  kworker/2:0-events</span></span>
+<span class="line"><span>02时38分39秒     0     78276    0.00    1.00    0.00    0.00    1.00     2  pidstat</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>02时38分39秒   UID       PID    %usr %system  %guest   %wait    %CPU   CPU  Command</span></span>
+<span class="line"><span>02时38分40秒  1000      3347    0.00    1.00    0.00    0.00    1.00     0  node</span></span>
+<span class="line"><span>02时38分40秒     0     78276    1.00    0.00    0.00    0.00    1.00     2  pidstat</span></span></code></pre>
+<ol start="6">
+<li>iostat
+通过 <code>iostat -xz 1</code> 可以看到系统中disk io的状态</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sh@ubuntu[root]:~# iostat -xz 1</span></span>
+<span class="line"><span>Linux 5.4.44 (rlk)      2020年09月13日  _x86_64_        (4 CPU)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>avg-cpu:  %user   %nice %system %iowait  %steal   %idle</span></span>
+<span class="line"><span>           0.05    0.01    0.09    0.01    0.00   99.84</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Device            r/s     rkB/s   rrqm/s  %rrqm r_await rareq-sz     w/s     wkB/s   wrqm/s  %wrqm w_await wareq-sz     d/s     dkB/s   drqm/s  %drqm d_await dareq-sz  aqu-sz  %util</span></span>
+<span class="line"><span>loop0            0.00      0.00     0.00   0.00    0.12     1.48    0.00      0.00     0.00   0.00    0.00     0.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00   0.00</span></span>
+<span class="line"><span>loop1            0.00      0.00     0.00   0.00    0.11     2.26    0.00      0.00     0.00   0.00    0.00     0.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00   0.00</span></span>
+<span class="line"><span>loop2            0.04      0.04     0.00   0.00    0.45     1.05    0.00      0.00     0.00   0.00    0.00     0.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00   0.00</span></span>
+<span class="line"><span>loop3            0.01      0.01     0.00   0.00    0.24     1.09    0.00      0.00     0.00   0.00    0.00     0.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00   0.00</span></span>
+<span class="line"><span>loop4            0.00      0.00     0.00   0.00    0.15     7.37    0.00      0.00     0.00   0.00    0.00     0.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00   0.00</span></span>
+<span class="line"><span>loop5            0.02      0.02     0.00   0.00    0.49     1.02    0.00      0.00     0.00   0.00    0.00     0.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00   0.00</span></span>
+<span class="line"><span>loop6            0.00      0.00     0.00   0.00    0.13     1.89    0.00      0.00     0.00   0.00    0.00     0.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00   0.00</span></span>
+<span class="line"><span>loop7            0.05      0.05     0.00   0.00    0.41     1.01    0.00      0.00     0.00   0.00    0.00     0.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00   0.00</span></span>
+<span class="line"><span>loop8            0.05      0.05     0.00   0.00    0.67     1.01    0.00      0.00     0.00   0.00    0.00     0.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00   0.00</span></span>
+<span class="line"><span>loop9            0.00      0.00     0.00   0.00    0.00     1.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00   0.00</span></span>
+<span class="line"><span>sda              1.00     22.93     0.36  26.65    0.56    23.03    0.65     10.07     0.60  47.67    0.36    15.39    0.00      0.00     0.00   0.00    0.00     0.00    0.00   0.06</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>avg-cpu:  %user   %nice %system %iowait  %steal   %idle</span></span>
+<span class="line"><span>           0.00    0.00    0.25    0.00    0.00   99.75</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Device            r/s     rkB/s   rrqm/s  %rrqm r_await rareq-sz     w/s     wkB/s   wrqm/s  %wrqm w_await wareq-sz     d/s     dkB/s   drqm/s  %drqm d_await dareq-sz  aqu-sz  %util</span></span>
+<span class="line"><span>sda              2.00     12.00     0.00   0.00    0.50     6.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00   0.40</span></span></code></pre>
+<ol start="7">
+<li>free
+通过 <code>free</code> 可以看到系统中内存的使用情况</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sh@ubuntu[root]:~# free</span></span>
+<span class="line"><span>              total        used        free      shared  buff/cache   available</span></span>
+<span class="line"><span>Mem:        3805660     2729828      158612        3108      917220      784960</span></span>
+<span class="line"><span>Swap:       2097148      595968     1501180</span></span></code></pre>
+<ol start="8">
+<li>sar
+通过 <code>sar -n DEV 1</code> 可以看出系统中网络收发是否有问题
+通过 <code>sar -n TCP,ETCP 1</code> 可以看出系统中TCP连接是否有问题</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sh@ubuntu[root]:~# sar -n DEV 1</span></span>
+<span class="line"><span>Linux 5.4.44 (rlk)      2020年09月13日  _x86_64_        (4 CPU)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>02时44分23秒     IFACE   rxpck/s   txpck/s    rxkB/s    txkB/s   rxcmp/s   txcmp/s  rxmcst/s   %ifutil</span></span>
+<span class="line"><span>02时44分24秒     ens33      4.00      5.00      0.49      0.58      0.00      0.00      0.00      0.00</span></span>
+<span class="line"><span>02时44分24秒        lo     11.00     11.00      0.91      0.91      0.00      0.00      0.00      0.00</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>02时44分24秒     IFACE   rxpck/s   txpck/s    rxkB/s    txkB/s   rxcmp/s   txcmp/s  rxmcst/s   %ifutil</span></span>
+<span class="line"><span>02时44分25秒     ens33      7.00      9.00      0.68      1.56      0.00      0.00      0.00      0.00</span></span>
+<span class="line"><span>02时44分25秒        lo     18.00     18.00      1.93      1.93      0.00      0.00      0.00      0.00</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>02时44分25秒     IFACE   rxpck/s   txpck/s    rxkB/s    txkB/s   rxcmp/s   txcmp/s  rxmcst/s   %ifutil</span></span>
+<span class="line"><span>02时44分26秒     ens33      2.00      3.00      0.23      0.96      0.00      0.00      0.00      0.00</span></span>
+<span class="line"><span>02时44分26秒        lo      6.00      6.00      1.10      1.10      0.00      0.00      0.00      0.00</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sh@ubuntu[root]:~# sar -n TCP,ETCP 1</span></span>
+<span class="line"><span>Linux 5.4.44 (rlk)      2020年09月13日  _x86_64_        (4 CPU)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>02时45分45秒  active/s passive/s    iseg/s    oseg/s</span></span>
+<span class="line"><span>02时45分46秒      0.00      0.00     16.00     16.00</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>02时45分45秒  atmptf/s  estres/s retrans/s isegerr/s   orsts/s</span></span>
+<span class="line"><span>02时45分46秒      0.00      0.00      0.00      0.00      0.00</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>02时45分46秒  active/s passive/s    iseg/s    oseg/s</span></span>
+<span class="line"><span>02时45分47秒      0.00      0.00     16.00     18.00</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>02时45分46秒  atmptf/s  estres/s retrans/s isegerr/s   orsts/s</span></span>
+<span class="line"><span>02时45分47秒      0.00      0.00      0.00      0.00      0.00</span></span></code></pre>
+<ol start="9">
+<li>top
+如果一般没啥问题，一般会以top结尾</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>top - 02:47:39 up 6 days, 14:52,  2 users,  load average: 0.16, 0.07, 0.01</span></span>
+<span class="line"><span>Tasks: 341 total,   1 running, 340 sleeping,   0 stopped,   0 zombie</span></span>
+<span class="line"><span>%Cpu(s):  0.0 us,  1.5 sy,  0.0 ni, 98.5 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st</span></span>
+<span class="line"><span>MiB Mem :   3716.5 total,    149.4 free,   2670.2 used,    896.9 buff/cache</span></span>
+<span class="line"><span>MiB Swap:   2048.0 total,   1466.0 free,    582.0 used.    762.2 avail Mem</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND</span></span>
+<span class="line"><span>      1 root      20   0  168136   8196   5688 S   0.0   0.2   0:17.47 systemd</span></span>
+<span class="line"><span>      2 root      20   0       0      0      0 S   0.0   0.0   0:00.61 kthreadd</span></span>
+<span class="line"><span>      3 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 rcu_gp</span></span>
+<span class="line"><span>      4 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 rcu_par_gp</span></span>
+<span class="line"><span>      6 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/0:0H-kblockd</span></span>
+<span class="line"><span>      9 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 mm_percpu_wq</span></span>
+<span class="line"><span>     10 root      20   0       0      0      0 S   0.0   0.0   0:00.42 ksoftirqd/0</span></span></code></pre></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

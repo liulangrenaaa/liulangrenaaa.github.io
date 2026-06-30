@@ -1,0 +1,546 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>Thermal框架、thermal_zone与限频限流机制 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>Thermal框架、thermal_zone与限频限流机制</h1><div class="post-meta"><time datetime="2026-05-31T11:10:00.000Z">2026年5月31日</time><span> / android / power</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">android</span><span class="tag">power</span><span class="tag">thermal</span><span class="tag">throttling</span></div></header><div class="article-body"><p>Thermal 不是一个“温度显示模块”，而是 Android 功耗闭环里的刹车系统。功耗升高会带来温升；温度到阈值后，thermal 策略会通过限频、限流、降亮度、降刷新率、关相机、限制充电等手段把功耗压下来。</p>
+<p>所以热问题不能只写“温度高”。完整结论必须包含：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>温度来源 -> 触发阈值 -> 限制动作 -> 性能/体验结果 -> 修复或策略调整</span></span></code></pre>
+<h2 id="总体架构">总体架构</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    Sensors[TSENS / PMIC / Battery / Skin sensors]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Kernel[Thermal zones]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Cooling[Cooling devices]</span></span>
+<span class="line"><span style="color:#E1E4E8">    HAL[Thermal HAL]</span></span>
+<span class="line"><span style="color:#E1E4E8">    TMS[ThermalManagerService]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Apps[Apps / SystemUI / Framework listeners]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Vendor[Vendor thermal engine]</span></span>
+<span class="line"><span style="color:#E1E4E8">    CPU[CPU cpufreq max]</span></span>
+<span class="line"><span style="color:#E1E4E8">    GPU[GPU freq limit]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Charge[Charging current limit]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Display[Brightness / refresh rate]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Modem[Modem / PA limit]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    Sensors --> Kernel</span></span>
+<span class="line"><span style="color:#E1E4E8">    Kernel --> Cooling</span></span>
+<span class="line"><span style="color:#E1E4E8">    Kernel --> HAL</span></span>
+<span class="line"><span style="color:#E1E4E8">    HAL --> TMS</span></span>
+<span class="line"><span style="color:#E1E4E8">    TMS --> Apps</span></span>
+<span class="line"><span style="color:#E1E4E8">    Kernel --> Vendor</span></span>
+<span class="line"><span style="color:#E1E4E8">    Vendor --> CPU</span></span>
+<span class="line"><span style="color:#E1E4E8">    Vendor --> GPU</span></span>
+<span class="line"><span style="color:#E1E4E8">    Vendor --> Charge</span></span>
+<span class="line"><span style="color:#E1E4E8">    Vendor --> Display</span></span>
+<span class="line"><span style="color:#E1E4E8">    Vendor --> Modem</span></span>
+<span class="line"><span style="color:#E1E4E8">    Cooling --> CPU</span></span>
+<span class="line"><span style="color:#E1E4E8">    Cooling --> GPU</span></span>
+<span class="line"><span style="color:#E1E4E8">    Cooling --> Charge</span></span></code></pre>
+<p>注意这张图的重点：Framework ThermalManagerService 不是唯一热策略。很多厂商平台会由 vendor thermal engine 直接监听 thermal zone 并操作 cooling device、cpufreq、charger、display 节点。<code>dumpsys thermalservice</code> 看不到，不代表没有温控。</p>
+<h2 id="源码入口">源码入口</h2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>模块</th><th>源码</th></tr></thead><tbody><tr><td>ThermalManagerService</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/ThermalManagerService.java:89:1">ThermalManagerService.java line 89</a></td></tr><tr><td>onStart</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/ThermalManagerService.java:154:1">ThermalManagerService.java line 154</a></td></tr><tr><td>HAL wrapper connect</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/ThermalManagerService.java:173:1">ThermalManagerService.java line 173</a></td></tr><tr><td>onTemperatureMapChangedLocked</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/ThermalManagerService.java:233:1">ThermalManagerService.java line 233</a></td></tr><tr><td>notifyEventListenersLocked</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/ThermalManagerService.java:285:1">ThermalManagerService.java line 285</a></td></tr><tr><td>shutdownIfNeeded</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/ThermalManagerService.java:302:1">ThermalManagerService.java line 302</a></td></tr><tr><td>onTemperatureChanged</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/ThermalManagerService.java:323:1">ThermalManagerService.java line 323</a></td></tr><tr><td>getCurrentTemperatures</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/ThermalManagerService.java:427:1">ThermalManagerService.java line 427</a></td></tr><tr><td>dumpInternal</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/ThermalManagerService.java:652:1">ThermalManagerService.java line 652</a></td></tr><tr><td>ThermalHalAidlWrapper</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/ThermalManagerService.java:946:1">ThermalManagerService.java line 946</a></td></tr><tr><td>ThermalHal20Wrapper</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/ThermalManagerService.java:1404:1">ThermalManagerService.java line 1404</a></td></tr><tr><td>TemperatureWatcher</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/ThermalManagerService.java:1571:1">ThermalManagerService.java line 1571</a></td></tr></tbody></table>
+<h2 id="framework-thermal流程">Framework Thermal流程</h2>
+<p><code>ThermalManagerService.onStart()</code> 会尝试连接 Thermal HAL。AOSP14 中优先级大致是：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>ThermalHalAidlWrapper</span></span>
+<span class="line"><span>ThermalHal20Wrapper</span></span>
+<span class="line"><span>ThermalHal11Wrapper</span></span>
+<span class="line"><span>ThermalHal10Wrapper</span></span></code></pre>
+<p>连接成功后会：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>注册 temperature callback</span></span>
+<span class="line"><span>读取 current temperatures</span></span>
+<span class="line"><span>更新 mTemperatureMap</span></span>
+<span class="line"><span>根据 TYPE_SKIN 的 status 计算全局 thermal status</span></span>
+<span class="line"><span>更新 headroom thresholds</span></span>
+<span class="line"><span>发布 thermalservice binder</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">sequenceDiagram</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant TMS as ThermalManagerService</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant HAL as Thermal HAL</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Map as mTemperatureMap</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Listener as IThermalEventListener</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant App as Framework/App</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    TMS->>HAL: connectToHal</span></span>
+<span class="line"><span style="color:#E1E4E8">    HAL-->>TMS: connected</span></span>
+<span class="line"><span style="color:#E1E4E8">    TMS->>HAL: getCurrentTemperatures</span></span>
+<span class="line"><span style="color:#E1E4E8">    HAL-->>TMS: Temperature list</span></span>
+<span class="line"><span style="color:#E1E4E8">    TMS->>Map: update temperatures</span></span>
+<span class="line"><span style="color:#E1E4E8">    TMS->>TMS: onTemperatureMapChangedLocked</span></span>
+<span class="line"><span style="color:#E1E4E8">    App->>TMS: registerThermalEventListener</span></span>
+<span class="line"><span style="color:#E1E4E8">    HAL-->>TMS: notifyThrottling callback</span></span>
+<span class="line"><span style="color:#E1E4E8">    TMS->>Listener: notifyThrottling</span></span></code></pre>
+<p><code>onTemperatureMapChangedLocked()</code> 的关键逻辑是：遍历 <code>mTemperatureMap</code>，用 <code>TYPE_SKIN</code> 的最高 status 更新全局 <code>mStatus</code>。这意味着 Framework 的 overall thermal status 更偏向皮肤温度体验，而不是 CPU/GPU 最高温。</p>
+<h2 id="temperature类型和等级">Temperature类型和等级</h2>
+<p>ThermalManagerService 支持的类型包括：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>类型</th><th>场景</th></tr></thead><tbody><tr><td>CPU</td><td>CPU 热</td></tr><tr><td>GPU</td><td>GPU 热</td></tr><tr><td>BATTERY</td><td>电池热</td></tr><tr><td>SKIN</td><td>外壳/体感热</td></tr><tr><td>USB_PORT</td><td>USB 口热</td></tr><tr><td>POWER_AMPLIFIER</td><td>PA/射频功放</td></tr><tr><td>BCL_*</td><td>电池电流/电压/百分比限制</td></tr><tr><td>NPU/TPU</td><td>AI 加速器</td></tr><tr><td>DISPLAY</td><td>显示相关</td></tr><tr><td>MODEM</td><td>modem</td></tr><tr><td>SOC</td><td>SoC</td></tr><tr><td>WIFI</td><td>Wi-Fi</td></tr><tr><td>CAMERA</td><td>相机</td></tr><tr><td>FLASHLIGHT</td><td>闪光灯</td></tr><tr><td>SPEAKER</td><td>扬声器</td></tr><tr><td>AMBIENT</td><td>环境温度</td></tr></tbody></table>
+<p>Throttling status：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>状态</th><th>含义</th></tr></thead><tbody><tr><td><code>NONE</code></td><td>无限制</td></tr><tr><td><code>LIGHT</code></td><td>轻微限制</td></tr><tr><td><code>MODERATE</code></td><td>中等限制</td></tr><tr><td><code>SEVERE</code></td><td>严重限制</td></tr><tr><td><code>CRITICAL</code></td><td>临界</td></tr><tr><td><code>EMERGENCY</code></td><td>紧急</td></tr><tr><td><code>SHUTDOWN</code></td><td>需要关机保护</td></tr></tbody></table>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart LR</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[NONE]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B[LIGHT]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C[MODERATE]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D[SEVERE]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E[CRITICAL]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F[EMERGENCY]</span></span>
+<span class="line"><span style="color:#E1E4E8">    G[SHUTDOWN]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    A --> B</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> D</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> F</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> G</span></span></code></pre>
+<p>如果温度达到 <code>THROTTLING_SHUTDOWN</code>，<code>shutdownIfNeeded()</code> 会根据类型触发不同关机原因，例如 CPU/GPU/NPU/SKIN/BATTERY 等。</p>
+<h2 id="framework命令">Framework命令</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> thermalservice</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> thermalservice</span><span style="color:#79B8FF"> --help</span></span></code></pre>
+<p>如果输出：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>Thermal Status: 0</span></span>
+<span class="line"><span>Cached temperatures:</span></span>
+<span class="line"><span>HAL Ready: false</span></span></code></pre>
+<p>只能说明 Framework 没连上 Thermal HAL，不能说明设备没有温控。下一步必须看 kernel sysfs 和 vendor 行为。</p>
+<p>ThermalManagerService 还支持注入温度用于测试监听逻辑。这个只用于 Framework 行为验证，不代表真实温度：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> thermalservice</span><span style="color:#9ECBFF"> inject-temperature</span><span style="color:#9ECBFF"> skin</span><span style="color:#79B8FF"> 42.0</span><span style="color:#9ECBFF"> moderate</span></span></code></pre>
+<p>如果设备支持命令格式，可用 <code>--help</code> 确认。</p>
+<h2 id="kernel-thermal_zone">Kernel thermal_zone</h2>
+<p>Kernel 侧入口：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for z in /sys/class/thermal/thermal_zone*; do echo "== $z =="; cat $z/type; cat $z/temp; done'</span></span></code></pre>
+<p>常见 thermal zone：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>battery</span></span>
+<span class="line"><span>skin</span></span>
+<span class="line"><span>cpu</span></span>
+<span class="line"><span>gpu</span></span>
+<span class="line"><span>pmic</span></span>
+<span class="line"><span>pm8998_tz</span></span>
+<span class="line"><span>pmi8998_tz</span></span>
+<span class="line"><span>pm8005_tz</span></span>
+<span class="line"><span>msm_therm</span></span>
+<span class="line"><span>tsens_tz_sensor*</span></span>
+<span class="line"><span>xo_therm</span></span>
+<span class="line"><span>quiet_therm</span></span>
+<span class="line"><span>pa_therm*</span></span></code></pre>
+<p>注意单位：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>37000 -> 37.000 C</span></span>
+<span class="line"><span>370   -> 37.0 C</span></span>
+<span class="line"><span>36    -> 36 C</span></span></code></pre>
+<p>不同节点单位可能不同，要结合平台习惯和实际范围判断。看到 <code>battery: 37000</code> 和 <code>msm_therm: 36</code> 并存并不奇怪。</p>
+<h2 id="cooling_device">cooling_device</h2>
+<p>看 cooling：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for c in /sys/class/thermal/cooling_device*; do echo "== $c =="; cat $c/type; cat $c/cur_state; cat $c/max_state; done'</span></span></code></pre>
+<p>常见 cooling device：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>类型</th><th>可能动作</th></tr></thead><tbody><tr><td><code>thermal-cpufreq-*</code></td><td>限制 CPU policy max freq</td></tr><tr><td>GPU cooling</td><td>限制 GPU 频率</td></tr><tr><td>charger/input current</td><td>限制充电电流</td></tr><tr><td>display/backlight</td><td>降亮度</td></tr><tr><td>modem/pa</td><td>限制射频</td></tr><tr><td>camera</td><td>限制相机</td></tr><tr><td>battery current limit</td><td>限制放电/充电</td></tr></tbody></table>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[Thermal zone temp rises]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B[Thermal governor or vendor engine]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C[Cooling device cur_state changes]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D[CPU max freq reduced]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E[GPU max freq reduced]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F[Charging current reduced]</span></span>
+<span class="line"><span style="color:#E1E4E8">    G[Brightness reduced]</span></span>
+<span class="line"><span style="color:#E1E4E8">    H[Performance or charging speed drops]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    A --> B</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> D</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> E</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> F</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> G</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> H</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> H</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> H</span></span>
+<span class="line"><span style="color:#E1E4E8">    G --> H</span></span></code></pre>
+<p>结论要写成：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>zone 温度上升 -> cooling cur_state 变化 -> 被控对象实际受限</span></span></code></pre>
+<p>只写“温度 45C”不够。</p>
+<h2 id="限频判断">限频判断</h2>
+<p>CPU 限频：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for p in /sys/devices/system/cpu/cpufreq/policy*; do echo "== $p =="; cat $p/cpuinfo_max_freq; cat $p/scaling_max_freq; cat $p/scaling_cur_freq; done'</span></span></code></pre>
+<p>判断：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>现象</th><th>解释</th></tr></thead><tbody><tr><td><code>scaling_max_freq &#x3C; cpuinfo_max_freq</code></td><td>policy max 被限制</td></tr><tr><td>cooling state 非 0</td><td>thermal 正在干预</td></tr><tr><td>温度升高后 max_freq 下降</td><td>热限频证据强</td></tr><tr><td>温度下降后 max_freq 恢复</td><td>策略闭环正常</td></tr><tr><td>cur_freq 上不去但 max 未降</td><td>可能负载不够、governor、uclamp、省电</td></tr></tbody></table>
+<p>GPU 限频视平台：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'find /sys/class/kgsl /sys/class/devfreq -maxdepth 3 -type f 2>/dev/null | grep -Ei "gpu|cur_freq|max_freq|min_freq|governor|busy"'</span></span></code></pre>
+<h2 id="充电限流">充电限流</h2>
+<p>充电热相关：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> battery</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for d in /sys/class/power_supply/*; do echo "== $d =="; cat $d/type 2>/dev/null; cat $d/current_now 2>/dev/null; cat $d/input_current_limit 2>/dev/null; cat $d/constant_charge_current 2>/dev/null; cat $d/temp 2>/dev/null; done'</span></span></code></pre>
+<p>证据链：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>battery/pmic/skin temp 上升</span></span>
+<span class="line"><span>charger cooling cur_state 变化</span></span>
+<span class="line"><span>input_current_limit 或 current_now 下降</span></span>
+<span class="line"><span>充电速度下降</span></span></code></pre>
+<h2 id="降亮度降刷新率">降亮度/降刷新率</h2>
+<p>Display thermal 可能表现为：</p>
+<ul>
+<li>最大亮度降低。</li>
+<li>HBM 不可用。</li>
+<li>刷新率上限降低。</li>
+<li>屏幕变暗。</li>
+</ul>
+<p>命令：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> display</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -Ei</span><span style="color:#9ECBFF"> "brightness|throttl|thermal|hbm|refresh|DisplayModeDirector"</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> SurfaceFlinger</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -Ei</span><span style="color:#9ECBFF"> "refresh|mode|fps"</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> thermalservice</span></span></code></pre>
+<p>报告中要写：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>温度达到阈值后，DisplayModeDirector/Thermal vote 限制刷新率；</span></span>
+<span class="line"><span>或 brightness throttling 限制最大亮度。</span></span></code></pre>
+<h2 id="当前qcom设备现象">当前QCOM设备现象</h2>
+<p>当前外接 msm8998 设备曾观察到：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>dumpsys thermalservice:</span></span>
+<span class="line"><span>    Thermal Status: 0</span></span>
+<span class="line"><span>    Cached temperatures:</span></span>
+<span class="line"><span>    HAL Ready: false</span></span></code></pre>
+<p>但 sysfs 可见：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>battery</span></span>
+<span class="line"><span>pm8998_tz</span></span>
+<span class="line"><span>pmi8998_tz</span></span>
+<span class="line"><span>pm8005_tz</span></span>
+<span class="line"><span>msm_therm</span></span>
+<span class="line"><span>tsens_tz_sensor*</span></span>
+<span class="line"><span>thermal-cpufreq-0</span></span>
+<span class="line"><span>thermal-cpufreq-1</span></span></code></pre>
+<p>正确结论：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>Framework Thermal HAL 链路不可用，不能通过 thermalservice 判断热状态。</span></span>
+<span class="line"><span>需要从 kernel thermal_zone 和 cooling_device 建立热分析证据。</span></span></code></pre>
+<h2 id="case-1thermal-hal不可用">Case 1：Thermal HAL不可用</h2>
+<p>现象：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>dumpsys thermalservice 显示 HAL Ready=false。</span></span></code></pre>
+<p>排查：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> thermalservice</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for z in /sys/class/thermal/thermal_zone*; do echo "$(cat $z/type) $(cat $z/temp)"; done'</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for c in /sys/class/thermal/cooling_device*; do echo "$(cat $c/type) $(cat $c/cur_state)/$(cat $c/max_state)"; done'</span></span></code></pre>
+<p>我会这样写报告：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>Framework Thermal HAL 未就绪，因此 thermalservice 无 cached temperature。</span></span>
+<span class="line"><span>但 kernel thermal_zone 和 cooling_device 正常暴露温度与限制状态。</span></span>
+<span class="line"><span>后续热分析以 kernel sysfs 和实际频率/电流变化为准。</span></span></code></pre>
+<h2 id="case-2cpu热限频">Case 2：CPU热限频</h2>
+<p>现象：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>跑压测几分钟后 FPS 下降。</span></span>
+<span class="line"><span>CPU scaling_max_freq 下降。</span></span>
+<span class="line"><span>thermal-cpufreq cur_state 从 0 变成 2。</span></span></code></pre>
+<p>证据：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for p in /sys/devices/system/cpu/cpufreq/policy*; do echo $p; cat $p/cpuinfo_max_freq; cat $p/scaling_max_freq; done'</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for c in /sys/class/thermal/cooling_device*; do cat $c/type; cat $c/cur_state; done'</span></span></code></pre>
+<p>结论：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>性能下降发生在温度上升后，thermal-cpufreq cooling 生效并降低 CPU policy max。</span></span>
+<span class="line"><span>这是热限频导致的性能下降，不是单纯调度异常。</span></span></code></pre>
+<h2 id="case-3充电发热限流">Case 3：充电发热限流</h2>
+<p>现象：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>边充电边亮屏使用，温度上升后充电电流下降。</span></span></code></pre>
+<p>证据链：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>battery temp / pmic temp 上升</span></span>
+<span class="line"><span>cooling_device cur_state 变化</span></span>
+<span class="line"><span>current_now 或 input_current_limit 下降</span></span></code></pre>
+<p>结论：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>充电路径热和系统运行负载叠加，触发 thermal 充电限流。</span></span>
+<span class="line"><span>优化方向是降低运行负载、改善散热或调整充电温控阈值。</span></span></code></pre>
+<h2 id="case-4亮屏高亮导致降亮度">Case 4：亮屏高亮导致降亮度</h2>
+<p>现象：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>户外高亮或 HDR 场景，几分钟后屏幕变暗。</span></span></code></pre>
+<p>证据：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>display/skin/battery 温度上升</span></span>
+<span class="line"><span>dumpsys display 中 brightness throttling 或 HBM 状态变化</span></span>
+<span class="line"><span>thermal status 升级</span></span></code></pre>
+<p>结论：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>屏幕变暗不是 UI bug，而是 display thermal brightness throttling。</span></span>
+<span class="line"><span>需要比较冷机和热机亮度上限，以及 HBM/HDR 触发条件。</span></span></code></pre>
+<h2 id="case-5温度高但没有限频">Case 5：温度高但没有限频</h2>
+<p>现象：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>某 thermal zone 温度看起来高，但 CPU/GPU/充电都没有限制。</span></span></code></pre>
+<p>可能原因：</p>
+<ul>
+<li>该 zone 不是控制目标。</li>
+<li>单位理解错误。</li>
+<li>阈值未到。</li>
+<li>HAL/sysfs 显示的是不同传感器。</li>
+<li>vendor thermal engine 没绑定该 zone。</li>
+</ul>
+<p>我会这样写结论：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>当前只观察到温度值高，未观察到 cooling state、频率、电流或亮度变化。</span></span>
+<span class="line"><span>因此不能判定 thermal throttling 已触发，需要继续确认阈值和 cooling 绑定。</span></span></code></pre>
+<h2 id="采集脚本">采集脚本</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#6A737D">#!/system/bin/sh</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">OUT</span><span style="color:#F97583">=</span><span style="color:#9ECBFF">/data/local/tmp/thermal_case_</span><span style="color:#E1E4E8">$(</span><span style="color:#B392F0">date</span><span style="color:#9ECBFF"> +%Y%m%d_%H%M%S</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">DURATION</span><span style="color:#F97583">=</span><span style="color:#FFAB70">${1</span><span style="color:#F97583">:-</span><span style="color:#FFAB70">600}</span></span>
+<span class="line"><span style="color:#B392F0">mkdir</span><span style="color:#79B8FF"> -p</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">"</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">date</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/meta.txt"</span></span>
+<span class="line"><span style="color:#B392F0">getprop</span><span style="color:#9ECBFF"> ro.product.device</span><span style="color:#F97583"> >></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/meta.txt"</span></span>
+<span class="line"><span style="color:#B392F0">getprop</span><span style="color:#9ECBFF"> ro.board.platform</span><span style="color:#F97583"> >></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/meta.txt"</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> thermalservice</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/thermalservice_before.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> battery</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/battery_before.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> display</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/display_before.txt"</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">for</span><span style="color:#E1E4E8"> z </span><span style="color:#F97583">in</span><span style="color:#9ECBFF"> /sys/class/thermal/thermal_zone*</span><span style="color:#E1E4E8">; </span><span style="color:#F97583">do</span></span>
+<span class="line"><span style="color:#79B8FF">    echo</span><span style="color:#9ECBFF"> "$(</span><span style="color:#B392F0">basename</span><span style="color:#E1E4E8"> $z</span><span style="color:#9ECBFF">) $(</span><span style="color:#B392F0">cat</span><span style="color:#E1E4E8"> $z</span><span style="color:#9ECBFF">/type </span><span style="color:#F97583">2></span><span style="color:#9ECBFF">/dev/null) $(</span><span style="color:#B392F0">cat</span><span style="color:#E1E4E8"> $z</span><span style="color:#9ECBFF">/temp </span><span style="color:#F97583">2></span><span style="color:#9ECBFF">/dev/null)"</span><span style="color:#F97583"> >></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/zones_before.txt"</span></span>
+<span class="line"><span style="color:#F97583">done</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">for</span><span style="color:#E1E4E8"> c </span><span style="color:#F97583">in</span><span style="color:#9ECBFF"> /sys/class/thermal/cooling_device*</span><span style="color:#E1E4E8">; </span><span style="color:#F97583">do</span></span>
+<span class="line"><span style="color:#79B8FF">    echo</span><span style="color:#9ECBFF"> "$(</span><span style="color:#B392F0">basename</span><span style="color:#E1E4E8"> $c</span><span style="color:#9ECBFF">) $(</span><span style="color:#B392F0">cat</span><span style="color:#E1E4E8"> $c</span><span style="color:#9ECBFF">/type </span><span style="color:#F97583">2></span><span style="color:#9ECBFF">/dev/null) $(</span><span style="color:#B392F0">cat</span><span style="color:#E1E4E8"> $c</span><span style="color:#9ECBFF">/cur_state </span><span style="color:#F97583">2></span><span style="color:#9ECBFF">/dev/null) $(</span><span style="color:#B392F0">cat</span><span style="color:#E1E4E8"> $c</span><span style="color:#9ECBFF">/max_state </span><span style="color:#F97583">2></span><span style="color:#9ECBFF">/dev/null)"</span><span style="color:#F97583"> >></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/cooling_before.txt"</span></span>
+<span class="line"><span style="color:#F97583">done</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">for</span><span style="color:#E1E4E8"> p </span><span style="color:#F97583">in</span><span style="color:#9ECBFF"> /sys/devices/system/cpu/cpufreq/policy*</span><span style="color:#E1E4E8">; </span><span style="color:#F97583">do</span></span>
+<span class="line"><span style="color:#79B8FF">    echo</span><span style="color:#9ECBFF"> "$(</span><span style="color:#B392F0">basename</span><span style="color:#E1E4E8"> $p</span><span style="color:#9ECBFF">) $(</span><span style="color:#B392F0">cat</span><span style="color:#E1E4E8"> $p</span><span style="color:#9ECBFF">/scaling_cur_freq </span><span style="color:#F97583">2></span><span style="color:#9ECBFF">/dev/null) $(</span><span style="color:#B392F0">cat</span><span style="color:#E1E4E8"> $p</span><span style="color:#9ECBFF">/scaling_max_freq </span><span style="color:#F97583">2></span><span style="color:#9ECBFF">/dev/null)"</span><span style="color:#F97583"> >></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/cpufreq_before.txt"</span></span>
+<span class="line"><span style="color:#F97583">done</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">sleep</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$DURATION</span><span style="color:#9ECBFF">"</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> thermalservice</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/thermalservice_after.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> battery</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/battery_after.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> display</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/display_after.txt"</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">for</span><span style="color:#E1E4E8"> z </span><span style="color:#F97583">in</span><span style="color:#9ECBFF"> /sys/class/thermal/thermal_zone*</span><span style="color:#E1E4E8">; </span><span style="color:#F97583">do</span></span>
+<span class="line"><span style="color:#79B8FF">    echo</span><span style="color:#9ECBFF"> "$(</span><span style="color:#B392F0">basename</span><span style="color:#E1E4E8"> $z</span><span style="color:#9ECBFF">) $(</span><span style="color:#B392F0">cat</span><span style="color:#E1E4E8"> $z</span><span style="color:#9ECBFF">/type </span><span style="color:#F97583">2></span><span style="color:#9ECBFF">/dev/null) $(</span><span style="color:#B392F0">cat</span><span style="color:#E1E4E8"> $z</span><span style="color:#9ECBFF">/temp </span><span style="color:#F97583">2></span><span style="color:#9ECBFF">/dev/null)"</span><span style="color:#F97583"> >></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/zones_after.txt"</span></span>
+<span class="line"><span style="color:#F97583">done</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">for</span><span style="color:#E1E4E8"> c </span><span style="color:#F97583">in</span><span style="color:#9ECBFF"> /sys/class/thermal/cooling_device*</span><span style="color:#E1E4E8">; </span><span style="color:#F97583">do</span></span>
+<span class="line"><span style="color:#79B8FF">    echo</span><span style="color:#9ECBFF"> "$(</span><span style="color:#B392F0">basename</span><span style="color:#E1E4E8"> $c</span><span style="color:#9ECBFF">) $(</span><span style="color:#B392F0">cat</span><span style="color:#E1E4E8"> $c</span><span style="color:#9ECBFF">/type </span><span style="color:#F97583">2></span><span style="color:#9ECBFF">/dev/null) $(</span><span style="color:#B392F0">cat</span><span style="color:#E1E4E8"> $c</span><span style="color:#9ECBFF">/cur_state </span><span style="color:#F97583">2></span><span style="color:#9ECBFF">/dev/null) $(</span><span style="color:#B392F0">cat</span><span style="color:#E1E4E8"> $c</span><span style="color:#9ECBFF">/max_state </span><span style="color:#F97583">2></span><span style="color:#9ECBFF">/dev/null)"</span><span style="color:#F97583"> >></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/cooling_after.txt"</span></span>
+<span class="line"><span style="color:#F97583">done</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">for</span><span style="color:#E1E4E8"> p </span><span style="color:#F97583">in</span><span style="color:#9ECBFF"> /sys/devices/system/cpu/cpufreq/policy*</span><span style="color:#E1E4E8">; </span><span style="color:#F97583">do</span></span>
+<span class="line"><span style="color:#79B8FF">    echo</span><span style="color:#9ECBFF"> "$(</span><span style="color:#B392F0">basename</span><span style="color:#E1E4E8"> $p</span><span style="color:#9ECBFF">) $(</span><span style="color:#B392F0">cat</span><span style="color:#E1E4E8"> $p</span><span style="color:#9ECBFF">/scaling_cur_freq </span><span style="color:#F97583">2></span><span style="color:#9ECBFF">/dev/null) $(</span><span style="color:#B392F0">cat</span><span style="color:#E1E4E8"> $p</span><span style="color:#9ECBFF">/scaling_max_freq </span><span style="color:#F97583">2></span><span style="color:#9ECBFF">/dev/null)"</span><span style="color:#F97583"> >></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/cpufreq_after.txt"</span></span>
+<span class="line"><span style="color:#F97583">done</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">tar</span><span style="color:#79B8FF"> -czf</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">.tar.gz"</span><span style="color:#79B8FF"> -C</span><span style="color:#9ECBFF"> "$(</span><span style="color:#B392F0">dirname</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">")"</span><span style="color:#9ECBFF"> "$(</span><span style="color:#B392F0">basename</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">")"</span></span>
+<span class="line"><span style="color:#79B8FF">echo</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">.tar.gz"</span></span></code></pre>
+<h2 id="我会这样说明">我会这样说明</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>我分析热问题会把温度、限制动作和体验结果串起来。</span></span>
+<span class="line"><span>Framework 侧先看 ThermalManagerService 和 Thermal HAL 是否可用；如果 HAL Ready=false，不能说明没有热问题，要下钻 /sys/class/thermal 的 thermal_zone 和 cooling_device。</span></span>
+<span class="line"><span>真正判断 throttling 要看 cooling_device cur_state、CPU/GPU max freq、充电电流、亮度或刷新率是否发生变化。</span></span>
+<span class="line"><span>只有温度升高但没有限制动作，不能说已经热限频。</span></span></code></pre>
+<h2 id="复盘">复盘</h2>
+<p>Thermal 分析要避免三个误区：</p>
+<ul>
+<li><code>thermalservice</code> 为空不等于没有温控。</li>
+<li>温度高不等于已经 throttling。</li>
+<li>性能下降不一定是 thermal，要有 cooling/freq/current/brightness 证据。</li>
+</ul>
+<p>我的判断口径：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>热问题的完整证据链是：温度上升 -> thermal策略触发 -> cooling动作出现 -> 频率/电流/亮度/FPS变化。</span></span></code></pre></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

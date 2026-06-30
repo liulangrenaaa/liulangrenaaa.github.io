@@ -1,0 +1,42 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>userspace heap | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>userspace heap</h1><div class="post-meta"><time datetime="2021-09-23T19:00:00.000Z">2021年9月23日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">userspace heap</span><span class="tag">heap</span></div></header><div class="article-body"><h2 id="heap-位置">heap 位置</h2>
+<p>通常来说 heap 与stack 对应，相向增长。为了内存使用不浪费，程序一开始运行的heap 也不会设置的很大，后续根据需要来扩大增长 heap顶部，实现 heap size的增长。</p>
+<p>c语言中，需求就是<code>malloc</code>需要分配内存的时候，通过 <code>brk</code> 来扩展 heap top。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>............</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>------------  heap top    ---- program break</span></span>
+<span class="line"><span>        | ---> heap size</span></span>
+<span class="line"><span>------------  start brk   ---- heap bottom</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>............</span></span></code></pre>
+<h2 id="brk-sbrk">brk sbrk</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>#include &#x3C;unistd.h></span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>int brk(void *addr);</span></span>
+<span class="line"><span>void *sbrk(intptr_t increment);</span></span></code></pre>
+<p><code>brk</code> 是系统调用， <code>sbrk</code> 是 linux libc中的。</p>
+<p>brk: 传入的参数是绝对地址，将 <code>heap top</code> 设置在那里。
+sbrk: 传入的参数是相对偏移，正数是将 <code>heap top</code> 上移，负数是将<code>heap top</code> 下移，</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>#include &#x3C;unistd.h></span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>int main(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>        int i = 0;</span></span>
+<span class="line"><span>        for (i = 0; i &#x3C; 1000; i++) {</span></span>
+<span class="line"><span>                sbrk(i);</span></span>
+<span class="line"><span>        }</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        return 0;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>使用strace 跟踪编译出来的bin文件执行，得到</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>......</span></span>
+<span class="line"><span>brk(NULL)                               = 0x555cd761b000</span></span>
+<span class="line"><span>brk(0x555cd761b001)                     = 0x555cd761b001</span></span>
+<span class="line"><span>brk(0x555cd761b003)                     = 0x555cd761b003</span></span>
+<span class="line"><span>brk(0x555cd761b006)                     = 0x555cd761b006</span></span>
+<span class="line"><span>brk(0x555cd761b00a)                     = 0x555cd761b00a</span></span>
+<span class="line"><span>brk(0x555cd761b00f)                     = 0x555cd761b00f</span></span>
+<span class="line"><span>brk(0x555cd761b015)                     = 0x555cd761b015</span></span>
+<span class="line"><span>......</span></span></code></pre>
+<p>可以看到最终也是调用到 <code>brk</code>，</p>
+<h2 id="使用-sbrk-进行内存分配">使用 sbrk 进行内存分配</h2>
+<h2 id="使用brk进行内存分配">使用brk进行内存分配</h2></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

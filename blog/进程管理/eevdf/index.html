@@ -1,0 +1,12 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>eevdf | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>eevdf</h1><div class="post-meta"><time datetime="2024-10-30T19:00:00.000Z">2024年10月30日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">进程调度</span><span class="tag">cfs</span><span class="tag">eevdf</span></div></header><div class="article-body"><h2 id="介绍">介绍</h2>
+<p>eevdf 主要是解决 cfs中 调度延迟问题的
+参考<a href="https://hackmd.io/@RinHizakura/SyG4t5u1a">Linux 核心設計: Scheduler(5): EEVDF 排程器/1</a>
+参考<a href="https://hackmd.io/@RinHizakura/HkyEtNkjA">Linux 核心設計: Scheduler(6): EEVDF 排程器/2</a></p>
+<h2 id="关键概念">关键概念</h2>
+<p>eevdf: Earliest Eligible Virtual Deadline First 最早虚拟完成截止时间 优先,就是 Virtual Deadline最小的最优先</p>
+<p>lag: 应该得到的cpu时间 - 实际得到cpu的时间
+lag为正的话,更容易 被调度,说明是eligible 的
+lag为负的话,则此轮将不会得到调度,是 not eligible的, 随着时间流逝, 应该得到的cpu时间才会变多, 然后lag才有可能变为正数</p>
+<p>virtual deadline: 代表process可以获得cpu的最早时间
+virtual deadline 则是比 lag 为正更为苛刻的一个条件, lag为正,只是符合条件 eligible
+但是需要从所有 eligible 的 task中找出 virtual deadline 最小的一个task</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

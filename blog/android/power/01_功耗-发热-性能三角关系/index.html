@@ -1,0 +1,642 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>功耗-发热-性能三角关系 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>功耗-发热-性能三角关系</h1><div class="post-meta"><time datetime="2026-05-31T11:01:00.000Z">2026年5月31日</time><span> / android / power</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">android</span><span class="tag">power</span><span class="tag">thermal</span><span class="tag">performance</span><span class="tag">aosp14</span></div></header><div class="article-body"><h2 id="为什么要先讲三角关系">为什么要先讲三角关系</h2>
+<p>Android 功耗问题不能只盯着“省电”。一个真实设备同时被三件事拉扯：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>性能：</span></span>
+<span class="line"><span>    App启动要快、滑动要稳、游戏帧率要高、相机预览不能卡。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>功耗：</span></span>
+<span class="line"><span>    待机要低、亮屏电流要低、后台不能频繁唤醒。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>发热：</span></span>
+<span class="line"><span>    皮肤温度不能烫、电池温度不能过高、PMIC/SoC不能超过保护阈值。</span></span></code></pre>
+<p>这三者不是并列指标，而是闭环。性能需求推动功耗上升，功耗上升带来温升，温升触发 thermal 限制，thermal 限制又反过来压性能和功耗。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    Perf[性能需求]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Work[更多工作量和更高响应]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Power[功耗上升]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Heat[温度上升]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Thermal[thermal策略触发]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Limit[限频 / 限流 / 降亮度]</span></span>
+<span class="line"><span style="color:#E1E4E8">    User[用户体验变化]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    Perf --> Work</span></span>
+<span class="line"><span style="color:#E1E4E8">    Work --> Power</span></span>
+<span class="line"><span style="color:#E1E4E8">    Power --> Heat</span></span>
+<span class="line"><span style="color:#E1E4E8">    Heat --> Thermal</span></span>
+<span class="line"><span style="color:#E1E4E8">    Thermal --> Limit</span></span>
+<span class="line"><span style="color:#E1E4E8">    Limit --> Power</span></span>
+<span class="line"><span style="color:#E1E4E8">    Limit --> User</span></span>
+<span class="line"><span style="color:#E1E4E8">    User --> Perf</span></span></code></pre>
+<p>所以功耗工程师做问题时，不能只问“谁耗电”，还要问：</p>
+<ul>
+<li>这个功耗是不是为了满足性能需求？</li>
+<li>温度是否已经触发限制？</li>
+<li>限制动作是什么？</li>
+<li>用户看到的是耗电、发热、卡顿，还是充电变慢？</li>
+<li>修复后是降低了功耗，还是只是牺牲了性能？</li>
+</ul>
+<h2 id="基本物理直觉">基本物理直觉</h2>
+<p>CPU/GPU 这类数字电路的动态功耗可以粗略理解为：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>P_dynamic ~= C * V^2 * f * activity</span></span></code></pre>
+<p>其中：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>变量</th><th>含义</th><th>工程含义</th></tr></thead><tbody><tr><td>C</td><td>等效电容</td><td>由硬件设计决定</td></tr><tr><td>V</td><td>电压</td><td>频率提高时通常要升压，影响非常大</td></tr><tr><td>f</td><td>频率</td><td>CPU/GPU/DDR频率越高，动态功耗越高</td></tr><tr><td>activity</td><td>活跃度</td><td>线程运行、GPU绘制、内存访问、外设传输</td></tr></tbody></table>
+<p>这解释了几个常见现象：</p>
+<ul>
+<li>CPU 频率只高一点，但电压也跟着上升，功耗可能明显上升。</li>
+<li>一个任务跑得慢不一定省电，如果拖长了高频时间，总能耗可能更高。</li>
+<li>高频短跑和低频长跑谁省电，要看任务类型、idle 机会和平台能效曲线。</li>
+<li>频繁短唤醒虽然平均 CPU 占用低，但会破坏 cpuidle 和系统 suspend。</li>
+</ul>
+<h2 id="android里的三角关系落点">Android里的三角关系落点</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    App[App / Framework负载]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Scheduler[Scheduler / cpufreq / cpuidle]</span></span>
+<span class="line"><span style="color:#E1E4E8">    PowerHAL[Power HAL boost/mode]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Display[Display亮度/刷新/合成]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Radio[Modem / Wi-Fi / BT / GNSS]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Charger[充电路径]</span></span>
+<span class="line"><span style="color:#E1E4E8">    ThermalZone[thermal_zone温度]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Cooling[cooling_device限制]</span></span>
+<span class="line"><span style="color:#E1E4E8">    BatteryStats[BatteryStats归因]</span></span>
+<span class="line"><span style="color:#E1E4E8">    User[性能/发热/续航体验]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    App --> Scheduler</span></span>
+<span class="line"><span style="color:#E1E4E8">    App --> Display</span></span>
+<span class="line"><span style="color:#E1E4E8">    App --> Radio</span></span>
+<span class="line"><span style="color:#E1E4E8">    App --> BatteryStats</span></span>
+<span class="line"><span style="color:#E1E4E8">    PowerHAL --> Scheduler</span></span>
+<span class="line"><span style="color:#E1E4E8">    Scheduler --> ThermalZone</span></span>
+<span class="line"><span style="color:#E1E4E8">    Display --> ThermalZone</span></span>
+<span class="line"><span style="color:#E1E4E8">    Radio --> ThermalZone</span></span>
+<span class="line"><span style="color:#E1E4E8">    Charger --> ThermalZone</span></span>
+<span class="line"><span style="color:#E1E4E8">    ThermalZone --> Cooling</span></span>
+<span class="line"><span style="color:#E1E4E8">    Cooling --> Scheduler</span></span>
+<span class="line"><span style="color:#E1E4E8">    Cooling --> Display</span></span>
+<span class="line"><span style="color:#E1E4E8">    Cooling --> Charger</span></span>
+<span class="line"><span style="color:#E1E4E8">    Cooling --> Radio</span></span>
+<span class="line"><span style="color:#E1E4E8">    Cooling --> User</span></span></code></pre>
+<p>从 Android 角度看，三角关系落在这些模块上：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>方向</th><th>Android模块</th><th>典型证据</th></tr></thead><tbody><tr><td>性能推动功耗</td><td>Scheduler、cpufreq、Power HAL、SurfaceFlinger</td><td>Perfetto 的 sched/freq/gfx</td></tr><tr><td>功耗推动温升</td><td>thermal zone、battery temp、PMIC temp</td><td><code>/sys/class/thermal</code></td></tr><tr><td>温升限制性能</td><td>cooling device、thermal HAL、vendor thermal engine</td><td>cooling state、频率上限下降</td></tr><tr><td>温升限制充电</td><td>BatteryService、Health HAL、charger driver</td><td><code>current_now</code>、<code>dumpsys battery</code></td></tr><tr><td>温升限制显示</td><td>DisplayPowerController、BrightnessThrottler</td><td><code>dumpsys display</code>、亮度上限</td></tr><tr><td>软件归因</td><td>BatteryStats、PowerProfile、PowerStats</td><td><code>dumpsys batterystats</code></td></tr></tbody></table>
+<h2 id="代码主线1power-hal如何参与性能和功耗">代码主线1：Power HAL如何参与性能和功耗</h2>
+<p>Power HAL 是 Framework 把“当前系统需要什么性能/功耗模式”告诉厂商平台的入口。它不直接发热，但它会影响调度、频率、boost、低功耗模式，最终影响功耗和温度。</p>
+<p>源码入口：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>入口</th><th>作用</th></tr></thead><tbody><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/PowerManagerService.java:4086:1">PowerManagerService.java:4086</a></td><td>PMS 设置 interactive power mode</td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/PowerManagerService.java:4640:1">PowerManagerService.java:4640</a></td><td><code>setPowerModeInternal</code></td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/native/services/powermanager/PowerHalController.cpp:94:1">PowerHalController.cpp:94</a></td><td><code>setBoost</code> 转发到 HAL wrapper</td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/native/services/powermanager/PowerHalController.cpp:100:1">PowerHalController.cpp:100</a></td><td><code>setMode</code> 转发到 HAL wrapper</td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/native/services/powermanager/PowerHalWrapper.cpp:199:1">PowerHalWrapper.cpp:199</a></td><td>AIDL Power HAL <code>setBoost</code></td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/native/services/powermanager/PowerHalWrapper.cpp:231:1">PowerHalWrapper.cpp:231</a></td><td>AIDL Power HAL <code>setMode</code></td></tr></tbody></table>
+<p>可以按这个伪代码理解：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>亮屏/灭屏/省电/DeviceIdle等状态变化</span></span>
+<span class="line"><span>    -> PowerManagerService.setPowerModeInternal(mode, enabled)</span></span>
+<span class="line"><span>    -> NativeWrapper.nativeSetPowerMode()</span></span>
+<span class="line"><span>    -> PowerHalController.setMode()</span></span>
+<span class="line"><span>    -> PowerHalWrapper.setMode()</span></span>
+<span class="line"><span>    -> vendor Power HAL</span></span>
+<span class="line"><span>    -> 写调度/频率/boost/平台功耗参数</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">sequenceDiagram</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant PMS as PowerManagerService</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Native as NativeWrapper</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Ctrl as PowerHalController</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Wrap as PowerHalWrapper</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Vendor as Vendor Power HAL</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Kernel as Kernel cpufreq/uclamp/devfreq</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    PMS->>Native: nativeSetPowerMode()</span></span>
+<span class="line"><span style="color:#E1E4E8">    Native->>Ctrl: setMode() / setBoost()</span></span>
+<span class="line"><span style="color:#E1E4E8">    Ctrl->>Wrap: processHalResult()</span></span>
+<span class="line"><span style="color:#E1E4E8">    Wrap->>Vendor: IPower.setMode / setBoost</span></span>
+<span class="line"><span style="color:#E1E4E8">    Vendor->>Kernel: 调整频率/boost/调度参数</span></span></code></pre>
+<p>排查价值：</p>
+<ul>
+<li>亮屏交互电流高，要看是否有长时间 boost 或 interactive mode 未退出。</li>
+<li>灭屏后频率不降，要看 Power HAL 是否还处于 interactive/boost 状态。</li>
+<li>游戏性能忽高忽低，要看 Power HAL、thermal 和调度是否互相打架。</li>
+</ul>
+<h2 id="代码主线2thermalmanagerservice如何处理温度">代码主线2：ThermalManagerService如何处理温度</h2>
+<p>ThermalManagerService 是 Framework 侧的 thermal 入口。它从 Thermal HAL 获取温度、cooling device 和阈值，再把状态通知给监听者。</p>
+<p>源码入口：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>入口</th><th>作用</th></tr></thead><tbody><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/ThermalManagerService.java:89:1">ThermalManagerService.java:89</a></td><td>ThermalManagerService 类定义</td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/ThermalManagerService.java:946:1">ThermalHalAidlWrapper:946</a></td><td>AIDL Thermal HAL 封装</td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/ThermalManagerService.java:323:1">onTemperatureChanged:323</a></td><td>温度变化入口</td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/ThermalManagerService.java:233:1">onTemperatureMapChangedLocked:233</a></td><td>汇总当前 thermal status</td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/ThermalManagerService.java:285:1">notifyEventListenersLocked:285</a></td><td>通知 thermal event listener</td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/ThermalManagerService.java:302:1">shutdownIfNeeded:302</a></td><td>极端温度保护</td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/ThermalManagerService.java:508:1">getCurrentCoolingDevices:508</a></td><td>查询 cooling device</td></tr></tbody></table>
+<p>核心逻辑可以这样读：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>Thermal HAL callback</span></span>
+<span class="line"><span>    -> onTemperatureChanged()</span></span>
+<span class="line"><span>    -> shutdownIfNeeded()</span></span>
+<span class="line"><span>    -> 更新 mTemperatureMap</span></span>
+<span class="line"><span>    -> notifyEventListenersLocked()</span></span>
+<span class="line"><span>    -> onTemperatureMapChangedLocked()</span></span>
+<span class="line"><span>    -> 根据 SKIN 等温度状态计算全局 Thermal Status</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    Sensor[温度传感器]</span></span>
+<span class="line"><span style="color:#E1E4E8">    HAL[Thermal HAL]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Callback[onTemperatureChanged]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Shutdown[shutdownIfNeeded]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Map[mTemperatureMap更新]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Notify[notifyEventListenersLocked]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Status[onTemperatureMapChangedLocked]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Apps[Framework监听者]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    Sensor --> HAL</span></span>
+<span class="line"><span style="color:#E1E4E8">    HAL --> Callback</span></span>
+<span class="line"><span style="color:#E1E4E8">    Callback --> Shutdown</span></span>
+<span class="line"><span style="color:#E1E4E8">    Callback --> Map</span></span>
+<span class="line"><span style="color:#E1E4E8">    Map --> Notify</span></span>
+<span class="line"><span style="color:#E1E4E8">    Map --> Status</span></span>
+<span class="line"><span style="color:#E1E4E8">    Notify --> Apps</span></span></code></pre>
+<p>要注意：ThermalManagerService 能看到的是 HAL 上报的 Framework 视角。很多厂商平台还会有 vendor thermal engine 直接操作 Kernel cooling device，所以 <code>dumpsys thermalservice</code> 不是热问题的唯一证据。</p>
+<h2 id="代码主线3显示亮度如何被热限制">代码主线3：显示亮度如何被热限制</h2>
+<p>亮屏功耗里，屏幕是大头。Android 显示链路里不仅有亮度，还有 HBM、高亮模式、热限制亮度上限。</p>
+<p>源码入口：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>入口</th><th>作用</th></tr></thead><tbody><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/display/DisplayPowerController.java:127:1">DisplayPowerController.java:127</a></td><td>显示电源控制核心类</td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/display/DisplayPowerController.java:755:1">requestPowerState:755</a></td><td>PMS 请求显示状态</td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/display/DisplayPowerController.java:1329:1">updatePowerState:1329</a></td><td>显示状态收敛</td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/display/DisplayPowerController.java:2035:1">createBrightnessThrottlerLocked:2035</a></td><td>创建亮度热限制器</td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/display/DisplayPowerController.java:2125:1">setScreenState:2125</a></td><td>设置屏幕状态</td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/display/DisplayPowerController.java:2247:1">animateScreenBrightness:2247</a></td><td>亮度渐变</td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/display/DisplayPowerController.java:2783:1">noteScreenBrightness:2783</a></td><td>亮度写入 BatteryStats</td></tr></tbody></table>
+<p>显示热限制可以这样理解：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    Lux[环境光/用户亮度]</span></span>
+<span class="line"><span style="color:#E1E4E8">    ABC[AutomaticBrightnessController]</span></span>
+<span class="line"><span style="color:#E1E4E8">    HBM[HighBrightnessMode]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Throttler[BrightnessThrottler]</span></span>
+<span class="line"><span style="color:#E1E4E8">    DPC[DisplayPowerController.updatePowerState]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Brightness[最终屏幕亮度]</span></span>
+<span class="line"><span style="color:#E1E4E8">    BatteryStats[BatteryStats记录亮度档位]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Heat[显示发热下降]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    Lux --> ABC</span></span>
+<span class="line"><span style="color:#E1E4E8">    ABC --> DPC</span></span>
+<span class="line"><span style="color:#E1E4E8">    HBM --> DPC</span></span>
+<span class="line"><span style="color:#E1E4E8">    Throttler --> DPC</span></span>
+<span class="line"><span style="color:#E1E4E8">    DPC --> Brightness</span></span>
+<span class="line"><span style="color:#E1E4E8">    Brightness --> BatteryStats</span></span>
+<span class="line"><span style="color:#E1E4E8">    Brightness --> Heat</span></span></code></pre>
+<p>这就是为什么“发热后屏幕变暗”也是功耗-热-性能三角的一部分：它不一定是显示 bug，而可能是 thermal brightness throttling 主动限制。</p>
+<h2 id="代码主线4充电热如何进入framework">代码主线4：充电热如何进入Framework</h2>
+<p>充电热至少有两条链：</p>
+<ul>
+<li>Battery/Health 链：电池状态、电流、电压、温度。</li>
+<li>Thermal 链：PMIC、电池、USB、skin、SoC 温度触发限流。</li>
+</ul>
+<p>源码入口：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>入口</th><th>作用</th></tr></thead><tbody><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/BatteryService.java:127:1">BatteryService.java:127</a></td><td>电池服务</td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/BatteryService.java:542:1">update:542</a></td><td>HealthInfo 更新入口</td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/BatteryService.java:590:1">processValuesLocked:590</a></td><td>处理电量、插电、温度、电流</td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/BatteryService.java:845:1">sendBatteryChangedIntentLocked:845</a></td><td>发送电池广播</td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/BatteryService.java:1371:1">dumpInternal:1371</a></td><td><code>dumpsys battery</code> 输出</td></tr></tbody></table>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    PMIC[PMIC / Charger / Fuel Gauge]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Health[Health HAL HealthInfo]</span></span>
+<span class="line"><span style="color:#E1E4E8">    BatteryService[BatteryService.update]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Process[processValuesLocked]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Stats[BatteryStatsService.setBatteryState]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Thermal[thermal_zone / vendor thermal]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Limit[降低充电电流]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    PMIC --> Health</span></span>
+<span class="line"><span style="color:#E1E4E8">    Health --> BatteryService</span></span>
+<span class="line"><span style="color:#E1E4E8">    BatteryService --> Process</span></span>
+<span class="line"><span style="color:#E1E4E8">    Process --> Stats</span></span>
+<span class="line"><span style="color:#E1E4E8">    PMIC --> Thermal</span></span>
+<span class="line"><span style="color:#E1E4E8">    Thermal --> Limit</span></span></code></pre>
+<p>充电发热分析时，<code>dumpsys battery</code> 只能告诉你 Framework 看到的电池状态；真正的充电限流可能发生在 charger driver、PMIC、vendor thermal engine 或 Health HAL 下方。</p>
+<h2 id="三角关系的常见场景">三角关系的常见场景</h2>
+<h3 id="场景1游戏十分钟后掉帧">场景1：游戏十分钟后掉帧</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">sequenceDiagram</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Game as Game</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant CPU as CPU/GPU/DDR</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Thermal as thermal_zone</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Cooling as cooling_device</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant User as 用户体验</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    Game->>CPU: 高负载渲染</span></span>
+<span class="line"><span style="color:#E1E4E8">    CPU->>Thermal: 温度持续上升</span></span>
+<span class="line"><span style="color:#E1E4E8">    Thermal->>Cooling: 达到阈值</span></span>
+<span class="line"><span style="color:#E1E4E8">    Cooling->>CPU: 限制最高频率</span></span>
+<span class="line"><span style="color:#E1E4E8">    CPU->>User: FPS下降/帧时间变长</span></span></code></pre>
+<p>排查证据：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> perfetto</span><span style="color:#79B8FF"> -o</span><span style="color:#9ECBFF"> /data/misc/perfetto-traces/game.trace</span><span style="color:#79B8FF"> -t</span><span style="color:#9ECBFF"> 300s</span><span style="color:#9ECBFF"> sched</span><span style="color:#9ECBFF"> freq</span><span style="color:#9ECBFF"> idle</span><span style="color:#9ECBFF"> power</span><span style="color:#9ECBFF"> thermal</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/class/thermal/thermal_zone</span><span style="color:#79B8FF">*</span><span style="color:#9ECBFF">/temp</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/class/thermal/cooling_device</span><span style="color:#79B8FF">*</span><span style="color:#9ECBFF">/cur_state</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/devices/system/cpu/cpufreq/policy</span><span style="color:#79B8FF">*</span><span style="color:#9ECBFF">/scaling_cur_freq</span></span></code></pre>
+<p>结论要写成：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>不是“调度突然变差”，而是温度达到阈值后 cooling device 限制频率，</span></span>
+<span class="line"><span>导致 GPU/CPU 可用算力下降，帧率下降。</span></span></code></pre>
+<h3 id="场景2亮屏静置电流高并伴随温升">场景2：亮屏静置电流高并伴随温升</h3>
+<p>可能链路：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>屏幕高亮度 / 高刷新率</span></span>
+<span class="line"><span>    -> Display + HWC + SurfaceFlinger持续工作</span></span>
+<span class="line"><span>    -> CPU/GPU/DDR不能降下来</span></span>
+<span class="line"><span>    -> 温度上升</span></span>
+<span class="line"><span>    -> 降亮度或限频</span></span></code></pre>
+<p>排查证据：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> display</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> SurfaceFlinger</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> settings</span><span style="color:#9ECBFF"> get</span><span style="color:#9ECBFF"> system</span><span style="color:#9ECBFF"> screen_brightness</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> perfetto</span><span style="color:#79B8FF"> -o</span><span style="color:#9ECBFF"> /data/misc/perfetto-traces/display.trace</span><span style="color:#79B8FF"> -t</span><span style="color:#9ECBFF"> 60s</span><span style="color:#9ECBFF"> sched</span><span style="color:#9ECBFF"> freq</span><span style="color:#9ECBFF"> idle</span><span style="color:#9ECBFF"> gfx</span><span style="color:#9ECBFF"> view</span><span style="color:#9ECBFF"> wm</span><span style="color:#9ECBFF"> power</span></span></code></pre>
+<h3 id="场景3边充边玩发热随后充电变慢">场景3：边充边玩发热，随后充电变慢</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    Charge[充电输入功率]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Game[游戏CPU/GPU功耗]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Display[屏幕亮度功耗]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Modem[网络/弱信号功耗]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Heat[整机温升]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Thermal[thermal策略]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Current[降低充电电流]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    Charge --> Heat</span></span>
+<span class="line"><span style="color:#E1E4E8">    Game --> Heat</span></span>
+<span class="line"><span style="color:#E1E4E8">    Display --> Heat</span></span>
+<span class="line"><span style="color:#E1E4E8">    Modem --> Heat</span></span>
+<span class="line"><span style="color:#E1E4E8">    Heat --> Thermal</span></span>
+<span class="line"><span style="color:#E1E4E8">    Thermal --> Current</span></span></code></pre>
+<p>证据：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> battery</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/class/power_supply/battery/current_now</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/class/power_supply/battery/temp</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/class/thermal/thermal_zone</span><span style="color:#79B8FF">*</span><span style="color:#9ECBFF">/temp</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/class/thermal/cooling_device</span><span style="color:#79B8FF">*</span><span style="color:#9ECBFF">/cur_state</span></span></code></pre>
+<p>结论要区分：</p>
+<ul>
+<li>是充电路径本身热。</li>
+<li>是运行负载叠加。</li>
+<li>是环境温度过高。</li>
+<li>是 thermal 阈值或限流策略过激。</li>
+</ul>
+<h3 id="场景4待机掉电高但手机也温热">场景4：待机掉电高但手机也温热</h3>
+<p>待机温热常见不是 CPU 大负载，而是系统睡不深：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>周期 alarm / 定位 / 蓝牙 / modem / sensor</span></span>
+<span class="line"><span>    -> 系统频繁 wakeup</span></span>
+<span class="line"><span>    -> cpuidle/suspend比例低</span></span>
+<span class="line"><span>    -> 平均功耗上升</span></span>
+<span class="line"><span>    -> 温度比正常待机高</span></span></code></pre>
+<p>证据：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --charged</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/kernel/debug/wakeup_sources</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> alarm</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> location</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> bluetooth_manager</span></span></code></pre>
+<h2 id="真机案例mi-mix-2--msm8998-的三角关系入口">真机案例：Mi MIX 2 / msm8998 的三角关系入口</h2>
+<p>当前外接 QCOM 设备：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>model: Mi MIX 2</span></span>
+<span class="line"><span>device: chiron</span></span>
+<span class="line"><span>Android: 14</span></span>
+<span class="line"><span>hardware: qcom</span></span>
+<span class="line"><span>board: msm8998</span></span>
+<span class="line"><span>soc: MSM8998</span></span>
+<span class="line"><span>adb: root</span></span></code></pre>
+<h3 id="观察1interactive-governor说明性能策略偏老平台">观察1：interactive governor说明性能策略偏老平台</h3>
+<p>采集：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/devices/system/cpu/cpufreq/policy</span><span style="color:#79B8FF">*</span><span style="color:#9ECBFF">/scaling_governor</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/devices/system/cpu/cpufreq/policy</span><span style="color:#79B8FF">*</span><span style="color:#9ECBFF">/scaling_cur_freq</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/devices/system/cpu/cpufreq/policy</span><span style="color:#79B8FF">*</span><span style="color:#9ECBFF">/scaling_max_freq</span></span></code></pre>
+<p>观察：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>policy0: interactive</span></span>
+<span class="line"><span>policy4: interactive</span></span></code></pre>
+<p>分析：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>现代平台常见 schedutil，但 msm8998 这类老 QCOM 平台仍可能使用 interactive。</span></span>
+<span class="line"><span>这意味着亮屏交互、boost、频率保持策略，要结合 interactive governor 和 vendor 参数看。</span></span>
+<span class="line"><span>如果发热后频率下降，还要同时看 thermal-cpufreq cooling。</span></span></code></pre>
+<h3 id="观察2thermal-hal不可用但kernel-thermal可用">观察2：Thermal HAL不可用，但Kernel thermal可用</h3>
+<p>采集：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> thermalservice</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/class/thermal/thermal_zone</span><span style="color:#79B8FF">*</span><span style="color:#9ECBFF">/type</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/class/thermal/thermal_zone</span><span style="color:#79B8FF">*</span><span style="color:#9ECBFF">/temp</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/class/thermal/cooling_device</span><span style="color:#79B8FF">*</span><span style="color:#9ECBFF">/type</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/class/thermal/cooling_device</span><span style="color:#79B8FF">*</span><span style="color:#9ECBFF">/cur_state</span></span></code></pre>
+<p>观察：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>dumpsys thermalservice:</span></span>
+<span class="line"><span>    HAL Ready: false</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>thermal_zone:</span></span>
+<span class="line"><span>    battery</span></span>
+<span class="line"><span>    pm8998_tz</span></span>
+<span class="line"><span>    pmi8998_tz</span></span>
+<span class="line"><span>    pm8005_tz</span></span>
+<span class="line"><span>    msm_therm</span></span>
+<span class="line"><span>    tsens_tz_sensor*</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>cooling_device:</span></span>
+<span class="line"><span>    thermal-cpufreq-0</span></span>
+<span class="line"><span>    thermal-cpufreq-1</span></span></code></pre>
+<p>分析：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>Framework thermalservice没有HAL数据，不代表设备没有thermal。</span></span>
+<span class="line"><span>Kernel thermal zone和cooling device仍然能观察热源和限制动作。</span></span></code></pre>
+<p>这个 case 非常适合说明：<strong>功耗-发热-性能三角不能只看 Framework。</strong></p>
+<h3 id="观察3usb满电状态不适合直接做待机热结论">观察3：USB满电状态不适合直接做待机热结论</h3>
+<p>采集：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> battery</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> power</span></span></code></pre>
+<p>观察：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>USB powered: true</span></span>
+<span class="line"><span>level: 100</span></span>
+<span class="line"><span>status: Full</span></span>
+<span class="line"><span>mIsPowered=true</span></span>
+<span class="line"><span>mStayOn=true</span></span></code></pre>
+<p>分析：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>USB供电会改变电源策略；</span></span>
+<span class="line"><span>满电会改变充电路径状态；</span></span>
+<span class="line"><span>stay awake会影响灭屏和suspend；</span></span>
+<span class="line"><span>因此这组状态只能作为“插USB调试基线”，不能直接代表自然待机。</span></span></code></pre>
+<p>这也是功耗测试最容易踩的坑：还没分析系统，测试条件先污染了。</p>
+<h2 id="数据采集矩阵">数据采集矩阵</h2>
+<p>做三角关系问题，建议每次按这个矩阵采：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>目标</th><th>命令</th></tr></thead><tbody><tr><td>Framework电源状态</td><td><code>adb shell dumpsys power</code></td></tr><tr><td>显示状态</td><td><code>adb shell dumpsys display</code>、<code>adb shell dumpsys SurfaceFlinger</code></td></tr><tr><td>电池/充电</td><td><code>adb shell dumpsys battery</code>、<code>cat /sys/class/power_supply/battery/current_now</code></td></tr><tr><td>频率</td><td><code>cat /sys/devices/system/cpu/cpufreq/policy*/scaling_cur_freq</code></td></tr><tr><td>idle</td><td><code>cat /sys/devices/system/cpu/cpu0/cpuidle/state*/time</code></td></tr><tr><td>唤醒</td><td><code>cat /sys/kernel/debug/wakeup_sources</code></td></tr><tr><td>Framework thermal</td><td><code>adb shell dumpsys thermalservice</code></td></tr><tr><td>Kernel thermal</td><td><code>cat /sys/class/thermal/thermal_zone*/temp</code></td></tr><tr><td>限制动作</td><td><code>cat /sys/class/thermal/cooling_device*/cur_state</code></td></tr><tr><td>时间线</td><td><code>adb shell perfetto ... sched freq idle power thermal gfx</code></td></tr></tbody></table>
+<h2 id="我的分析口径把三角关系写清楚">我的分析口径：把三角关系写清楚</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>现象：</span></span>
+<span class="line"><span>    亮屏游戏10分钟后掉帧并发热。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>测试条件：</span></span>
+<span class="line"><span>    亮度固定，网络固定，环境温度记录，是否插USB明确。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>性能证据：</span></span>
+<span class="line"><span>    Perfetto显示帧时间变长，CPU/GPU频率在某时间点下降。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>功耗证据：</span></span>
+<span class="line"><span>    下降前CPU/GPU频率高，屏幕亮度高，电池电流或外接电流较高。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>热证据：</span></span>
+<span class="line"><span>    thermal_zone中skin/tsens/pmic温度持续上升；</span></span>
+<span class="line"><span>    cooling_device cur_state在掉帧前后变化。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>结论：</span></span>
+<span class="line"><span>    这是高负载引起温升，thermal策略限制频率后导致性能下降。</span></span></code></pre>
+<h2 id="常见错误结论">常见错误结论</h2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>错误说法</th><th>为什么错</th></tr></thead><tbody><tr><td>CPU频率下降，所以调度坏了</td><td>可能是 thermal cooling 正常限频</td></tr><tr><td>thermalservice 没温度，所以没热问题</td><td>Thermal HAL 可能没接，Kernel thermal 仍有效</td></tr><tr><td>充电慢就是充电器问题</td><td>可能是边充边用触发 thermal 限流</td></tr><tr><td>待机 CPU 低就一定省电</td><td>频繁唤醒会破坏 suspend 和 cpuidle</td></tr><tr><td>降低性能就是优化功耗</td><td>可能牺牲体验，必须看任务完成时间和温升</td></tr></tbody></table>
+<h2 id="这篇结论">这篇结论</h2>
+<p>功耗、发热、性能是一条闭环，不是三张表：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>负载产生性能需求</span></span>
+<span class="line"><span>    -> Power HAL / Scheduler / Display / Radio 提高活动度</span></span>
+<span class="line"><span>    -> 功耗上升</span></span>
+<span class="line"><span>    -> thermal zone 温度上升</span></span>
+<span class="line"><span>    -> cooling device 或 vendor thermal engine 限制能力</span></span>
+<span class="line"><span>    -> 性能、亮度、充电速度或网络能力下降</span></span></code></pre>
+<p>后续每个具体专题都应该回到这条闭环上解释。只讲 wakelock、只讲 thermal、只讲 cpufreq，都只能看到局部；把三角关系串起来，才是功耗工程分析。</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

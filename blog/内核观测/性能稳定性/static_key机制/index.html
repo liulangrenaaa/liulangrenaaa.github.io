@@ -1,0 +1,296 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>static_key机制 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>static_key机制</h1><div class="post-meta"><time datetime="2021-09-14T19:00:00.000Z">2021年9月14日</time><span> / kernel debug</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">static_key</span></div></header><div class="article-body"><p>还没有完全看懂 5.14 版本的 static-key 机制，
+这里仅仅做个记录</p>
+<h2 id="概览">概览</h2>
+<p>内核中有很多判断条件在正常情况下的结果都是固定的，除非极其罕见的场景才会改变，
+通常单个的这种判断的代价很低可以忽略，但是如果这种判断数量巨大且被频繁执行，
+那就会带来性能损失了。内核的static-key机制就是为了优化这种场景,其优化的结果是：
+对于大多数情况，对应的判断被优化为一个NOP指令，在非常有限的场景就变成jump XXX一类的指令，
+使得对应的代码段得到执行。</p>
+<p>典型场景就是 <code>tracepoint</code> 机制中。</p>
+<h2 id="demo">demo</h2>
+<p>在 <code>mm</code> 目录下找一个内有两个 <code>tracepoint</code> 的函数—<code>compact_zone</code></p>
+<p><code>compact_zone</code>  内部有三个<code>tracepoint</code>:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static enum compact_result</span></span>
+<span class="line"><span>compact_zone(struct compact_control *cc, struct capture_control *capc)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>        ......</span></span>
+<span class="line"><span>	trace_mm_compaction_begin(start_pfn, cc->migrate_pfn,</span></span>
+<span class="line"><span>				cc->free_pfn, end_pfn, sync);</span></span>
+<span class="line"><span>        ......</span></span>
+<span class="line"><span>		trace_mm_compaction_migratepages(cc->nr_migratepages, err,</span></span>
+<span class="line"><span>							&#x26;cc->migratepages);</span></span>
+<span class="line"><span>        ......</span></span>
+<span class="line"><span>	trace_mm_compaction_end(start_pfn, cc->migrate_pfn,</span></span>
+<span class="line"><span>				cc->free_pfn, end_pfn, sync, ret);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	return ret;</span></span></code></pre>
+<p>normal 情况下 crash, compact_zone 的汇编是：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>0xffffffff8242f820 &#x3C;compact_zone>:	push   %r15</span></span>
+<span class="line"><span>0xffffffff8242f822 &#x3C;compact_zone+2>:	push   %r14</span></span>
+<span class="line"><span>0xffffffff8242f824 &#x3C;compact_zone+4>:	mov    %rdi,%r14</span></span>
+<span class="line"><span>0xffffffff8242f827 &#x3C;compact_zone+7>:	push   %r13</span></span>
+<span class="line"><span>0xffffffff8242f829 &#x3C;compact_zone+9>:	push   %r12</span></span>
+<span class="line"><span>0xffffffff8242f82b &#x3C;compact_zone+11>:	push   %rbp</span></span>
+<span class="line"><span>0xffffffff8242f82c &#x3C;compact_zone+12>:	push   %rbx</span></span>
+<span class="line"><span>0xffffffff8242f82d &#x3C;compact_zone+13>:	sub    $0x88,%rsp</span></span>
+<span class="line"><span>0xffffffff8242f834 &#x3C;compact_zone+20>:	mov    0x40(%rdi),%rdi</span></span>
+<span class="line"><span>0xffffffff8242f838 &#x3C;compact_zone+24>:	mov    0x70(%r14),%ebp</span></span>
+<span class="line"><span>0xffffffff8242f83c &#x3C;compact_zone+28>:	mov    %rsi,0x28(%rsp)</span></span>
+<span class="line"><span>0xffffffff8242f841 &#x3C;compact_zone+33>:	mov    0x80(%rdi),%rbx</span></span>
+<span class="line"><span>0xffffffff8242f848 &#x3C;compact_zone+40>:	mov    %gs:0x28,%rax</span></span>
+<span class="line"><span>0xffffffff8242f851 &#x3C;compact_zone+49>:	mov    %rax,0x80(%rsp)</span></span>
+<span class="line"><span>0xffffffff8242f859 &#x3C;compact_zone+57>:	xor    %eax,%eax</span></span>
+<span class="line"><span>0xffffffff8242f85b &#x3C;compact_zone+59>:	mov    0x70(%rdi),%rax</span></span>
+<span class="line"><span>0xffffffff8242f85f &#x3C;compact_zone+63>:	mov    %r14,(%r14)</span></span>
+<span class="line"><span>0xffffffff8242f862 &#x3C;compact_zone+66>:	mov    0x18b66d7(%rip),%r12d        # 0xffffffff83ce5f40</span></span>
+<span class="line"><span>0xffffffff8242f869 &#x3C;compact_zone+73>:	movq   $0x0,0x48(%r14)</span></span>
+<span class="line"><span>0xffffffff8242f871 &#x3C;compact_zone+81>:	mov    %rax,0x30(%rsp)</span></span>
+<span class="line"><span>0xffffffff8242f876 &#x3C;compact_zone+86>:	lea    0x10(%r14),%rax</span></span>
+<span class="line"><span>0xffffffff8242f87a &#x3C;compact_zone+90>:	mov    %rax,0x20(%rsp)</span></span>
+<span class="line"><span>0xffffffff8242f87f &#x3C;compact_zone+95>:	mov    %rax,0x10(%r14)</span></span>
+<span class="line"><span>0xffffffff8242f883 &#x3C;compact_zone+99>:	mov    %rax,0x18(%r14)</span></span>
+<span class="line"><span>0xffffffff8242f887 &#x3C;compact_zone+103>:	mov    0x5c(%r14),%eax</span></span>
+<span class="line"><span>0xffffffff8242f88b &#x3C;compact_zone+107>:	movq   $0x0,0x50(%r14)</span></span>
+<span class="line"><span>0xffffffff8242f893 &#x3C;compact_zone+115>:	movq   $0x0,0x20(%r14)</span></span>
+<span class="line"><span>0xffffffff8242f89b &#x3C;compact_zone+123>:	mov    %r14,0x8(%r14)</span></span>
+<span class="line"><span>0xffffffff8242f89f &#x3C;compact_zone+127>:	test   %r12d,%r12d</span></span>
+<span class="line"><span>0xffffffff8242f8a2 &#x3C;compact_zone+130>:	jne    0xffffffff8243062d &#x3C;compact_zone+3597></span></span>
+<span class="line"><span>0xffffffff8242f8a8 &#x3C;compact_zone+136>:	shr    $0x3,%eax</span></span>
+<span class="line"><span>0xffffffff8242f8ab &#x3C;compact_zone+139>:	and    $0x3,%eax</span></span>
+<span class="line"><span>0xffffffff8242f8ae &#x3C;compact_zone+142>:	mov    0x68(%r14),%edx</span></span>
+<span class="line"><span>0xffffffff8242f8b2 &#x3C;compact_zone+146>:	mov    0x6c(%r14),%ecx</span></span>
+<span class="line"><span>0xffffffff8242f8b6 &#x3C;compact_zone+150>:	mov    %eax,0x64(%r14)</span></span>
+<span class="line"><span>0xffffffff8242f8ba &#x3C;compact_zone+154>:	mov    0x60(%r14),%esi</span></span>
+<span class="line"><span>0xffffffff8242f8be &#x3C;compact_zone+158>:	callq  0xffffffff8242f710 &#x3C;compaction_suitable></span></span>
+<span class="line"><span>0xffffffff8242f8c3 &#x3C;compact_zone+163>:	cmp    $0x8,%eax</span></span>
+<span class="line"><span>0xffffffff8242f8c6 &#x3C;compact_zone+166>:	mov    %eax,%r12d</span></span>
+<span class="line"><span>0xffffffff8242f8c9 &#x3C;compact_zone+169>:	sete   %dl</span></span>
+<span class="line"><span>0xffffffff8242f8cc &#x3C;compact_zone+172>:	cmp    $0x1,%eax</span></span>
+<span class="line"><span>0xffffffff8242f8cf &#x3C;compact_zone+175>:	sete   %al</span></span>
+<span class="line"><span>0xffffffff8242f8d2 &#x3C;compact_zone+178>:	or     %al,%dl</span></span>
+<span class="line"><span>0xffffffff8242f8d4 &#x3C;compact_zone+180>:	jne    0xffffffff8242fccd &#x3C;compact_zone+1197></span></span>
+<span class="line"><span>0xffffffff8242f8da &#x3C;compact_zone+186>:	mov    0x40(%r14),%rdi</span></span>
+<span class="line"><span>0xffffffff8242f8de &#x3C;compact_zone+190>:	mov    0x478(%rdi),%eax</span></span>
+<span class="line"><span>0xffffffff8242f8e4 &#x3C;compact_zone+196>:	cmp    %eax,0x60(%r14)</span></span>
+<span class="line"><span>0xffffffff8242f8e8 &#x3C;compact_zone+200>:	jl     0xffffffff8242f8f7 &#x3C;compact_zone+215></span></span>
+<span class="line"><span>0xffffffff8242f8ea &#x3C;compact_zone+202>:	cmpl   $0x6,0x474(%rdi)</span></span>
+<span class="line"><span>0xffffffff8242f8f1 &#x3C;compact_zone+209>:	je     0xffffffff8243050d &#x3C;compact_zone+3309></span></span>
+<span class="line"><span>0xffffffff8242f8f7 &#x3C;compact_zone+215>:	mov    0x30(%rsp),%rdx</span></span>
+<span class="line"><span>0xffffffff8242f8fc &#x3C;compact_zone+220>:	mov    %rbx,%rax</span></span>
+<span class="line"><span>0xffffffff8242f8ff &#x3C;compact_zone+223>:	xor    %edi,%edi</span></span>
+<span class="line"><span>0xffffffff8242f901 &#x3C;compact_zone+225>:	movq   $0x0,0x38(%r14)</span></span>
+<span class="line"><span>0xffffffff8242f909 &#x3C;compact_zone+233>:	add    %rdx,%rax</span></span>
+<span class="line"><span>0xffffffff8242f90c &#x3C;compact_zone+236>:	test   %ebp,%ebp</span></span>
+<span class="line"><span>0xffffffff8242f90e &#x3C;compact_zone+238>:	setne  %dil</span></span>
+<span class="line"><span>0xffffffff8242f912 &#x3C;compact_zone+242>:	cmpb   $0x0,0x79(%r14)</span></span>
+<span class="line"><span>0xffffffff8242f917 &#x3C;compact_zone+247>:	mov    %rax,0x50(%rsp)</span></span>
+<span class="line"><span>0xffffffff8242f91c &#x3C;compact_zone+252>:	mov    %edi,0x68(%rsp)</span></span>
+<span class="line"><span>0xffffffff8242f920 &#x3C;compact_zone+256>:	je     0xffffffff8242fcf9 &#x3C;compact_zone+1241></span></span>
+<span class="line"><span>0xffffffff8242f926 &#x3C;compact_zone+262>:	lea    -0x1(%rax),%rcx</span></span>
+<span class="line"><span>0xffffffff8242f92a &#x3C;compact_zone+266>:	mov    %rdx,0x30(%r14)</span></span>
+<span class="line"><span>0xffffffff8242f92e &#x3C;compact_zone+270>:	and    $0xfffffffffffffe00,%rcx</span></span>
+<span class="line"><span>0xffffffff8242f935 &#x3C;compact_zone+277>:	mov    %rcx,0x28(%r14)</span></span>
+<span class="line"><span>0xffffffff8242f939 &#x3C;compact_zone+281>:	movb   $0x0,0x4b(%rsp)</span></span>
+<span class="line"><span>0xffffffff8242f93e &#x3C;compact_zone+286>:	test   %ebp,%ebp</span></span>
+<span class="line"><span>0xffffffff8242f940 &#x3C;compact_zone+288>:	jne    0xffffffff8242f959 &#x3C;compact_zone+313></span></span>
+<span class="line"><span>0xffffffff8242f942 &#x3C;compact_zone+290>:	mov    0x40(%r14),%rax</span></span>
+<span class="line"><span>0xffffffff8242f946 &#x3C;compact_zone+294>:	mov    0x458(%rax),%rbx</span></span>
+<span class="line"><span>0xffffffff8242f94d &#x3C;compact_zone+301>:	cmp    %rbx,0x450(%rax)</span></span>
+<span class="line"><span>0xffffffff8242f954 &#x3C;compact_zone+308>:	sete   0x4b(%rsp)</span></span>
+<span class="line"><span>0xffffffff8242f959 &#x3C;compact_zone+313>:	nopl   0x0(%rax,%rax,1)</span></span>
+<span class="line"><span>0xffffffff8242f95e &#x3C;compact_zone+318>:	mov    %gs:0x7dbe1c03(%rip),%eax        # 0x11568</span></span>
+<span class="line"><span>0xffffffff8242f965 &#x3C;compact_zone+325>:	mov    %eax,%eax</span></span>
+<span class="line"><span>......</span></span>
+<span class="line"><span>0xffffffff8242fc92 &#x3C;compact_zone+1138>:	add    %rax,%gs:0x7ddb566e(%rip)        # 0x1e5308</span></span>
+<span class="line"><span>0xffffffff8242fc9a &#x3C;compact_zone+1146>:	nopl   0x0(%rax,%rax,1)</span></span>
+<span class="line"><span>0xffffffff8242fc9f &#x3C;compact_zone+1151>:	mov    %gs:0x7dbe18c2(%rip),%eax        # 0x11568</span></span>
+<span class="line"><span>0xffffffff8242fca6 &#x3C;compact_zone+1158>:	mov    %eax,%eax</span></span>
+<span class="line"><span>0xffffffff8242fca8 &#x3C;compact_zone+1160>:	bt     %rax,0x18b59a0(%rip)        # 0xffffffff83ce5650</span></span>
+<span class="line"><span>0xffffffff8242fcb0 &#x3C;compact_zone+1168>:	jae    0xffffffff8242fccd &#x3C;compact_zone+1197></span></span>
+<span class="line"><span>0xffffffff8242fcb2 &#x3C;compact_zone+1170>:	incl   %gs:0x7dbe7247(%rip)        # 0x16f00</span></span>
+<span class="line"><span>0xffffffff8242fcb9 &#x3C;compact_zone+1177>:	mov    0x188ed40(%rip),%rax        # 0xffffffff83cbea00</span></span>
+<span class="line"><span>0xffffffff8242fcc0 &#x3C;compact_zone+1184>:	decl   %gs:0x7dbe7239(%rip)        # 0x16f00</span></span>
+<span class="line"><span>0xffffffff8242fcc7 &#x3C;compact_zone+1191>:	je     0xffffffff8243063e &#x3C;compact_zone+3614></span></span>
+<span class="line"><span>0xffffffff8242fccd &#x3C;compact_zone+1197>:	mov    0x80(%rsp),%rax</span></span>
+<span class="line"><span>0xffffffff8242fcd5 &#x3C;compact_zone+1205>:	sub    %gs:0x28,%rax</span></span>
+<span class="line"><span>0xffffffff8242fcde &#x3C;compact_zone+1214>:	jne    0xffffffff82430687 &#x3C;compact_zone+3687></span></span>
+<span class="line"><span>0xffffffff8242fce4 &#x3C;compact_zone+1220>:	add    $0x88,%rsp</span></span>
+<span class="line"><span>0xffffffff8242fceb &#x3C;compact_zone+1227>:	mov    %r12d,%eax</span></span>
+<span class="line"><span>0xffffffff8242fcee &#x3C;compact_zone+1230>:	pop    %rbx</span></span>
+<span class="line"><span>0xffffffff8242fcef &#x3C;compact_zone+1231>:	pop    %rbp</span></span>
+<span class="line"><span>0xffffffff8242fcf0 &#x3C;compact_zone+1232>:	pop    %r12</span></span>
+<span class="line"><span>0xffffffff8242fcf2 &#x3C;compact_zone+1234>:	pop    %r13</span></span>
+<span class="line"><span>0xffffffff8242fcf4 &#x3C;compact_zone+1236>:	pop    %r14</span></span>
+<span class="line"><span>0xffffffff8242fcf6 &#x3C;compact_zone+1238>:	pop    %r15</span></span></code></pre>
+<p>接下来打开 <code>trace_mm_compaction_begin</code> 和 <code>trace_mm_compaction_end</code> 两个tracepoint 点，然后crash</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>0xffffffff8ce2f820 &#x3C;compact_zone>:	push   %r15</span></span>
+<span class="line"><span>0xffffffff8ce2f822 &#x3C;compact_zone+2>:	push   %r14</span></span>
+<span class="line"><span>0xffffffff8ce2f824 &#x3C;compact_zone+4>:	mov    %rdi,%r14</span></span>
+<span class="line"><span>0xffffffff8ce2f827 &#x3C;compact_zone+7>:	push   %r13</span></span>
+<span class="line"><span>0xffffffff8ce2f829 &#x3C;compact_zone+9>:	push   %r12</span></span>
+<span class="line"><span>0xffffffff8ce2f82b &#x3C;compact_zone+11>:	push   %rbp</span></span>
+<span class="line"><span>0xffffffff8ce2f82c &#x3C;compact_zone+12>:	push   %rbx</span></span>
+<span class="line"><span>0xffffffff8ce2f82d &#x3C;compact_zone+13>:	sub    $0x88,%rsp</span></span>
+<span class="line"><span>0xffffffff8ce2f834 &#x3C;compact_zone+20>:	mov    0x40(%rdi),%rdi</span></span>
+<span class="line"><span>0xffffffff8ce2f838 &#x3C;compact_zone+24>:	mov    0x70(%r14),%ebp</span></span>
+<span class="line"><span>0xffffffff8ce2f83c &#x3C;compact_zone+28>:	mov    %rsi,0x28(%rsp)</span></span>
+<span class="line"><span>0xffffffff8ce2f841 &#x3C;compact_zone+33>:	mov    0x80(%rdi),%rbx</span></span>
+<span class="line"><span>0xffffffff8ce2f848 &#x3C;compact_zone+40>:	mov    %gs:0x28,%rax</span></span>
+<span class="line"><span>0xffffffff8ce2f851 &#x3C;compact_zone+49>:	mov    %rax,0x80(%rsp)</span></span>
+<span class="line"><span>0xffffffff8ce2f859 &#x3C;compact_zone+57>:	xor    %eax,%eax</span></span>
+<span class="line"><span>0xffffffff8ce2f85b &#x3C;compact_zone+59>:	mov    0x70(%rdi),%rax</span></span>
+<span class="line"><span>0xffffffff8ce2f85f &#x3C;compact_zone+63>:	mov    %r14,(%r14)</span></span>
+<span class="line"><span>0xffffffff8ce2f862 &#x3C;compact_zone+66>:	mov    0x18b66d7(%rip),%r12d        # 0xffffffff8e6e5f40</span></span>
+<span class="line"><span>0xffffffff8ce2f869 &#x3C;compact_zone+73>:	movq   $0x0,0x48(%r14)</span></span>
+<span class="line"><span>0xffffffff8ce2f871 &#x3C;compact_zone+81>:	mov    %rax,0x30(%rsp)</span></span>
+<span class="line"><span>0xffffffff8ce2f876 &#x3C;compact_zone+86>:	lea    0x10(%r14),%rax</span></span>
+<span class="line"><span>0xffffffff8ce2f87a &#x3C;compact_zone+90>:	mov    %rax,0x20(%rsp)</span></span>
+<span class="line"><span>0xffffffff8ce2f87f &#x3C;compact_zone+95>:	mov    %rax,0x10(%r14)</span></span>
+<span class="line"><span>0xffffffff8ce2f883 &#x3C;compact_zone+99>:	mov    %rax,0x18(%r14)</span></span>
+<span class="line"><span>0xffffffff8ce2f887 &#x3C;compact_zone+103>:	mov    0x5c(%r14),%eax</span></span>
+<span class="line"><span>0xffffffff8ce2f88b &#x3C;compact_zone+107>:	movq   $0x0,0x50(%r14)</span></span>
+<span class="line"><span>0xffffffff8ce2f893 &#x3C;compact_zone+115>:	movq   $0x0,0x20(%r14)</span></span>
+<span class="line"><span>0xffffffff8ce2f89b &#x3C;compact_zone+123>:	mov    %r14,0x8(%r14)</span></span>
+<span class="line"><span>0xffffffff8ce2f89f &#x3C;compact_zone+127>:	test   %r12d,%r12d</span></span>
+<span class="line"><span>0xffffffff8ce2f8a2 &#x3C;compact_zone+130>:	jne    0xffffffff8ce3062d &#x3C;compact_zone+3597></span></span>
+<span class="line"><span>0xffffffff8ce2f8a8 &#x3C;compact_zone+136>:	shr    $0x3,%eax</span></span>
+<span class="line"><span>0xffffffff8ce2f8ab &#x3C;compact_zone+139>:	and    $0x3,%eax</span></span>
+<span class="line"><span>0xffffffff8ce2f8ae &#x3C;compact_zone+142>:	mov    0x68(%r14),%edx</span></span>
+<span class="line"><span>0xffffffff8ce2f8b2 &#x3C;compact_zone+146>:	mov    0x6c(%r14),%ecx</span></span>
+<span class="line"><span>0xffffffff8ce2f8b6 &#x3C;compact_zone+150>:	mov    %eax,0x64(%r14)</span></span>
+<span class="line"><span>0xffffffff8ce2f8ba &#x3C;compact_zone+154>:	mov    0x60(%r14),%esi</span></span>
+<span class="line"><span>0xffffffff8ce2f8be &#x3C;compact_zone+158>:	callq  0xffffffff8ce2f710 &#x3C;compaction_suitable></span></span>
+<span class="line"><span>0xffffffff8ce2f8c3 &#x3C;compact_zone+163>:	cmp    $0x8,%eax</span></span>
+<span class="line"><span>0xffffffff8ce2f8c6 &#x3C;compact_zone+166>:	mov    %eax,%r12d</span></span>
+<span class="line"><span>0xffffffff8ce2f8c9 &#x3C;compact_zone+169>:	sete   %dl</span></span>
+<span class="line"><span>0xffffffff8ce2f8cc &#x3C;compact_zone+172>:	cmp    $0x1,%eax</span></span>
+<span class="line"><span>0xffffffff8ce2f8cf &#x3C;compact_zone+175>:	sete   %al</span></span>
+<span class="line"><span>0xffffffff8ce2f8d2 &#x3C;compact_zone+178>:	or     %al,%dl</span></span>
+<span class="line"><span>0xffffffff8ce2f8d4 &#x3C;compact_zone+180>:	jne    0xffffffff8ce2fccd &#x3C;compact_zone+1197></span></span>
+<span class="line"><span>0xffffffff8ce2f8da &#x3C;compact_zone+186>:	mov    0x40(%r14),%rdi</span></span>
+<span class="line"><span>0xffffffff8ce2f8de &#x3C;compact_zone+190>:	mov    0x478(%rdi),%eax</span></span>
+<span class="line"><span>0xffffffff8ce2f8e4 &#x3C;compact_zone+196>:	cmp    %eax,0x60(%r14)</span></span>
+<span class="line"><span>0xffffffff8ce2f8e8 &#x3C;compact_zone+200>:	jl     0xffffffff8ce2f8f7 &#x3C;compact_zone+215></span></span>
+<span class="line"><span>0xffffffff8ce2f8ea &#x3C;compact_zone+202>:	cmpl   $0x6,0x474(%rdi)</span></span>
+<span class="line"><span>0xffffffff8ce2f8f1 &#x3C;compact_zone+209>:	je     0xffffffff8ce3050d &#x3C;compact_zone+3309></span></span>
+<span class="line"><span>0xffffffff8ce2f8f7 &#x3C;compact_zone+215>:	mov    0x30(%rsp),%rdx</span></span>
+<span class="line"><span>0xffffffff8ce2f8fc &#x3C;compact_zone+220>:	mov    %rbx,%rax</span></span>
+<span class="line"><span>0xffffffff8ce2f8ff &#x3C;compact_zone+223>:	xor    %edi,%edi</span></span>
+<span class="line"><span>0xffffffff8ce2f901 &#x3C;compact_zone+225>:	movq   $0x0,0x38(%r14)</span></span>
+<span class="line"><span>0xffffffff8ce2f909 &#x3C;compact_zone+233>:	add    %rdx,%rax</span></span>
+<span class="line"><span>0xffffffff8ce2f90c &#x3C;compact_zone+236>:	test   %ebp,%ebp</span></span>
+<span class="line"><span>0xffffffff8ce2f90e &#x3C;compact_zone+238>:	setne  %dil</span></span>
+<span class="line"><span>0xffffffff8ce2f912 &#x3C;compact_zone+242>:	cmpb   $0x0,0x79(%r14)</span></span>
+<span class="line"><span>0xffffffff8ce2f917 &#x3C;compact_zone+247>:	mov    %rax,0x50(%rsp)</span></span>
+<span class="line"><span>0xffffffff8ce2f91c &#x3C;compact_zone+252>:	mov    %edi,0x68(%rsp)</span></span>
+<span class="line"><span>0xffffffff8ce2f920 &#x3C;compact_zone+256>:	je     0xffffffff8ce2fcf9 &#x3C;compact_zone+1241></span></span>
+<span class="line"><span>0xffffffff8ce2f926 &#x3C;compact_zone+262>:	lea    -0x1(%rax),%rcx</span></span>
+<span class="line"><span>0xffffffff8ce2f92a &#x3C;compact_zone+266>:	mov    %rdx,0x30(%r14)</span></span>
+<span class="line"><span>0xffffffff8ce2f92e &#x3C;compact_zone+270>:	and    $0xfffffffffffffe00,%rcx</span></span>
+<span class="line"><span>0xffffffff8ce2f935 &#x3C;compact_zone+277>:	mov    %rcx,0x28(%r14)</span></span>
+<span class="line"><span>0xffffffff8ce2f939 &#x3C;compact_zone+281>:	movb   $0x0,0x4b(%rsp)</span></span>
+<span class="line"><span>0xffffffff8ce2f93e &#x3C;compact_zone+286>:	test   %ebp,%ebp</span></span>
+<span class="line"><span>0xffffffff8ce2f940 &#x3C;compact_zone+288>:	jne    0xffffffff8ce2f959 &#x3C;compact_zone+313></span></span>
+<span class="line"><span>0xffffffff8ce2f942 &#x3C;compact_zone+290>:	mov    0x40(%r14),%rax</span></span>
+<span class="line"><span>0xffffffff8ce2f946 &#x3C;compact_zone+294>:	mov    0x458(%rax),%rbx</span></span>
+<span class="line"><span>0xffffffff8ce2f94d &#x3C;compact_zone+301>:	cmp    %rbx,0x450(%rax)</span></span>
+<span class="line"><span>0xffffffff8ce2f954 &#x3C;compact_zone+308>:	sete   0x4b(%rsp)</span></span>
+<span class="line"><span>0xffffffff8ce2f959 &#x3C;compact_zone+313>:	jmpq   0xffffffff8ce30375 &#x3C;compact_zone+2901></span></span>
+<span class="line"><span>0xffffffff8ce2f95e &#x3C;compact_zone+318>:	mov    %gs:0x731e1c03(%rip),%eax        # 0x11568</span></span>
+<span class="line"><span>0xffffffff8ce2f965 &#x3C;compact_zone+325>:	mov    %eax,%eax</span></span>
+<span class="line"><span>......</span></span>
+<span class="line"><span>0xffffffff8ce2fc92 &#x3C;compact_zone+1138>:	add    %rax,%gs:0x733b566e(%rip)        # 0x1e5308</span></span>
+<span class="line"><span>0xffffffff8ce2fc9a &#x3C;compact_zone+1146>:	jmpq   0xffffffff8ce303ce &#x3C;compact_zone+2990></span></span>
+<span class="line"><span>0xffffffff8ce2fc9f &#x3C;compact_zone+1151>:	mov    %gs:0x731e18c2(%rip),%eax        # 0x11568</span></span>
+<span class="line"><span>0xffffffff8ce2fca6 &#x3C;compact_zone+1158>:	mov    %eax,%eax</span></span>
+<span class="line"><span>0xffffffff8ce2fca8 &#x3C;compact_zone+1160>:	bt     %rax,0x18b59a0(%rip)        # 0xffffffff8e6e5650</span></span>
+<span class="line"><span>0xffffffff8ce2fcb0 &#x3C;compact_zone+1168>:	jae    0xffffffff8ce2fccd &#x3C;compact_zone+1197></span></span>
+<span class="line"><span>0xffffffff8ce2fcb2 &#x3C;compact_zone+1170>:	incl   %gs:0x731e7247(%rip)        # 0x16f00</span></span>
+<span class="line"><span>0xffffffff8ce2fcb9 &#x3C;compact_zone+1177>:	mov    0x188ed40(%rip),%rax        # 0xffffffff8e6bea00</span></span>
+<span class="line"><span>0xffffffff8ce2fcc0 &#x3C;compact_zone+1184>:	decl   %gs:0x731e7239(%rip)        # 0x16f00</span></span>
+<span class="line"><span>0xffffffff8ce2fcc7 &#x3C;compact_zone+1191>:	je     0xffffffff8ce3063e &#x3C;compact_zone+3614></span></span>
+<span class="line"><span>0xffffffff8ce2fccd &#x3C;compact_zone+1197>:	mov    0x80(%rsp),%rax</span></span>
+<span class="line"><span>0xffffffff8ce2fcd5 &#x3C;compact_zone+1205>:	sub    %gs:0x28,%rax</span></span>
+<span class="line"><span>0xffffffff8ce2fcde &#x3C;compact_zone+1214>:	jne    0xffffffff8ce30687 &#x3C;compact_zone+3687></span></span>
+<span class="line"><span>0xffffffff8ce2fce4 &#x3C;compact_zone+1220>:	add    $0x88,%rsp</span></span>
+<span class="line"><span>0xffffffff8ce2fceb &#x3C;compact_zone+1227>:	mov    %r12d,%eax</span></span>
+<span class="line"><span>0xffffffff8ce2fcee &#x3C;compact_zone+1230>:	pop    %rbx</span></span>
+<span class="line"><span>0xffffffff8ce2fcef &#x3C;compact_zone+1231>:	pop    %rbp</span></span>
+<span class="line"><span>0xffffffff8ce2fcf0 &#x3C;compact_zone+1232>:	pop    %r12</span></span>
+<span class="line"><span>0xffffffff8ce2fcf2 &#x3C;compact_zone+1234>:	pop    %r13</span></span>
+<span class="line"><span>0xffffffff8ce2fcf4 &#x3C;compact_zone+1236>:	pop    %r14</span></span>
+<span class="line"><span>0xffffffff8ce2fcf6 &#x3C;compact_zone+1238>:	pop    %r15</span></span></code></pre>
+<p>可以看出来两处不一样</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>0xffffffff8242f959 &#x3C;compact_zone+313>:	nopl   0x0(%rax,%rax,1)</span></span>
+<span class="line"><span>0xffffffff8242fc9a &#x3C;compact_zone+1146>:	nopl   0x0(%rax,%rax,1)</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>0xffffffff8ce2f959 &#x3C;compact_zone+313>:	jmpq   0xffffffff8ce30375 &#x3C;compact_zone+2901></span></span>
+<span class="line"><span>0xffffffff8ce2fc9a &#x3C;compact_zone+1146>:	jmpq   0xffffffff8ce303ce &#x3C;compact_zone+2990></span></span></code></pre>
+<h2 id="demo2">demo2</h2>
+<p>总觉得用 <code>tracepoint</code> 来实现有些不好，还是手动写个demo</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:~/workspace/linux $ git diff</span></span>
+<span class="line"><span>diff --git a/mm/compaction.c b/mm/compaction.c</span></span>
+<span class="line"><span>index bfc93da1c2c7..13513d807f86 100644</span></span>
+<span class="line"><span>--- a/mm/compaction.c</span></span>
+<span class="line"><span>+++ b/mm/compaction.c</span></span>
+<span class="line"><span>@@ -2896,6 +2896,25 @@ void wakeup_kcompactd(pg_data_t *pgdat, int order, int highest_zoneidx)</span></span>
+<span class="line"><span>        wake_up_interruptible(&#x26;pgdat->kcompactd_wait);</span></span>
+<span class="line"><span> }</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>+DEFINE_STATIC_KEY_TRUE(sh_true);</span></span>
+<span class="line"><span>+DEFINE_STATIC_KEY_TRUE(sh_false);</span></span>
+<span class="line"><span>+</span></span>
+<span class="line"><span>+static noinline void check_compact_true(void)</span></span>
+<span class="line"><span>+{</span></span>
+<span class="line"><span>+       if (static_branch_likely(&#x26;sh_true)) {</span></span>
+<span class="line"><span>+               pr_err("check_compact_true\n");</span></span>
+<span class="line"><span>+       }</span></span>
+<span class="line"><span>+</span></span>
+<span class="line"><span>+}</span></span>
+<span class="line"><span>+</span></span>
+<span class="line"><span>+static noinline void check_compact_false(void)</span></span>
+<span class="line"><span>+{</span></span>
+<span class="line"><span>+       if (static_branch_unlikely(&#x26;sh_false)) {</span></span>
+<span class="line"><span>+               pr_err("check_compact_false\n");</span></span>
+<span class="line"><span>+       }</span></span>
+<span class="line"><span>+</span></span>
+<span class="line"><span>+}</span></span>
+<span class="line"><span>+</span></span>
+<span class="line"><span> /*</span></span>
+<span class="line"><span>  * The background compaction daemon, started as a kernel thread</span></span>
+<span class="line"><span>  * from the init process.</span></span>
+<span class="line"><span>@@ -2920,6 +2939,10 @@ static int kcompactd(void *p)</span></span>
+<span class="line"><span>        while (!kthread_should_stop()) {</span></span>
+<span class="line"><span>                unsigned long pflags;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>+               static_key_enable(&#x26;sh_true.key);</span></span>
+<span class="line"><span>+               static_key_disable(&#x26;sh_false.key);</span></span>
+<span class="line"><span>+               check_compact_true();</span></span>
+<span class="line"><span>+               check_compact_false();</span></span>
+<span class="line"><span>                /*</span></span></code></pre>
+<p>crash 结果是</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>crash> ls</span></span>
+<span class="line"><span>dump.202109261702  vmlinux</span></span>
+<span class="line"><span>crash> dis check_compact_true</span></span>
+<span class="line"><span>0xffffffff85e2ce00 &#x3C;check_compact_true>:        xchg   %ax,%ax</span></span>
+<span class="line"><span>0xffffffff85e2ce02 &#x3C;check_compact_true+2>:      jmpq   0xffffffff86950654 &#x3C;check_compact_true.cold></span></span>
+<span class="line"><span>0xffffffff85e2ce07 &#x3C;check_compact_true+7>:      retq</span></span>
+<span class="line"><span>0xffffffff85e2ce08 &#x3C;check_compact_true+8>:      nopl   0x0(%rax,%rax,1)</span></span>
+<span class="line"><span>crash> dis check_compact_false</span></span>
+<span class="line"><span>0xffffffff85e2ce10 &#x3C;check_compact_false>:       nopl   0x0(%rax,%rax,1) [FTRACE NOP]</span></span>
+<span class="line"><span>0xffffffff85e2ce15 &#x3C;check_compact_false+5>:     retq</span></span>
+<span class="line"><span>0xffffffff85e2ce16 &#x3C;check_compact_false+6>:     nopw   %cs:0x0(%rax,%rax,1)</span></span>
+<span class="line"><span>crash> dis check_compact_true.cold</span></span>
+<span class="line"><span>0xffffffff86950654 &#x3C;check_compact_true.cold>:   mov    $0xffffffff871b19a4,%rdi</span></span>
+<span class="line"><span>0xffffffff8695065b &#x3C;check_compact_true.cold+7>: jmpq   0xffffffff8694ba28 &#x3C;_printk></span></span>
+<span class="line"><span>crash></span></span></code></pre>
+<p>可以看到：</p>
+<ul>
+<li><code>check_compact_true</code> 在被优化之后 只有一个 <code>jmp</code> 指令，没有任何类似于 test 的判断指令</li>
+<li><code>check_compact_false</code> 在被优化之后 只有一个 <code>nopl</code> 指令，没有任何类似于 test 的判断指令</li>
+</ul>
+<p>这里需要加上 <code>noinline</code> 修饰符，否则编译器会自动 <code>inline</code>这个函数。</p>
+<h2 id="代码分析">代码分析</h2>
+<p>暂时还没完全看懂，看 <code>demo2</code> 算是 了解基本原理实现。
+后续补充。。</p>
+<p>参考<a href="http://linux.laoqinren.net/kernel/static_key/">内核基础设施——static_key</a>
+参考<a href="https://rtoax.blog.csdn.net/article/details/115279591?utm_medium=distribute.pc_relevant_t0.none-task-blog-2%7Edefault%7ECTRLIST%7Edefault-1.no_search_link&#x26;depth_1-utm_source=distribute.pc_relevant_t0.none-task-blog-2%7Edefault%7ECTRLIST%7Edefault-1.no_search_link">Linux Jump Label/static-key机制详解</a></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

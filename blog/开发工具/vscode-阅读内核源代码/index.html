@@ -1,0 +1,91 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>vscode 阅读内核源码 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>vscode 阅读内核源码</h1><div class="post-meta"><time datetime="2020-09-03T19:00:00.000Z">2020年9月3日</time><span> / 开发工具</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">开发工具</span></div></header><div class="article-body"><h2 id="cpptools-方法">cpptools 方法</h2>
+<p>相信大多数人使用vscode阅读内核源码跟我一开始的做法是一样的：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>1. 下载vscode,安装Remote-ssh,C/C++解析等工具</span></span>
+<span class="line"><span>2. 建立 kernel workspace,添加kernel代码</span></span></code></pre>
+<p>其实这样从我实际的体验来说都要比 SI,Vim 要方便一点了，但是我们还是会遇到 找</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>1. 不到清晰的定义，类似于多个slab slub slob的代码，通常都是乱跳转</span></span>
+<span class="line"><span>2. 硬件体系结构相关代码和kernel 通用代码之间跳转的时候乱跳转</span></span>
+<span class="line"><span>3. kernel 代码中有很多宏定义，不知道实际到底定义了哪些宏，如果看代码的时候需要对比.config文件，那效率会大大降低</span></span>
+<span class="line"><span>4. 看一个代码文件，也不知道当前工作会不会用到，可能看到代码，在你工作的环境根本就不会编译</span></span></code></pre>
+<p>你是不是也有这样的困惑呢？
+我们接下来一条一条的解决上面这几个问题，让你在看内核代码时畅通无阻</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>1. 第一点和第二点可以通过在 settings.json中 设置 search.exclude files.exclude来避免, search.exclude 可以避免你搜索时搜索到他，files.exclude可以直接让你在文件列表视图上看不到他</span></span>
+<span class="line"><span>2. 主要原因是 Vscode 默认认为宏是未定义的。</span></span>
+<span class="line"><span>可以写一个简单脚本来处理 .config 文件，将其中 =y =m的 CONFIG 项目提取出来，最后在settings.json中 设置 DEFINE 的项，来避免这个问题</span></span>
+<span class="line"><span>3. 这个就需要使用 gcc的特性 和 cpp解析的插件了，还需要新版本内核提供的一个脚本</span></span></code></pre>
+<p><a href="https://github.com/liulangrenaaa/gernerate_config">解析config文件脚本</a>
+下面我重点来讲如何利用 内核编译产生的中间文件，来解析建立你的工程</p>
+<ol>
+<li>首先需要下面这个脚本，超过4.19的版本内核应该有这个文件</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sh@ubuntu:~/workspace/linux$ find ./scripts/ -name gen_compile*</span></span>
+<span class="line"><span>./scripts/gen_compile_commands.py</span></span></code></pre>
+<ol start="2">
+<li>先编译bzImage</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>mkdir out</span></span>
+<span class="line"><span>cp .config ./out/.config</span></span>
+<span class="line"><span>make -j4 bzImage O=./out</span></span></code></pre>
+<ol start="3">
+<li>生成compile_commands.json</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span># 4.19 - 5.8 之前可以用</span></span>
+<span class="line"><span>./scripts/gen_compile_commands.py -d ./out/</span></span>
+<span class="line"><span># 5.9 之后可以用</span></span>
+<span class="line"><span>./scripts/clang-tools/gen_compile_commands.py -d ./out/</span></span></code></pre>
+<ol start="4">
+<li>配置 .vscode/c_cpp_properties.json</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>{</span></span>
+<span class="line"><span># 4.19 - 5.8 之前可以用</span></span>
+<span class="line"><span>    .....</span></span>
+<span class="line"><span>    "compileCommands": "${WorkspaceFolder}/out/compile_commands.json"</span></span>
+<span class="line"><span>    .....</span></span>
+<span class="line"><span># 5.9 之后可以用</span></span>
+<span class="line"><span>    .....</span></span>
+<span class="line"><span>    "compileCommands": "${WorkspaceFolder}/compile_commands.json"</span></span>
+<span class="line"><span>    .....</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>到此为止，基本上在浏览内核代码上不会有困难了</p>
+<p>贴一下 .vscode/c_cpp_properties.json 配置</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>{</span></span>
+<span class="line"><span>    "env": {</span></span>
+<span class="line"><span>      "myDefaultIncludePath": ["${workspaceFolder}", "${workspaceFolder}/include"],</span></span>
+<span class="line"><span>      "myCompilerPath": "/usr/local/bin/gcc-9"</span></span>
+<span class="line"><span>    },</span></span>
+<span class="line"><span>    "configurations": [</span></span>
+<span class="line"><span>      {</span></span>
+<span class="line"><span>        "name": "linux-kernel",</span></span>
+<span class="line"><span>        "intelliSenseMode": "gcc-x64",</span></span>
+<span class="line"><span>        "includePath": ["${myDefaultIncludePath}"],</span></span>
+<span class="line"><span>        "defines": [</span></span>
+<span class="line"><span>            "__KERNEL__",</span></span>
+<span class="line"><span>            "BAR=100"],</span></span>
+<span class="line"><span>        "compilerPath": "/usr/bin/clang",</span></span>
+<span class="line"><span>        "cStandard": "c11",</span></span>
+<span class="line"><span>        "cppStandard": "c++17",</span></span>
+<span class="line"><span>        "compileCommands": "${workspaceFolder}/out/compile_commands.json",</span></span>
+<span class="line"><span>        "browse": {</span></span>
+<span class="line"><span>          "path": ["${workspaceFolder}"],</span></span>
+<span class="line"><span>          "limitSymbolsToIncludedHeaders": true,</span></span>
+<span class="line"><span>          "databaseFilename": ""</span></span>
+<span class="line"><span>        }</span></span>
+<span class="line"><span>      }</span></span>
+<span class="line"><span>    ],</span></span>
+<span class="line"><span>    "version": 4</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>注意”intelliSenseMode”: “gcc-x64” 不同平台配置不一样，我是代码放在ubuntu20上，所以是gcc-x64</p>
+<h2 id="clangd-方法">clangd 方法</h2>
+<ol>
+<li>仍然需要生成 compile_commands.json，</li>
+<li>settings 中搜索 clangd，在用户 与 远程中添加 <code>--compile-commands-dir=${workspaceFolder} --background-index --completion-style=detailed --header-insertion=never -log=info</code></li>
+<li>对于 arm64 工程添加</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>CompileFlags:</span></span>
+<span class="line"><span>  Add: --target=aarch64-linux-gnu</span></span>
+<span class="line"><span>  Remove: -mabi=lp64</span></span></code></pre>
+<ol start="4">
+<li></li>
+</ol>
+<p>使用VSCode进行linux内核代码阅读和开发</p>
+<p><a href="https://blog.csdn.net/xhnmdlfl/article/details/117911630">https://blog.csdn.net/xhnmdlfl/article/details/117911630</a></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

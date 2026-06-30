@@ -1,0 +1,117 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>adb调试命令速查 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>adb调试命令速查</h1><div class="post-meta"><time datetime="2025-08-15T10:00:00.000Z">2025年8月15日</time><span> / android / debug-trace工具链</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">android</span><span class="tag">adb</span><span class="tag">调试</span></div></header><div class="article-body"><h2 id="简介">简介</h2>
+<p>本文整理了常用的 adb 调试命令，方便快速查找和使用。</p>
+<h2 id="设备管理">设备管理</h2>
+<h3 id="查看设备">查看设备</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> devices</span></span></code></pre>
+<h3 id="连接设备">连接设备</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> connect</span><span style="color:#F97583"> &#x3C;</span><span style="color:#9ECBFF">i</span><span style="color:#E1E4E8">p</span><span style="color:#F97583">></span><span style="color:#9ECBFF">:</span><span style="color:#F97583">&#x3C;</span><span style="color:#9ECBFF">por</span><span style="color:#E1E4E8">t</span><span style="color:#F97583">></span></span></code></pre>
+<h3 id="断开设备">断开设备</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> disconnect</span></span></code></pre>
+<h2 id="应用管理">应用管理</h2>
+<h3 id="安装应用">安装应用</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> install</span><span style="color:#F97583"> &#x3C;</span><span style="color:#9ECBFF">apk_pat</span><span style="color:#E1E4E8">h</span><span style="color:#F97583">></span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> install</span><span style="color:#79B8FF"> -r</span><span style="color:#F97583"> &#x3C;</span><span style="color:#9ECBFF">apk_pat</span><span style="color:#E1E4E8">h</span><span style="color:#F97583">></span><span style="color:#6A737D">  # 覆盖安装</span></span></code></pre>
+<h3 id="卸载应用">卸载应用</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> uninstall</span><span style="color:#F97583"> &#x3C;</span><span style="color:#9ECBFF">package_nam</span><span style="color:#E1E4E8">e</span><span style="color:#F97583">></span></span></code></pre>
+<h3 id="启动应用">启动应用</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> am</span><span style="color:#9ECBFF"> start</span><span style="color:#79B8FF"> -n</span><span style="color:#F97583"> &#x3C;</span><span style="color:#9ECBFF">package_nam</span><span style="color:#E1E4E8">e</span><span style="color:#F97583">></span><span style="color:#9ECBFF">/</span><span style="color:#F97583">&#x3C;</span><span style="color:#9ECBFF">activity_nam</span><span style="color:#E1E4E8">e</span><span style="color:#F97583">></span></span></code></pre>
+<h3 id="停止应用">停止应用</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> am</span><span style="color:#9ECBFF"> force-stop</span><span style="color:#F97583"> &#x3C;</span><span style="color:#9ECBFF">package_nam</span><span style="color:#E1E4E8">e</span><span style="color:#F97583">></span></span></code></pre>
+<h2 id="日志查看">日志查看</h2>
+<h3 id="实时日志">实时日志</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> logcat</span></span></code></pre>
+<h3 id="过滤日志">过滤日志</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> logcat</span><span style="color:#79B8FF"> -s</span><span style="color:#F97583"> &#x3C;</span><span style="color:#9ECBFF">ta</span><span style="color:#E1E4E8">g</span><span style="color:#F97583">></span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> logcat</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#F97583"> &#x3C;</span><span style="color:#9ECBFF">keywor</span><span style="color:#E1E4E8">d</span><span style="color:#F97583">></span></span></code></pre>
+<h3 id="清除日志">清除日志</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> logcat</span><span style="color:#79B8FF"> -c</span></span></code></pre>
+<h3 id="崩溃日志">崩溃日志</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> logcat</span><span style="color:#79B8FF"> -b</span><span style="color:#9ECBFF"> crash</span></span></code></pre>
+<h2 id="文件操作">文件操作</h2>
+<h3 id="推送文件">推送文件</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> push</span><span style="color:#F97583"> &#x3C;</span><span style="color:#9ECBFF">local_pat</span><span style="color:#E1E4E8">h</span><span style="color:#F97583">></span><span style="color:#F97583"> &#x3C;</span><span style="color:#9ECBFF">remote_pat</span><span style="color:#E1E4E8">h</span><span style="color:#F97583">></span></span></code></pre>
+<h3 id="拉取文件">拉取文件</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> pull</span><span style="color:#F97583"> &#x3C;</span><span style="color:#9ECBFF">remote_pat</span><span style="color:#E1E4E8">h</span><span style="color:#F97583">></span><span style="color:#F97583"> &#x3C;</span><span style="color:#9ECBFF">local_pat</span><span style="color:#E1E4E8">h</span><span style="color:#F97583">></span></span></code></pre>
+<h3 id="列出文件">列出文件</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> ls</span><span style="color:#F97583"> &#x3C;</span><span style="color:#9ECBFF">pat</span><span style="color:#E1E4E8">h</span><span style="color:#F97583">></span></span></code></pre>
+<h2 id="系统信息">系统信息</h2>
+<h3 id="设备信息">设备信息</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> getprop</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> getprop</span><span style="color:#9ECBFF"> ro.build.version.release</span></span></code></pre>
+<h3 id="cpu-信息">CPU 信息</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /proc/cpuinfo</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> top</span><span style="color:#79B8FF"> -m</span><span style="color:#79B8FF"> 10</span></span></code></pre>
+<h3 id="内存信息">内存信息</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /proc/meminfo</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> meminfo</span><span style="color:#F97583"> &#x3C;</span><span style="color:#9ECBFF">package_nam</span><span style="color:#E1E4E8">e</span><span style="color:#F97583">></span></span></code></pre>
+<h3 id="电池信息">电池信息</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> battery</span></span></code></pre>
+<h2 id="调试命令">调试命令</h2>
+<h3 id="截图">截图</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> screencap</span><span style="color:#9ECBFF"> /sdcard/screenshot.png</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> pull</span><span style="color:#9ECBFF"> /sdcard/screenshot.png</span></span></code></pre>
+<h3 id="录屏">录屏</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> screenrecord</span><span style="color:#9ECBFF"> /sdcard/record.mp4</span></span></code></pre>
+<h3 id="输入事件">输入事件</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> input</span><span style="color:#9ECBFF"> tap</span><span style="color:#F97583"> &#x3C;</span><span style="color:#E1E4E8">x</span><span style="color:#F97583">></span><span style="color:#F97583"> &#x3C;</span><span style="color:#E1E4E8">y</span><span style="color:#F97583">></span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> input</span><span style="color:#9ECBFF"> swipe</span><span style="color:#F97583"> &#x3C;</span><span style="color:#9ECBFF">x</span><span style="color:#F97583">1></span><span style="color:#F97583"> &#x3C;</span><span style="color:#9ECBFF">y</span><span style="color:#F97583">1></span><span style="color:#F97583"> &#x3C;</span><span style="color:#9ECBFF">x</span><span style="color:#F97583">2></span><span style="color:#F97583"> &#x3C;</span><span style="color:#9ECBFF">y</span><span style="color:#F97583">2></span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> input</span><span style="color:#9ECBFF"> text</span><span style="color:#9ECBFF"> "text"</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> input</span><span style="color:#9ECBFF"> keyevent</span><span style="color:#F97583"> &#x3C;</span><span style="color:#9ECBFF">keycod</span><span style="color:#E1E4E8">e</span><span style="color:#F97583">></span></span></code></pre>
+<h3 id="窗口信息">窗口信息</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> window</span><span style="color:#9ECBFF"> windows</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> window</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -i</span><span style="color:#9ECBFF"> focus</span></span></code></pre>
+<h3 id="activity-信息">Activity 信息</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> activity</span><span style="color:#9ECBFF"> activities</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> activity</span><span style="color:#9ECBFF"> top</span></span></code></pre>
+<h2 id="性能分析">性能分析</h2>
+<h3 id="cpu-使用">CPU 使用</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> top</span><span style="color:#79B8FF"> -m</span><span style="color:#79B8FF"> 10</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> cpuinfo</span></span></code></pre>
+<h3 id="内存使用">内存使用</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> meminfo</span><span style="color:#F97583"> &#x3C;</span><span style="color:#9ECBFF">package_nam</span><span style="color:#E1E4E8">e</span><span style="color:#F97583">></span></span></code></pre>
+<h3 id="帧率">帧率</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> gfxinfo</span><span style="color:#F97583"> &#x3C;</span><span style="color:#9ECBFF">package_nam</span><span style="color:#E1E4E8">e</span><span style="color:#F97583">></span></span></code></pre>
+<h3 id="电池使用">电池使用</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span></span></code></pre>
+<h2 id="网络调试">网络调试</h2>
+<h3 id="查看网络状态">查看网络状态</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> netstat</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> ifconfig</span></span></code></pre>
+<h3 id="端口转发">端口转发</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> forward</span><span style="color:#9ECBFF"> tcp:</span><span style="color:#F97583">&#x3C;</span><span style="color:#9ECBFF">local_por</span><span style="color:#E1E4E8">t</span><span style="color:#F97583">></span><span style="color:#9ECBFF"> tcp:</span><span style="color:#F97583">&#x3C;</span><span style="color:#9ECBFF">remote_por</span><span style="color:#E1E4E8">t</span><span style="color:#F97583">></span></span></code></pre>
+<h3 id="无线调试">无线调试</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> tcpip</span><span style="color:#79B8FF"> 5555</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> connect</span><span style="color:#F97583"> &#x3C;</span><span style="color:#9ECBFF">i</span><span style="color:#E1E4E8">p</span><span style="color:#F97583">></span><span style="color:#9ECBFF">:5555</span></span></code></pre>
+<h2 id="shell-命令">Shell 命令</h2>
+<h3 id="执行命令">执行命令</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#F97583"> &#x3C;</span><span style="color:#9ECBFF">comman</span><span style="color:#E1E4E8">d</span><span style="color:#F97583">></span></span></code></pre>
+<h3 id="交互式-shell">交互式 Shell</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span></span></code></pre>
+<h3 id="root-权限">Root 权限</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> root</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> su</span></span></code></pre>
+<h2 id="常用快捷键">常用快捷键</h2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>快捷键</th><th>说明</th></tr></thead><tbody><tr><td>Ctrl+C</td><td>中断命令</td></tr><tr><td>Ctrl+Z</td><td>暂停命令</td></tr><tr><td>Tab</td><td>自动补全</td></tr></tbody></table>
+<h2 id="总结">总结</h2>
+<p>adb 是 Android 开发和调试的重要工具，掌握常用命令可以提高开发效率。</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

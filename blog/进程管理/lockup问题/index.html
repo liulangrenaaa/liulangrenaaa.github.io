@@ -1,0 +1,302 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>linux lockup问题 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>linux lockup问题</h1><div class="post-meta"><time datetime="2020-09-12T19:00:00.000Z">2020年9月12日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">进程调度</span><span class="tag">hardlockup</span><span class="tag">softlockup</span></div></header><div class="article-body"><h2 id="lockup定义">lockup定义</h2>
+<p>lockup是指是指某段内核代码占着CPU不放。</p>
+<p>lockup分两种：hard lockup 与 soft lockup，区别是hard lockup是屏蔽系统中断情况下发生的。
+贴一段原文：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Short answer：</span></span>
+<span class="line"><span>A ‘soft lockup’ is defined as a bug that causes the kernel to loop in kernel mode for more than 20 seconds […], without giving other tasks a chance to run.</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>A ‘hard lockup’ is defined as a bug that causes the CPU to loop in kernel mode for more than 10 seconds […], without letting other interrupts have a chance to run.</span></span></code></pre>
+<p>有几个概念需要澄清一下：</p>
+<ol>
+<li>发生lockup的一定是内核代码，因为用户态代码都是可以抢占的。</li>
+<li>在内核态代码中发生lockup时，一般伴随着 preempt_disable()或者local_irq_disable()，产生lockup 的基本条件是禁止抢占，当然禁止中断这种就更猛了</li>
+</ol>
+<h2 id="soft-lockup">Soft lockup</h2>
+<p>Soft lockup是指CPU被内核代码一直占用着，系统某个CPU上超过20s其他进程无法得到运行。
+系统是如何检测 Soft lockup的呢？</p>
+<h3 id="实现机制">实现机制</h3>
+<p>设立涉及到几个概念：一般优先级的普通进程，最高优先级的watchdog/?内核线程，Hr-timer时钟中断，其中Hr-timer可以打断watchdog/?执行，watchdog/?可以打断普通优先级的进程执行。</p>
+<p>Soft lockup机制在初始化的时候会init一个 Hr-timer，定时执行
+在执行过程中</p>
+<ol>
+<li>获取 percpu变量 watchdog_touch_ts 的值</li>
+<li>唤醒 watchdog/? 内核线程</li>
+<li>比较 当前timestamp 和 watchdog_touch_ts值</li>
+<li>内核线程会用当前的time_stamp 更新 watchdog_touch_ts</li>
+</ol>
+<p>per-cpu 变量<code>watchdog_touch_ts</code> 在 <code>softlockup_fn</code> —> <code>update_touch_ts</code> 中更新</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static DEFINE_PER_CPU(unsigned long, watchdog_touch_ts);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>/* Commands for resetting the watchdog */</span></span>
+<span class="line"><span>static void update_touch_ts(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	__this_cpu_write(watchdog_touch_ts, get_timestamp());</span></span>
+<span class="line"><span>	update_report_ts();</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static int softlockup_fn(void *data)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	update_touch_ts();</span></span>
+<span class="line"><span>	complete(this_cpu_ptr(&#x26;softlockup_completion));</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	return 0;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p><code>softlockup_fn</code> 主要是在 <code>watchdog_timer_fn</code>中使用 <code>stop_one_cpu_nowait</code> 来调用的，<code>watchdog_timer_fn</code> 是 设置的 per-cpu 的 hrtimer的回调函数。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/* watchdog kicker functions */</span></span>
+<span class="line"><span>static enum hrtimer_restart watchdog_timer_fn(struct hrtimer *hrtimer)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	unsigned long touch_ts, period_ts, now;</span></span>
+<span class="line"><span>	struct pt_regs *regs = get_irq_regs();</span></span>
+<span class="line"><span>	int duration;</span></span>
+<span class="line"><span>	int softlockup_all_cpu_backtrace = sysctl_softlockup_all_cpu_backtrace;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (!watchdog_enabled)</span></span>
+<span class="line"><span>		return HRTIMER_NORESTART;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	/* kick the hardlockup detector */</span></span>
+<span class="line"><span>	watchdog_interrupt_count();</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	/* kick the softlockup detector */</span></span>
+<span class="line"><span>	if (completion_done(this_cpu_ptr(&#x26;softlockup_completion))) { // 不是直接的函数调用，只是 queue_work 而已。</span></span>
+<span class="line"><span>		reinit_completion(this_cpu_ptr(&#x26;softlockup_completion));</span></span>
+<span class="line"><span>		stop_one_cpu_nowait(smp_processor_id(),</span></span>
+<span class="line"><span>				softlockup_fn, NULL,</span></span>
+<span class="line"><span>				this_cpu_ptr(&#x26;softlockup_stop_work));</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>    ......</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	/* Check for a softlockup. */</span></span>
+<span class="line"><span>	touch_ts = __this_cpu_read(watchdog_touch_ts);</span></span>
+<span class="line"><span>	duration = is_softlockup(touch_ts, period_ts, now);</span></span>
+<span class="line"><span>	if (unlikely(duration)) {</span></span>
+<span class="line"><span>		/*</span></span>
+<span class="line"><span>		 * Prevent multiple soft-lockup reports if one cpu is already</span></span>
+<span class="line"><span>		 * engaged in dumping all cpu back traces.</span></span>
+<span class="line"><span>		 */</span></span>
+<span class="line"><span>		if (softlockup_all_cpu_backtrace) {</span></span>
+<span class="line"><span>			if (test_and_set_bit_lock(0, &#x26;soft_lockup_nmi_warn))</span></span>
+<span class="line"><span>				return HRTIMER_RESTART;</span></span>
+<span class="line"><span>		}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>		/* Start period for the next softlockup warning. */</span></span>
+<span class="line"><span>		update_report_ts();</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>		pr_emerg("BUG: soft lockup - CPU#%d stuck for %us! [%s:%d]\n",</span></span>
+<span class="line"><span>			smp_processor_id(), duration,</span></span>
+<span class="line"><span>			current->comm, task_pid_nr(current));</span></span>
+<span class="line"><span>		print_modules();</span></span>
+<span class="line"><span>		print_irqtrace_events(current);</span></span>
+<span class="line"><span>		if (regs)</span></span>
+<span class="line"><span>			show_regs(regs);</span></span>
+<span class="line"><span>		else</span></span>
+<span class="line"><span>			dump_stack();</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>		if (softlockup_all_cpu_backtrace) {</span></span>
+<span class="line"><span>			trigger_allbutself_cpu_backtrace();</span></span>
+<span class="line"><span>			clear_bit_unlock(0, &#x26;soft_lockup_nmi_warn);</span></span>
+<span class="line"><span>		}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>		add_taint(TAINT_SOFTLOCKUP, LOCKDEP_STILL_OK);</span></span>
+<span class="line"><span>		if (softlockup_panic)</span></span>
+<span class="line"><span>			panic("softlockup: hung tasks");</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static void watchdog_enable(unsigned int cpu)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	struct hrtimer *hrtimer = this_cpu_ptr(&#x26;watchdog_hrtimer);</span></span>
+<span class="line"><span>	struct completion *done = this_cpu_ptr(&#x26;softlockup_completion);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	WARN_ON_ONCE(cpu != smp_processor_id());</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	init_completion(done);</span></span>
+<span class="line"><span>	complete(done);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	/*</span></span>
+<span class="line"><span>	 * Start the timer first to prevent the NMI watchdog triggering</span></span>
+<span class="line"><span>	 * before the timer has a chance to fire.</span></span>
+<span class="line"><span>	 */</span></span>
+<span class="line"><span>	hrtimer_init(hrtimer, CLOCK_MONOTONIC, HRTIMER_MODE_REL_HARD);</span></span>
+<span class="line"><span>	hrtimer->function = watchdog_timer_fn;</span></span>
+<span class="line"><span>	hrtimer_start(hrtimer, ns_to_ktime(sample_period),</span></span>
+<span class="line"><span>		      HRTIMER_MODE_REL_PINNED_HARD);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	/* Initialize timestamp */</span></span>
+<span class="line"><span>	update_touch_ts();</span></span>
+<span class="line"><span>	/* Enable the perf event */</span></span>
+<span class="line"><span>	if (watchdog_enabled &#x26; NMI_WATCHDOG_ENABLED)</span></span>
+<span class="line"><span>		watchdog_nmi_enable(cpu);</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p><code>stop_one_cpu_nowait</code> 并不是 直接调用 <code>softlockup_fn</code>，只是 queue_work 而已，</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/* queue @work to @stopper.  if offline, @work is completed immediately */</span></span>
+<span class="line"><span>static bool cpu_stop_queue_work(unsigned int cpu, struct cpu_stop_work *work)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	struct cpu_stopper *stopper = &#x26;per_cpu(cpu_stopper, cpu);</span></span>
+<span class="line"><span>	DEFINE_WAKE_Q(wakeq);</span></span>
+<span class="line"><span>	unsigned long flags;</span></span>
+<span class="line"><span>	bool enabled;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	preempt_disable();</span></span>
+<span class="line"><span>	raw_spin_lock_irqsave(&#x26;stopper->lock, flags);</span></span>
+<span class="line"><span>	enabled = stopper->enabled;</span></span>
+<span class="line"><span>	if (enabled)</span></span>
+<span class="line"><span>		__cpu_stop_queue_work(stopper, work, &#x26;wakeq);</span></span>
+<span class="line"><span>	else if (work->done)</span></span>
+<span class="line"><span>		cpu_stop_signal_done(work->done);</span></span>
+<span class="line"><span>	raw_spin_unlock_irqrestore(&#x26;stopper->lock, flags);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	wake_up_q(&#x26;wakeq);</span></span>
+<span class="line"><span>	preempt_enable();</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	return enabled;</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>bool stop_one_cpu_nowait(unsigned int cpu, cpu_stop_fn_t fn, void *arg,</span></span>
+<span class="line"><span>			struct cpu_stop_work *work_buf)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	*work_buf = (struct cpu_stop_work){ .fn = fn, .arg = arg, .caller = _RET_IP_, };</span></span>
+<span class="line"><span>	return cpu_stop_queue_work(cpu, work_buf);</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>此时如果系统中有 代码路径关闭了抢占，且执行了较长时间，就会实际导致 <code>softlockup_fn</code> 这个应该和 hr-timer 发生频率一致的函数得不到执行，从而 <code>watchdog_touch_ts</code> 一直没有更新，最后在 <code>watchdog_timer_fn</code> 中 会根据<code>touch_ts = __this_cpu_read(watchdog_touch_ts);</code> 与 <code>now</code> 的值 比较，得出是否发生了 soft lockup问题</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>	/* Check for a softlockup. */</span></span>
+<span class="line"><span>	touch_ts = __this_cpu_read(watchdog_touch_ts);</span></span>
+<span class="line"><span>	duration = is_softlockup(touch_ts, period_ts, now);</span></span></code></pre>
+<p>贴一个其他博客：<a href="https://e-mailky.github.io/2017-01-18-kernel-daedlock-check2">进程R状态死锁检测</a></p>
+<h2 id="hard-lockup">Hard lockup</h2>
+<p>Hard lockup是指CPU被内核代码一直占用着，系统某个CPU上超过10s无 hr-timer中断发生，就判断为发生了 hard lockup.</p>
+<h3 id="实现机制-1">实现机制</h3>
+<p>Hard lockup 是基于 hw-PMU 实现的。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/**</span></span>
+<span class="line"><span> * hardlockup_detector_perf_init - Probe whether NMI event is available at all</span></span>
+<span class="line"><span> */</span></span>
+<span class="line"><span>int __init hardlockup_detector_perf_init(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	int ret = hardlockup_detector_event_create();</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (ret) {</span></span>
+<span class="line"><span>		pr_info("Perf NMI watchdog permanently disabled\n");</span></span>
+<span class="line"><span>	} else {</span></span>
+<span class="line"><span>		perf_event_release_kernel(this_cpu_read(watchdog_ev));</span></span>
+<span class="line"><span>		this_cpu_write(watchdog_ev, NULL);</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>	return ret;</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>/* Return 0, if a NMI watchdog is available. Error code otherwise */</span></span>
+<span class="line"><span>int __weak __init watchdog_nmi_probe(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	return hardlockup_detector_perf_init();</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>void __init lockup_detector_init(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	if (tick_nohz_full_enabled())</span></span>
+<span class="line"><span>		pr_info("Disabling watchdog on nohz_full cores by default\n");</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	cpumask_copy(&#x26;watchdog_cpumask,</span></span>
+<span class="line"><span>		     housekeeping_cpumask(HK_FLAG_TIMER));</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (!watchdog_nmi_probe())</span></span>
+<span class="line"><span>		nmi_watchdog_available = true;</span></span>
+<span class="line"><span>	lockup_detector_setup();</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>主要的初始化工作是 <code>hardlockup_detector_event_create</code> 做的，将 <code>watchdog_overflow_callback</code> 设置为 pmu nmi interrupt 中断 handler.</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static int hardlockup_detector_event_create(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	unsigned int cpu = smp_processor_id();</span></span>
+<span class="line"><span>	struct perf_event_attr *wd_attr;</span></span>
+<span class="line"><span>	struct perf_event *evt;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	wd_attr = &#x26;wd_hw_attr;</span></span>
+<span class="line"><span>	wd_attr->sample_period = hw_nmi_get_sample_period(watchdog_thresh);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	/* Try to register using hardware perf events */</span></span>
+<span class="line"><span>	evt = perf_event_create_kernel_counter(wd_attr, cpu, NULL,</span></span>
+<span class="line"><span>					       watchdog_overflow_callback, NULL);</span></span>
+<span class="line"><span>	if (IS_ERR(evt)) {</span></span>
+<span class="line"><span>		pr_debug("Perf event create on CPU %d failed with %ld\n", cpu,</span></span>
+<span class="line"><span>			 PTR_ERR(evt));</span></span>
+<span class="line"><span>		return PTR_ERR(evt);</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>	this_cpu_write(watchdog_ev, evt);</span></span>
+<span class="line"><span>	return 0;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>在 <code>watchdog_overflow_callback</code> 中，<code>is_hardlockup</code> 来判断是否发生了 hardlockup.
+<code>hrtimer_interrupts</code> 是 per-cpu 的变量，在 per-cpu 的 hr-timer 中断handler中增加 <code>hrtimer_interrupts</code> 数值，在 <code>is_hardlockup</code> 中判断是否发生了 hardlockup.</p>
+<p>主要利用了 hr-timer 是可屏蔽的中断，但是 HW-pmu 是不可屏蔽的中断。如果本地 cpu 中断禁止了，那么 hr-timer 的 handler就无法执行，但是 HW-pmu 的中断是可以执行的。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static void watchdog_interrupt_count(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	__this_cpu_inc(hrtimer_interrupts);</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>/* watchdog detector functions */</span></span>
+<span class="line"><span>bool is_hardlockup(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	unsigned long hrint = __this_cpu_read(hrtimer_interrupts); // hr-timer 中增加的</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (__this_cpu_read(hrtimer_interrupts_saved) == hrint)</span></span>
+<span class="line"><span>		return true;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	__this_cpu_write(hrtimer_interrupts_saved, hrint);</span></span>
+<span class="line"><span>	return false;</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>/* Callback function for perf event subsystem */</span></span>
+<span class="line"><span>static void watchdog_overflow_callback(struct perf_event *event,</span></span>
+<span class="line"><span>				       struct perf_sample_data *data,</span></span>
+<span class="line"><span>				       struct pt_regs *regs)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	/* Ensure the watchdog never gets throttled */</span></span>
+<span class="line"><span>	event->hw.interrupts = 0;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (__this_cpu_read(watchdog_nmi_touch) == true) {</span></span>
+<span class="line"><span>		__this_cpu_write(watchdog_nmi_touch, false);</span></span>
+<span class="line"><span>		return;</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (!watchdog_check_timestamp())</span></span>
+<span class="line"><span>		return;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (is_hardlockup()) {</span></span>
+<span class="line"><span>		int this_cpu = smp_processor_id();</span></span>
+<span class="line"><span>		...</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>	...</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>参考<a href="http://linuxperf.com/?p=83">内核如何检测SOFT LOCKUP与HARD LOCKUP？</a>
+参考<a href="https://blog.csdn.net/hzj_001/article/details/100054659">softlockup/hardlockup原理详细介绍</a></p>
+<h2 id="lockup-与-hung_task-区别">lockup 与 hung_task 区别</h2>
+<h3 id="soft-lockup-1">soft lockup：</h3>
+<p>一定是 <code>RU</code> 状态进程触发的， <code>RU</code> 状态进程一直运行，占用CPU超过20s之后，还未有过进程切换，就会出现这个问题。</p>
+<p>最好复现方式是: preempt_disable()之后 一直循环等待，不去preempt_enable()，这时候就会触发
+这个问题。
+a. spin_lock() / preempt_disable()</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>spin_lock(&#x26;lock);</span></span>
+<span class="line"><span>while(1) {</span></span>
+<span class="line"><span>    i = i + 1;</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span>spin_unlock(&#x26;lock);</span></span></code></pre>
+<p>b. spinlock的 dead_lock 也会触发这种问题</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>    CPU0                            CPU1</span></span>
+<span class="line"><span>                        spin_lock(&#x26;lock_B);</span></span>
+<span class="line"><span>spin_lock(&#x26;lock_A);</span></span>
+<span class="line"><span>                        spin_lock(&#x26;lock_A);</span></span>
+<span class="line"><span>spin_lock(&#x26;lock_B);</span></span>
+<span class="line"><span>xxx</span></span></code></pre>
+<p>此时 <code>CPU0</code> <code>CPU1</code> 都会检测到 <code>soft lockup</code></p>
+<h3 id="hard-lockup-1">hard lockup：</h3>
+<p>也一定是 <code>RU</code> 状态进程触发的， <code>RU</code> 状态进程一直运行，同时禁止了本地中断。占用CPU超过10s之后，还未有过进程切换且本地中断还未打开，就会出现这个问题。</p>
+<p>与 soft lockup 相比，只是加了一个条件是中断关闭。
+最好复现方式是: <code>local_irq_disable()</code> 之后 一直循环等待，不去 <code>local_irq_enable()</code>，
+这时候就会触发 <code>hard lockup</code> 这个问题。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span></span></span></code></pre>
+<h3 id="hung-task">hung task：</h3>
+<p>hung task 一定是 <code>UN</code> 状态进程触发的，hung_task
+从 注释可以看到</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/*</span></span>
+<span class="line"><span> * Check whether a TASK_UNINTERRUPTIBLE does not get woken up for</span></span>
+<span class="line"><span> * a really long time (120 seconds). If that happens, print out</span></span>
+<span class="line"><span> * a warning.</span></span>
+<span class="line"><span> */</span></span></code></pre>
+<p><code>UN</code> 是 <code>TASK_UNINTERRUPTIBLE</code> 缩写，也就是<code>D状态</code>的线程。</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

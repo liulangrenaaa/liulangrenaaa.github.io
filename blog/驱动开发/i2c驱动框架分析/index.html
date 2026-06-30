@@ -1,0 +1,31 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>i2c驱动框架分析 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>i2c驱动框架分析</h1><div class="post-meta"><time datetime="2024-10-13T19:00:00.000Z">2024年10月13日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">device drivers</span><span class="tag">i2c</span></div></header><div class="article-body"><h2 id="i2c-驱动主要结构体">i2c 驱动主要结构体</h2>
+<p>主要是 i2c_adapter i2c_client i2c_msg 这三个结构体.</p>
+<h2 id="i2c_tools">i2c_tools</h2>
+<p>i2c_tools 可以直接通过i2c控制器,访问i2c设备
+使用 i2c_tools 需要知道以下几个值</p>
+<ol>
+<li>i2c 控制器 number</li>
+<li>i2c 设备地址</li>
+<li>读 or 写</li>
+<li>读写地址-</li>
+</ol>
+<h3 id="i2cdetect">i2cdetect</h3>
+<p>如果不想通过原理图获取当前 设备地址 是什么,可以使用  i2cdetect 来自动检测当前有哪些设备接在当前控制器上,</p>
+<p>i2cdetect -y 0
+i2cdetect -y 1
+i2cdetect -y 2
+检测 i2c bus0 上有哪些设备地址存在, 如果存在 则会打印出来,
+如果设备的驱动程序匹配上了,则 打印 UU
+如果设备驱动程序没有匹配上,则打印 1f 等类似的设备地址</p>
+<p>i2cdetect -l
+检测板子上有哪些 i2c bus存在</p>
+<h3 id="i2ctransfer">i2ctransfer</h3>
+<p>i2c_tools的 的传输功能工具</p>
+<p>i2ctransfer -f -y 0 w2@0x1e 0 0x4 // 写 2byte
+12ctransfer -f -y 0 w2@0x1e 0 0x3
+12ctransfer -f -y 0 w1@0x1e 0xc r2 // 写 1byte, 读 2byte
+i2ctransfer -f -y 0 w1@0x1e 0xe r2@0x1e</p>
+<p>-f : 强制使用, 对于 已经有driver的设备必须使用 -f</p>
+<h3 id="smbus-协议-是-i2c协议子协议-有最低clk限制-10k">Smbus 协议, 是 i2c协议子协议, 有最低clk限制 10k</h3>
+<p>i2cget
+i2cset</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

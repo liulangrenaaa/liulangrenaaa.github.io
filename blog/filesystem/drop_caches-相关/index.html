@@ -1,0 +1,289 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>drop_caches  相关 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>drop_caches  相关</h1><div class="post-meta"><time datetime="2021-02-01T19:00:40.000Z">2021年2月1日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">drop_caches</span><span class="tag">cache</span></div></header><div class="article-body"><h2 id="proc文件系统">proc文件系统</h2>
+<p><code>drop_caches</code> 文件位于系统 <code>/proc/sys/vm</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Inspiron-5548@ubuntu: /proc/sys/vm# ls -al | grep drop</span></span>
+<span class="line"><span>--w------- 1 root root 0 2月   7 14:14 drop_caches</span></span>
+<span class="line"><span>Inspiron-5548@ubuntu: /proc/sys/vm#</span></span></code></pre>
+<p>可以写入<code>1</code>:drop page cache <code>2</code>: drop slab <code>3</code>: drop page cache and slab 等值</p>
+<h2 id="代码分析">代码分析</h2>
+<p>相关代码主要在 <code>fs/drop_caches.c</code> 目录下</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>int drop_caches_sysctl_handler(struct ctl_table *table, int write,</span></span>
+<span class="line"><span>		void *buffer, size_t *length, loff_t *ppos)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>    ......</span></span>
+<span class="line"><span>		if (sysctl_drop_caches &#x26; 1) {</span></span>
+<span class="line"><span>			iterate_supers(drop_pagecache_sb, NULL);</span></span>
+<span class="line"><span>			count_vm_event(DROP_PAGECACHE);</span></span>
+<span class="line"><span>		}</span></span>
+<span class="line"><span>		if (sysctl_drop_caches &#x26; 2) {</span></span>
+<span class="line"><span>			drop_slab();</span></span>
+<span class="line"><span>			count_vm_event(DROP_SLAB);</span></span>
+<span class="line"><span>		}</span></span>
+<span class="line"><span>    ......</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>可以看到：
+如果写入的值 <code>bit1</code> 是1，就会回收<code>page cache</code>，如果写入的值 <code>bit2</code> 是1，就会回收<code>slab</code>。</p>
+<h3 id="pagecache-回收">pagecache 回收</h3>
+<p>简化一些定义 lock操作，如下：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static void drop_pagecache_sb(struct super_block *sb, void *unused)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>    ......</span></span>
+<span class="line"><span>	list_for_each_entry(inode, &#x26;sb->s_inodes, i_sb_list) {</span></span>
+<span class="line"><span>		__iget(inode);</span></span>
+<span class="line"><span>		invalidate_mapping_pages(inode->i_mapping, 0, -1);</span></span>
+<span class="line"><span>		cond_resched();</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>	iput(toput_inode);</span></span>
+<span class="line"><span>    ......</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>void iterate_supers(void (*f)(struct super_block *, void *), void *arg)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>    ......</span></span>
+<span class="line"><span>	list_for_each_entry(sb, &#x26;super_blocks, s_list) {</span></span>
+<span class="line"><span>		sb->s_count++;</span></span>
+<span class="line"><span>		down_read(&#x26;sb->s_umount);</span></span>
+<span class="line"><span>		if (sb->s_root &#x26;&#x26; (sb->s_flags &#x26; SB_BORN))</span></span>
+<span class="line"><span>			f(sb, arg);</span></span>
+<span class="line"><span>		up_read(&#x26;sb->s_umount);</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>    ......</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>首先遍历<code>super_blocks</code>，然后 遍历<code>sb->s_inodes</code>，实际的回收 <code>pagecache</code>是针对于 <code>inode->i_mappings</code>的，对应代码就是 <code>invalidate_mapping_pages(inode->i_mapping, 0, -1);</code>。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>int remove_mapping(struct address_space *mapping, struct page *page)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	if (__remove_mapping(mapping, page, false, NULL)) {</span></span>
+<span class="line"><span>		/*</span></span>
+<span class="line"><span>		 * Unfreezing the refcount with 1 rather than 2 effectively</span></span>
+<span class="line"><span>		 * drops the pagecache ref for us without requiring another</span></span>
+<span class="line"><span>		 * atomic operation.</span></span>
+<span class="line"><span>		 */</span></span>
+<span class="line"><span>		page_ref_unfreeze(page, 1);</span></span>
+<span class="line"><span>		return 1;</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>	return 0;</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static int</span></span>
+<span class="line"><span>invalidate_complete_page(struct address_space *mapping, struct page *page)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	int ret;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (page->mapping != mapping)</span></span>
+<span class="line"><span>		return 0;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (page_has_private(page) &#x26;&#x26; !try_to_release_page(page, 0))</span></span>
+<span class="line"><span>		return 0;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	ret = remove_mapping(mapping, page);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	return ret;</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>int invalidate_inode_page(struct page *page)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	struct address_space *mapping = page_mapping(page);</span></span>
+<span class="line"><span>	if (!mapping)</span></span>
+<span class="line"><span>		return 0;</span></span>
+<span class="line"><span>	if (PageDirty(page) || PageWriteback(page))</span></span>
+<span class="line"><span>		return 0;</span></span>
+<span class="line"><span>	if (page_mapped(page))</span></span>
+<span class="line"><span>		return 0;</span></span>
+<span class="line"><span>	return invalidate_complete_page(mapping, page);</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static unsigned long __invalidate_mapping_pages(struct address_space *mapping,</span></span>
+<span class="line"><span>		pgoff_t start, pgoff_t end, unsigned long *nr_pagevec)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	while (index &#x3C;= end &#x26;&#x26; pagevec_lookup_entries(&#x26;pvec, mapping, index,</span></span>
+<span class="line"><span>			min(end - index, (pgoff_t)PAGEVEC_SIZE - 1) + 1,</span></span>
+<span class="line"><span>			indices)) {</span></span>
+<span class="line"><span>		for (i = 0; i &#x3C; pagevec_count(&#x26;pvec); i++) {</span></span>
+<span class="line"><span>			struct page *page = pvec.pages[i];</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>			/* We rely upon deletion not changing page->index */</span></span>
+<span class="line"><span>			index = indices[i];</span></span>
+<span class="line"><span>			ret = invalidate_inode_page(page);</span></span>
+<span class="line"><span>			unlock_page(page);</span></span>
+<span class="line"><span>			/*</span></span>
+<span class="line"><span>			 * Invalidation is a hint that the page is no longer</span></span>
+<span class="line"><span>			 * of interest and try to speed up its reclaim.</span></span>
+<span class="line"><span>			 */</span></span>
+<span class="line"><span>			if (!ret) {</span></span>
+<span class="line"><span>				deactivate_file_page(page);</span></span>
+<span class="line"><span>				/* It is likely on the pagevec of a remote CPU */</span></span>
+<span class="line"><span>				if (nr_pagevec)</span></span>
+<span class="line"><span>					(*nr_pagevec)++;</span></span>
+<span class="line"><span>			}</span></span>
+<span class="line"><span>			count += ret;</span></span>
+<span class="line"><span>		}</span></span>
+<span class="line"><span>		pagevec_remove_exceptionals(&#x26;pvec);</span></span>
+<span class="line"><span>		pagevec_release(&#x26;pvec);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>		index++;</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>	return count;</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>/**</span></span>
+<span class="line"><span> * invalidate_mapping_pages - Invalidate all the unlocked pages of one inode</span></span>
+<span class="line"><span> * @mapping: the address_space which holds the pages to invalidate</span></span>
+<span class="line"><span> * @start: the offset 'from' which to invalidate</span></span>
+<span class="line"><span> * @end: the offset 'to' which to invalidate (inclusive)</span></span>
+<span class="line"><span> *</span></span>
+<span class="line"><span> * This function only removes the unlocked pages, if you want to</span></span>
+<span class="line"><span> * remove all the pages of one inode, you must call truncate_inode_pages.</span></span>
+<span class="line"><span> *</span></span>
+<span class="line"><span> * invalidate_mapping_pages() will not block on IO activity. It will not</span></span>
+<span class="line"><span> * invalidate pages which are dirty, locked, under writeback or mapped into</span></span>
+<span class="line"><span> * pagetables.</span></span>
+<span class="line"><span> *</span></span>
+<span class="line"><span> * Return: the number of the pages that were invalidated</span></span>
+<span class="line"><span> */</span></span>
+<span class="line"><span>unsigned long invalidate_mapping_pages(struct address_space *mapping,</span></span>
+<span class="line"><span>		pgoff_t start, pgoff_t end)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	return __invalidate_mapping_pages(mapping, start, end, NULL);</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span>EXPORT_SYMBOL(invalidate_mapping_pages);</span></span></code></pre>
+<p><code>invalidate_mapping_pages</code> 会尝试 将这个<code>inode</code>对应的<code>pagecache</code>invaild掉（就像注释里面写的，除去<code>dirty</code> <code>locked</code> <code>writeback</code>的 page）。</p>
+<p>所以 <code>drop cache</code> 不会将脏页给drop掉，要想 drop掉脏页，需要先<code>sync()</code>一下。</p>
+<h3 id="slab-回收">slab 回收</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static unsigned long shrink_slab(gfp_t gfp_mask, int nid,</span></span>
+<span class="line"><span>				 struct mem_cgroup *memcg,</span></span>
+<span class="line"><span>				 int priority)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	unsigned long ret, freed = 0;</span></span>
+<span class="line"><span>	struct shrinker *shrinker;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (!down_read_trylock(&#x26;shrinker_rwsem))</span></span>
+<span class="line"><span>		goto out;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	list_for_each_entry(shrinker, &#x26;shrinker_list, list) {</span></span>
+<span class="line"><span>		struct shrink_control sc = {</span></span>
+<span class="line"><span>			.gfp_mask = gfp_mask,</span></span>
+<span class="line"><span>			.nid = nid,</span></span>
+<span class="line"><span>			.memcg = memcg,</span></span>
+<span class="line"><span>		};</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>		ret = do_shrink_slab(&#x26;sc, shrinker, priority);</span></span>
+<span class="line"><span>		if (ret == SHRINK_EMPTY)</span></span>
+<span class="line"><span>			ret = 0;</span></span>
+<span class="line"><span>		freed += ret;</span></span>
+<span class="line"><span>		/*</span></span>
+<span class="line"><span>		 * Bail out if someone want to register a new shrinker to</span></span>
+<span class="line"><span>		 * prevent the registration from being stalled for long periods</span></span>
+<span class="line"><span>		 * by parallel ongoing shrinking.</span></span>
+<span class="line"><span>		 */</span></span>
+<span class="line"><span>		if (rwsem_is_contended(&#x26;shrinker_rwsem)) {</span></span>
+<span class="line"><span>			freed = freed ? : 1;</span></span>
+<span class="line"><span>			break;</span></span>
+<span class="line"><span>		}</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	up_read(&#x26;shrinker_rwsem);</span></span>
+<span class="line"><span>out:</span></span>
+<span class="line"><span>	cond_resched();</span></span>
+<span class="line"><span>	return freed;</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>void drop_slab_node(int nid)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	unsigned long freed;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	do {</span></span>
+<span class="line"><span>		struct mem_cgroup *memcg = NULL;</span></span>
+<span class="line"><span>		freed = 0;</span></span>
+<span class="line"><span>		memcg = mem_cgroup_iter(NULL, NULL, NULL);</span></span>
+<span class="line"><span>		do {</span></span>
+<span class="line"><span>			freed += shrink_slab(GFP_KERNEL, nid, memcg, 0);</span></span>
+<span class="line"><span>		} while ((memcg = mem_cgroup_iter(NULL, memcg, NULL)) != NULL);</span></span>
+<span class="line"><span>	} while (freed > 10);</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>void drop_slab(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	int nid;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	for_each_online_node(nid)</span></span>
+<span class="line"><span>		drop_slab_node(nid);</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p><code>drop_slab</code> 过程首先会遍历 <code>online_node</code>，对该 <code>node</code>进行 <code>drop_slab_node</code>。</p>
+<p>在<code>drop_slab_node</code> 中，会遍历 <code>memcg</code>进行<code>shrink_slab</code>，退出条件是，这一次回收的 <code>slab objects</code> 小于10.</p>
+<p>在 <code>shrink_slab</code> 中，会遍历注册的 <code>shrinker</code>，使用<code>do_shrink_slab</code> 对每个<code>shrinker</code> 进行slab内存回收。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static unsigned long do_shrink_slab(struct shrink_control *shrinkctl,</span></span>
+<span class="line"><span>				    struct shrinker *shrinker, int priority)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	trace_mm_shrink_slab_start(shrinker, shrinkctl, nr,</span></span>
+<span class="line"><span>				   freeable, delta, total_scan, priority);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	while (total_scan >= batch_size ||</span></span>
+<span class="line"><span>	       total_scan >= freeable) {</span></span>
+<span class="line"><span>		unsigned long ret;</span></span>
+<span class="line"><span>		unsigned long nr_to_scan = min(batch_size, total_scan);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>		shrinkctl->nr_to_scan = nr_to_scan;</span></span>
+<span class="line"><span>		shrinkctl->nr_scanned = nr_to_scan;</span></span>
+<span class="line"><span>		ret = shrinker->scan_objects(shrinker, shrinkctl);</span></span>
+<span class="line"><span>		if (ret == SHRINK_STOP)</span></span>
+<span class="line"><span>			break;</span></span>
+<span class="line"><span>		freed += ret;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>		count_vm_events(SLABS_SCANNED, shrinkctl->nr_scanned);</span></span>
+<span class="line"><span>		total_scan -= shrinkctl->nr_scanned;</span></span>
+<span class="line"><span>		scanned += shrinkctl->nr_scanned;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>		cond_resched();</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	trace_mm_shrink_slab_end(shrinker, nid, freed, nr, new_nr, total_scan);</span></span>
+<span class="line"><span>	return freed;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>在 <code>do_shrink_slab</code> 中，有两个 <code>tracepoint</code>点，分别是 start end，可以用来追踪相关事件，
+实际回收的函数是 <code>shrinker->scan_objects(shrinker, shrinkctl);</code></p>
+<p>不同的<code>slab</code>，会注册不同的 <code>shrinker</code>.
+example:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>int ext4_es_register_shrinker(struct ext4_sb_info *sbi)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	sbi->s_es_shrinker.scan_objects = ext4_es_scan;</span></span>
+<span class="line"><span>	sbi->s_es_shrinker.count_objects = ext4_es_count;</span></span>
+<span class="line"><span>	sbi->s_es_shrinker.seeks = DEFAULT_SEEKS;</span></span>
+<span class="line"><span>	err = register_shrinker(&#x26;sbi->s_es_shrinker);</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static int __init hugepage_init(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	err = register_shrinker(&#x26;huge_zero_page_shrinker);</span></span>
+<span class="line"><span>	if (err)</span></span>
+<span class="line"><span>		goto err_hzp_shrinker;</span></span>
+<span class="line"><span>	err = register_shrinker(&#x26;deferred_split_shrinker);</span></span>
+<span class="line"><span>	if (err)</span></span>
+<span class="line"><span>		goto err_split_shrinker;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>实际上 <code>shrink_slab</code> 不仅仅在 <code>drop_slab_node</code> 中使用，在 内存回收的时候，也会通过<code>shrink_node_memcgs</code> 调用到</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static void shrink_node_memcgs(pg_data_t *pgdat, struct scan_control *sc)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>    ......</span></span>
+<span class="line"><span>		shrink_lruvec(lruvec, sc);</span></span>
+<span class="line"><span>		shrink_slab(sc->gfp_mask, pgdat->node_id, memcg,</span></span>
+<span class="line"><span>			    sc->priority);</span></span>
+<span class="line"><span>    ......</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static void shrink_node(pg_data_t *pgdat, struct scan_control *sc)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>    shrink_node_memcgs(pgdat, sc);</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>来trace一下看看</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>tencent_clould@ubuntu: ~/workspace/tmp# sudo bpftrace -e 'tracepoint:vmscan:mm_shrink_slab_start {printf("[pid-%d:%s]: trace_mm_shrink_slab_start start\n", pid,comm)}'</span></span>
+<span class="line"><span>Attaching 1 probe...</span></span>
+<span class="line"><span>[pid-1747572:zsh]: trace_mm_shrink_slab_start start</span></span>
+<span class="line"><span>[pid-1747572:zsh]: trace_mm_shrink_slab_start start</span></span>
+<span class="line"><span></span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>tencent_clould@ubuntu: ~/workspace/tmp# sudo bpftrace -e 'tracepoint:vmscan:mm_shrink_slab_end {printf("[pid-%d:%s]: trace_mm_shrink_slab_end total_scan = %d\n", pid,comm, args->total_scan)}'</span></span>
+<span class="line"><span>Attaching 1 probe...</span></span>
+<span class="line"><span>[pid-1747572:zsh]: trace_mm_shrink_slab_end total_scan = 0</span></span>
+<span class="line"><span>[pid-1747572:zsh]: trace_mm_shrink_slab_end total_scan = 0</span></span>
+<span class="line"><span>[pid-1747572:zsh]: trace_mm_shrink_slab_end total_scan = 57</span></span>
+<span class="line"><span>[pid-1747572:zsh]: trace_mm_shrink_slab_end total_scan = 0</span></span>
+<span class="line"><span>[pid-1747572:zsh]: trace_mm_shrink_slab_end total_scan = 1</span></span></code></pre>
+<p>代码定义大多来自于<code>Linux 5.10</code></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

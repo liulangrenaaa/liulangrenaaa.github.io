@@ -1,0 +1,746 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>PowerManagerService与唤醒锁机制 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>PowerManagerService与唤醒锁机制</h1><div class="post-meta"><time datetime="2026-05-31T11:03:00.000Z">2026年5月31日</time><span> / android / power</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">android</span><span class="tag">power</span><span class="tag">PowerManagerService</span><span class="tag">wakelock</span><span class="tag">aosp14</span></div></header><div class="article-body"><h2 id="pms到底管什么">PMS到底管什么</h2>
+<p>PowerManagerService，后面简称 PMS，是 Android Framework 电源策略的中枢。它不是“省电服务”，而是一个状态收敛器：把输入事件、屏幕状态、用户活动、wakelock、电池状态、Doze、Power HAL、suspend blocker 都合成一个当前系统应该处于的电源状态。</p>
+<p>可以先建立一个直觉：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>PMS 决定 Framework 是否还需要保持系统 awake；</span></span>
+<span class="line"><span>Kernel 决定硬件是否真的能 suspend；</span></span>
+<span class="line"><span>BatteryStats 记录是谁让系统保持活跃。</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    API[PowerManager API]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Input[Input/userActivity]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Battery[Battery/Plug状态]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Dream[Dream/Doze]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Wakelock[WakeLock]</span></span>
+<span class="line"><span style="color:#E1E4E8">    PMS[PowerManagerService]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Display[DisplayPowerController]</span></span>
+<span class="line"><span style="color:#E1E4E8">    HAL[Power HAL]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Blocker[SuspendBlocker]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Stats[BatteryStats]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Kernel[Kernel wakeup source]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    API --> PMS</span></span>
+<span class="line"><span style="color:#E1E4E8">    Input --> PMS</span></span>
+<span class="line"><span style="color:#E1E4E8">    Battery --> PMS</span></span>
+<span class="line"><span style="color:#E1E4E8">    Dream --> PMS</span></span>
+<span class="line"><span style="color:#E1E4E8">    Wakelock --> PMS</span></span>
+<span class="line"><span style="color:#E1E4E8">    PMS --> Display</span></span>
+<span class="line"><span style="color:#E1E4E8">    PMS --> HAL</span></span>
+<span class="line"><span style="color:#E1E4E8">    PMS --> Blocker</span></span>
+<span class="line"><span style="color:#E1E4E8">    PMS --> Stats</span></span>
+<span class="line"><span style="color:#E1E4E8">    Blocker --> Kernel</span></span></code></pre>
+<h2 id="先看源码地图">先看源码地图</h2>
+<p>默认源码目录：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>/home/suhui/workspace/aosp/los21/frameworks</span></span></code></pre>
+<p>PMS 主线入口：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>入口</th><th>作用</th></tr></thead><tbody><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/PowerManagerService.java:170:1">PowerManagerService.java:170</a></td><td>PMS 类定义</td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/PowerManagerService.java:1709:1">acquireWakeLockInternal:1709</a></td><td>申请 wakelock</td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/PowerManagerService.java:1880:1">releaseWakeLockInternal:1880</a></td><td>释放 wakelock</td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/PowerManagerService.java:2008:1">findWakeLockIndexLocked:2008</a></td><td>根据 Binder token 查找 wakelock</td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/PowerManagerService.java:2029:1">notifyWakeLockAcquiredLocked:2029</a></td><td>通知统计/监听 wakelock acquire</td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/PowerManagerService.java:2093:1">notifyWakeLockReleasedLocked:2093</a></td><td>通知统计/监听 wakelock release</td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/PowerManagerService.java:2177:1">userActivityNoUpdateLocked:2177</a></td><td>用户活动刷新亮屏超时</td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/PowerManagerService.java:2332:1">setWakefulnessLocked:2332</a></td><td>Awake/Dozing/Asleep 状态切换</td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/PowerManagerService.java:2600:1">updatePowerStateLocked:2600</a></td><td>状态收敛主循环</td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/PowerManagerService.java:2838:1">updateWakeLockSummaryLocked:2838</a></td><td>汇总 wakelock 影响</td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/PowerManagerService.java:3961:1">updateSuspendBlockerLocked:3961</a></td><td>更新 suspend blocker</td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/PowerManagerService.java:5526:1">WakeLock class:5526</a></td><td>PMS 内部 WakeLock 对象</td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/PowerManagerService.java:5732:1">SuspendBlockerImpl:5732</a></td><td>PMS 内部 suspend blocker</td></tr></tbody></table>
+<p>Native suspend blocker：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>入口</th><th>作用</th></tr></thead><tbody><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/jni/com_android_server_power_PowerManagerService.cpp:214:1">nativeAcquireSuspendBlocker:214</a></td><td>Java 到 native acquire</td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/jni/com_android_server_power_PowerManagerService.cpp:219:1">nativeReleaseSuspendBlocker:219</a></td><td>Java 到 native release</td></tr></tbody></table>
+<p>BatteryStats：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>入口</th><th>作用</th></tr></thead><tbody><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/am/BatteryStatsService.java:1190:1">noteStartWakelock:1190</a></td><td>wakelock 开始归因</td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/am/BatteryStatsService.java:1208:1">noteStopWakelock:1208</a></td><td>wakelock 结束归因</td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/am/BatteryStatsService.java:1226:1">noteStartWakelockFromSource:1226</a></td><td>WorkSource wakelock 开始</td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/am/BatteryStatsService.java:1268:1">noteStopWakelockFromSource:1268</a></td><td>WorkSource wakelock 结束</td></tr></tbody></table>
+<h2 id="pms状态收敛updatepowerstatelocked">PMS状态收敛：updatePowerStateLocked</h2>
+<p>PMS 的核心不是某个单独 API，而是 <code>updatePowerStateLocked()</code>。很多入口只是改状态、设置 <code>mDirty</code>，然后进入这个方法重新计算系统状态。</p>
+<p>源码里可以看到它分阶段执行：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>Phase 0: updateIsPowered / updateStayOn / brightness boost</span></span>
+<span class="line"><span>Phase 1: updateWakeLockSummary / updateUserActivitySummary / updateWakefulness</span></span>
+<span class="line"><span>Phase 2: updateProfiles</span></span>
+<span class="line"><span>Phase 3: updatePowerGroups</span></span>
+<span class="line"><span>Phase 4: updateDream</span></span>
+<span class="line"><span>Phase 5: finishWakefulnessChange</span></span>
+<span class="line"><span>Phase 6: updateSuspendBlocker</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    Dirty[mDirty非0]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Phase0[Phase0: 电池/StayOn/亮度boost]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Phase1[Phase1: wakelock/userActivity/wakefulness]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Loop{wakefulness是否变化}</span></span>
+<span class="line"><span style="color:#E1E4E8">    Phase2[Phase2: profile锁定]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Phase3[Phase3: PowerGroup显示状态]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Phase4[Phase4: Dream/Doze]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Phase5[Phase5: 通知wakefulness变化]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Phase6[Phase6: updateSuspendBlocker]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    Dirty --> Phase0</span></span>
+<span class="line"><span style="color:#E1E4E8">    Phase0 --> Phase1</span></span>
+<span class="line"><span style="color:#E1E4E8">    Phase1 --> Loop</span></span>
+<span class="line"><span style="color:#E1E4E8">    Loop -->|变化| Phase1</span></span>
+<span class="line"><span style="color:#E1E4E8">    Loop -->|稳定| Phase2</span></span>
+<span class="line"><span style="color:#E1E4E8">    Phase2 --> Phase3</span></span>
+<span class="line"><span style="color:#E1E4E8">    Phase3 --> Phase4</span></span>
+<span class="line"><span style="color:#E1E4E8">    Phase4 --> Phase5</span></span>
+<span class="line"><span style="color:#E1E4E8">    Phase5 --> Phase6</span></span></code></pre>
+<p>为什么 <code>updateSuspendBlockerLocked()</code> 放在最后？源码注释已经说得很直白：它可能释放最后一个 suspend blocker，所以必须等其他状态和通知都处理完，否则系统可能在 Framework 还没收尾时睡下去。</p>
+<h2 id="wakelock对象里有什么">WakeLock对象里有什么</h2>
+<p>PMS 内部的 <code>WakeLock</code> 不是一个简单 tag。它至少包含：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>字段</th><th>含义</th></tr></thead><tbody><tr><td><code>mLock</code></td><td>Binder token，用于查找和死亡监听</td></tr><tr><td><code>mDisplayId</code></td><td>关联 display</td></tr><tr><td><code>mFlags</code></td><td>wakelock 类型和 flags</td></tr><tr><td><code>mTag</code></td><td>调试 tag</td></tr><tr><td><code>mPackageName</code></td><td>申请方包名</td></tr><tr><td><code>mWorkSource</code></td><td>耗电归因对象</td></tr><tr><td><code>mHistoryTag</code></td><td>BatteryStats 历史 tag</td></tr><tr><td><code>mOwnerUid / mOwnerPid</code></td><td>申请者 uid/pid</td></tr><tr><td><code>mUidState</code></td><td>UID 状态</td></tr><tr><td><code>mAcquireTime</code></td><td>acquire 时间</td></tr><tr><td><code>mNotifiedAcquired</code></td><td>是否已经通知统计</td></tr><tr><td><code>mNotifiedLong</code></td><td>是否已经标记长 wakelock</td></tr><tr><td><code>mDisabled</code></td><td>是否被策略禁用</td></tr><tr><td><code>mCallback</code></td><td>wakelock callback</td></tr></tbody></table>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    Binder[IBinder token]</span></span>
+<span class="line"><span style="color:#E1E4E8">    WakeLock[PowerManagerService.WakeLock]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Props[flags/tag/package/uid/pid]</span></span>
+<span class="line"><span style="color:#E1E4E8">    WS[WorkSource]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Death[DeathRecipient]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Stats[BatteryStats历史]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    Binder --> WakeLock</span></span>
+<span class="line"><span style="color:#E1E4E8">    Props --> WakeLock</span></span>
+<span class="line"><span style="color:#E1E4E8">    WS --> WakeLock</span></span>
+<span class="line"><span style="color:#E1E4E8">    WakeLock --> Death</span></span>
+<span class="line"><span style="color:#E1E4E8">    WakeLock --> Stats</span></span></code></pre>
+<p>两个细节很重要：</p>
+<ol>
+<li>PMS 用 Binder token 查找 wakelock，所以重复 acquire 同一个 token 会更新已有对象，而不是简单追加。</li>
+<li><code>WakeLock</code> 实现 <code>IBinder.DeathRecipient</code>，调用方进程死掉时可以自动释放，避免锁永久泄漏。</li>
+</ol>
+<h2 id="acquirewakelockinternal解析">acquireWakeLockInternal解析</h2>
+<p>申请 wakelock 的主流程：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>acquireWakeLockInternal()</span></span>
+<span class="line"><span>    -> 检查 display 权限</span></span>
+<span class="line"><span>    -> findWakeLockIndexLocked(lock)</span></span>
+<span class="line"><span>    -> 已存在：更新属性</span></span>
+<span class="line"><span>    -> 不存在：创建 WakeLock，加入 mWakeLocks</span></span>
+<span class="line"><span>    -> applyWakeLockFlagsOnAcquireLocked()</span></span>
+<span class="line"><span>    -> mDirty |= DIRTY_WAKE_LOCKS</span></span>
+<span class="line"><span>    -> updatePowerStateLocked()</span></span>
+<span class="line"><span>    -> notifyWakeLockAcquiredLocked()</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">sequenceDiagram</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Client as App/SystemService</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Binder as Binder token</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant PMS as PowerManagerService</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant List as mWakeLocks</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Update as updatePowerStateLocked</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Notifier as Notifier/BatteryStats</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    Client->>PMS: acquireWakeLockInternal(lock, flags, tag, ws)</span></span>
+<span class="line"><span style="color:#E1E4E8">    PMS->>PMS: check display access</span></span>
+<span class="line"><span style="color:#E1E4E8">    PMS->>List: findWakeLockIndexLocked(lock)</span></span>
+<span class="line"><span style="color:#E1E4E8">    alt already exists</span></span>
+<span class="line"><span style="color:#E1E4E8">        PMS->>List: updateProperties()</span></span>
+<span class="line"><span style="color:#E1E4E8">    else new lock</span></span>
+<span class="line"><span style="color:#E1E4E8">        PMS->>List: new WakeLock + add</span></span>
+<span class="line"><span style="color:#E1E4E8">        PMS->>Binder: linkToDeath()</span></span>
+<span class="line"><span style="color:#E1E4E8">    end</span></span>
+<span class="line"><span style="color:#E1E4E8">    PMS->>PMS: mDirty |= DIRTY_WAKE_LOCKS</span></span>
+<span class="line"><span style="color:#E1E4E8">    PMS->>Update: updatePowerStateLocked()</span></span>
+<span class="line"><span style="color:#E1E4E8">    PMS->>Notifier: notifyWakeLockAcquiredLocked()</span></span></code></pre>
+<p>源码里有一个很关键的注释：<code>notifyWakeLockAcquiredLocked()</code> 要放到最后，确保已经 acquire kernel wake lock 后再开始 BatteryStats 计时，否则可能出现统计已经开始但系统还没真正被保持 awake 的竞态。</p>
+<h2 id="releasewakelockinternal解析">releaseWakeLockInternal解析</h2>
+<p>释放 wakelock：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>releaseWakeLockInternal()</span></span>
+<span class="line"><span>    -> findWakeLockIndexLocked(lock)</span></span>
+<span class="line"><span>    -> 找不到就返回</span></span>
+<span class="line"><span>    -> 可选处理 WAIT_FOR_NO_PROXIMITY</span></span>
+<span class="line"><span>    -> unlinkToDeath()</span></span>
+<span class="line"><span>    -> setDisabled(true)</span></span>
+<span class="line"><span>    -> removeWakeLockLocked()</span></span>
+<span class="line"><span>        -> mWakeLocks.remove()</span></span>
+<span class="line"><span>        -> UID wakelock计数--</span></span>
+<span class="line"><span>        -> notifyWakeLockReleasedLocked()</span></span>
+<span class="line"><span>        -> applyWakeLockFlagsOnReleaseLocked()</span></span>
+<span class="line"><span>        -> mDirty |= DIRTY_WAKE_LOCKS</span></span>
+<span class="line"><span>        -> updatePowerStateLocked()</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    Release[releaseWakeLockInternal]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Find[findWakeLockIndexLocked]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Missing[找不到: return]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Unlink[unlinkToDeath]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Remove[removeWakeLockLocked]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Notify[notifyWakeLockReleasedLocked]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Dirty[mDirty DIRTY_WAKE_LOCKS]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Update[updatePowerStateLocked]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    Release --> Find</span></span>
+<span class="line"><span style="color:#E1E4E8">    Find -->|not found| Missing</span></span>
+<span class="line"><span style="color:#E1E4E8">    Find -->|found| Unlink</span></span>
+<span class="line"><span style="color:#E1E4E8">    Unlink --> Remove</span></span>
+<span class="line"><span style="color:#E1E4E8">    Remove --> Notify</span></span>
+<span class="line"><span style="color:#E1E4E8">    Notify --> Dirty</span></span>
+<span class="line"><span style="color:#E1E4E8">    Dirty --> Update</span></span></code></pre>
+<p>释放不是简单从列表删掉，还会影响 user activity。例如带 <code>ON_AFTER_RELEASE</code> 的屏幕类锁释放后，可能触发一次 user activity，避免屏幕立刻灭。</p>
+<h2 id="wakelocksummary如何决定是否阻止cpu睡眠">WakeLockSummary如何决定是否阻止CPU睡眠</h2>
+<p>PMS 不会每次都直接拿 <code>mWakeLocks</code> 原始列表做判断，而是汇总成 <code>mWakeLockSummary</code>。</p>
+<p><code>updateWakeLockSummaryLocked()</code> 大致做：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>遍历 mWakeLocks</span></span>
+<span class="line"><span>    -> getWakeLockSummaryFlags(wakeLock)</span></span>
+<span class="line"><span>    -> 合并到 global mWakeLockSummary</span></span>
+<span class="line"><span>    -> 合并到对应 PowerGroup</span></span>
+<span class="line"><span>    -> 合并到 ProfilePowerState</span></span>
+<span class="line"><span>    -> adjustWakeLockSummary(wakefulness, summary)</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    Locks[mWakeLocks列表]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Flags[getWakeLockSummaryFlags]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Global[mWakeLockSummary]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Group[PowerGroup wakeLockSummary]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Profile[Profile wakeLockSummary]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Adjust[adjustWakeLockSummary]</span></span>
+<span class="line"><span style="color:#E1E4E8">    CPU[WAKE_LOCK_CPU]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Screen[WAKE_LOCK_SCREEN_DIM/BRIGHT]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Doze[WAKE_LOCK_DOZE/DRAW]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    Locks --> Flags</span></span>
+<span class="line"><span style="color:#E1E4E8">    Flags --> Global</span></span>
+<span class="line"><span style="color:#E1E4E8">    Flags --> Group</span></span>
+<span class="line"><span style="color:#E1E4E8">    Flags --> Profile</span></span>
+<span class="line"><span style="color:#E1E4E8">    Global --> Adjust</span></span>
+<span class="line"><span style="color:#E1E4E8">    Adjust --> CPU</span></span>
+<span class="line"><span style="color:#E1E4E8">    Adjust --> Screen</span></span>
+<span class="line"><span style="color:#E1E4E8">    Adjust --> Doze</span></span></code></pre>
+<p><code>adjustWakeLockSummary()</code> 会根据 wakefulness 过滤不合理的锁。例如系统不是 Dozing 时，Doze/Draw 相关锁没有意义；系统 Asleep 时，屏幕 bright/dim 相关 summary 也会被清掉。</p>
+<p>工程意义：</p>
+<ul>
+<li><code>Wake Locks: size > 0</code> 不代表一定阻止 suspend。</li>
+<li>要看它最终是否汇总成 <code>WAKE_LOCK_CPU</code>。</li>
+<li><code>PARTIAL_WAKE_LOCK</code> 才是待机 CPU 不能睡的核心嫌疑。</li>
+</ul>
+<h2 id="suspendblocker如何落到kernel">SuspendBlocker如何落到Kernel</h2>
+<p>PMS 内部有几个 suspend blocker：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>名称</th><th>作用</th></tr></thead><tbody><tr><td><code>PowerManagerService.WakeLocks</code></td><td>Framework wakelock 需要保持 CPU awake</td></tr><tr><td><code>PowerManagerService.Display</code></td><td>显示状态切换/亮屏时保持系统</td></tr><tr><td><code>PowerManagerService.Broadcasts</code></td><td>电源状态广播未完成</td></tr><tr><td><code>PowerManagerService.Booting</code></td><td>启动阶段</td></tr><tr><td><code>PowerManagerService.WirelessChargerDetector</code></td><td>无线充电检测</td></tr></tbody></table>
+<p><code>updateSuspendBlockerLocked()</code> 里最关键的判断：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>needWakeLockSuspendBlocker = (mWakeLockSummary &#x26; WAKE_LOCK_CPU) != 0</span></span>
+<span class="line"><span>needDisplaySuspendBlocker = needSuspendBlockerLocked()</span></span>
+<span class="line"><span>autoSuspend = !needDisplaySuspendBlocker</span></span>
+<span class="line"><span>interactive = powerGroup.isBrightOrDimLocked()</span></span></code></pre>
+<p>然后：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>先 acquire 需要的 blocker</span></span>
+<span class="line"><span>    -> inform Power HAL interactive mode</span></span>
+<span class="line"><span>再 release 不需要的 blocker</span></span>
+<span class="line"><span>    -> 需要时 enable autosuspend</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    Summary[mWakeLockSummary]</span></span>
+<span class="line"><span style="color:#E1E4E8">    CPU{包含WAKE_LOCK_CPU?}</span></span>
+<span class="line"><span style="color:#E1E4E8">    Display{needSuspendBlockerLocked?}</span></span>
+<span class="line"><span style="color:#E1E4E8">    WLSB[WakeLocks SuspendBlocker]</span></span>
+<span class="line"><span style="color:#E1E4E8">    DPSB[Display SuspendBlocker]</span></span>
+<span class="line"><span style="color:#E1E4E8">    HAL[setHalInteractiveModeLocked]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Auto[setHalAutoSuspendModeLocked]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Kernel[native acquire/release wake lock]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    Summary --> CPU</span></span>
+<span class="line"><span style="color:#E1E4E8">    CPU -->|yes| WLSB</span></span>
+<span class="line"><span style="color:#E1E4E8">    Display -->|yes| DPSB</span></span>
+<span class="line"><span style="color:#E1E4E8">    WLSB --> Kernel</span></span>
+<span class="line"><span style="color:#E1E4E8">    DPSB --> Kernel</span></span>
+<span class="line"><span style="color:#E1E4E8">    Display --> HAL</span></span>
+<span class="line"><span style="color:#E1E4E8">    Display --> Auto</span></span></code></pre>
+<p>SuspendBlockerImpl 最后会调用 JNI：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>SuspendBlockerImpl.acquire()</span></span>
+<span class="line"><span>    -> mNativeWrapper.nativeAcquireSuspendBlocker(mName)</span></span>
+<span class="line"><span>    -> nativeAcquireSuspendBlocker()</span></span>
+<span class="line"><span>    -> acquire_wake_lock(PARTIAL_WAKE_LOCK, name)</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>SuspendBlockerImpl.release()</span></span>
+<span class="line"><span>    -> nativeReleaseSuspendBlocker()</span></span>
+<span class="line"><span>    -> release_wake_lock(name)</span></span></code></pre>
+<p>对应源码：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>入口</th><th>作用</th></tr></thead><tbody><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/PowerManagerService.java:5774:1">SuspendBlockerImpl.acquire:5774</a></td><td>Java acquire</td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/PowerManagerService.java:5793:1">SuspendBlockerImpl.release:5793</a></td><td>Java release</td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/jni/com_android_server_power_PowerManagerService.cpp:214:1">nativeAcquireSuspendBlocker:214</a></td><td>native acquire</td></tr><tr><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/jni/com_android_server_power_PowerManagerService.cpp:219:1">nativeReleaseSuspendBlocker:219</a></td><td>native release</td></tr></tbody></table>
+<h2 id="notifier和batterystats归因">Notifier和BatteryStats归因</h2>
+<p><code>notifyWakeLockAcquiredLocked()</code> 并不直接写 BatteryStats，而是通过 Notifier 这一层，把事件分发给统计、日志、回调等。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">sequenceDiagram</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant PMS as PowerManagerService</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Notifier as Notifier</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant BSS as BatteryStatsService</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant BS as BatteryStatsImpl</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    PMS->>Notifier: onWakeLockAcquired(flags, tag, uid, ws)</span></span>
+<span class="line"><span style="color:#E1E4E8">    Notifier->>BSS: noteStartWakelock / noteStartWakelockFromSource</span></span>
+<span class="line"><span style="color:#E1E4E8">    BSS->>BS: 记录UID、tag、时间</span></span>
+<span class="line"><span style="color:#E1E4E8">    PMS->>Notifier: onWakeLockReleased(...)</span></span>
+<span class="line"><span style="color:#E1E4E8">    Notifier->>BSS: noteStopWakelock / noteStopWakelockFromSource</span></span></code></pre>
+<p>这也是为什么 WorkSource 很重要：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>系统服务替应用工作</span></span>
+<span class="line"><span>    -> wakelock owner 可能是 system_server</span></span>
+<span class="line"><span>    -> WorkSource 指向真实应用 UID</span></span>
+<span class="line"><span>    -> BatteryStats 才能把耗电归因给正确对象</span></span></code></pre>
+<p>如果 WorkSource 缺失，耗电排行可能会把锅放到 system_server 上。</p>
+<h2 id="useractivity和wakelock的区别">userActivity和wakelock的区别</h2>
+<p>很多人会把 user activity 和 wakelock 混在一起。它们影响不同：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>机制</th><th>影响</th></tr></thead><tbody><tr><td>userActivity</td><td>刷新亮屏/Dim/Dream/睡眠超时</td></tr><tr><td>PARTIAL_WAKE_LOCK</td><td>屏幕可灭，但 CPU 不能 suspend</td></tr><tr><td>SCREEN类旧锁</td><td>影响屏幕保持亮，现代应用不推荐</td></tr><tr><td>Display suspend blocker</td><td>显示状态转换和亮屏期间保持系统</td></tr></tbody></table>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart LR</span></span>
+<span class="line"><span style="color:#E1E4E8">    Touch[触摸/按键] --> UserActivity[userActivityNoUpdateLocked]</span></span>
+<span class="line"><span style="color:#E1E4E8">    UserActivity --> Timeout[刷新屏幕超时]</span></span>
+<span class="line"><span style="color:#E1E4E8">    AppWork[后台任务] --> Partial[PARTIAL_WAKE_LOCK]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Partial --> CPU[保持CPU awake]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Display[亮屏/显示切换] --> DisplayBlocker[Display SuspendBlocker]</span></span>
+<span class="line"><span style="color:#E1E4E8">    DisplayBlocker --> Awake[保持系统直到显示稳定]</span></span></code></pre>
+<p>排查“屏幕不灭”优先看 userActivity、窗口 flag、stay awake；排查“灭屏不睡”优先看 PARTIAL_WAKE_LOCK 和 wakeup_sources。</p>
+<h2 id="dumpsys-power怎么看">dumpsys power怎么看</h2>
+<p>命令：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> power</span></span></code></pre>
+<p>关键字段：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>字段</th><th>含义</th><th>判断</th></tr></thead><tbody><tr><td><code>mWakefulness</code></td><td>Framework wakefulness</td><td>Awake/Dozing/Asleep</td></tr><tr><td><code>mIsPowered</code>、<code>mPlugType</code></td><td>是否插电</td><td>USB 会污染待机测试</td></tr><tr><td><code>mStayOn</code></td><td>插电保持唤醒</td><td>true 时不要直接测自然待机</td></tr><tr><td><code>mWakeLockSummary</code></td><td>wakelock 汇总</td><td>看是否有 CPU 相关 summary</td></tr><tr><td><code>Wake Locks</code></td><td>当前 Java wakelock 列表</td><td>看 tag、uid、pid、WorkSource</td></tr><tr><td><code>Suspend Blockers</code></td><td>PMS suspend blocker</td><td>看 WakeLocks/Display/Broadcasts</td></tr><tr><td><code>mHoldingWakeLockSuspendBlocker</code></td><td>是否持有 wakelock blocker</td><td>true 时 Framework 阻止 suspend</td></tr><tr><td><code>mHoldingDisplaySuspendBlocker</code></td><td>是否持有 display blocker</td><td>亮屏或显示转换</td></tr><tr><td><code>mHalInteractiveModeEnabled</code></td><td>Power HAL interactive</td><td>影响平台性能/功耗</td></tr></tbody></table>
+<h2 id="真机casemi-mix-2当前不是待机条件">真机case：Mi MIX 2当前不是待机条件</h2>
+<p>当前 QCOM 真机基线：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>mWakefulness=Awake</span></span>
+<span class="line"><span>mIsPowered=true</span></span>
+<span class="line"><span>mPlugType=2</span></span>
+<span class="line"><span>mStayOn=true</span></span>
+<span class="line"><span>mHalInteractiveModeEnabled=true</span></span>
+<span class="line"><span>mHoldingWakeLockSuspendBlocker=false</span></span>
+<span class="line"><span>mHoldingDisplaySuspendBlocker=true</span></span>
+<span class="line"><span>Wake Locks: size=0</span></span></code></pre>
+<p>这组数据怎么解？</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>Wake Locks: size=0</span></span>
+<span class="line"><span>    说明当前没有 Framework Java wakelock 列表项。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>mHoldingWakeLockSuspendBlocker=false</span></span>
+<span class="line"><span>    说明当前不是 wakelock summary 导致 PMS 持有 WakeLocks blocker。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>mHoldingDisplaySuspendBlocker=true</span></span>
+<span class="line"><span>    说明 Display 侧仍要求保持系统，当前不是低功耗待机。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>mIsPowered=true + mStayOn=true</span></span>
+<span class="line"><span>    说明 USB 插线和 stay awake 已经改变了测试条件。</span></span></code></pre>
+<p>结论：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>不能说“没有wakelock所以设备应该待机”。</span></span>
+<span class="line"><span>当前设备 Awake、USB供电、stay awake、Display blocker持有，</span></span>
+<span class="line"><span>它不是自然灭屏待机场景。</span></span></code></pre>
+<p>这个 case 很重要，因为它防止一个常见误判：只看 <code>Wake Locks: size=0</code> 就以为 PMS 没问题。</p>
+<h2 id="case-1长时间partial_wake_lock">Case 1：长时间PARTIAL_WAKE_LOCK</h2>
+<p>典型现象：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>灭屏后电流不降。</span></span>
+<span class="line"><span>dumpsys power 中 Wake Locks 有 PARTIAL_WAKE_LOCK。</span></span>
+<span class="line"><span>wakeup_sources 中 PowerManagerService.WakeLocks total_time 增长。</span></span></code></pre>
+<p>采集：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> power</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> power.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --charged</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> batterystats.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/kernel/debug/wakeup_sources</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> wakeup_sources.txt</span></span></code></pre>
+<p>判断：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>如果 mHoldingWakeLockSuspendBlocker=true，</span></span>
+<span class="line"><span>并且 Wake Locks 中存在长时间 PARTIAL_WAKE_LOCK，</span></span>
+<span class="line"><span>再加上 wakeup_sources 中 PowerManagerService.WakeLocks total_time 增长，</span></span>
+<span class="line"><span>就可以判断 Framework wakelock 阻止 suspend。</span></span></code></pre>
+<p>修复方向：</p>
+<ul>
+<li>检查应用是否释放锁。</li>
+<li>给锁设置 timeout。</li>
+<li>用 JobScheduler/WorkManager 合并后台任务。</li>
+<li>系统服务检查 WorkSource 归因。</li>
+</ul>
+<h2 id="case-2wake-locks为空但仍不睡">Case 2：Wake Locks为空但仍不睡</h2>
+<p>现象：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>dumpsys power:</span></span>
+<span class="line"><span>    Wake Locks: size=0</span></span>
+<span class="line"><span>    mHoldingWakeLockSuspendBlocker=false</span></span>
+<span class="line"><span>    mHoldingDisplaySuspendBlocker=true</span></span></code></pre>
+<p>可能原因：</p>
+<ul>
+<li>屏幕仍亮。</li>
+<li>display power state 还没 ready。</li>
+<li>插电 stay awake。</li>
+<li>proximity、dream、doze display、AOD 等显示策略。</li>
+</ul>
+<p>下一步：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> display</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> power</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> settings</span><span style="color:#9ECBFF"> get</span><span style="color:#9ECBFF"> global</span><span style="color:#9ECBFF"> stay_on_while_plugged_in</span></span></code></pre>
+<p>结论不能写成 wakelock 问题，而要写：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>PMS 当前不是由 WakeLocks suspend blocker 阻止 suspend，</span></span>
+<span class="line"><span>而是 Display suspend blocker 或测试条件导致设备保持 Awake。</span></span></code></pre>
+<h2 id="case-3system_server耗电高但可能是worksource缺失">Case 3：system_server耗电高但可能是WorkSource缺失</h2>
+<p>现象：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>BatteryStats 显示 system_server wakelock 时间长。</span></span></code></pre>
+<p>分析：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>系统服务可能替应用做定位、网络、同步、传感器任务。</span></span>
+<span class="line"><span>如果 WorkSource 设置正确，BatteryStats 可以归因到真实 UID；</span></span>
+<span class="line"><span>如果 WorkSource 缺失，耗电就可能看起来像 system_server。</span></span></code></pre>
+<p>检查：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --charged</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -i</span><span style="color:#9ECBFF"> "wake lock"</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> power</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> sed</span><span style="color:#79B8FF"> -n</span><span style="color:#9ECBFF"> '/Wake Locks/,/Suspend Blockers/p'</span></span></code></pre>
+<p>结论要谨慎：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>system_server 高不是根因，只是入口。</span></span>
+<span class="line"><span>需要继续看 tag、WorkSource、调用链和具体服务。</span></span></code></pre>
+<h2 id="case-4频繁短wakelock">Case 4：频繁短wakelock</h2>
+<p>长锁容易看，短锁更麻烦。它可能表现为：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>单个 wakelock 时间不长；</span></span>
+<span class="line"><span>但系统每隔几十秒醒一次；</span></span>
+<span class="line"><span>cpuidle/suspend比例很差。</span></span></code></pre>
+<p>证据：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --wakeups</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> alarm</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/kernel/debug/wakeup_sources</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> perfetto</span><span style="color:#79B8FF"> -o</span><span style="color:#9ECBFF"> /data/misc/perfetto-traces/wakeup.trace</span><span style="color:#79B8FF"> -t</span><span style="color:#9ECBFF"> 180s</span><span style="color:#9ECBFF"> sched</span><span style="color:#9ECBFF"> freq</span><span style="color:#9ECBFF"> idle</span><span style="color:#9ECBFF"> power</span><span style="color:#9ECBFF"> am</span><span style="color:#9ECBFF"> binder_driver</span></span></code></pre>
+<p>判断：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>如果 alarmtimer 或某外设 wakeup_count 增长，</span></span>
+<span class="line"><span>Perfetto 上周期 resume 后有短时间 wakelock，</span></span>
+<span class="line"><span>那问题不是长锁，而是周期唤醒破坏低功耗。</span></span></code></pre>
+<h2 id="排查决策树">排查决策树</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    Start[灭屏后功耗高]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Power[dumpsys power]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Awake{mWakefulness Awake?}</span></span>
+<span class="line"><span style="color:#E1E4E8">    WL{Wake Locks有PARTIAL?}</span></span>
+<span class="line"><span style="color:#E1E4E8">    WLSB{mHoldingWakeLockSuspendBlocker?}</span></span>
+<span class="line"><span style="color:#E1E4E8">    Display{mHoldingDisplaySuspendBlocker?}</span></span>
+<span class="line"><span style="color:#E1E4E8">    Kernel[wakeup_sources]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Alarm[Alarm/Job/外设周期唤醒]</span></span>
+<span class="line"><span style="color:#E1E4E8">    CaseWL[Framework wakelock问题]</span></span>
+<span class="line"><span style="color:#E1E4E8">    CaseDisplay[显示/测试条件问题]</span></span>
+<span class="line"><span style="color:#E1E4E8">    CaseKernel[Kernel/HAL/外设问题]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    Start --> Power</span></span>
+<span class="line"><span style="color:#E1E4E8">    Power --> Awake</span></span>
+<span class="line"><span style="color:#E1E4E8">    Awake -->|yes| Display</span></span>
+<span class="line"><span style="color:#E1E4E8">    Awake -->|no| WL</span></span>
+<span class="line"><span style="color:#E1E4E8">    WL -->|yes| WLSB</span></span>
+<span class="line"><span style="color:#E1E4E8">    WLSB -->|yes| CaseWL</span></span>
+<span class="line"><span style="color:#E1E4E8">    WLSB -->|no| Kernel</span></span>
+<span class="line"><span style="color:#E1E4E8">    Display -->|yes| CaseDisplay</span></span>
+<span class="line"><span style="color:#E1E4E8">    Display -->|no| Kernel</span></span>
+<span class="line"><span style="color:#E1E4E8">    Kernel --> Alarm</span></span>
+<span class="line"><span style="color:#E1E4E8">    Alarm --> CaseKernel</span></span></code></pre>
+<h2 id="常用命令">常用命令</h2>
+<h3 id="framework状态">Framework状态</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> power</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> power</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> sed</span><span style="color:#79B8FF"> -n</span><span style="color:#9ECBFF"> '/Wake Locks/,/Suspend Blockers/p'</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> power</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -E</span><span style="color:#9ECBFF"> "mWakefulness|mIsPowered|mStayOn|mHolding|mWakeLockSummary"</span></span></code></pre>
+<h3 id="batterystats">BatteryStats</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --charged</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> batterystats.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --wakeups</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> wakeups.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --reset</span></span></code></pre>
+<h3 id="kernel">Kernel</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/kernel/debug/wakeup_sources</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dmesg</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -i</span><span style="color:#9ECBFF"> "wakeup</span><span style="color:#79B8FF">\\</span><span style="color:#9ECBFF">|suspend</span><span style="color:#79B8FF">\\</span><span style="color:#9ECBFF">|resume"</span></span></code></pre>
+<h3 id="时间线">时间线</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> perfetto</span><span style="color:#79B8FF"> -o</span><span style="color:#9ECBFF"> /data/misc/perfetto-traces/power.trace</span><span style="color:#79B8FF"> -t</span><span style="color:#9ECBFF"> 120s</span><span style="color:#9ECBFF"> sched</span><span style="color:#9ECBFF"> freq</span><span style="color:#9ECBFF"> idle</span><span style="color:#9ECBFF"> power</span><span style="color:#9ECBFF"> am</span><span style="color:#9ECBFF"> binder_driver</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> pull</span><span style="color:#9ECBFF"> /data/misc/perfetto-traces/power.trace</span></span></code></pre>
+<h2 id="我会这样收口">我会这样收口</h2>
+<h3 id="framework-wakelock问题">Framework wakelock问题</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>Framework:</span></span>
+<span class="line"><span>    dumpsys power 中存在 PARTIAL_WAKE_LOCK xxx，uid=yyy。</span></span>
+<span class="line"><span>    mHoldingWakeLockSuspendBlocker=true。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>BatteryStats:</span></span>
+<span class="line"><span>    UID yyy 的 wakelock xxx 累计 xx 分钟。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Kernel:</span></span>
+<span class="line"><span>    wakeup_sources 中 PowerManagerService.WakeLocks total_time 增长。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>结论:</span></span>
+<span class="line"><span>    该 wakelock 阻止系统 suspend，是灭屏功耗高的主要原因。</span></span></code></pre>
+<h3 id="非wakelock问题">非wakelock问题</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>Framework:</span></span>
+<span class="line"><span>    Wake Locks: size=0。</span></span>
+<span class="line"><span>    mHoldingWakeLockSuspendBlocker=false。</span></span>
+<span class="line"><span>    但 mHoldingDisplaySuspendBlocker=true / 或 mWakefulness=Awake。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>判断:</span></span>
+<span class="line"><span>    当前不是 PARTIAL_WAKE_LOCK 阻止 suspend。</span></span>
+<span class="line"><span>    应继续排查显示状态、插电 stay awake、Doze/AOD 或 Kernel wakeup source。</span></span></code></pre>
+<h2 id="这篇总结">这篇总结</h2>
+<p>PMS 和 wakelock 的核心不是“看到锁就怪锁”，而是看完整链路：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>PowerManager API</span></span>
+<span class="line"><span>    -> acquireWakeLockInternal</span></span>
+<span class="line"><span>    -> WakeLock对象进入mWakeLocks</span></span>
+<span class="line"><span>    -> updateWakeLockSummaryLocked</span></span>
+<span class="line"><span>    -> updatePowerStateLocked</span></span>
+<span class="line"><span>    -> updateSuspendBlockerLocked</span></span>
+<span class="line"><span>    -> nativeAcquireSuspendBlocker</span></span>
+<span class="line"><span>    -> Kernel wakeup source</span></span>
+<span class="line"><span>    -> BatteryStats归因</span></span></code></pre>
+<p>排查时要同时看：</p>
+<ul>
+<li><code>Wake Locks</code> 列表。</li>
+<li><code>mWakeLockSummary</code>。</li>
+<li><code>mHoldingWakeLockSuspendBlocker</code>。</li>
+<li><code>Suspend Blockers</code>。</li>
+<li><code>wakeup_sources</code>。</li>
+<li><code>BatteryStats</code>。</li>
+</ul>
+<p>只有这些证据能互相对上，才能说 wakelock 是根因。</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

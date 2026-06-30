@@ -1,0 +1,65 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>地址空间布局随机化 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>地址空间布局随机化</h1><div class="post-meta"><time datetime="2021-09-23T19:00:00.000Z">2021年9月23日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">地址空间布局随机化</span><span class="tag">randomize_va_space</span></div></header><div class="article-body"><p>ASLR(Address Space Layout Randomization)在2005年被引入到Linux的内核。</p>
+<h2 id="proc-接口">proc 接口</h2>
+<p>sysctl可以通过设置<code>kernel.randomize_va_space</code>参数来设置地址随机化机制。
+<code>randomize_va_space</code> 的值有三种，分别是[0, 1, 2]：
+0 - 表示关闭进程地址空间随机化。
+1 - 表示将栈（stack）随机化。
+2 - 表示在1的基础上增加堆（heap）的随机化。</p>
+<p>也可以直接操作 <code>/proc/sys/kernel/randomize_va_space</code> 文件来使得</p>
+<h2 id="demo">demo</h2>
+<p>使用这段代码来分析 <code>randomize_va_space</code> 效果：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>#include&#x3C;stdio.h></span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>unsigned long sp(void){</span></span>
+<span class="line"><span>    #if defined(__i386__)</span></span>
+<span class="line"><span>        asm("mov %esp, %eax");</span></span>
+<span class="line"><span>    #elif defined(__x86_64__)</span></span>
+<span class="line"><span>        asm("mov %rsp, %rax");</span></span>
+<span class="line"><span>    #endif</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>int main(int argc, const char *argv[])</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	unsigned long esp = sp();</span></span>
+<span class="line"><span>	printf("Stack pointer (ESP : 0x%lx)\n",esp);</span></span>
+<span class="line"><span>	return 0;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<h3 id="开启随机化">开启随机化</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>tencent_clould@ubuntu: ~/workspace# cat /proc/sys/kernel/randomize_va_space</span></span>
+<span class="line"><span>2</span></span>
+<span class="line"><span>tencent_clould@ubuntu: ~/workspace#</span></span></code></pre>
+<p>demo code 每次运行 sp 指针地址都不相同</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>[Running] cd "/tmp/" &#x26;&#x26; gcc 123.c -o 123 &#x26;&#x26; "/tmp/"123</span></span>
+<span class="line"><span>Stack pointer (ESP : 0x7ffe548d3a50)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>[Done] exited with code=0 in 1.375 seconds</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>[Running] cd "/tmp/" &#x26;&#x26; gcc 123.c -o 123 &#x26;&#x26; "/tmp/"123</span></span>
+<span class="line"><span>Stack pointer (ESP : 0x7fff1e5f1850)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>[Done] exited with code=0 in 0.23 seconds</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>[Running] cd "/tmp/" &#x26;&#x26; gcc 123.c -o 123 &#x26;&#x26; "/tmp/"123</span></span>
+<span class="line"><span>Stack pointer (ESP : 0x7ffe65433d80)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>[Done] exited with code=0 in 0.064 seconds</span></span></code></pre>
+<h3 id="关闭随机化">关闭随机化</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>VM-0-11-ubuntu# echo 0 >  /proc/sys/kernel/randomize_va_space</span></span>
+<span class="line"><span>VM-0-11-ubuntu# cat  /proc/sys/kernel/randomize_va_space</span></span>
+<span class="line"><span>0</span></span>
+<span class="line"><span>VM-0-11-ubuntu#</span></span></code></pre>
+<p>连续运行多次，每次 sp 指针地址都是一致的：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>[Running] cd "/tmp/" &#x26;&#x26; gcc 123.c -o 123 &#x26;&#x26; "/tmp/"123</span></span>
+<span class="line"><span>Stack pointer (ESP : 0x7fffffffe280)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>[Done] exited with code=0 in 0.054 seconds</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>[Running] cd "/tmp/" &#x26;&#x26; gcc 123.c -o 123 &#x26;&#x26; "/tmp/"123</span></span>
+<span class="line"><span>Stack pointer (ESP : 0x7fffffffe280)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>[Done] exited with code=0 in 0.05 seconds</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>[Running] cd "/tmp/" &#x26;&#x26; gcc 123.c -o 123 &#x26;&#x26; "/tmp/"123</span></span>
+<span class="line"><span>Stack pointer (ESP : 0x7fffffffe280)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>[Done] exited with code=0 in 0.051 seconds</span></span></code></pre></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

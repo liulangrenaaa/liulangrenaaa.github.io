@@ -1,0 +1,405 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>psi 相关patch | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>psi 相关patch</h1><div class="post-meta"><time datetime="2021-02-08T19:00:40.000Z">2021年2月8日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">psi</span><span class="tag">pressure</span></div></header><div class="article-body"><h2 id="psi简介">PSI简介</h2>
+<p>psi 是 <code>pressure stall information</code>缩写，主要是观测 系统压力的一系列指标</p>
+<p>下面是 Kernel Documention 翻译：
+当系统CPU，内存或IO设备有竞争风险时，workload会遇到较大的<code>sched latency</code>，吞吐量减少，并有导致OOM被杀死的风险。
+如果没有这种到底是哪种资源竞争的度量，在发生资源紧张 或者 性能问题的时候很难确定到底是那种资源
+导致的问题（毕竟 内存问题可能导致CPU占满，也会导致IO读取慢等问题），很难找出木桶中最短的那块木板。</p>
+<p>psi功能可以识别并量化由 木桶中最短缺的资源 造成的中断及其对复杂工作负载乃至整个系统的时间影响。
+准确衡量由资源短缺导致的生产力损失，可以帮助用户将工作负载调整为硬件大小，或者根据工作负载需求配
+置硬件。</p>
+<p>当psi实时汇总此信息时，可以使用诸如减载，将作业迁移到其他系统或数据中心之类的技术来动态管理系
+统，或者从战略上暂停或杀死低优先级或可重新启动的批处理作业。
+这样可以最大化硬件利用率，且不会牺牲工作负载的运行状况 或冒重大破坏（如OOM终止）的风险。</p>
+<p>关于用户空间接口，在我ubuntu 服务器上（Linux 5.8）可以看到：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>amd_server@ubuntu: ~/workspace/tmp# cat /proc/pressure/cpu</span></span>
+<span class="line"><span>some avg10=0.00 avg60=0.00 avg300=0.00 total=2344622763</span></span>
+<span class="line"><span>amd_server@ubuntu: ~/workspace/tmp# cat /proc/pressure/io</span></span>
+<span class="line"><span>some avg10=0.00 avg60=0.00 avg300=0.00 total=454836681</span></span>
+<span class="line"><span>full avg10=0.00 avg60=0.00 avg300=0.00 total=444813857</span></span>
+<span class="line"><span>amd_server@ubuntu: ~/workspace/tmp# cat /proc/pressure/memory</span></span>
+<span class="line"><span>some avg10=0.00 avg60=0.00 avg300=0.00 total=31812811</span></span>
+<span class="line"><span>full avg10=0.00 avg60=0.00 avg300=0.00 total=15845529</span></span>
+<span class="line"><span>amd_server@ubuntu: ~/workspace/tmp#</span></span></code></pre>
+<p><code>PSI</code> 的优点如上所说，可以定位系统中的 <code>短板资源</code> 是哪个。
+在没有 <code>PSI</code> 之前的情况是怎么样的呢？
+之前可以使用 <code>loadavg</code> 与 <code>vmpressure</code> 来衡量一些资源压力的情况：</p>
+<ol>
+<li><code>loadavg</code>：
+主要是衡量 一定时间内 运行队列上的进程数（running + uninterruptible 进程数量）</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>long calc_load_fold_active(struct rq *this_rq, long adjust)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	long nr_active, delta = 0;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	nr_active = this_rq->nr_running - adjust;</span></span>
+<span class="line"><span>	nr_active += (long)this_rq->nr_uninterruptible;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (nr_active != this_rq->calc_load_active) {</span></span>
+<span class="line"><span>		delta = nr_active - this_rq->calc_load_active;</span></span>
+<span class="line"><span>		this_rq->calc_load_active = nr_active;</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	return delta;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>用户空间接口<code>/proc/loadavg</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>amd_server@ubuntu: /proc# cat /proc/loadavg</span></span>
+<span class="line"><span>0.22 0.14 0.10 2/1013 752563</span></span>
+<span class="line"><span>amd_server@ubuntu: /proc#</span></span></code></pre>
+<ol start="2">
+<li><code>vmpressure</code>
+可以告知此时内存压力，但是这个需要配置 <code>CONFIG_MEMCG</code>。
+后面再写。。
+代码主要在 <code>mm/vmpressure.c</code></li>
+</ol>
+<p>缺点嘛，很明显：
+vmpressure 也有一些缺陷：
+结果仅体现内存回收压力，不能反映系统在申请内存上的资源等待时间；
+计算周期比较粗；
+粗略的几个等级通知，无法精细化管理。</p>
+<p>vmpresssure 对外接口主要是</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static inline void vmpressure(gfp_t gfp, struct mem_cgroup *memcg, bool tree,</span></span>
+<span class="line"><span>			      unsigned long scanned, unsigned long reclaimed);</span></span>
+<span class="line"><span>static inline void vmpressure_prio(gfp_t gfp, struct mem_cgroup *memcg,</span></span>
+<span class="line"><span>				   int prio);</span></span></code></pre>
+<p>查看调用栈</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>bpftrace -e 'kprobe:vmpressure { @[kstack] = count(); }'</span></span>
+<span class="line"><span>bpftrace -e 'kprobe:vmpressure_prio { @[kstack] = count(); }'</span></span></code></pre>
+<p>vmpressure</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>@[</span></span>
+<span class="line"><span>    vmpressure+1</span></span>
+<span class="line"><span>    do_try_to_free_pages+215</span></span>
+<span class="line"><span>    try_to_free_mem_cgroup_pages+254</span></span>
+<span class="line"><span>    try_charge_memcg+421</span></span>
+<span class="line"><span>    charge_memcg+69</span></span>
+<span class="line"><span>    mem_cgroup_swapin_charge_page+89</span></span>
+<span class="line"><span>    __read_swap_cache_async+532</span></span>
+<span class="line"><span>    swap_cluster_readahead+368</span></span>
+<span class="line"><span>    swapin_readahead+66</span></span>
+<span class="line"><span>    do_swap_page+950</span></span>
+<span class="line"><span>    handle_pte_fault+468</span></span>
+<span class="line"><span>    __handle_mm_fault+967</span></span>
+<span class="line"><span>    handle_mm_fault+216</span></span>
+<span class="line"><span>    do_user_addr_fault+453</span></span>
+<span class="line"><span>    exc_page_fault+119</span></span>
+<span class="line"><span>    asm_exc_page_fault+30</span></span>
+<span class="line"><span>]: 4639</span></span></code></pre>
+<p>vmpressure_prio</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>@[</span></span>
+<span class="line"><span>    vmpressure_prio+1</span></span>
+<span class="line"><span>    try_to_free_mem_cgroup_pages+254</span></span>
+<span class="line"><span>    try_charge_memcg+421</span></span>
+<span class="line"><span>    charge_memcg+69</span></span>
+<span class="line"><span>    mem_cgroup_swapin_charge_page+89</span></span>
+<span class="line"><span>    __read_swap_cache_async+532</span></span>
+<span class="line"><span>    swap_cluster_readahead+368</span></span>
+<span class="line"><span>    swapin_readahead+66</span></span>
+<span class="line"><span>    do_swap_page+950</span></span>
+<span class="line"><span>    handle_pte_fault+468</span></span>
+<span class="line"><span>    __handle_mm_fault+967</span></span>
+<span class="line"><span>    handle_mm_fault+216</span></span>
+<span class="line"><span>    do_user_addr_fault+453</span></span>
+<span class="line"><span>    exc_page_fault+119</span></span>
+<span class="line"><span>    asm_exc_page_fault+30</span></span>
+<span class="line"><span>]: 19831</span></span></code></pre>
+<h2 id="psi实现">PSI实现</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>+--------------------------------------------------------------+</span></span>
+<span class="line"><span>|                                                              |</span></span>
+<span class="line"><span>|                   LKMD OOMD等 应用层模块                       |</span></span>
+<span class="line"><span>|                                                              |</span></span>
+<span class="line"><span>+-----------+------------------------------------+-------------+</span></span>
+<span class="line"><span>            |                                    |</span></span>
+<span class="line"><span>            v                                    v</span></span>
+<span class="line"><span>       System 接口                            Per group 接口</span></span>
+<span class="line"><span>            |                                    |</span></span>
+<span class="line"><span>            |                                    |</span></span>
+<span class="line"><span>+-----------+------------------------------------+--------------+</span></span>
+<span class="line"><span>|                                                               |</span></span>
+<span class="line"><span>|      PSI 值 计 算                   PER CPUTASK和 状态时间统计   |</span></span>
+<span class="line"><span>+-----------+------------------------------------+--------------+</span></span>
+<span class="line"><span>     Enqueue| Dequeue                        Fast| path</span></span>
+<span class="line"><span>            |                                    |</span></span>
+<span class="line"><span>     Tick , |  Wakeup                       Slow | Path</span></span>
+<span class="line"><span>            |                                    |</span></span>
+<span class="line"><span>+-----------v--------------+         +-----------v--------------+</span></span>
+<span class="line"><span>|                          |         |                          |</span></span>
+<span class="line"><span>|        SCHEDULE          |         |         MEMORY           |</span></span>
+<span class="line"><span>|                          |         |                          |</span></span>
+<span class="line"><span>+--------------------------+         +--------------------------+</span></span></code></pre>
+<p>对于用户空间，PSI 模块通过文件系统节点向用户空间开放两种形态的接口。一种是系统级别的接口<code>/proc/pressure/</code>。另外一种是结合 control group，进行更精细化的分组<code>后面再写</code>。</p>
+<p>对于内核空间实现，PSI 模块通过在内存管理模块以及调度器模块中插桩，我们可以跟踪每一个任务由于 memory、io 以及 CPU 资源而进入等待状态的信息。例如系统中处于 iowait 状态的 task 数目、由于等待 memory 资源而处于阻塞状态的任务数目。</p>
+<p>代码主要在 <code>kernel/sched/psi.c</code>，<code>kernel/sched/Makefile</code>中</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>obj-$(CONFIG_PSI) += psi.o</span></span></code></pre>
+<p>这是实现为一个 kernel module的：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static int __init psi_proc_init(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	if (psi_enable) {</span></span>
+<span class="line"><span>		proc_mkdir("pressure", NULL);</span></span>
+<span class="line"><span>		proc_create("pressure/io", 0, NULL, &#x26;psi_io_proc_ops);</span></span>
+<span class="line"><span>		proc_create("pressure/memory", 0, NULL, &#x26;psi_memory_proc_ops);</span></span>
+<span class="line"><span>		proc_create("pressure/cpu", 0, NULL, &#x26;psi_cpu_proc_ops);</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>	return 0;</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span>module_init(psi_proc_init);</span></span></code></pre>
+<ol>
+<li>初始化</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static void psi_avgs_work(struct work_struct *work) {</span></span>
+<span class="line"><span>	mutex_lock(&#x26;group->avgs_lock);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	now = sched_clock();</span></span>
+<span class="line"><span>	collect_percpu_times(group, PSI_AVGS, &#x26;changed_states);</span></span>
+<span class="line"><span>	nonidle = changed_states &#x26; (1 &#x3C;&#x3C; PSI_NONIDLE);</span></span>
+<span class="line"><span>	/*</span></span>
+<span class="line"><span>	 * If there is task activity, periodically fold the per-cpu</span></span>
+<span class="line"><span>	 * times and feed samples into the running averages. If things</span></span>
+<span class="line"><span>	 * are idle and there is no data to process, stop the clock.</span></span>
+<span class="line"><span>	 * Once restarted, we'll catch up the running averages in one</span></span>
+<span class="line"><span>	 * go - see calc_avgs() and missed_periods.</span></span>
+<span class="line"><span>	 */</span></span>
+<span class="line"><span>	if (now >= group->avg_next_update)</span></span>
+<span class="line"><span>		group->avg_next_update = update_averages(group, now);</span></span>
+<span class="line"><span>	if (nonidle) {</span></span>
+<span class="line"><span>		schedule_delayed_work(dwork, nsecs_to_jiffies(</span></span>
+<span class="line"><span>				group->avg_next_update - now) + 1);</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>	mutex_unlock(&#x26;group->avgs_lock);</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static void group_init(struct psi_group *group)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	int cpu;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	for_each_possible_cpu(cpu)</span></span>
+<span class="line"><span>		seqcount_init(&#x26;per_cpu_ptr(group->pcpu, cpu)->seq);</span></span>
+<span class="line"><span>	group->avg_last_update = sched_clock();</span></span>
+<span class="line"><span>	group->avg_next_update = group->avg_last_update + psi_period;</span></span>
+<span class="line"><span>	INIT_DELAYED_WORK(&#x26;group->avgs_work, psi_avgs_work);</span></span>
+<span class="line"><span>	mutex_init(&#x26;group->avgs_lock);</span></span>
+<span class="line"><span>        ......</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>void __init psi_init(void) {</span></span>
+<span class="line"><span>	psi_period = jiffies_to_nsecs(PSI_FREQ);</span></span>
+<span class="line"><span>	group_init(&#x26;psi_system);</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>void __init sched_init(void) {</span></span>
+<span class="line"><span>	psi_init();</span></span>
+<span class="line"><span>        ......</span></span>
+<span class="line"><span>	scheduler_running = 1;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>初始化分为俩部分:
+a. 模块初始化
+b. 还有部分是跟随 schedule_init的初始化</p>
+<p>如果支持 cgroup（需要 mount cgroup2 文件系统），那么系统中会有多个 PSI group，形成层级结构。</p>
+<ol start="2">
+<li>事件触发 统计
+其实就是在各个事件发生的时候，在代码路径中埋点。
+整个 PSI 技术的核心难点其实在于如何准确捕捉到任务状态的变化，并统计状态持续时间。
+状态的标记主要通过函数 <code>psi_task_change()</code>，相关的<code>flag</code>保存在 <code>task_struct->flag</code> 中。
+如</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/* Task state bitmasks */</span></span>
+<span class="line"><span>#define TSK_IOWAIT	(1 &#x3C;&#x3C; NR_IOWAIT)</span></span>
+<span class="line"><span>#define TSK_MEMSTALL	(1 &#x3C;&#x3C; NR_MEMSTALL)</span></span>
+<span class="line"><span>#define TSK_RUNNING	(1 &#x3C;&#x3C; NR_RUNNING)</span></span>
+<span class="line"><span>#define TSK_ONCPU	(1 &#x3C;&#x3C; NR_ONCPU)</span></span></code></pre>
+<p>在 <code>enqueue_task()</code> <code>dequeue_task()</code> 中都会调用到 <code>psi</code> hook的函数，最后调用到 <code>psi_task_change()</code>，</p>
+<ol start="3">
+<li>周期性统计
+周期性统计任务是在 <code>group_init()</code> 中 开启的，</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static void calc_avgs(unsigned long avg[3], int missed_periods,</span></span>
+<span class="line"><span>		      u64 time, u64 period)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	unsigned long pct;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	/* Fill in zeroes for periods of no activity */</span></span>
+<span class="line"><span>	if (missed_periods) {</span></span>
+<span class="line"><span>		avg[0] = calc_load_n(avg[0], EXP_10s, 0, missed_periods);</span></span>
+<span class="line"><span>		avg[1] = calc_load_n(avg[1], EXP_60s, 0, missed_periods);</span></span>
+<span class="line"><span>		avg[2] = calc_load_n(avg[2], EXP_300s, 0, missed_periods);</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	/* Sample the most recent active period */</span></span>
+<span class="line"><span>	pct = div_u64(time * 100, period);</span></span>
+<span class="line"><span>	pct *= FIXED_1;</span></span>
+<span class="line"><span>	avg[0] = calc_load(avg[0], EXP_10s, pct);</span></span>
+<span class="line"><span>	avg[1] = calc_load(avg[1], EXP_60s, pct);</span></span>
+<span class="line"><span>	avg[2] = calc_load(avg[2], EXP_300s, pct);</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static u64 update_averages(struct psi_group *group, u64 now)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	expires = group->avg_next_update;</span></span>
+<span class="line"><span>	if (now - expires >= psi_period)</span></span>
+<span class="line"><span>		missed_periods = div_u64(now - expires, psi_period);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	avg_next_update = expires + ((1 + missed_periods) * psi_period);</span></span>
+<span class="line"><span>	period = now - (group->avg_last_update + (missed_periods * psi_period));</span></span>
+<span class="line"><span>	group->avg_last_update = now;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	for (s = 0; s &#x3C; NR_PSI_STATES - 1; s++) {</span></span>
+<span class="line"><span>		u32 sample;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>		sample = group->total[PSI_AVGS][s] - group->avg_total[s];</span></span>
+<span class="line"><span>		if (sample > period)</span></span>
+<span class="line"><span>			sample = period;</span></span>
+<span class="line"><span>		group->avg_total[s] += sample;</span></span>
+<span class="line"><span>		calc_avgs(group->avg[s], missed_periods, sample, period);</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	return avg_next_update;</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static void psi_avgs_work(struct work_struct *work) {</span></span>
+<span class="line"><span>	mutex_lock(&#x26;group->avgs_lock);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	now = sched_clock();</span></span>
+<span class="line"><span>	collect_percpu_times(group, PSI_AVGS, &#x26;changed_states);</span></span>
+<span class="line"><span>	nonidle = changed_states &#x26; (1 &#x3C;&#x3C; PSI_NONIDLE);</span></span>
+<span class="line"><span>	/*</span></span>
+<span class="line"><span>	 * If there is task activity, periodically fold the per-cpu</span></span>
+<span class="line"><span>	 * times and feed samples into the running averages. If things</span></span>
+<span class="line"><span>	 * are idle and there is no data to process, stop the clock.</span></span>
+<span class="line"><span>	 * Once restarted, we'll catch up the running averages in one</span></span>
+<span class="line"><span>	 * go - see calc_avgs() and missed_periods.</span></span>
+<span class="line"><span>	 */</span></span>
+<span class="line"><span>	if (now >= group->avg_next_update)</span></span>
+<span class="line"><span>		group->avg_next_update = update_averages(group, now);</span></span>
+<span class="line"><span>	if (nonidle) {</span></span>
+<span class="line"><span>		schedule_delayed_work(dwork, nsecs_to_jiffies(</span></span>
+<span class="line"><span>				group->avg_next_update - now) + 1);</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>	mutex_unlock(&#x26;group->avgs_lock);</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static void group_init(struct psi_group *group)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>        ......</span></span>
+<span class="line"><span>	INIT_DELAYED_WORK(&#x26;group->avgs_work, psi_avgs_work);</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>运行时机是 <code>psi_period = jiffies_to_nsecs(PSI_FREQ);</code> 每2s。</p>
+<p>从底层看，一个 psi group 的 PSI 值是基于任务数目统计的，当一个任务状态发生变化的时候，首先需要遍历该任务所属的 PSI group（如果不支持 cgroup，那么系统只有一个全局的 PSI group），更新 PSI group 的 task counter。</p>
+<p>一旦 task counter 发生了变化，那么我们需要进一步更新对应 CPU 上的时间统计信息。例如 iowait task count 从 0 变成 1，那么 SOME 维度的 io wait time 需要更新。具体的 per-CPU PSI 状态时间统计信息如下：</p>
+<h2 id="具体分析">具体分析</h2>
+<p>可以根据如下 标志 来跟踪内核中的埋点</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/* Task state bitmasks */</span></span>
+<span class="line"><span>#define TSK_IOWAIT	(1 &#x3C;&#x3C; NR_IOWAIT)</span></span>
+<span class="line"><span>#define TSK_MEMSTALL	(1 &#x3C;&#x3C; NR_MEMSTALL)</span></span>
+<span class="line"><span>#define TSK_RUNNING	(1 &#x3C;&#x3C; NR_RUNNING)</span></span>
+<span class="line"><span>#define TSK_ONCPU	(1 &#x3C;&#x3C; NR_ONCPU)</span></span></code></pre>
+<p>各种资源状态</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/*</span></span>
+<span class="line"><span> * Pressure states for each resource:</span></span>
+<span class="line"><span> *</span></span>
+<span class="line"><span> * SOME: Stalled tasks &#x26; working tasks</span></span>
+<span class="line"><span> * FULL: Stalled tasks &#x26; no working tasks</span></span>
+<span class="line"><span> */</span></span>
+<span class="line"><span>enum psi_states {</span></span>
+<span class="line"><span>	PSI_IO_SOME,</span></span>
+<span class="line"><span>	PSI_IO_FULL,</span></span>
+<span class="line"><span>	PSI_MEM_SOME,</span></span>
+<span class="line"><span>	PSI_MEM_FULL,</span></span>
+<span class="line"><span>	PSI_CPU_SOME,</span></span>
+<span class="line"><span>	/* Only per-CPU, to weigh the CPU in the global average: */</span></span>
+<span class="line"><span>	PSI_NONIDLE,</span></span>
+<span class="line"><span>	NR_PSI_STATES = 6,</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<p>memory 相关埋点</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static void psi_flags_change(struct task_struct *task, int clear, int set);</span></span>
+<span class="line"><span>void psi_task_change(struct task_struct *task, int clear, int set);</span></span>
+<span class="line"><span>void psi_task_switch(struct task_struct *prev, struct task_struct *next,</span></span>
+<span class="line"><span>		     bool sleep);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>void psi_memstall_enter(unsigned long *flags);</span></span>
+<span class="line"><span>void psi_memstall_leave(unsigned long *flags);</span></span></code></pre>
+<p>输出到 用户空间</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static int psi_io_show(struct seq_file *m, void *v)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	return psi_show(m, &#x26;psi_system, PSI_IO);</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static int psi_memory_show(struct seq_file *m, void *v)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	return psi_show(m, &#x26;psi_system, PSI_MEM);</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static int psi_cpu_show(struct seq_file *m, void *v)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	return psi_show(m, &#x26;psi_system, PSI_CPU);</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>有了 PSI 对系统资源压力的准确评估，可以做很多有意义的功能来最大化系统资源的利用。比如 facebook 开发的 cgroup2 和 oomd。oomd 是一个用户态的 out of  memory 监控管理服务。</p>
+<p>Android 早期在 kernel 新增了一个功能叫 lmk(low memory killer)，在有了 PSI 之后，android 将默认的 LMK 替换成了用户态的 LMKD。其代码存放于 android/system/core/lmkd/。</p>
+<p>其核心思想是给 /proc/pressure/memory 的 SOME 和 FULL 设定阈值，当延时超过阈值时，触发 lmkd daemon 进程选择进程杀死。同时，还可以结合 meminfo 的剩余内存大小来判断需要清理的程度和所选进程的优先级。</p>
+<h2 id="用户态-程序实现">用户态 程序实现</h2>
+<p>这个程序时在source code的 <code>Documentation/translations/zh_CN/accounting/psi.rst</code> 给出的 example。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>#include &#x3C;errno.h></span></span>
+<span class="line"><span>#include &#x3C;fcntl.h></span></span>
+<span class="line"><span>#include &#x3C;stdio.h></span></span>
+<span class="line"><span>#include &#x3C;poll.h></span></span>
+<span class="line"><span>#include &#x3C;string.h></span></span>
+<span class="line"><span>#include &#x3C;unistd.h></span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>/* 监控内存部分阻塞，监控时间窗口为1秒、阻塞门限为150毫秒。*/</span></span>
+<span class="line"><span>int main()</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>        const char trig[] = "some 150000 1000000";</span></span>
+<span class="line"><span>        struct pollfd fds;</span></span>
+<span class="line"><span>        char buf[512];</span></span>
+<span class="line"><span>        ssize_t ret;</span></span>
+<span class="line"><span>        int n;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        fds.fd = open("/proc/pressure/memory", O_RDWR | O_NONBLOCK);</span></span>
+<span class="line"><span>        if (fds.fd &#x3C; 0)</span></span>
+<span class="line"><span>        {</span></span>
+<span class="line"><span>                printf("/proc/pressure/memory open error: %s\n",</span></span>
+<span class="line"><span>                       strerror(errno));</span></span>
+<span class="line"><span>                return 1;</span></span>
+<span class="line"><span>        }</span></span>
+<span class="line"><span>        fds.events = POLLPRI;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        if (write(fds.fd, trig, strlen(trig) + 1) &#x3C; 0)</span></span>
+<span class="line"><span>        {</span></span>
+<span class="line"><span>                printf("/proc/pressure/memory write error: %s\n",</span></span>
+<span class="line"><span>                       strerror(errno));</span></span>
+<span class="line"><span>                return 1;</span></span>
+<span class="line"><span>        }</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        printf("waiting for events...\n");</span></span>
+<span class="line"><span>        while (1)</span></span>
+<span class="line"><span>        {</span></span>
+<span class="line"><span>                // n = poll(&#x26;fds, 1, -1);</span></span>
+<span class="line"><span>                fds.revents |= POLLPRI;</span></span>
+<span class="line"><span>                if (n &#x3C; 0)</span></span>
+<span class="line"><span>                {</span></span>
+<span class="line"><span>                        printf("poll error: %s\n", strerror(errno));</span></span>
+<span class="line"><span>                        return 1;</span></span>
+<span class="line"><span>                }</span></span>
+<span class="line"><span>                if (fds.revents &#x26; POLLERR)</span></span>
+<span class="line"><span>                {</span></span>
+<span class="line"><span>                        printf("got POLLERR, event source is gone\n");</span></span>
+<span class="line"><span>                        return 0;</span></span>
+<span class="line"><span>                }</span></span>
+<span class="line"><span>                if (fds.revents &#x26; POLLPRI)</span></span>
+<span class="line"><span>                {</span></span>
+<span class="line"><span>                        printf("event triggered!\n");</span></span>
+<span class="line"><span>                        ret = read(fds.fd, buf, sizeof(buf));</span></span>
+<span class="line"><span>                        if (ret &#x3C; 0)</span></span>
+<span class="line"><span>                        {</span></span>
+<span class="line"><span>                                printf("poll data error\n");</span></span>
+<span class="line"><span>                        }</span></span>
+<span class="line"><span>                        printf("Memory Pressure Stall Information:\n%s\n", buf);</span></span>
+<span class="line"><span>                }</span></span>
+<span class="line"><span>                else</span></span>
+<span class="line"><span>                {</span></span>
+<span class="line"><span>                        printf("unknown event received: 0x%x\n", fds.revents);</span></span>
+<span class="line"><span>                        return 1;</span></span>
+<span class="line"><span>                }</span></span>
+<span class="line"><span>        }</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        return 0;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>参考<a href="https://www.cnblogs.com/Linux-tech/p/12961296.html">文章</a></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

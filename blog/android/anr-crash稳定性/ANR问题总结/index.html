@@ -1,0 +1,191 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>ANR问题总结 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>ANR问题总结</h1><div class="post-meta"><time datetime="2022-07-01T19:00:40.000Z">2022年7月1日</time><span> / android / anr-crash稳定性</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">android</span><span class="tag">ANR</span><span class="tag">android framework</span><span class="tag">稳定性</span></div></header><div class="article-body"><h2 id="简介">简介</h2>
+<p>ANR是一套监控Android应用响应是否及时的机制，可以把发生ANR比作是引爆炸弹，那么整个流程包含三部分组成：</p>
+<ol>
+<li>埋定时炸弹：中控系统(system_server进程)启动倒计时，在规定时间内如果目标(应用进程)没有干完所有的活，则中控系统会定向炸毁(杀进程)目标。</li>
+<li>拆炸弹：在规定的时间内干完工地的所有活，并及时向中控系统报告完成，请求解除定时炸弹，则幸免于难。</li>
+<li>引爆炸弹：中控系统立即封装现场，抓取快照，搜集目标执行慢的罪证(traces)，便于后续的案件侦破(调试分析)，最后是炸毁目标。</li>
+</ol>
+<p>ANR（App Not Responding）基本上99%的App都有，即使是系统，也有system_anr，我相信虽然ANR问题这样的普遍，还是有很多人对ANR问题即熟悉又陌生的，ANR中log信息怎么看？发生的场景有哪些？广播会发生ANR吗？我的App啥事都没有干怎么发生了ANR了等等一些问题，今天通过三个案例总结一下ANR问题分析的一般套路，以做备忘。</p>
+<h3 id="anr触发机制整体流程">ANR触发机制整体流程</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">sequenceDiagram</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant SS as system_server</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant AS as AMS(ActivityManagerService)</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant NH as NH(Handler)</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant App as App进程</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant BT as Binder线程</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    Note over SS,BT: 埋炸弹阶段 - 启动倒计时</span></span>
+<span class="line"><span style="color:#E1E4E8">    AS->>NH: sendMessageDelayed(msg, timeout)</span></span>
+<span class="line"><span style="color:#E1E4E8">    Note right of NH: 开始倒计时&#x3C;br/>Input: 5s&#x3C;br/>Service: 20s/200s&#x3C;br/>Broadcast: 10s/60s</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    alt 正常完成</span></span>
+<span class="line"><span style="color:#E1E4E8">        App->>AS: 任务完成通知</span></span>
+<span class="line"><span style="color:#E1E4E8">        AS->>NH: removeMessages(msg)</span></span>
+<span class="line"><span style="color:#E1E4E8">        Note right of NH: 拆弹成功 ✅</span></span>
+<span class="line"><span style="color:#E1E4E8">    else 超时未完成</span></span>
+<span class="line"><span style="color:#E1E4E8">        Note right of NH: 倒计时结束 💣</span></span>
+<span class="line"><span style="color:#E1E4E8">        NH->>AS: 触发超时处理</span></span>
+<span class="line"><span style="color:#E1E4E8">        AS->>AS: 检查进程状态</span></span>
+<span class="line"><span style="color:#E1E4E8">        AS->>App: 发送SIGQUIT信号</span></span>
+<span class="line"><span style="color:#E1E4E8">        Note over App: 收集traces</span></span>
+<span class="line"><span style="color:#E1E4E8">        AS->>App: killProcess()</span></span>
+<span class="line"><span style="color:#E1E4E8">        Note over App: 进程被杀 💥</span></span>
+<span class="line"><span style="color:#E1E4E8">    end</span></span></code></pre>
+<h3 id="input事件anr详细流程">Input事件ANR详细流程</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[InputManager产生输入事件] --> B[InputDispatcher分发事件]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C{事件类型?}</span></span>
+<span class="line"><span style="color:#E1E4E8">    C -->|KeyEvent| D[分发到FocusedWindow]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C -->|MotionEvent| E[分发到TouchedWindow]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> F[通过InputChannel发送]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> F</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> G[App进程接收事件]</span></span>
+<span class="line"><span style="color:#E1E4E8">    G --> H{5s内处理完成?}</span></span>
+<span class="line"><span style="color:#E1E4E8">    H -->|是| I[正常响应 ✅]</span></span>
+<span class="line"><span style="color:#E1E4E8">    H -->|否| J[触发ANR]</span></span>
+<span class="line"><span style="color:#E1E4E8">    J --> K[InputDispatcher检测超时]</span></span>
+<span class="line"><span style="color:#E1E4E8">    K --> L[通知system_server]</span></span>
+<span class="line"><span style="color:#E1E4E8">    L --> M[AMS处理ANR]</span></span>
+<span class="line"><span style="color:#E1E4E8">    M --> N{显示ANR对话框?}</span></span>
+<span class="line"><span style="color:#E1E4E8">    N -->|用户选择等待| O[继续执行]</span></span>
+<span class="line"><span style="color:#E1E4E8">    N -->|用户选择关闭| P[kill进程]</span></span>
+<span class="line"><span style="color:#E1E4E8">    N -->|后台进程| Q[直接kill]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    style A fill:#e1f5fe</span></span>
+<span class="line"><span style="color:#E1E4E8">    style J fill:#ffebee</span></span>
+<span class="line"><span style="color:#E1E4E8">    style P fill:#ffcdd2</span></span>
+<span class="line"><span style="color:#E1E4E8">    style Q fill:#ffcdd2</span></span></code></pre>
+<h3 id="service-anr处理流程">Service ANR处理流程</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">stateDiagram-v2</span></span>
+<span class="line"><span style="color:#E1E4E8">    [*] --> 启动Service</span></span>
+<span class="line"><span style="color:#E1E4E8">    启动Service --> 发送超时消息: ActiveServices.realStartServiceLocked()</span></span>
+<span class="line"><span style="color:#E1E4E8">    发送超时消息 --> 等待完成: sendMessageDelayed(SERVICE_TIMEOUT_MSG)</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    等待完成 --> 正常完成: serviceDoneExecuting()</span></span>
+<span class="line"><span style="color:#E1E4E8">    等待完成 --> 超时触发: 超过时间限制</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    正常完成 --> 移除消息: removeMessages()</span></span>
+<span class="line"><span style="color:#E1E4E8">    移除消息 --> [*]: 正常结束 ✅</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    超时触发 --> 收集信息: ActiveServices.serviceTimeout()</span></span>
+<span class="line"><span style="color:#E1E4E8">    收集信息 --> 获取traces: dumpStackTraces()</span></span>
+<span class="line"><span style="color:#E1E4E8">    获取traces --> 弹出ANR对话框: mAppErrors.appNotResponding()</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    弹出ANR对话框 --> 用户等待: 点击Wait</span></span>
+<span class="line"><span style="color:#E1E4E8">    弹出ANR对话框 --> 用户关闭: 点击Close</span></span>
+<span class="line"><span style="color:#E1E4E8">    弹出ANR对话框 --> 后台进程: 直接kill</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    用户等待 --> [*]: 继续执行</span></span>
+<span class="line"><span style="color:#E1E4E8">    用户关闭 --> kill进程: Process.killProcess()</span></span>
+<span class="line"><span style="color:#E1E4E8">    kill进程 --> [*]: 进程死亡 💀</span></span></code></pre>
+<h3 id="anr信息收集与分析流程">ANR信息收集与分析流程</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart LR</span></span>
+<span class="line"><span style="color:#E1E4E8">    subgraph 触发["ANR触发"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        A1[Input超时]</span></span>
+<span class="line"><span style="color:#E1E4E8">        A2[Service超时]</span></span>
+<span class="line"><span style="color:#E1E4E8">        A3[Broadcast超时]</span></span>
+<span class="line"><span style="color:#E1E4E8">        A4[Provider超时]</span></span>
+<span class="line"><span style="color:#E1E4E8">    end</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    subgraph 收集["信息收集"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        B1[获取traces文件]</span></span>
+<span class="line"><span style="color:#E1E4E8">        B2[收集CPU使用情况]</span></span>
+<span class="line"><span style="color:#E1E4E8">        B3[收集Binder信息]</span></span>
+<span class="line"><span style="color:#E1E4E8">        B4[收集内存信息]</span></span>
+<span class="line"><span style="color:#E1E4E8">        B5[收集IO信息]</span></span>
+<span class="line"><span style="color:#E1E4E8">    end</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    subgraph 分析["问题分析"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        C1{主线程状态?}</span></span>
+<span class="line"><span style="color:#E1E4E8">        C2[Blocked - 等待锁]</span></span>
+<span class="line"><span style="color:#E1E4E8">        C3[Waiting - 等待唤醒]</span></span>
+<span class="line"><span style="color:#E1E4E8">        C4[Runnable - CPU密集]</span></span>
+<span class="line"><span style="color:#E1E4E8">        C5[Native - 系统调用]</span></span>
+<span class="line"><span style="color:#E1E4E8">    end</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    subgraph 原因["常见原因"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        D1[死锁]</span></span>
+<span class="line"><span style="color:#E1E4E8">        D2[耗时操作]</span></span>
+<span class="line"><span style="color:#E1E4E8">        D3[Binder阻塞]</span></span>
+<span class="line"><span style="color:#E1E4E8">        D4[CPU/IO竞争]</span></span>
+<span class="line"><span style="color:#E1E4E8">        D5[内存不足]</span></span>
+<span class="line"><span style="color:#E1E4E8">    end</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    触发 --> 收集</span></span>
+<span class="line"><span style="color:#E1E4E8">    收集 --> 分析</span></span>
+<span class="line"><span style="color:#E1E4E8">    C1 -->|monitor contention| C2</span></span>
+<span class="line"><span style="color:#E1E4E8">    C1 -->|Object.wait| C3</span></span>
+<span class="line"><span style="color:#E1E4E8">    C1 -->|CPU usage高| C4</span></span>
+<span class="line"><span style="color:#E1E4E8">    C1 -->|native调用| C5</span></span>
+<span class="line"><span style="color:#E1E4E8">    C2 --> D1</span></span>
+<span class="line"><span style="color:#E1E4E8">    C3 --> D3</span></span>
+<span class="line"><span style="color:#E1E4E8">    C4 --> D2</span></span>
+<span class="line"><span style="color:#E1E4E8">    C4 --> D4</span></span>
+<span class="line"><span style="color:#E1E4E8">    C5 --> D5</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    style 触发 fill:#fff3e0</span></span>
+<span class="line"><span style="color:#E1E4E8">    style 收集 fill:#e3f2fd</span></span>
+<span class="line"><span style="color:#E1E4E8">    style 分析 fill:#f3e5f5</span></span>
+<span class="line"><span style="color:#E1E4E8">    style 原因 fill:#ffebee</span></span></code></pre>
+<h3 id="binder阻塞导致anr的复杂场景">Binder阻塞导致ANR的复杂场景</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">sequenceDiagram</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Main as 主线程</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant BT as Binder线程池</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Remote as 远程进程</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant SS as system_server</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    Note over Main,SS: 场景: Binder线程池被占满</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    Main->>BT: 发起Binder调用</span></span>
+<span class="line"><span style="color:#E1E4E8">    Note right of BT: Binder线程池已满(16个)</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    par 并行Binder请求</span></span>
+<span class="line"><span style="color:#E1E4E8">        BT->>Remote: 请求1</span></span>
+<span class="line"><span style="color:#E1E4E8">        BT->>Remote: 请求2</span></span>
+<span class="line"><span style="color:#E1E4E8">        BT->>Remote: ...</span></span>
+<span class="line"><span style="color:#E1E4E8">        BT->>Remote: 请求16</span></span>
+<span class="line"><span style="color:#E1E4E8">    end</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    Note right of Remote: 远程进程繁忙&#x3C;br/>无法及时响应</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    Main->>BT: 新的Binder请求</span></span>
+<span class="line"><span style="color:#E1E4E8">    Note right of BT: 无法分配线程&#x3C;br/>阻塞等待</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    SS->>Main: 检测超时</span></span>
+<span class="line"><span style="color:#E1E4E8">    Note over Main: ANR触发!&#x3C;br/>主线程被Binder阻塞</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    Remote-->>BT: 响应请求1</span></span>
+<span class="line"><span style="color:#E1E4E8">    BT-->>Main: 返回结果</span></span>
+<span class="line"><span style="color:#E1E4E8">    Note over Main: 为时已晚&#x3C;br/>进程已被kill</span></span></code></pre>
+<h2 id="问题分析">问题分析</h2>
+<p>一句话总结ANR原因：<code>没有在规定的时间内，干完要干的事情，就会发生ANR</code>，就是 <code>system server</code> 在指定时间内没有收到应用发送的 binder call。</p>
+<h3 id="场景分类">场景分类</h3>
+<ol>
+<li>Input事件超过5s没有被处理完</li>
+<li>Service处理超时，前台20s，后台200s</li>
+<li>BroadcastReceiver处理超时，前台10S，后台60s</li>
+<li>ContentProvider执行超时，比较少见</li>
+</ol>
+<h3 id="发生原因">发生原因</h3>
+<ol>
+<li>主线程有耗时操作，如有复杂的layout布局，IO操作等，导致。</li>
+<li>被Binder对端block</li>
+<li>被子线程同步锁block</li>
+<li>Binder被占满导致主线程无法和 <code>System Server</code> 通信</li>
+<li>得不到系统资源（CPU/RAM/IO）</li>
+</ol>
+<h3 id="从进程的角度">从进程的角度</h3>
+<h4 id="问题出在当前进程">问题出在当前进程:</h4>
+<ol>
+<li>主线程本身耗时, 或则主线程的消息队列存在耗时操作;</li>
+<li>主线程被本进程的其他子线程所blocked;</li>
+</ol>
+<h4 id="问题出在远端进程">问题出在远端进程</h4>
+<ol>
+<li>一般是binder call或socket等通信方式问题</li>
+</ol>
+<p>参考<a href="https://www.androidperformance.com/2018/05/07/Android-performance-optimization-skills-and-tools/#/%E7%B3%BB%E7%BB%9F%E6%A1%86%E6%9E%B6">Android 性能优化必知必会</a>
+参考<a href="https://www.jianshu.com/p/18f16aba79dd">应用与系统稳定性第一篇---ANR问题分析的一般套路</a>
+参考<a href=""></a>
+参考<a href=""></a>
+参考<a href=""></a></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

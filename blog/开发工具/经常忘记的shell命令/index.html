@@ -1,0 +1,1647 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>那些经常忘记的shell命令 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>那些经常忘记的shell命令</h1><div class="post-meta"><time datetime="2020-09-12T19:00:00.000Z">2020年9月12日</time><span> / shell脚本</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">shell</span></div></header><div class="article-body"><p>总有那么几条经常使用，但有比较难记住的命令，做个记录。</p>
+<ol>
+<li>ln 创建连接</li>
+</ol>
+<p>ln 创建 软链接</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ln -s   实际文件/目录          软链接文件/目录</span></span>
+<span class="line"><span>ln -s /usr/sbin/trace-bpfcc /usr/bin/trace</span></span></code></pre>
+<p>ln 创建 硬链接</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ln   实际文件          硬链接文件 //目录无法使用硬链接</span></span>
+<span class="line"><span>ln  /usr/sbin/trace-bpfcc /usr/bin/trace</span></span></code></pre>
+<ol start="2">
+<li>tar</li>
+</ol>
+<p>解压 tar.gz 文件      // extrat — 提取</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>tar -zxvf file.tar.gz</span></span></code></pre>
+<p>压缩 文件、文件夹      // create  — 创建</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>tar -zcvf file.tar.gz  ./file</span></span></code></pre>
+<ol start="3">
+<li>zip</li>
+</ol>
+<p>zip 解压 aaa.zip文件</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>unzip aaa.zip</span></span></code></pre>
+<p>zip 压缩文件夹</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>zip -r aaa.zip ./aaa</span></span></code></pre>
+<p>zip 压缩多个文件</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>zip -r aaa.zip ./aaa ./bbb</span></span></code></pre>
+<ol start="4">
+<li>scp 本地 &#x3C;—> 远程 互传文件</li>
+</ol>
+<p>从 ubuntu@xxx:222 获取 <code>/home/ubuntu/.vscode-server/data/Machine/settings.json</code> 文件，且保存为 <code>/tmp/settings.json</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>scp -P  222 ubuntu@xxx:/home/ubuntu/.vscode-server/data/Machine/settings.json /tmp/settings.json</span></span></code></pre>
+<p>将本地的 elfutils-0.144.tar.bz2 文件传输到 <code>ubuntu@xxxx:/home/ubuntu/</code> 目录下</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span> scp -P  222  ./elfutils-0.144.tar.bz2 ubuntu@xxxx:/home/ubuntu/</span></span></code></pre>
+<p>可以参考<a href="https://www.cnblogs.com/bignode/articles/9241333.html">scp 命令介绍</a></p>
+<p>这样还是必须输入密码的，可以使用 <code>sshpass</code> 来免密码传输</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sshpass -p hjkl scp -P  222  ./elfutils-0.144.tar.bz2 ubuntu@xxxx:/home/ubuntu/</span></span></code></pre>
+<ol start="5">
+<li>ubuntu 截图工具</li>
+</ol>
+<p>安装</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo apt-get install flameshot</span></span></code></pre>
+<p>使用</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>flameshot gui</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Inspiron-5548@ubuntu: ~/workspace/linux-stable# cat ~/.zshrc| tail -n 1</span></span>
+<span class="line"><span>alias shot="flameshot gui"</span></span>
+<span class="line"><span>Inspiron-5548@ubuntu: ~/workspace/linux-stable# shot</span></span></code></pre>
+<ol start="6">
+<li>编译linux kernel 前准备工作</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo apt install git fakeroot build-essential ncurses-dev xz-utils libssl-dev bc flex libelf-dev bison clang gcc-aarch64-linux-gnu</span></span></code></pre>
+<ol start="7">
+<li>dd 快速生成大文件</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Inspiron-5548@130ubuntu: ~# dd if=/dev/zero of=haha bs=1M count=100</span></span>
+<span class="line"><span>记录了100+0 的读入</span></span>
+<span class="line"><span>记录了100+0 的写出</span></span>
+<span class="line"><span>104857600 bytes (105 MB, 100 MiB) copied, 0.294862 s, 356 MB/s</span></span>
+<span class="line"><span>Inspiron-5548@ubuntu: ~#</span></span></code></pre>
+<ol start="8">
+<li>rsync
+为啥我需要 rsync来同步文件目录呢？</li>
+</ol>
+<p>我的博客仓库部署在 tencent 上，其实本地公司、家里个人电脑也部署了一份，github gitee 上也备份了。
+但是如果依赖手动去同步：</p>
+<ol>
+<li>在哪个 linux机器上修改了之后及时发布到github,且及时备份到gitee</li>
+<li>到新的机器上修改之前，需要先 <code>git pull origin master</code> 将本地，或者服务器上 blog更新到最新</li>
+<li>开始修改，修改完成 —> 1</li>
+</ol>
+<p>然后我发现我这个场景 rsync 并不能很好解决。。
+如果是 一个服务器 和 备份服务器之间 数据同步 可以使用这样的方式。。
+突然想到，在新安装一台 linux主机 虚拟机 的时候，可以使用 rsync 来同步，减少 home 目录下文件搞来稿去的 事情。。</p>
+<p>远程目录同步到本地</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>rsync -avz  49.235.41.28:/home/ubuntu/workspace/blog_workspace /home/ubuntu/workspace/</span></span></code></pre>
+<p>本地目录同步到远程</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>rsync -avz /home/ubuntu/workspace/  49.235.41.28:/home/ubuntu/workspace/blog_workspace</span></span></code></pre>
+<p><a href="http://einverne.github.io/post/2017/07/rsync-introduction.html">rsync 命令</a></p>
+<ol start="9">
+<li>samba 相关</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>net Z: 192.168.1.103???</span></span></code></pre>
+<p>安装配置samba</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>#!/bin/bash</span></span>
+<span class="line"><span>sudo -S apt install samba samba-common-bin -y</span></span>
+<span class="line"><span>echo -e "[samba]\ncomment = samba\npath = /home/ubuntu/workspace\npublic = yes\nwritable = yes\ncreate mask = 0644\ndirectory mask = 0755\nforceuser = ubuntu\nforcegroup = ubuntu" | sudo -i tee -a /etc/samba/smb.conf;</span></span>
+<span class="line"><span>sudo -S systemctl enable smbd</span></span>
+<span class="line"><span>sudo -S service smbd restart</span></span></code></pre>
+<ol start="10">
+<li>wine 使用</li>
+</ol>
+<p>工作上可能需要使用通讯会议这样的软件，或者是临时使用source insight，但这些又都没有linux版
+本，要么使用wine来模拟windows api实现，要么使用windows虚拟机。</p>
+<p>这里使用wine:
+安装 <code>wine</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo apt install wine</span></span>
+<span class="line"><span>sudo apt install winetricks</span></span></code></pre>
+<p>安装 <code>软件</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo apt install winetricks</span></span></code></pre>
+<p>进去选择资源管理器，初始化一下~/.wine 目录，然后直接安装</p>
+<p>使用 <code>软件</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Inspiron-5548@ubuntu: ~/workspace# tail ~/.zshrc  -n 2</span></span>
+<span class="line"><span>alias shot="flameshot gui"</span></span>
+<span class="line"><span>alias wemeet="wine /home/ubuntu/.wine/drive_c/Program\ Files\ \(x86\)/Tencent/WeMeet/wemeetapp.exe"</span></span>
+<span class="line"><span>Inspiron-5548@ubuntu: ~/workspace# wemeet</span></span></code></pre>
+<ol start="11">
+<li>查询常见函数</li>
+</ol>
+<p>apropos</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Inspiron-5548@ubuntu: ~/workspace/kernel_debug_tools# apropos pid</span></span>
+<span class="line"><span>acpid (8)            - Advanced Configuration and Power Interface event daemon</span></span>
+<span class="line"><span>biosnoop-bpfcc (8)   - Trace block device I/O and print details incl. issuing PID.</span></span>
+<span class="line"><span>getpid (2)           - get process identification</span></span>
+<span class="line"><span>getppid (2)          - get process identification</span></span>
+<span class="line"><span>git (1)              - the stupid content tracker</span></span>
+<span class="line"><span>pid_namespaces (7)   - overview of Linux PID namespaces</span></span>
+<span class="line"><span>pidfd_open (2)       - obtain a file descriptor that refers to a process</span></span>
+<span class="line"><span>pidfd_send_signal (2) - send a signal to a process specified by a file descriptor</span></span>
+<span class="line"><span>pidof (8)            - find the process ID of a running program.</span></span>
+<span class="line"><span>pidpersec-bpfcc (8)  - Count new processes (via fork()). Uses Linux eBPF/bcc.</span></span>
+<span class="line"><span>pidpersec.bt (8)     - Count new processes (via fork()). Uses bpftrace/eBPF.</span></span>
+<span class="line"><span>waitpid (2)          - wait for process to change state</span></span>
+<span class="line"><span>Inspiron-5548@ubuntu: ~/workspace/kernel_debug_tools#</span></span></code></pre>
+<ol start="12">
+<li>查找常见软件包
+<code>sudo apt-cache search </code></li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Inspiron-5548@ubuntu: ~/workspace/kernel_debug_tools# sudo apt-cache search qemu | grep arm</span></span>
+<span class="line"><span>qemu-efi-arm - UEFI firmware for 32-bit ARM virtual machines</span></span>
+<span class="line"><span>qemu-system-arm - QEMU full system emulation binaries (arm)</span></span>
+<span class="line"><span>Inspiron-5548@ubuntu: ~/workspace/kernel_debug_tools# sudo apt-cache search qemu | grep aarch64</span></span>
+<span class="line"><span>qemu-efi-aarch64 - UEFI firmware for 64-bit ARM virtual machines</span></span>
+<span class="line"><span>Inspiron-5548@ubuntu: ~/workspace/kernel_debug_tools#</span></span></code></pre>
+<ol start="13">
+<li>make 相关
+指定 <code>gcc</code> version，和 忽略 <code>warning</code>.</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>make CC=gcc-7 CFLAGS="-Wno-error"</span></span></code></pre>
+<ol start="14">
+<li>ubuntu-21 安装低版本 gcc
+在 ubuntu-21 上需要编译 linux-3.4 版本代码，需要安装 gcc-5
+但是在ubuntu-21 上，没有提供 gcc-5的官方源，
+这时候 可以将 ubuntu-16 的源添加到 <code>/etc/apt/source.list</code> 中</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:~/workspace/linux $ sudo apt-cache policy gcc-5</span></span>
+<span class="line"><span>gcc-5:</span></span>
+<span class="line"><span>  已安装：5.4.0-6ubuntu1~16.04.12</span></span>
+<span class="line"><span>  候选： 5.4.0-6ubuntu1~16.04.12</span></span>
+<span class="line"><span>  版本列表：</span></span>
+<span class="line"><span> *** 5.4.0-6ubuntu1~16.04.12 500</span></span>
+<span class="line"><span>        500 https://mirrors.tuna.tsinghua.edu.cn/ubuntu xenial-updates/main amd64 Packages</span></span>
+<span class="line"><span>        500 https://mirrors.tuna.tsinghua.edu.cn/ubuntu xenial-security/main amd64 Packages</span></span>
+<span class="line"><span>        100 /var/lib/dpkg/status</span></span>
+<span class="line"><span>     5.3.1-14ubuntu2 500</span></span>
+<span class="line"><span>        500 https://mirrors.tuna.tsinghua.edu.cn/ubuntu xenial/main amd64 Packages</span></span>
+<span class="line"><span>ubuntu@zeku_server:~/workspace/linux $</span></span></code></pre>
+<p>参考<a href="https://blog.csdn.net/CharlieVV/article/details/111242143">Ubuntu高版本如何安装低版本GCC (以Ubuntu 20安装GCC5为例)</a></p>
+<ol start="15">
+<li>sed 命令
+<code>sed</code> <code>grep</code> <code>awk</code> 被称为linux三剑客，足以说明其强大的字符文本处理能力。
+a. 删除 ‘str1 str2’ 的特定行(这个在处理 kernel config文件时候很有用)</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@~: $ cat .config | grep "CONFIG_INLINE_SPIN_UNLOCK_IRQ=y"</span></span>
+<span class="line"><span>CONFIG_INLINE_SPIN_UNLOCK_IRQ=y</span></span>
+<span class="line"><span>ubuntu@~: $</span></span>
+<span class="line"><span>ubuntu@~: $ sed -i '/CONFIG_INLINE_SPIN_UNLOCK_IRQ=y/d' .config</span></span>
+<span class="line"><span>ubuntu@~: $ cat .config | grep "CONFIG_INLINE_SPIN_UNLOCK_IRQ=y"</span></span></code></pre>
+<p>b. l</p>
+<ol start="15">
+<li>grep 命令
+a. 最常见的</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>tencent_clould@1ubuntu: ~/workspace/blog_workspace# grep "asdfasdf" . -nr</span></span>
+<span class="line"><span>./source/file.md:224:asdfasdf_</span></span>
+<span class="line"><span>./source/file.md:239:asdfasdf</span></span>
+<span class="line"><span>tencent_clould@ubuntu: ~/workspace/blog_workspace#</span></span></code></pre>
+<p>b. <code>-w</code> 全词匹配</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>tencent_clould@ubuntu: ~/workspace/blog_workspace# grep "asdfasdf" . -nr -w</span></span>
+<span class="line"><span>./source/file.md:239:asdfasdf</span></span>
+<span class="line"><span>tencent_clould@ubuntu: ~/workspace/blog_workspace#</span></span></code></pre>
+<p>c. <code>-A 3</code> <code>-B 3</code>  <code>-C 3</code>
+显示前后几行：
+加上查找到的后三行  加上查找前三行   加上查找的前后三行</p>
+<p>d. 正则表达式</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>grep  -E 'migrate.*a.out|sched_switch.*a.out|sugov_next_freq|START|END'</span></span></code></pre>
+<ol start="16">
+<li>awk 命令
+在 下面这一段字符串总找出 关键数字。</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Big task executing for 3s...</span></span>
+<span class="line"><span>Changing to small task...</span></span>
+<span class="line"><span>Time incorrectly scheduled on small when task was big: 80561 usec (2% of big task CPU time)</span></span>
+<span class="line"><span>Time incorrectly scheduled on big when task was small, after downmigration: 53 usec (0% of small task CPU time)</span></span>
+<span class="line"><span>Downmigration latency: 72232 usec</span></span></code></pre>
+<p>awk 将shell中参数传递到 awk表达式中</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>FILE_NAME=/tmp/1234.txt</span></span>
+<span class="line"><span>lines=`awk '{print NR}'  $FILE_NAME | tail -n1`</span></span>
+<span class="line"><span>echo "lines : $lines"</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span># 循环遍历</span></span>
+<span class="line"><span>for i in $(seq 1 $lines);</span></span>
+<span class="line"><span>do</span></span>
+<span class="line"><span>        val=`awk -v i="$i" 'NR==i {print $1}' $FILE_NAME`</span></span>
+<span class="line"><span>        # awk -v i="$i" 'NR==i {print $1}' $FILE_NAME</span></span>
+<span class="line"><span>        echo "val= $val"</span></span>
+<span class="line"><span>done</span></span></code></pre>
+<p>可以使用 <code>awk -v i="$i"</code> 来传参。</p>
+<p>awk 传参到shell数组</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>#!/bin/bash</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>FILE_NAME=/tmp/1234.txt</span></span>
+<span class="line"><span>lines=`awk '{print NR}'  $FILE_NAME | tail -n1`</span></span>
+<span class="line"><span>echo "lines : $lines"</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span># 循环遍历</span></span>
+<span class="line"><span>for i in $(seq 1 $lines);</span></span>
+<span class="line"><span>do</span></span>
+<span class="line"><span>        val[$i]=`awk -v i="$i" 'NR==i {print $1}' $FILE_NAME`</span></span>
+<span class="line"><span>        # awk -v i="$i" 'NR==i {print $1}' $FILE_NAME</span></span>
+<span class="line"><span>        # echo "val= $val"</span></span>
+<span class="line"><span>done</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>for i in $(seq 1 $lines);</span></span>
+<span class="line"><span>do</span></span>
+<span class="line"><span>        echo "val[$i]= ${val[$i]}"</span></span>
+<span class="line"><span>done</span></span></code></pre>
+<ol start="17">
+<li>inline
+linux 代码中会经常使用到 <code>inline</code>的技巧，使得少一次函数调用，代码原地展开，
+但是有时候 <code>gcc</code> 编译器会 ‘智能’的给我们 inline一些我们不想 inline的函数，所以
+有什么部分可以让编译器知道我们不想 inline 某些函数呢？</li>
+</ol>
+<p>添加 <code>noinline</code> 关键字</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static void noinline create_oops(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	*(int *)0 = 0;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<ol start="18">
+<li>mount
+重新挂载某一个目录，并改变大小</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>mount -o 128M -o remount /tmp</span></span></code></pre>
+<ol start="19">
+<li>ubuntu shell 切换 wifi
+切换wifi</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo nmcli connection up Su</span></span>
+<span class="line"><span>sudo nmcli connection up ChinaNet-5mrv</span></span></code></pre>
+<p>连接wifi</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo nmcli dev wifi connect ChinaNet-5mrv password ejgaefpq</span></span></code></pre>
+<ol start="21">
+<li>ubuntu cmd 测试网络速度</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>amd_server@130ubuntu: ~/workspace# sudo apt install speedtest-cli</span></span>
+<span class="line"><span>amd_server@ubuntu: ~/workspace#</span></span>
+<span class="line"><span>amd_server@ubuntu: ~/workspace# speedtest-cli</span></span>
+<span class="line"><span>Retrieving speedtest.net configuration...</span></span>
+<span class="line"><span>Testing from China Telecom Shanghai (101.228.28.85)...</span></span>
+<span class="line"><span>Retrieving speedtest.net server list...</span></span>
+<span class="line"><span>Selecting best server based on ping...</span></span>
+<span class="line"><span>Hosted by China Telecom (Shanghai) [21.59 km]: 8.567 ms</span></span>
+<span class="line"><span>Testing download speed................................................................................</span></span>
+<span class="line"><span>Download: 19.08 Mbit/s</span></span>
+<span class="line"><span>Testing upload speed......................................................................................................</span></span>
+<span class="line"><span>Upload: 22.78 Mbit/s</span></span></code></pre>
+<ol start="22">
+<li>局域网内部两台ubuntu 之间测网速
+两台机器都需要安装<code>iperf</code></li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo apt install iperf</span></span></code></pre>
+<p>测速
+server</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>amd_server@ubuntu: ~/workspace# iperf -s</span></span>
+<span class="line"><span>------------------------------------------------------------</span></span>
+<span class="line"><span>Server listening on TCP port 5001</span></span>
+<span class="line"><span>TCP window size:  128 KByte (default)</span></span>
+<span class="line"><span>------------------------------------------------------------</span></span></code></pre>
+<p>client
+udp测速</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>h@ubuntu:~/rlk$ iperf -u -c 192.168.1.17 -b 1000M</span></span>
+<span class="line"><span>------------------------------------------------------------</span></span>
+<span class="line"><span>Client connecting to 192.168.1.17, UDP port 5001</span></span>
+<span class="line"><span>Sending 1470 byte datagrams, IPG target: 11.22 us (kalman adjust)</span></span>
+<span class="line"><span>UDP buffer size:  208 KByte (default)</span></span>
+<span class="line"><span>------------------------------------------------------------</span></span>
+<span class="line"><span>[  3] local 192.168.47.128 port 42228 connected with 192.168.1.17 port 5001</span></span>
+<span class="line"><span>[  3] WARNING: did not receive ack of last datagram after 10 tries.</span></span>
+<span class="line"><span>[ ID] Interval       Transfer     Bandwidth</span></span>
+<span class="line"><span>[  3]  0.0-10.0 sec   584 MBytes   490 Mbits/sec</span></span>
+<span class="line"><span>[  3] Sent 416552 datagrams</span></span>
+<span class="line"><span>sh@ubuntu:~/rlk$</span></span></code></pre>
+<p>tcp测速</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sh@ubuntu:~/rlk$ iperf  -c 192.168.1.17 -b 1000M</span></span>
+<span class="line"><span>------------------------------------------------------------</span></span>
+<span class="line"><span>Client connecting to 192.168.1.17, TCP port 5001</span></span>
+<span class="line"><span>TCP window size:  204 KByte (default)</span></span>
+<span class="line"><span>------------------------------------------------------------</span></span>
+<span class="line"><span>[  3] local 192.168.47.128 port 46822 connected with 192.168.1.17 port 5001</span></span>
+<span class="line"><span>[ ID] Interval       Transfer     Bandwidth</span></span>
+<span class="line"><span>[  3]  0.0-10.2 sec  22.8 MBytes  18.7 Mbits/sec</span></span></code></pre>
+<p>明显<code>tcp</code> 测速结果比 <code>udp</code>测速的慢了好多</p>
+<ol start="23">
+<li>shell 命令连续执行</li>
+</ol>
+<p><code>&#x26;&#x26;</code> 连续执行多条命令，前面执行成功，后面才能继续执行</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>amd_server@127ubuntu: ~/workspace# ls &#x26;&#x26; echo</span></span>
+<span class="line"><span>benos  data  jenkins_workspace  just_for_git  kernel_debug_tools  linux-stable  mails  nps  share  tmp  vscode</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>amd_server@ubuntu: ~/workspace# ls asdasd &#x26;&#x26; echo</span></span>
+<span class="line"><span>ls: cannot access 'asdasd': No such file or directory</span></span>
+<span class="line"><span>amd_server@2ubuntu: ~/workspace#</span></span></code></pre>
+<p><code>||</code> 前一条命令执行失败，后面命令才能继续执行</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>amd_server@ubuntu: ~/workspace# ls  || echo "hjkl"</span></span>
+<span class="line"><span>benos  data  jenkins_workspace  just_for_git  kernel_debug_tools  linux-stable  mails  nps  share  tmp  vscode</span></span>
+<span class="line"><span>amd_server@ubuntu: ~/workspace#</span></span>
+<span class="line"><span>amd_server@ubuntu: ~/workspace#</span></span>
+<span class="line"><span>amd_server@ubuntu: ~/workspace# ls asdasd || echo "hjkl"</span></span>
+<span class="line"><span>ls: cannot access 'asdasd': No such file or directory</span></span>
+<span class="line"><span>hjkl</span></span>
+<span class="line"><span>amd_server@ubuntu: ~/workspace#</span></span></code></pre>
+<p><code>;</code>顺序执行一系列命令，后一个命令不管前一条命令执行是否成功都需要执行</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>amd_server@2ubuntu: ~/workspace# ls asdasd &#x26;&#x26; echo "hjkl"</span></span>
+<span class="line"><span>ls: cannot access 'asdasd': No such file or directory</span></span>
+<span class="line"><span>amd_server@2ubuntu: ~/workspace#</span></span>
+<span class="line"><span>amd_server@2ubuntu: ~/workspace#</span></span>
+<span class="line"><span>amd_server@2ubuntu: ~/workspace# ls asdasd ; echo "hjkl"</span></span>
+<span class="line"><span>ls: cannot access 'asdasd': No such file or directory</span></span>
+<span class="line"><span>hjkl</span></span>
+<span class="line"><span>amd_server@ubuntu: ~/workspace#</span></span></code></pre>
+<p><code>&#x26;</code>后台执行</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>amd_server@ubuntu: ~/workspace# ls asdasd &#x26;</span></span>
+<span class="line"><span>[1] 75103</span></span>
+<span class="line"><span>amd_server@ubuntu: ~/workspace# ls: cannot access 'asdasd': No such file or directory</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>[1]  + 75103 exit 2     ls --color=tty asdasd</span></span>
+<span class="line"><span>amd_server@ubuntu: ~/workspace#</span></span></code></pre>
+<ol start="24">
+<li>切换 shell 为 zsh</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sh@amd_server:~/workspace/diagnose-tools $ cat /etc/shells</span></span>
+<span class="line"><span># /etc/shells: valid login shells</span></span>
+<span class="line"><span>/bin/sh</span></span>
+<span class="line"><span>/bin/bash</span></span>
+<span class="line"><span>/usr/bin/bash</span></span>
+<span class="line"><span>/bin/rbash</span></span>
+<span class="line"><span>/usr/bin/rbash</span></span>
+<span class="line"><span>/bin/dash</span></span>
+<span class="line"><span>/usr/bin/dash</span></span>
+<span class="line"><span>/usr/bin/tmux</span></span>
+<span class="line"><span>/bin/zsh</span></span>
+<span class="line"><span>/usr/bin/zsh</span></span>
+<span class="line"><span>sh@amd_server:~/workspace/diagnose-tools $ chsh -s /bin/zsh</span></span>
+<span class="line"><span>Password:</span></span>
+<span class="line"><span>sh@amd_server:~/workspace/diagnose-tools $</span></span></code></pre>
+<p>安装 o-my-zsh</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sh -c "$(wget -O- https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"</span></span></code></pre>
+<ol start="24">
+<li>生成、应用patch</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>git diff > /tmp/123.patch</span></span>
+<span class="line"><span>git apply /tmp/123.patch</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>git format-patch HEAD^</span></span>
+<span class="line"><span>git am 001-xxx.patch</span></span></code></pre>
+<ol start="25">
+<li>解压 vmlinuz 到 vmlinux</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Inspiron-5548@1ubuntu: /boot# sudo touch vmlinux</span></span>
+<span class="line"><span>Inspiron-5548@ubuntu: /boot# sudo chmod 777 vmlinux</span></span>
+<span class="line"><span>Inspiron-5548@ubuntu: /boot# sudo od -t x1 -A d vmlinuz | grep "1f 8b 08 00"</span></span>
+<span class="line"><span>0016800 8d 80 00 02 00 00 ff e0 1f 8b 08 00 00 00 00 00</span></span>
+<span class="line"><span>^C</span></span>
+<span class="line"><span>Inspiron-5548@130ubuntu: /boot# 0016800+8</span></span>
+<span class="line"><span>zsh: command not found: 0016800+8</span></span>
+<span class="line"><span>Inspiron-5548@127ubuntu: /boot# sudo dd if=vmlinuz bs=1 skip=0016808 | zcat >  vmlinux</span></span>
+<span class="line"><span>记录了9699832+0 的读入</span></span>
+<span class="line"><span>记录了9699832+0 的写出</span></span>
+<span class="line"><span>9699832 bytes (9.7 MB, 9.3 MiB) copied, 19.7819 s, 490 kB/s</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>gzip: stdin: decompression OK, trailing garbage ignored</span></span>
+<span class="line"><span>Inspiron-5548@2ubuntu: /boot#</span></span></code></pre>
+<ol start="26">
+<li>insmod failed</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>stable_kernel@1kernel: /tmp/share/test_modules/resource_leak/kmemleak# sudo insmod kmemleak.ko</span></span>
+<span class="line"><span>[   42.674738] kmemleak: module is already loaded</span></span>
+<span class="line"><span>insmod: ERROR: could not insert module kmemleak.ko: Invalid parameters</span></span>
+<span class="line"><span>stable_kernel@1kernel: /tmp/share/test_modules/resource_leak/kmemleak#</span></span>
+<span class="line"><span>stable_kernel@1kernel: /tmp/share/test_modules/resource_leak/kmemleak# dmesg | tail -n 3</span></span>
+<span class="line"><span>[   33.897197] rfkill: input handler disabled</span></span>
+<span class="line"><span>[   42.674217] kmemleak: loading out-of-tree module taints kernel.</span></span>
+<span class="line"><span>[   42.674738] kmemleak: module is already loaded</span></span></code></pre>
+<p>原因是 kernel 已经安装了一个 <code>built-in</code> 的 kmemleak 模块。</p>
+<ol start="27">
+<li>adb 脚本相关
+等待 adb 设备上线</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>adb wait-for-device</span></span></code></pre>
+<ol start="28">
+<li>bat脚本相关
+延时5s</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>timeout 5</span></span></code></pre>
+<ol start="29">
+<li>stress 使用
+<code>stress --help</code></li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>amd_server@ubuntu: ~/workspace/linux-stable# stress --help</span></span>
+<span class="line"><span>`stress' imposes certain types of compute stress on your system</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Usage: stress [OPTION [ARG]] ...</span></span>
+<span class="line"><span> -?, --help         show this help statement</span></span>
+<span class="line"><span>     --version      show version statement</span></span>
+<span class="line"><span> -v, --verbose      be verbose</span></span>
+<span class="line"><span> -q, --quiet        be quiet</span></span>
+<span class="line"><span> -n, --dry-run      show what would have been done</span></span>
+<span class="line"><span> -t, --timeout N    timeout after N seconds</span></span>
+<span class="line"><span>     --backoff N    wait factor of N microseconds before work starts</span></span>
+<span class="line"><span> -c, --cpu N        spawn N workers spinning on sqrt()</span></span>
+<span class="line"><span> -i, --io N         spawn N workers spinning on sync()</span></span>
+<span class="line"><span> -m, --vm N         spawn N workers spinning on malloc()/free()</span></span>
+<span class="line"><span>     --vm-bytes B   malloc B bytes per vm worker (default is 256MB)</span></span>
+<span class="line"><span>     --vm-stride B  touch a byte every B bytes (default is 4096)</span></span>
+<span class="line"><span>     --vm-hang N    sleep N secs before free (default none, 0 is inf)</span></span>
+<span class="line"><span>     --vm-keep      redirty memory instead of freeing and reallocating</span></span>
+<span class="line"><span> -d, --hdd N        spawn N workers spinning on write()/unlink()</span></span>
+<span class="line"><span>     --hdd-bytes B  write B bytes per hdd worker (default is 1GB)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Example: stress --cpu 8 --io 4 --vm 2 --vm-bytes 128M --timeout 10s</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Note: Numbers may be suffixed with s,m,h,d,y (time) or B,K,M,G (size).</span></span></code></pre>
+<p><code>stress -c 4</code> — 对 <code>cpu</code> 进行压力测试
+<code>stress -m 2</code> — 对 <code>memory</code> 进行压力测试，两个进程，每个进程默认占用 <code>256MB</code> 内存，一直进行<code>malloc free</code>操作，所以cpu也很高
+<code>stress -m 3 --vm-bytes 300M</code> — 对 <code>memory</code> 进行压力测试，三个进程，每个进程占用 <code>300MB</code> 内存，一直进行<code>malloc free</code>操作，所以cpu也很高
+<code>stress -m 3 --vm-bytes 300M --vm-hang 3</code> — 对 <code>memory</code> 进行压力测试，三个进程，每个进程占用 <code>300MB</code> 内存，因为hang 住，就是不会一直分配内存，所以cpu占用很少</p>
+<ol start="30">
+<li>扩大swap分区
+主要是笔记本只有4G内存，开两个vscode之后一直内存回收，swap设置小了之后会触发剧烈的pagein pageout，所以扩大一点。</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>root@ubuntu-Inspiron-5548:/# swapoff -a</span></span>
+<span class="line"><span>root@ubuntu-Inspiron-5548:/#</span></span>
+<span class="line"><span>root@ubuntu-Inspiron-5548:/# sudo dd if=/dev/zero of=swapfile bs=4M count=1024</span></span>
+<span class="line"><span>记录了1024+0 的读入</span></span>
+<span class="line"><span>记录了1024+0 的写出</span></span>
+<span class="line"><span>4294967296 bytes (4.3 GB, 4.0 GiB) copied, 10.1046 s, 425 MB/s</span></span>
+<span class="line"><span>root@ubuntu-Inspiron-5548:/#</span></span>
+<span class="line"><span>root@ubuntu-Inspiron-5548:/# sudo mkswap -f swapfile</span></span>
+<span class="line"><span>正在设置交换空间版本 1，大小 = 4 GiB (4294963200  个字节)</span></span>
+<span class="line"><span>无标签， UUID=78564906-a685-4965-a8b8-e967feb23a0f</span></span>
+<span class="line"><span>root@ubuntu-Inspiron-5548:/# swap</span></span>
+<span class="line"><span>swapin.bt  swaplabel  swapoff    swapon</span></span>
+<span class="line"><span>root@ubuntu-Inspiron-5548:/# swapo</span></span>
+<span class="line"><span>swapoff  swapon</span></span>
+<span class="line"><span>root@ubuntu-Inspiron-5548:/# swapon</span></span>
+<span class="line"><span>root@ubuntu-Inspiron-5548:/# swapon -a</span></span>
+<span class="line"><span>root@ubuntu-Inspiron-5548:/#</span></span></code></pre>
+<ol start="31">
+<li>查看 线程优先级</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>amd_server@130ubuntu: ~/workspace/share/test_modules/scheduler/userspace api/nice# ./a.out 20</span></span>
+<span class="line"><span>now nice is 20, ret = 19</span></span>
+<span class="line"><span>^C</span></span>
+<span class="line"><span>amd_server@130ubuntu: ~/workspace/share/test_modules/scheduler/userspace api/nice# ./a.out 0</span></span>
+<span class="line"><span>now nice is 0, ret = 0</span></span>
+<span class="line"><span>amd_server@130ubuntu: ~/workspace/share/test_modules/scheduler/userspace api/nice# sudo ./a.out -12</span></span>
+<span class="line"><span>now nice is -12, ret = -12</span></span>
+<span class="line"><span>^C</span></span>
+<span class="line"><span>amd_server@130ubuntu: ~/workspace/share/test_modules/scheduler/userspace api/nice#</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>amd_server@ubuntu: ~/workspace# ps -el  | grep a.out</span></span>
+<span class="line"><span>0 S  1000 1760035 1690956  0  99  19 -   625 hrtime pts/4    00:00:00 a.out</span></span>
+<span class="line"><span>amd_server@ubuntu: ~/workspace# ps -el  | grep a.out</span></span>
+<span class="line"><span>0 S  1000 1760082 1690956  0  80   0 -   625 hrtime pts/4    00:00:00 a.out</span></span>
+<span class="line"><span>amd_server@ubuntu: ~/workspace# ps -el  | grep a.out</span></span>
+<span class="line"><span>4 S     0 1761864 1761863  0  68 -12 -   624 -      pts/4    00:00:00 a.out</span></span>
+<span class="line"><span>amd_server@ubuntu: ~/workspace#</span></span></code></pre>
+<p>只有 root 用户才可以使用 -x 的 nice值。
+参考<a href="https://www.cnblogs.com/cute/archive/2011/11/08/2241258.html">Linux C语言库函数参考 — nice</a>
+参考<a href="">a.out 代码</a></p>
+<ol start="32">
+<li>改变运行中线程的优先级
+先 <code>sleep</code></li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>amd_server@130ubuntu: ~/workspace/share/test_modules/scheduler/userspace api# sleep 100</span></span>
+<span class="line"><span>amd_server@ubuntu: ~/workspace/share/test_modules/scheduler/userspace api#</span></span></code></pre>
+<p>使用 renice 改变线程优先级</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>amd_server@ubuntu: ~/workspace# ps -el  | grep sleep</span></span>
+<span class="line"><span>0 S  1000 1763468 1206623  0  80   0 -  2790 hrtime ?        00:00:00 sleep</span></span>
+<span class="line"><span>0 S  1000 1763647 1690956  0  80   0 -  2791 hrtime pts/4    00:00:00 sleep</span></span>
+<span class="line"><span>amd_server@1ubuntu: ~/workspace# renice -n 13 -p 2791</span></span>
+<span class="line"><span>amd_server@130ubuntu: ~/workspace# ps -aux  | grep sleep</span></span>
+<span class="line"><span>ubuntu   1763468  0.0  0.0  11160   520 ?        S    18:11   0:00 sleep 180</span></span>
+<span class="line"><span>ubuntu   1763647  0.0  0.0  11164   588 pts/4    S+   18:12   0:00 sleep 100</span></span>
+<span class="line"><span>ubuntu   1763805  0.0  0.0  12120   728 pts/5    S+   18:13   0:00 grep --color=auto --exclude-dir=.bzr --exclude-dir=CVS --exclude-dir=.git --exclude-dir=.hg --exclude-dir=.svn --exclude-dir=.idea --exclude-dir=.tox sleep</span></span>
+<span class="line"><span>amd_server@ubuntu: ~/workspace#</span></span>
+<span class="line"><span>amd_server@ubuntu: ~/workspace#</span></span>
+<span class="line"><span>amd_server@ubuntu: ~/workspace# renice -n 13 -p 1763647</span></span>
+<span class="line"><span>1763647 (process ID) old priority 0, new priority 13</span></span>
+<span class="line"><span>amd_server@ubuntu: ~/workspace# ps -aux  | grep sleep</span></span>
+<span class="line"><span>ubuntu   1763468  0.0  0.0  11160   520 ?        S    18:11   0:00 sleep 180</span></span>
+<span class="line"><span>ubuntu   1763647  0.0  0.0  11164   588 pts/4    SN+  18:12   0:00 sleep 100</span></span>
+<span class="line"><span>ubuntu   1763883  0.0  0.0  12120   660 pts/5    S+   18:14   0:00 grep --color=auto --exclude-dir=.bzr --exclude-dir=CVS --exclude-dir=.git --exclude-dir=.hg --exclude-dir=.svn --exclude-dir=.idea --exclude-dir=.tox sleep</span></span>
+<span class="line"><span>amd_server@ubuntu: ~/workspace#</span></span>
+<span class="line"><span>amd_server@ubuntu: ~/workspace#</span></span>
+<span class="line"><span>amd_server@ubuntu: ~/workspace#</span></span>
+<span class="line"><span>amd_server@ubuntu: ~/workspace# ps -el  | grep sleep</span></span>
+<span class="line"><span>0 S  1000 1763468 1206623  0  80   0 -  2790 hrtime ?        00:00:00 sleep</span></span>
+<span class="line"><span>0 S  1000 1763647 1690956  0  93  13 -  2791 hrtime pts/4    00:00:00 sleep</span></span>
+<span class="line"><span>amd_server@ubuntu: ~/workspace#</span></span>
+<span class="line"><span></span></span></code></pre>
+<ol start="33">
+<li>一行循环执行某个命令</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>for i in $(seq 1 20000); do   ; done</span></span>
+<span class="line"><span>for i in $(seq 1 20000); do cat /proc/28703/sched | grep effective ; done</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>for i in $(seq 1 20000); do echo $i; done</span></span>
+<span class="line"><span></span></span></code></pre>
+<ol start="34">
+<li>快速git clone 大项目</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>git clone git://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git --depth 1</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>for i in $(seq 1 200); do echo $i; done</span></span></code></pre>
+<p>然后 <code>git fetch --unshallow</code> 整个项目即可</p>
+<p>clone 指定分支</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>git clone https://android.googlesource.com/kernel/common -b android13-5.15-2022-11</span></span></code></pre>
+<ol start="35">
+<li>tuna 开源 mirror的linux仓库地址</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>mainline: git clone https://mirrors.tuna.tsinghua.edu.cn/git/linux.git</span></span>
+<span class="line"><span>stable:   git clone https://mirrors.tuna.tsinghua.edu.cn/git/linux-stable.git</span></span>
+<span class="line"><span>next:     git clone https://mirrors.tuna.tsinghua.edu.cn/git/linux-next.git</span></span></code></pre>
+<p>kernel.org官方源</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>amd_server@ubuntu: ~/workspace/stable# git remote -vv</span></span>
+<span class="line"><span>kernel  git://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git (fetch)</span></span>
+<span class="line"><span>kernel  git://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git (push)</span></span>
+<span class="line"><span>stable  git://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git (fetch)</span></span>
+<span class="line"><span>stable  git://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git (push)</span></span></code></pre>
+<ol start="36">
+<li>如何快速 clone 一个较大仓库</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>git clone --depth=1 xxx</span></span>
+<span class="line"><span>git fetch --unshallow</span></span></code></pre>
+<ol start="37">
+<li>vim 安装插件</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>:PlugInstall</span></span></code></pre>
+<ol start="38">
+<li>查看线程调度策略</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ps -eLfc | grep FF</span></span>
+<span class="line"><span>ps -eLfc | grep RR</span></span></code></pre>
+<p>具体定义如下</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>class scheduling class of the process.  (alias policy, cls).  Field's possible values are:</span></span>
+<span class="line"><span>    -   not reported</span></span>
+<span class="line"><span>    TS  SCHED_OTHER</span></span>
+<span class="line"><span>    FF  SCHED_FIFO</span></span>
+<span class="line"><span>    RR  SCHED_RR</span></span>
+<span class="line"><span>    B   SCHED_BATCH</span></span>
+<span class="line"><span>    ISO SCHED_ISO</span></span>
+<span class="line"><span>    IDL SCHED_IDLE</span></span>
+<span class="line"><span>    DLN SCHED_DEADLINE</span></span>
+<span class="line"><span>    ?   unknown value</span></span></code></pre>
+<ol start="39">
+<li>给cpu定频率</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>cpufreq-set:</span></span>
+<span class="line"><span>DESCRIPTION</span></span>
+<span class="line"><span>cpufreq-set allows you to modify cpufreq settings without having to type e.g. "/sys/devices/system/cpu/cpu0/cpufreq/scaling_set_speed" all the time.</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>OPTIONS</span></span>
+<span class="line"><span>-c --cpu &#x3C;CPU></span></span>
+<span class="line"><span>number of CPU where cpufreq settings shall be modified.</span></span>
+<span class="line"><span>-d --min &#x3C;FREQ></span></span>
+<span class="line"><span>new minimum CPU frequency the governor may select.</span></span>
+<span class="line"><span>-u --max &#x3C;FREQ></span></span>
+<span class="line"><span>new maximum CPU frequency the governor may select.</span></span>
+<span class="line"><span>-g --governor &#x3C;GOV></span></span>
+<span class="line"><span>new cpufreq governor.</span></span>
+<span class="line"><span>-f --freq &#x3C;FREQ></span></span>
+<span class="line"><span>specific frequency to be set. Requires userspace governor to be available and loaded.</span></span>
+<span class="line"><span>-h --help</span></span>
+<span class="line"><span>Prints out the help screen.</span></span></code></pre>
+<ol start="40">
+<li>git log
+<code>git log</code> 十分强大，目前一个工作是查看 Q &#x26; M的 kernel代码改了那些东西，用起来这个更是十分有必要</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>1. git log -S</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>2. git log -L :func_name:file</span></span>
+<span class="line"><span>git log -L :select_task_rq:kernel/sched/core.c</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>3. git log -Lline_num:file</span></span>
+<span class="line"><span>git log -L2825,+2:kernel/sched/core.c</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>4. git log master..feature : 包含在 feature分支，但是不在master分支上的patch</span></span>
+<span class="line"><span>5. git log --no-merges : 过滤掉merge的patch</span></span>
+<span class="line"><span>6. git log commit1 commit2 : commit1--commit2之间的patch</span></span></code></pre>
+<p>我需要监控 两个commit之间的patch，但是我只关注 <code>kernel/sched/</code> 目录下文件的修改，改如何将这些commits找出来？
+这里我写了一个<a href="https://gitee.com/shshshsh/find_releated_commits">python脚本</a>来实现。</p>
+<ol start="41">
+<li>git branch
+a. 检查哪些分支包含某个 <code>commit id</code></li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:~/workspace/msm-5.4 $ git branch -a --contains f556cd74a7ea038c67812b0d9b5d971d03da5372</span></span>
+<span class="line"><span>  msm-5.4.r5</span></span>
+<span class="line"><span>  remotes/origin/LA.AU.0.2.0.r4.1</span></span>
+<span class="line"><span>  remotes/origin/LV.AU.0.2.0.r1</span></span>
+<span class="line"><span>  remotes/origin/kernel.lnx.5.4.r1-rel</span></span>
+<span class="line"><span>  remotes/origin/kernel.lnx.5.4.r3-rel</span></span>
+<span class="line"><span>  remotes/origin/kernel.lnx.5.4.r6-rel</span></span>
+<span class="line"><span>  remotes/origin/kernel.lnx.5.4.r7-rel</span></span>
+<span class="line"><span>  remotes/origin/kernel.lnx.5.4.r9-rel</span></span>
+<span class="line"><span>  remotes/origin/msm-5.4.r2</span></span>
+<span class="line"><span>  remotes/origin/msm-5.4.r5</span></span>
+<span class="line"><span>ubuntu@zeku_server:~/workspace/msm-5.4 $ git branch -r --contains f556cd74a7ea038c67812b0d9b5d971d03da5372</span></span>
+<span class="line"><span>  origin/LA.AU.0.2.0.r4.1</span></span>
+<span class="line"><span>  origin/LV.AU.0.2.0.r1</span></span>
+<span class="line"><span>  origin/kernel.lnx.5.4.r1-rel</span></span>
+<span class="line"><span>  origin/kernel.lnx.5.4.r3-rel</span></span>
+<span class="line"><span>  origin/kernel.lnx.5.4.r6-rel</span></span>
+<span class="line"><span>  origin/kernel.lnx.5.4.r7-rel</span></span>
+<span class="line"><span>  origin/kernel.lnx.5.4.r9-rel</span></span>
+<span class="line"><span>  origin/msm-5.4.r2</span></span>
+<span class="line"><span>  origin/msm-5.4.r5</span></span>
+<span class="line"><span>ubuntu@zeku_server:~/workspace/msm-5.4 $ git branch  --contains f556cd74a7ea038c67812b0d9b5d971d03da5372</span></span>
+<span class="line"><span>  msm-5.4.r5</span></span>
+<span class="line"><span>ubuntu@zeku_server:~/workspace/msm-5.4 $ git branch msm-5.4.r5  --contains f556cd74a7ea038c67812b0d9b5d971d03da5372</span></span>
+<span class="line"><span>  msm-5.4.r5</span></span>
+<span class="line"><span>ubuntu@zeku_server:~/workspace/msm-5.4 $ git branch android11-5.4  --contains f556cd74a7ea038c67812b0d9b5d971d03da5372</span></span>
+<span class="line"><span>ubuntu@zeku_server:~/workspace/msm-5.4 $</span></span></code></pre>
+<ol start="42">
+<li>git show
+a. 查看某个 commit是哪个版本引入的</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:~/workspace/linux $ git show e6223a3b19421e3a8df1352d21fd0d71093f44ae:Makefile</span></span>
+<span class="line"><span>VERSION = 2</span></span>
+<span class="line"><span>PATCHLEVEL = 6</span></span>
+<span class="line"><span>SUBLEVEL = 36</span></span>
+<span class="line"><span>EXTRAVERSION =</span></span>
+<span class="line"><span>NAME = Flesh-Eating Bats with Fangs</span></span></code></pre>
+<ol start="43">
+<li>随机提取一个commit来生成patch</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>git format-patch HEAD^ : 生成patch</span></span>
+<span class="line"><span>git format-patch -1 commit-id : 生成这个 commit-id 的patch。</span></span></code></pre>
+<ol start="44">
+<li>gcc -E预编译 .c文件</li>
+<li>gcc 生成汇编 文件</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>gcc -S 123.c</span></span></code></pre>
+<ol start="46">
+<li>gcc 生成 汇编和 C文件 对照</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>gcc -Wa,-adlhn 123.c</span></span></code></pre>
+<ol start="47">
+<li>检查commits是否有<code>Functional change</code></li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>add helper func for util_avg and runnable_avg calc when entity</span></span>
+<span class="line"><span>enqueue and dequeue. No functional change.</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>without this change:</span></span>
+<span class="line"><span>size vmlinux</span></span>
+<span class="line"><span>   text	   data	    bss	    dec	    hex	filename</span></span>
+<span class="line"><span>19889268	6632812	2429160	28951240	1b9c2c8	vmlinux</span></span>
+<span class="line"><span>size kernel/sched/fair.o</span></span>
+<span class="line"><span>   text	   data	    bss	    dec	    hex	filename</span></span>
+<span class="line"><span>  40044	   1569	     96	  41709	   a2ed	kernel/sched/fair.o</span></span>
+<span class="line"><span>ubuntu@zeku_server:~/workspace/linux-stable $</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>with this change:</span></span>
+<span class="line"><span>size vmlinux</span></span>
+<span class="line"><span>   text	   data	    bss	    dec	    hex	filename</span></span>
+<span class="line"><span>19889268	6632812	2429160	28951240	1b9c2c8	vmlinux</span></span>
+<span class="line"><span>size kernel/sched/fair.o</span></span>
+<span class="line"><span>   text	   data	    bss	    dec	    hex	filename</span></span>
+<span class="line"><span>  40044	   1569	     96	  41709	   a2ed	kernel/sched/fair.o</span></span></code></pre>
+<p>参考<a href="https://lkml.org/lkml/2021/4/22/297">lkml 邮件</a></p>
+<ol>
+<li>编译出现<code>error, forbidden warning:</code> 编译错误</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>两种解决办法</span></span>
+<span class="line"><span>这是因为编译的时候,由于你的代码不符合标准,比如类型转换的时候,你没有强制转化(比如将int型赋值给char型,需要强制转换)或者定义了某些变量或者函数却没有使用.这些都会出现警告,而警告将会被看做错误来处理.</span></span>
+<span class="line"><span>1. 修改自己的代码,将出现的警告全部解决掉.该强制转换的强制转化,该删掉定义了未使用的变量函数删掉或者注释掉.</span></span>
+<span class="line"><span>2. 修改scripts/gcc-wrapper.py将interpret_warning(line)注释掉,这样它就不会将警告当成错误处理了</span></span></code></pre>
+<ol start="46">
+<li>qemu 邮件列表 <code>qemu-discuss@nongnu.org</code></li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>KVM开发者邮件列表是：kvm@vger.kernel.org</span></span>
+<span class="line"><span>KVM内核部分以及QEMU中与KVM相关部分的讨论都会在这里讨论。</span></span>
+<span class="line"><span>订阅方法：向majordomo@vger.kernel.org发送一封以”subscribe kvm”为正文的邮件。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>QEMU开发者邮件列表是：qemu-devel@nongnu.org</span></span>
+<span class="line"><span>QEMU普通用户讨论的邮件列表是：qemu-discuss@nongnu.org</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>KVM的IRC频道：在irc.freenode.net服务器上的#kvm频道</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>QEMU的IRC频道：在irc.oftc.net服务器上的#qemu频道</span></span></code></pre>
+<ol start="47">
+<li>android ltp 编译 test eas.</li>
+</ol>
+<p>动态编译</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>./configure CC=aarch64-linux-gnu-gcc --build=x86_64-pc-linux-gnu --target=aarch64-linux --host=aarch64-linux</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>make -j10</span></span></code></pre>
+<p>然后静态编译</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>aarch64-linux-gnu-gcc -static -g -O2 -fno-strict-aliasing -pipe -Wall -W -Wold-style-definition  -I../../../../include -I../../../../include -I../../../../include/old/  -c -o eas_big_to_small.o eas_big_to_small.c</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>aarch64-linux-gnu-gcc -static  -L../../../../lib  eas_big_to_small.o trace_parse.o util.o   -lltp -lpthread -o eas_big_to_small</span></span></code></pre>
+<ol start="48">
+<li>sched_feat 怎么动态修改？
+a. 直接在板子上修改文件节点，只对当前测试有效 <code>/sys/kernel/debug/sched_features</code>，</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>venus:/data/local/tmp/eas # cat /sys/kernel/debug/sched_features</span></span>
+<span class="line"><span>GENTLE_FAIR_SLEEPERS START_DEBIT NO_NEXT_BUDDY LAST_BUDDY CACHE_HOT_BUDDY WAKEUP_PREEMPTION NO_HRTICK NO_DOUBLE_TICK NONTASK_CAPACITY NO_TTWU_QUEUE NO_SIS_AVG_CPU S</span></span>
+<span class="line"><span>IS_PROP NO_WARN_DOUBLE_CLOCK RT_PUSH_IPI RT_RUNTIME_SHARE NO_LB_MIN ATTACH_AGE_LOAD WA_IDLE WA_WEIGHT WA_BIAS NO_UTIL_EST NO_SUGOV_RT_MAX_FREQ</span></span>
+<span class="line"><span>venus:/data/local/tmp/eas #</span></span>
+<span class="line"><span>venus:/data/local/tmp/eas #</span></span>
+<span class="line"><span>venus:/data/local/tmp/eas # echo UTIL_EST > /sys/kernel/debug/sched_features</span></span>
+<span class="line"><span>venus:/data/local/tmp/eas #</span></span>
+<span class="line"><span>venus:/data/local/tmp/eas #</span></span>
+<span class="line"><span>venus:/data/local/tmp/eas # cat /sys/kernel/debug/sched_features</span></span>
+<span class="line"><span>GENTLE_FAIR_SLEEPERS START_DEBIT NO_NEXT_BUDDY LAST_BUDDY CACHE_HOT_BUDDY WAKEUP_PREEMPTION NO_HRTICK NO_DOUBLE_TICK NONTASK_CAPACITY NO_TTWU_QUEUE NO_SIS_AVG_CPU S</span></span>
+<span class="line"><span>IS_PROP NO_WARN_DOUBLE_CLOCK RT_PUSH_IPI RT_RUNTIME_SHARE NO_LB_MIN ATTACH_AGE_LOAD WA_IDLE WA_WEIGHT WA_BIAS UTIL_EST NO_SUGOV_RT_MAX_FREQ</span></span>
+<span class="line"><span>venus:/data/local/tmp/eas #</span></span>
+<span class="line"><span>venus:/data/local/tmp/eas #</span></span></code></pre>
+<p>b. 直接修改源文件，这样编译生效
+直接修改 <code>kernel/sched/features.h</code> 文件中的 true or false。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>SCHED_FEAT(RT_RUNTIME_SHARE, true)</span></span>
+<span class="line"><span>SCHED_FEAT(LB_MIN, false)</span></span>
+<span class="line"><span>SCHED_FEAT(ATTACH_AGE_LOAD, true)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>SCHED_FEAT(WA_IDLE, true)</span></span>
+<span class="line"><span>SCHED_FEAT(WA_WEIGHT, true)</span></span>
+<span class="line"><span>SCHED_FEAT(WA_BIAS, true)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>/*</span></span>
+<span class="line"><span> * UtilEstimation. Use estimated CPU utilization.</span></span>
+<span class="line"><span> */</span></span>
+<span class="line"><span>SCHED_FEAT(UTIL_EST, true)</span></span></code></pre>
+<ol start="50">
+<li>shell 参数个数</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>if [ $# -eq 0 ];then</span></span>
+<span class="line"><span>     echo "zero param..."</span></span>
+<span class="line"><span>elif [ $# -eq 1 ];then</span></span>
+<span class="line"><span>     echo "one param..."</span></span>
+<span class="line"><span>else</span></span>
+<span class="line"><span>     echo "more than one param..."</span></span>
+<span class="line"><span>fi</span></span></code></pre>
+<ol start="51">
+<li>shell 参数值比较</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>if [ "$1" == "start" ];then   </span></span>
+<span class="line"><span>     echo "do start"</span></span>
+<span class="line"><span>elif [ "$1" == "stop" ];then</span></span>
+<span class="line"><span>     echo "do stop"</span></span>
+<span class="line"><span>else</span></span>
+<span class="line"><span>     echo "Please make sure the positon variable is start or stop."</span></span>
+<span class="line"><span>fi</span></span></code></pre>
+<ol start="52">
+<li>shell 捕获 <code>Ctrl + C</code></li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>#!/bin/bash</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>trap 'onCtrlC' INT</span></span>
+<span class="line"><span>function onCtrlC () {</span></span>
+<span class="line"><span>    echo 'Ctrl+C is captured'</span></span>
+<span class="line"><span>    exit 0</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>while true; do</span></span>
+<span class="line"><span>    echo 'I am working!'</span></span>
+<span class="line"><span>     sleep 10</span></span>
+<span class="line"><span>done</span></span></code></pre>
+<ol start="53">
+<li>
+<p>systrace 支持
+抓取到 systrace之后，还需要直观的显示出来，可以在 <code>https://ui.perfetto.dev/#!/</code> 看到，<a href="https://ui.perfetto.dev/#!/">点击跳转</a></p>
+</li>
+<li>
+<p>offline 某个 cpu</p>
+</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@ubuntu:/sys/devices/system/cpu/cpu0$ cat /sys/devices/system/cpu/cpu0/online</span></span>
+<span class="line"><span>1</span></span>
+<span class="line"><span>ubuntu@ubuntu:/sys/devices/system/cpu/cpu0$ cat /sys/devices/system/cpu/online</span></span>
+<span class="line"><span>0-3</span></span>
+<span class="line"><span>ubuntu@ubuntu:/sys/devices/system/cpu/cpu0$ cat /sys/devices/system/cpu/offline</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>ubuntu@ubuntu:/sys/devices/system/cpu/cpu0$ sudo su</span></span>
+<span class="line"><span>root@ubuntu:/sys/devices/system/cpu/cpu0# echo 0 >> /sys/devices/system/cpu/cpu0/online</span></span>
+<span class="line"><span>root@ubuntu:/sys/devices/system/cpu/cpu0# cat  /sys/devices/system/cpu/cpu0/online</span></span>
+<span class="line"><span>0</span></span>
+<span class="line"><span>root@ubuntu:/sys/devices/system/cpu/cpu0# cat echo 0 >> /sys/devices/system/cpu/online</span></span>
+<span class="line"><span>bash: /sys/devices/system/cpu/online: Permission denied</span></span>
+<span class="line"><span>root@ubuntu:/sys/devices/system/cpu/cpu0# cat /sys/devices/system/cpu/online</span></span>
+<span class="line"><span>1-3</span></span>
+<span class="line"><span>root@ubuntu:/sys/devices/system/cpu/cpu0# cat /sys/devices/system/cpu/offline</span></span>
+<span class="line"><span>0</span></span>
+<span class="line"><span>root@ubuntu:/sys/devices/system/cpu/cpu0#</span></span></code></pre>
+<ol start="55">
+<li>wsl2 限制内存, cpu使用
+文件位置 <code>D:\Users\50001309</code></li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@wsl:/mnt/d/Users/50001309 $ cat .wslconfig</span></span>
+<span class="line"><span>[wsl2]</span></span>
+<span class="line"><span>processors=3</span></span>
+<span class="line"><span>memory=3GB</span></span>
+<span class="line"><span>swap=3GB</span></span>
+<span class="line"><span>localhostForwarding=true</span></span>
+<span class="line"><span>ubuntu@wsl:/mnt/d/Users/50001309 $</span></span></code></pre>
+<ol start="57">
+<li>vscode remote-ssh 频繁断开原因
+win10 自带 openssh 与 vscode不兼容，需要修改环境变量，直接使用 git自带的ssh.</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>https://blog.csdn.net/jyhongjax/article/details/106075493#fromHistory</span></span></code></pre>
+<ol start="58">
+<li>解压 <code>patch.gz</code>
+a. 删除源文件，得到解压后的文件</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:~/workspace/linux/tmp_out $</span></span>
+<span class="line"><span>ubuntu@zeku_server:~/workspace/linux/tmp_out $ ls</span></span>
+<span class="line"><span>include  Makefile  patch-5.12-rc3-rt3.patch.gz  scripts  source</span></span>
+<span class="line"><span>ubuntu@zeku_server:~/workspace/linux/tmp_out $ gunzip -d patch-5.12-rc3-rt3.patch.gz</span></span>
+<span class="line"><span>ubuntu@zeku_server:~/workspace/linux/tmp_out $ ls</span></span>
+<span class="line"><span>include  Makefile  patch-5.12-rc3-rt3.patch  scripts  source</span></span>
+<span class="line"><span>ubuntu@zeku_server:~/workspace/linux/tmp_out $</span></span></code></pre>
+<p>b. 保留源文件，得到解压后的文件</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:~/workspace/linux/tmp_out $ gunzip -cd patch-5.12-rc3-rt3.patch.gz > patch.txt</span></span>
+<span class="line"><span>ubuntu@zeku_server:~/workspace/linux/tmp_out $</span></span></code></pre>
+<ol start="59">
+<li>解压 <code>patches.xx.tar.gz</code>
+a. 解压</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:~/workspace/linux/tmp_out $ ls</span></span>
+<span class="line"><span>include  Makefile  patches-5.12-rc3-rt3.tar.gz  scripts  source</span></span>
+<span class="line"><span>ubuntu@zeku_server:~/workspace/linux/tmp_out $ tar -zxvf patches-5.12-rc3-rt3.tar.gz</span></span>
+<span class="line"><span>patches/</span></span>
+<span class="line"><span>patches/0001-kthread-Move-prio-affinite-change-into-the-newly-cre.patch</span></span>
+<span class="line"><span>patches/0001-locking-rtmutex-Remove-cruft.patch</span></span>
+<span class="line"><span>patches/0001-mm-sl-au-b-Change-list_lock-to-raw_spinlock_t.patch</span></span>
+<span class="line"><span>...</span></span>
+<span class="line"><span>ubuntu@zeku_server:~/workspace/linux/tmp_out $ ls patches/</span></span>
+<span class="line"><span> 0001-kthread-Move-prio-affinite-change-into-the-newly-cre.patch   0019-tick-sched-Prevent-false-positive-softirq-pending-wa.patch         mm-memcontrol-Disable-preemption-in-__mod_memcg_lruv.patch</span></span>
+<span class="line"><span> 0001-locking-rtmutex-Remove-cruft.patch                           0020-kdb-only-use-atomic-consoles-for-output-mirroring.patch            mm-memcontrol-do_not_disable_irq.patch</span></span></code></pre>
+<p>b. 使用</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span></span></span></code></pre>
+<ol start="60">
+<li>给 kernel 打上 <code>rt patch</code></li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:~/workspace/linux/tmp_out $ wget http://cdn.kernel.org/pub/linux/kernel/projects/rt/5.12/patch-5.12-rc3-rt3.patch.gz</span></span>
+<span class="line"><span>--2021-05-25 10:24:37--  http://cdn.kernel.org/pub/linux/kernel/projects/rt/5.12/patch-5.12-rc3-rt3.patch.gz</span></span>
+<span class="line"><span>Resolving cdn.kernel.org (cdn.kernel.org)... 151.101.1.176, 151.101.129.176, 151.101.65.176, ...</span></span>
+<span class="line"><span>Connecting to cdn.kernel.org (cdn.kernel.org)|151.101.1.176|:80... connected.</span></span>
+<span class="line"><span>HTTP request sent, awaiting response... 200 OK</span></span>
+<span class="line"><span>Length: 135397 (132K) [application/x-gzip]</span></span>
+<span class="line"><span>Saving to: ‘patch-5.12-rc3-rt3.patch.gz’</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>patch-5.12-rc3-rt3.patch.gz                        100%[===============================================================================================================>] 132.22K   384KB/s    in 0.3s</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>2021-05-25 10:24:38 (384 KB/s) - ‘patch-5.12-rc3-rt3.patch.gz’ saved [135397/135397]</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>ubuntu@zeku_server:~/workspace/linux/tmp_out $ gunzip -d patch-5.12-rc3-rt3.patch.gz</span></span>
+<span class="line"><span>ubuntu@zeku_server:~/workspace/linux/tmp_out $ ls</span></span>
+<span class="line"><span>include  Makefile  patch-5.12-rc3-rt3.patch  scripts  source</span></span>
+<span class="line"><span>ubuntu@zeku_server:~/workspace/linux/tmp_out $</span></span>
+<span class="line"><span>ubuntu@zeku_server:~/workspace/linux/tmp_out $ cd ..</span></span>
+<span class="line"><span>ubuntu@zeku_server:~/workspace/linux $ patch -p1 &#x3C; ./tmp_out/patch-5.12-rc3-rt3.patch</span></span>
+<span class="line"><span>patching file arch/alpha/include/asm/spinlock_types.h</span></span>
+<span class="line"><span>patching file arch/arm/Kconfig</span></span>
+<span class="line"><span>patching file arch/arm/include/asm/spinlock_types.h</span></span>
+<span class="line"><span>patching file arch/arm/include/asm/thread_info.h</span></span>
+<span class="line"><span>patching file arch/arm/kernel/asm-offsets.c</span></span>
+<span class="line"><span>patching file arch/arm/kernel/entry-armv.S</span></span>
+<span class="line"><span>patching file arch/arm/kernel/signal.c</span></span>
+<span class="line"><span>......</span></span>
+<span class="line"><span>ubuntu@zeku_server:~/workspace/linux $ git st</span></span>
+<span class="line"><span>On branch 5.12-rc3</span></span>
+<span class="line"><span>Changes not staged for commit:</span></span>
+<span class="line"><span>  (use "git add/rm &#x3C;file>..." to update what will be committed)</span></span>
+<span class="line"><span>  (use "git restore &#x3C;file>..." to discard changes in working directory)</span></span>
+<span class="line"><span>	modified:   arch/alpha/include/asm/spinlock_types.h</span></span>
+<span class="line"><span>	modified:   arch/arm/Kconfig</span></span>
+<span class="line"><span>	modified:   arch/arm/include/asm/spinlock_types.h</span></span>
+<span class="line"><span>	modified:   arch/arm/include/asm/thread_info.h</span></span>
+<span class="line"><span>	modified:   arch/arm/kernel/asm-offsets.c</span></span>
+<span class="line"><span>	modified:   arch/arm/kernel/entry-armv.S</span></span>
+<span class="line"><span>	modified:   arch/arm/kernel/signal.c</span></span></code></pre>
+<ol start="61">
+<li>
+<p>MIPS DMIPS MFLOPS
+MIPS: <code>Million Instructions Per Second</code>，每秒处理的百万级的机器语言指令数。
+DMIPS：<code>Dhrystone Million Instructions Per Second</code>，整数运算测试程序 每秒处理的百万级的机器语言指令数
+MFLOPS：<code>A benchmark which attemps to estimate a system's floating-point "MFLOPS" rating for specific FADD, FSUB, FMUL and FDIV instruction mixes.</code>，是一种基于浮点运算的CPU测试程序，当然，这种测试的结果也以 MFLOPS来加以表示，代表了CPU处理浮点运算的能力。</p>
+</li>
+<li>
+<p>jenkins 升级
+tuna mirror</p>
+</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>https://mirrors.tuna.tsinghua.edu.cn/jenkins/war-stable/2.277.4/jenkins.war</span></span></code></pre>
+<p>如何升级</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>下载提示的 jenkins.war 包，上传到服务器</span></span>
+<span class="line"><span>查看 jenkins.war 的目录，比如是：/usr/share/jenkins/jenkins.war，可用如下命令查看：</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>ps aux | grep jenkins</span></span>
+<span class="line"><span>备份初始的 jenkins.war 包：cp /usr/share/jenkins/jenkins.war jenkins.war.bak</span></span>
+<span class="line"><span>停止服务：/etc/init.d/jenkins stop</span></span>
+<span class="line"><span>替换新的 war 包后，启动服务：/etc/init.d/jenkins start</span></span></code></pre>
+<ol start="63">
+<li>各种版本 gcc 下载
+wget 相应地址</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>https://ftp.gnu.org/gnu/gcc/gcc-4.8.5/</span></span></code></pre>
+<ol start="64">
+<li>linux 源文件编译成为 汇编文件</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>make kernel/sched/core.lst V=1</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>(base) ubuntu@zeku_server:~/workspace/linux $ ls kernel/sched/core.lst</span></span>
+<span class="line"><span>kernel/sched/core.lst</span></span></code></pre>
+<ol start="65">
+<li>公司服务器安装 软件
+一般公司服务器都会预装很多软件，需要使用的时候只需要 module load即可</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>module load vs_code</span></span>
+<span class="line"><span>module unload vs_code</span></span>
+<span class="line"><span>module av</span></span></code></pre>
+<ol start="66">
+<li>Ubuntu启用Cgroups V2
+首先确定 当前系统是默认启用的是 cgroup v1 还是 v2，
+可以通过 <code>/sys/fs/cgroup/cgroup.controllers</code> 文件确认，</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:~ $ cat /sys/fs/cgroup/cgroup.controllers</span></span>
+<span class="line"><span>cat: /sys/fs/cgroup/cgroup.controllers: 没有那个文件或目录</span></span></code></pre>
+<p>说明 此时还是 cgroup v1</p>
+<p>可以更新 grub文件，在启动的时候 给 kernel 传参，使得默认使用 cgroup v2。
+在<code>/etc/default/grub</code> 文件中，在 <code>GRUB_CMDLINE_LINUX</code> 中
+添加 <code>systemd.unified_cgroup_hierarchy=1</code>；
+然后<code>sudo update-grub</code> 更新 grub文件，reboot之后，系统将默认使用 cgroup v2.</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:~ $ cat /sys/fs/cgroup/cgroup.controllers</span></span>
+<span class="line"><span>cpuset cpu io memory pids rdma</span></span></code></pre>
+<p>这是系统默认使用 cgroup v2的样子</p>
+<p>也可以通过<code>mount</code> 看：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:~ $ mount | grep cgroup</span></span>
+<span class="line"><span>cgroup2 on /sys/fs/cgroup type cgroup2 (rw,nosuid,nodev,noexec,relatime,nsdelegate)</span></span>
+<span class="line"><span>ubuntu@zeku_server:~ $</span></span></code></pre>
+<p>其中
+GRUB_CMDLINE_LINUX_DEFAULT 仅在正常引导时才有效（恢复模式不适用）
+GRUB_CMDLINE_LINUX 总是有效的</p>
+<ol start="67">
+<li>ubuntu 升级
+查看当前版本</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:/etc $ lsb_release -a</span></span>
+<span class="line"><span>No LSB modules are available.</span></span>
+<span class="line"><span>Distributor ID:	Ubuntu</span></span>
+<span class="line"><span>Description:	Ubuntu 20.10</span></span>
+<span class="line"><span>Release:	20.10</span></span>
+<span class="line"><span>Codename:	groovy</span></span>
+<span class="line"><span>ubuntu@zeku_server:/etc $ uname -a</span></span>
+<span class="line"><span>Linux ubuntu-HP-ProDesk-680-G4-MT 5.8.0-59-generic #66-Ubuntu SMP Thu Jun 17 00:46:01 UTC 2021 x86_64 x86_64 x86_64 GNU/Linux</span></span>
+<span class="line"><span>ubuntu@zeku_server:/etc $ sudo do-release-upgrade</span></span>
+<span class="line"><span>正在检查新版 Ubuntu</span></span>
+<span class="line"><span>请在升级前安装您的发行版所有可用更新。</span></span>
+<span class="line"><span>ubuntu@zeku_server:/etc $</span></span></code></pre>
+<p>如果想升级到非lts版本，需要修改 <code>lts</code> 到 <code>normal</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo sed -i 's/lts/normal/g' /etc/update-manager/release-upgrades</span></span></code></pre>
+<p>最后执行升级即可</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo do-release-upgrade</span></span></code></pre>
+<p>升级成功之后查看</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:~ $  lsb_release -a</span></span>
+<span class="line"><span>No LSB modules are available.</span></span>
+<span class="line"><span>Distributor ID:	Ubuntu</span></span>
+<span class="line"><span>Description:	Ubuntu 21.04</span></span>
+<span class="line"><span>Release:	21.04</span></span>
+<span class="line"><span>Codename:	hirsute</span></span>
+<span class="line"><span>ubuntu@zeku_server:~ $ uname -a</span></span>
+<span class="line"><span>Linux ubuntu-HP-ProDesk-680-G4-MT 5.11.0-22-generic #23-Ubuntu SMP Thu Jun 17 00:34:23 UTC 2021 x86_64 x86_64 x86_64 GNU/Linux</span></span>
+<span class="line"><span>ubuntu@zeku_server:~ $</span></span>
+<span class="line"><span>ubuntu@zeku_server:~ $ sudo do-release-upgrade</span></span>
+<span class="line"><span>正在检查新版 Ubuntu</span></span>
+<span class="line"><span>There is no development version of an LTS available.</span></span>
+<span class="line"><span>To upgrade to the latest non-LTS development release</span></span>
+<span class="line"><span>set Prompt=normal in /etc/update-manager/release-upgrades.</span></span>
+<span class="line"><span>ubuntu@zeku_server:~ $</span></span></code></pre>
+<p>强制升级</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo do-release-upgrade -d</span></span></code></pre>
+<ol start="68">
+<li>删除多余 ubuntu old kernel image</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>1973  sudo dpkg --get-selections |grep linux</span></span>
+<span class="line"><span>1974  sudo dpkg --purge linux-image-5.4.0-77-generic</span></span>
+<span class="line"><span>1975  sudo dpkg --purge linux-modules-extra-5.4.0-77-generic</span></span>
+<span class="line"><span>1976  sudo dpkg --purge linux-image-5.4.0-77-generic</span></span>
+<span class="line"><span>1977  sudo dpkg --purge linux-image-5.8.0-59-generic</span></span>
+<span class="line"><span>1978  sudo dpkg --purge linux-modules-extra-5.8.0-59-generic</span></span>
+<span class="line"><span>1979  sudo dpkg --purge linux-image-5.8.0-59-generic</span></span></code></pre>
+<ol start="69">
+<li>linux selftests怎么运行？
+编译</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>make -C tools/testing/selftests</span></span></code></pre>
+<p>运行所有测试项</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>make -C tools/testing/selftests run_tests</span></span></code></pre>
+<p>运行单个测试项</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>make -C tools/testing/selftests TARGETS=ptrace run_test</span></span></code></pre>
+<p>参考<a href="https://blog.csdn.net/qq_22418329/article/details/109514029">Linux Kernel Selftests</a>
+参考<a href="https://www.kernel.org/doc/html/latest/dev-tools/kselftest.html">Doc文档</a></p>
+<ol start="70">
+<li>ubuntu bootchart 安装使用
+安装</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo apt install systemd-bootchart</span></span></code></pre>
+<p>使用 需要在 kernel 启动参数加上 <code>init=/lib/systemd/systemd-bootchart</code>，然后在<code>/run/log</code> 目录下，每次启动会生成一张 svg 的矢量图，可以分析出 boot阶段 cpu, io 的使用情况，酌情优化。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>stable_kernel@kernel: /run/log# pwd</span></span>
+<span class="line"><span>/run/log</span></span>
+<span class="line"><span>stable_kernel@kernel: /run/log# ls</span></span>
+<span class="line"><span>bootchart-20210721-1917.svg  journal</span></span>
+<span class="line"><span>stable_kernel@kernel: /run/log#</span></span></code></pre>
+<p>参考<a href="https://wiki.archlinux.org/title/Improving_performance/Boot_process#Analyzing_the_boot_process">ARCH-LINUX-WIKI-Improving performance/Boot process</a></p>
+<ol start="71">
+<li>ubuntu 配置 smba 服务器</li>
+</ol>
+<ul>
+<li>server
+安装软件包</li>
+</ul>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo apt-get install samba smbclient cifs-utils</span></span></code></pre>
+<p><code>sudo vim /etc/samba/smb.conf</code>
+在global下的workgroup=WORKGROUP下面添加一句：
+<code>security = user</code>
+最后一行添加：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>[zeku_smba]</span></span>
+<span class="line"><span>   comment = sharefolder</span></span>
+<span class="line"><span>   path = /tmp/server</span></span>
+<span class="line"><span>   valid users = zeku_smba</span></span>
+<span class="line"><span>   browseable = yes</span></span>
+<span class="line"><span>   read only = yes</span></span>
+<span class="line"><span>   create mask = 0777</span></span>
+<span class="line"><span>   directory mask = 0777</span></span>
+<span class="line"><span>   public = yes</span></span>
+<span class="line"><span>   writable = yes</span></span>
+<span class="line"><span>   available = yes</span></span></code></pre>
+<ul>
+<li>client
+wsl 上 安装 软件包</li>
+</ul>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo apt-get install smbclient cifs-utils</span></span></code></pre>
+<p>挂载 目录</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo mount -t cifs -o username=zeku_smba //10.122.7.199/zeku_smba /tmp/server/</span></span></code></pre>
+<ol start="72">
+<li>_GNU_SOURCE
+_GNU_SOURCE 有两种使用方法</li>
+</ol>
+<ul>
+<li>在包含头文件前 加上 <code>#define _GNU_SOURCE</code></li>
+<li>在链接编译的时候，加上<code>-D_GNU_SOURCE</code> 选项
+这样会降低可移植性</li>
+</ul>
+<p>参考<a href="https://stackoverflow.com/questions/5582211/what-does-define-gnu-source-imply">_GNU_SOURCE有啥用</a></p>
+<ol start="73">
+<li>ubuntu sudo 免密码</li>
+</ol>
+<ul>
+<li>sudo chmod 744 /etc/sudoers</li>
+<li>sudo vi /etc/sudoers, 最后一行添加 <code>rlk ALL=(ALL) NOPASSWD:ALL</code></li>
+<li>sudo chmod 400 /etc/sudoers, 然后即刻生效</li>
+</ul>
+<ol start="74">
+<li>
+<p>a</p>
+</li>
+<li>
+<p>a</p>
+</li>
+<li>
+<p>a</p>
+</li>
+<li>
+<p>a vmbox 虚拟机？</p>
+</li>
+<li>
+<p>linux发行版本如何选择？</p>
+</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>个人使用的话，</span></span>
+<span class="line"><span>有信仰选 Debian，</span></span>
+<span class="line"><span>追求新特性选 Fedora，</span></span>
+<span class="line"><span>爱好瞎折腾 arch 、gentoo，</span></span>
+<span class="line"><span>新手 Ubuntu，</span></span>
+<span class="line"><span>想用 Windows 软件 deepin，</span></span>
+<span class="line"><span>喜欢 kde 界面、或想在命令行下用 gui 配置选 suse，</span></span>
+<span class="line"><span>安全 Linux 小白选 kali，</span></span>
+<span class="line"><span>你问我 CentOS 怎样？它早该进坟墓了，倒是 CentOS stream 还凑合</span></span></code></pre>
+<p>参考<a href="https://www.v2ex.com/t/734996">V2EX</a>
+安装 fedora 33发现已经是 5.10.22了，果然是与mainline最近的版本。</p>
+<ol>
+<li>手动编译安装qemu</li>
+</ol>
+<p>发现卸载qemu-system-aarch64，然后重新安装，就已经支持了 raspi4了，可能是 ubuntu官方源自己适配的吧。。
+<code>ubuntu  安装  qemu-system</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo apt install qemu-system</span></span></code></pre>
+<p><code>ubuntu  卸载  qemu-system</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo apt auto-remove qemu-system</span></span></code></pre>
+<p><code>手动编译安装 qemu</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>1. sudo apt-get install git libglib2.0-dev libfdt-dev libpixman-1-dev zlib1g-dev</span></span>
+<span class="line"><span>2. sudo apt install ninja-build</span></span>
+<span class="line"><span>3. ./configure --target-list=aarch64-softmmu --enable-debug-info --enable-trace-backends=simple --prefix=/usr/local</span></span>
+<span class="line"><span>4. make -j4</span></span>
+<span class="line"><span>5. make install</span></span></code></pre>
+<p>vscode qemu 调试 raspi4b 参考
+<a href="https://blog.csdn.net/qq_17593855/article/details/134699186">https://blog.csdn.net/qq_17593855/article/details/134699186</a></p>
+<ol start="98">
+<li>linux下pdf阅读器</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>1. chorme 直接打开</span></span>
+<span class="line"><span>2. ubuntu自带的</span></span>
+<span class="line"><span>3. FoxitReader</span></span>
+<span class="line"><span>4. wps</span></span></code></pre>
+<ol start="99">
+<li>ubuntu cmd 更新 vscode
+方法一:</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>wget https://vscode-update.azurewebsites.net/latest/linux-deb-x64/stable -O /tmp/code_latest_amd64.deb</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>sudo dpkg -i /tmp/code_latest_amd64.deb</span></span></code></pre>
+<p>方法二:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo apt update</span></span>
+<span class="line"><span>sudo apt install code</span></span></code></pre>
+<p>会自动下载最新版本 code，然后解压覆盖掉老版本，避免每次手动从网页端下载。</p>
+<ol start="100">
+<li>shell 脚本检查</li>
+</ol>
+<ul>
+<li>安装</li>
+</ul>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo apt install shellcheck</span></span></code></pre>
+<ul>
+<li>检查</li>
+</ul>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>shellcheck yourscript</span></span></code></pre>
+<p>代码参考<a href="https://github.com/koalaman/shellcheck">github</a>
+使用参考<a href="https://www.cnblogs.com/zqb-all/p/10054594.html">博客</a></p>
+<ol start="101">
+<li>控制 <code>/var/log/journal</code> 目录大小</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>journalctl --vacuum-size=100M</span></span></code></pre>
+<ol start="102">
+<li><code>/var/log/btmp</code> 文件太大
+参考<a href="https://serverfault.com/questions/119299/my-var-log-btmp-file-is-huge-what-should-i-do">btmp</a>
+This means people are trying to brute-force your passwords (common on any public-facing server).
+就是有人在尝试暴力破解你的机器密码，
+Linux用户登录信息放在三个文件中：</li>
+</ol>
+<ul>
+<li>/var/run/utmp：记录当前正在登录系统的用户信息，默认由who和w记录当前登录用户的信息，uptime记录系统启动时间；</li>
+<li>/var/log/wtmp：记录当前正在登录和历史登录系统的用户信息，默认由last命令查看；</li>
+<li>/var/log/btmp：记录失败的登录尝试信息，默认由lastb命令查看。</li>
+</ul>
+<ol start="103">
+<li>jenkins 启动失败
+jenkins 自身运行的log存放在 <code>/var/log/jenkins</code> 中
+可以查看其中log，来确定具体什么原因
+其中有个原因是 8080 端口被其他进程占用了</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>2022-01-07 08:37:26.217+0000 [id=1]     SEVERE  winstone.Logger#logInternal: Container startup failed</span></span>
+<span class="line"><span>java.net.BindException: Address already in use</span></span>
+<span class="line"><span>        at sun.nio.ch.Net.bind0(Native Method)</span></span>
+<span class="line"><span>        at sun.nio.ch.Net.bind(Net.java:461)</span></span>
+<span class="line"><span>        at sun.nio.ch.Net.bind(Net.java:453)</span></span>
+<span class="line"><span>        at sun.nio.ch.ServerSocketChannelImpl.bind(ServerSocketChannelImpl.java:222)</span></span>
+<span class="line"><span>        at sun.nio.ch.ServerSocketAdaptor.bind(ServerSocketAdaptor.java:85)</span></span>
+<span class="line"><span>        at org.eclipse.jetty.server.ServerConnector.openAcceptChannel(ServerConnector.java:345)</span></span>
+<span class="line"><span>Caused: java.io.IOException: Failed to bind to 0.0.0.0/0.0.0.0:8080</span></span>
+<span class="line"><span>        at org.eclipse.jetty.server.ServerConnector.openAcceptChannel(ServerConnector.java:349)</span></span>
+<span class="line"><span>        at org.eclipse.jetty.server.ServerConnector.open(ServerConnector.java:310)</span></span>
+<span class="line"><span>        at org.eclipse.jetty.server.AbstractNetworkConnector.doStart(AbstractNetworkConnector.java:80)</span></span>
+<span class="line"><span>        at org.eclipse.jetty.server.ServerConnector.doStart(ServerConnector.java:234)</span></span>
+<span class="line"><span>        at org.eclipse.jetty.util.component.AbstractLifeCycle.start(AbstractLifeCycle.java:72)</span></span>
+<span class="line"><span>        at org.eclipse.jetty.server.Server.doStart(Server.java:386)</span></span>
+<span class="line"><span>        at org.eclipse.jetty.util.component.AbstractLifeCycle.start(AbstractLifeCycle.java:72)</span></span>
+<span class="line"><span>        at winstone.Launcher.&#x3C;init>(Launcher.java:182)</span></span>
+<span class="line"><span>Caused: java.io.IOException: Failed to start Jetty</span></span>
+<span class="line"><span>        at winstone.Launcher.&#x3C;init>(Launcher.java:184)</span></span>
+<span class="line"><span>        at winstone.Launcher.main(Launcher.java:355)</span></span>
+<span class="line"><span>        at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)</span></span>
+<span class="line"><span>        at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:62)</span></span>
+<span class="line"><span>        at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)</span></span>
+<span class="line"><span>        at java.lang.reflect.Method.invoke(Method.java:498)</span></span>
+<span class="line"><span>        at Main._main(Main.java:375)</span></span>
+<span class="line"><span>        at Main.main(Main.java:151)</span></span>
+<span class="line"><span></span></span></code></pre>
+<p>查看是哪个进程将 端口占用了</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>VM-0-11-ubuntu# netstat -tnlp</span></span>
+<span class="line"><span>Active Internet connections (only servers)</span></span>
+<span class="line"><span>Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name</span></span>
+<span class="line"><span>tcp        0      0 127.0.0.1:43265         0.0.0.0:*               LISTEN      2595/node</span></span>
+<span class="line"><span>tcp        0      0 0.0.0.0:111             0.0.0.0:*               LISTEN      1/init</span></span>
+<span class="line"><span>tcp        0      0 0.0.0.0:80              0.0.0.0:*               LISTEN      985/nginx: master p</span></span>
+<span class="line"><span>tcp        0      0 0.0.0.0:6000            0.0.0.0:*               LISTEN      944/sshd: /usr/sbin</span></span>
+<span class="line"><span>tcp        0      0 192.168.122.1:53        0.0.0.0:*               LISTEN      1712/dnsmasq</span></span>
+<span class="line"><span>tcp        0      0 10.0.3.1:53             0.0.0.0:*               LISTEN      1111/dnsmasq</span></span>
+<span class="line"><span>tcp        0      0 0.0.0.0:21              0.0.0.0:*               LISTEN      862/vsftpd</span></span>
+<span class="line"><span>tcp        0      0 127.0.0.53:53           0.0.0.0:*               LISTEN      781/systemd-resolve</span></span>
+<span class="line"><span>tcp        0      0 127.0.0.1:38551         0.0.0.0:*               LISTEN      860/containerd</span></span>
+<span class="line"><span>tcp        0      0 0.0.0.0:25              0.0.0.0:*               LISTEN      2367/master</span></span>
+<span class="line"><span>tcp        0      0 127.0.0.1:6010          0.0.0.0:*               LISTEN      2974/sshd: ubuntu@p</span></span>
+<span class="line"><span>tcp6       0      0 :::12865                :::*                    LISTEN      955/netserver</span></span>
+<span class="line"><span>tcp6       0      0 :::111                  :::*                    LISTEN      1/init</span></span>
+<span class="line"><span>tcp6       0      0 :::8080                 :::*                    LISTEN      10483/java</span></span>
+<span class="line"><span>tcp6       0      0 :::80                   :::*                    LISTEN      985/nginx: master p</span></span>
+<span class="line"><span>tcp6       0      0 :::25                   :::*                    LISTEN      2367/master</span></span>
+<span class="line"><span>VM-0-11-ubuntu# ps -aux | grep 10483</span></span>
+<span class="line"><span>tomcat     10483 20.1  6.1 2411244 125152 ?      Ssl  16:44   0:08 /usr/lib/jvm/java-8-openjdk-amd64/bin/java -Djava.util.logging.config.file=/var/lib/tomcat9/conf/logging.properties -Djava.util.logging.manager=org.apache.juli.ClassLoaderLogManager -Djava.awt.headless=true -Djdk.tls.ephemeralDHKeySize=2048 -Djava.protocol.handler.pkgs=org.apache.catalina.webresources -Dorg.apache.catalina.security.SecurityListener.UMASK=0027 -Dignore.endorsed.dirs= -classpath /usr/share/tomcat9/bin/bootstrap.jar:/usr/share/tomcat9/bin/tomcat-juli.jar -Dcatalina.base=/var/lib/tomcat9 -Dcatalina.home=/usr/share/tomcat9 -Djava.io.tmpdir=/tmp org.apache.catalina.startup.Bootstrap start</span></span>
+<span class="line"><span>root       10690  0.0  0.0   6300   672 pts/3    S+   16:44   0:00 grep 10483</span></span></code></pre>
+<p>最后将他干掉就好了</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span> 3045  2022-01-07 16:37:22 sudo service jenkins restart</span></span>
+<span class="line"><span> 3046  2022-01-07 16:37:26 sudo service jenkins status</span></span>
+<span class="line"><span> 3062  2022-01-07 16:42:38 sudo service tomcat stop</span></span></code></pre>
+<p>EBLEBUWTMOXNVAMC</p>
+<p>比较方便的是</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>lsof -i:80</span></span></code></pre>
+<ol start="104">
+<li>单独编译内核某个文件
+前提 ./out 目录下 .config文件存在</li>
+</ol>
+<p>编译成为 .s文件</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>makeARCH=arm64 CROSS_COMPILE=/usr/bin/aarch64-linux-gnu- kernel/sched/core_ctl.s O=./out/</span></span></code></pre>
+<p>编译成为 .o文件, 还可以使用 objdump 来查看 函数的反汇编，在一些场景的优化下比较重要</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>make ARCH=arm64 CROSS_COMPILE=/usr/bin/aarch64-linux-gnu- kernel/sched/core_ctl.o O=./out/</span></span>
+<span class="line"><span>objdump -d kernel/sched/core_ctl.o</span></span></code></pre>
+<p>说到优化，就必须要说 内核的 gcc 编译优化等级了，在 Makefile 中</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ifdef CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE</span></span>
+<span class="line"><span>KBUILD_CFLAGS += -O2</span></span>
+<span class="line"><span>else ifdef CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE_O3</span></span>
+<span class="line"><span>KBUILD_CFLAGS += -O3</span></span>
+<span class="line"><span>else ifdef CONFIG_CC_OPTIMIZE_FOR_SIZE</span></span>
+<span class="line"><span>KBUILD_CFLAGS += -Os</span></span>
+<span class="line"><span>endif</span></span></code></pre>
+<p>如果需要改 优化等级，直接在这里 hard code 修改为 <code>-O0</code> or <code>-O1</code> or <code>-O2</code></p>
+<ol start="105">
+<li>各个手机厂商开源的手机镜像</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>三星：</span></span>
+<span class="line"><span>https://opensource.samsung.com/projects</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>小米:</span></span>
+<span class="line"><span>device tree:  https://github.com/MiCode/kernel_devicetree/tree/umi-q-oss</span></span>
+<span class="line"><span>kernel: https://github.com/MiCode/Xiaomi_Kernel_OpenSource</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>华为:</span></span>
+<span class="line"><span>https://consumer.huawei.com/en/opensource/detail/?siteCode=worldwide&#x26;productCode=Smartphones&#x26;fileType=openSourceSoftware&#x26;pageSize=10&#x26;curPage=1</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>oppo:</span></span>
+<span class="line"><span>https://github.com/oppo-source/FindX2</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>vivo:</span></span>
+<span class="line"><span>https://opensource.vivo.com/Project</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Qcom codeaurora:</span></span>
+<span class="line"><span>https://www.codeaurora.org/</span></span>
+<span class="line"><span>https://source.codeaurora.org/quic/la/kernel/common/</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>MTK fpsgo 代码</span></span>
+<span class="line"><span>https://github.com/oppo-source/android_kernel_oppo_mt6833/tree/oppo/mt6833_s_12.1_oppo_k10_5g/drivers/misc/mediatek/performance/fpsgo_v3</span></span></code></pre>
+<p>Oplus:
+<a href="https://github.com/OnePlusOSS">https://github.com/OnePlusOSS</a></p>
+<ol start="107">
+<li>博客</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>https://xinqiu.gitbooks.io/linux-inside-zh/content/SyncPrim/linux-sync-6.html</span></span></code></pre>
+<ol start="108">
+<li>ubuntu删除旧版本内核image
+查看机器安装过哪些版本image</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:/usr/sbin $ dpkg -l | grep linux-image-</span></span>
+<span class="line"><span>ii  linux-image-5.11.0-22-generic              5.11.0-22.23                               amd64        Signed kernel image generic</span></span>
+<span class="line"><span>ii  linux-image-5.11.0-25-generic              5.11.0-25.27                               amd64        Signed kernel image generic</span></span>
+<span class="line"><span>ii  linux-image-5.11.0-38-generic              5.11.0-38.42                               amd64        Signed kernel image generic</span></span>
+<span class="line"><span>ii  linux-image-5.13.0-20-generic              5.13.0-20.20                               amd64        Signed kernel image generic</span></span>
+<span class="line"><span>ii  linux-image-5.13.0-21-generic              5.13.0-21.21                               amd64        Signed kernel image generic</span></span>
+<span class="line"><span>ii  linux-image-5.13.0-22-generic              5.13.0-22.22                               amd64        Signed kernel image generic</span></span>
+<span class="line"><span>iU  linux-image-5.13.0-27-generic              5.13.0-27.29                               amd64        Signed kernel image generic</span></span>
+<span class="line"><span>rc  linux-image-5.4.0-71-generic               5.4.0-71.79                                amd64        Signed kernel image generic</span></span>
+<span class="line"><span>rc  linux-image-5.4.0-72-generic               5.4.0-72.80                                amd64        Signed kernel image generic</span></span>
+<span class="line"><span>iU  linux-image-generic                        5.13.0.27.37                               amd64        Generic Linux kernel image</span></span>
+<span class="line"><span>ubuntu@zeku_server:/usr/sbin $</span></span></code></pre>
+<p>rc表示软件包已经删除（Removed），但配置文件（Config-files）还在．ii表示已经安装（Installed）．
+可以用</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo apt-get purge linux-image-5.13.0-21-generic</span></span></code></pre>
+<p>删除已经安装的image</p>
+<ol start="109">
+<li>linux &#x26;&#x26; windows拆分合并大文件
+windows需要</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>split trace.html -b 40m &#x26;&#x26; tail -10 trace.html  > tail.html &#x26;&#x26; cat xaa tail.html > new.html</span></span></code></pre>
+<ol start="110">
+<li>安卓过滤前台进程</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>logcat -b events | grep on_resume</span></span></code></pre>
+<p>安卓过滤前台进程之后，logcat退出，不阻塞当前shell</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>logcat -d -b events | grep on_resume</span></span></code></pre>
+<ol start="111">
+<li>安卓logcat 过滤某个tag的log</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>logcat *:S powerhal-libperfmgr</span></span></code></pre>
+<ol start="112">
+<li>安卓批量安装apk</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span># 使用应用宝下载apk，它可以保存apk文件</span></span>
+<span class="line"><span>/sdcard/Android/data/com.tencent.android.qqdownloader/files/tassistant/apk/</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span># 先压缩再pull</span></span>
+<span class="line"><span>adb shell "tar -jcvf /sdcard/Android/data/com.tencent.android.qqdownloader/files/tassistant/apk.tar.gz /sdcard/Android/data/com.tencent.android.qqdownloader/files/tassistant/apk"</span></span>
+<span class="line"><span>adb pull //sdcard/Android/data/com.tencent.android.qqdownloader/files/tassistant/apk.tar.gz ./</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span># 直接 pull</span></span>
+<span class="line"><span>adb shell "tar -jcvf /sdcard/Android/data/com.tencent.android.qqdownloader/files/tassistant/apk</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span></span></span>
+<span class="line"><span># 遍历目录安装</span></span>
+<span class="line"><span>for i in `ls ./`; do</span></span>
+<span class="line"><span>  adb install -r "${i}"</span></span>
+<span class="line"><span>done</span></span>
+<span class="line"><span></span></span></code></pre>
+<ol start="113">
+<li>echo 不换行</li>
+</ol>
+<p><code>echo -n "abc" &#x26;&#x26; echo adf</code></p>
+<ol start="114">
+<li>如何在 Markdown 文件中插入图片</li>
+</ol>
+<p>使用 Markdown 中 <code>![](/images/image.jpg)</code> 的方式访问图片。</p>
+<ol start="115">
+<li>CONFIG_COMPAT 含义</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>CONFIG_COMPAT －－－－－是否支持64 bit kernel上运行32bit 的application</span></span></code></pre>
+<ol start="116">
+<li>System V 信号量 和 POSIX 信号量区别</li>
+</ol>
+<p>System V它最初由AT&#x26;T开发，曾经也被称为AT&#x26;T System V，是Unix操作系统众多版本中的一支。在1983年第一次发布，一共发行了4个System V的主要版本，System V Release4，或者称为SVR4，是最成功的版本，该版本有些风格成为一些UNIX共同特性的源头，如下表格的初始化脚本/etc/init.d。用来控制系统的启动和关闭。
+System v信号量测试基于内核的，它放在内核里面，要使用System V信号量需要进入内核态，所以在多线程编程中一般不建议使用System V信号量，因为线程相对于进程是轻量级的，从操作系统的调度开销角度看，如果使用System V信号量会使得每次调用都要进入内核态，丧失了线程的轻量优势。当我们讨论“System v信号量”时，所指的是计数信号量集。</p>
+<p>Posix是Portable Operating System Interface(可移植性操作系统接口)的简称，是一个电气与电子工程学会即IEEE开发的一系列标准，目的是为运行在不同操作系统的应用程序提供统一的接口，实现者是不同的操作系统内核。
+Posix信号量是基于内存的，即信号量值是放在共享内存中的，它使与文件系统中的路径名对应的名字来标识。当我们谈论“Posix 信号量”时，所指的是单个计数信号量。在Linux操作系统中，Posix信号量(共享内存、消息队列)可以通过ipcs命令查看。Posix信号量多用于进程间通信。</p>
+<p>参考<a href="https://blog.csdn.net/qq_29344757/article/details/78657874">Unix/Linux的System V、BSD、Posix概念</a></p>
+<ol start="117">
+<li>代码覆盖率统计方法</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>1. 在gcc编译代码时增加参数gcov</span></span>
+<span class="line"><span>2. 使用gtest写ut用例，构造不同的参数，争取跑到函数中每个分支</span></span>
+<span class="line"><span>3. 使用gcov还原代码执行过程，生成代码执行分析文件.html</span></span></code></pre>
+<ol start="118">
+<li>下载 <code>pixel6 kernel</code> 代码
+a. <a href="https://source.android.com/setup/build/building-kernels#fromHistory">https://source.android.com/setup/build/building-kernels#fromHistory</a>
+按照这个源来，但是 实际需要 切换源。</li>
+</ol>
+<p>b. <a href="https://mirrors.tuna.tsinghua.edu.cn/help/AOSP/">https://mirrors.tuna.tsinghua.edu.cn/help/AOSP/</a> 这是清华的 源</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>注意: 本镜像是 AOSP 镜像，Android SDK因版权原因，我们不能提供镜像服务。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>可访问 https://cs.android.com 或 https://github.com/aosp-mirror 在线搜索及浏览 AOSP 源码。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>参考 Google 教程 https://source.android.com/setup/build/downloading， 将 https://android.googlesource.com/ 全部使用 https://mirrors.tuna.tsinghua.edu.cn/git/AOSP/ 代替即可。</span></span></code></pre>
+<p>实际命令</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>repo init -u https://mirrors.tuna.tsinghua.edu.cn/git/AOSP/kernel/manifest -b android-gs-raviole-5.10-android12L</span></span></code></pre>
+<p>需要注意环境变量</p>
+<ol start="119">
+<li>.repo 文件非常大</li>
+</ol>
+<p>在 .repo 目录下执行</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>先查看</span></span>
+<span class="line"><span>find . -name "*pack" -type f |xargs -I {} du -s {}|sort -k 1 -n|tail -10|awk '{print $2}'| xargs rm</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>再删除</span></span>
+<span class="line"><span>find . -name "*pack" -type f |xargs -I {} du -s {}|sort -k 1 -n|tail -10|awk '{print $2}'| xargs rm</span></span></code></pre>
+<p>参考<a href="https://blog.csdn.net/linglaoli/article/details/80083877">删除repo中大文件</a></p>
+<ol start="120">
+<li>arm training 培训地址</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>https://arm.fuseuniversal.com/learning/plans</span></span></code></pre>
+<ol start="121">
+<li>docker root权限 和 共享文件夹</li>
+</ol>
+<p>docker</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>docker run -it --privileged -v /var/lib/jenkins/workspace/tmp:/BiscuitOS/tmp/ --name my_biscuitos biscuitos-docker:latest</span></span></code></pre>
+<ol start="122">
+<li>
+<p>减少 aarch64 ubuntu image大小</p>
+</li>
+<li>
+<p>ubuntu 启动时间优化
+在使用 arm64 ubuntu debug kernel 过程中我遇到了 由于ubuntu 启动服务过多，导致ubuntu 从开机进入shell 需要 <code>90s</code> 的尴尬事情。
+后面为了提高效率 将很多服务进行 stop，我们这里进行的优化主要是 systemd 启动服务的时间。</p>
+</li>
+</ol>
+<ul>
+<li>首先查看所有服务耗时</li>
+</ul>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>systemd-analyze blame</span></span></code></pre>
+<ul>
+<li>将耗时过长的服务，且不影响我们debug的服务进行 disable，永久停用</li>
+</ul>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>systemctl disable</span></span></code></pre>
+<ol start="124">
+<li>
+<p>youtube 双字幕
+看youtube 视频可以使用 <code>YouTube™ 双字幕</code> 这个插件，有自带翻译功能。
+chrome 也有一个自带的 实时字幕功能， 通过 <code>chrome://settings/accessibility</code> 就可以关闭打开。</p>
+</li>
+<li>
+<p>CSV/TSV/PSV 格式</p>
+</li>
+<li>
+<p>vscode 查询一串 hex 字符串 的string 内容</p>
+</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Hex Util</span></span></code></pre>
+<ol start="127">
+<li>gdb无法单步调试</li>
+</ol>
+<p>使用gdb调试单步程序时如果打印提示“single stepping until exit from function xxx,which has no line number information”，可能的原因有两个：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>1 编译源文件时没有加-g选项；(二进制炸弹 遇到了)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>2 gcc与gdb版本不兼容，通常是由于手工对gcc程序进行了升级，导致现有gdb程序版本过旧，比如gcc升级到4.8版本，gdb仍为旧的7.2版本。此时需要下载新版gdb源码包(7.8版本可行)，手工升级gdb。</span></span></code></pre>
+<ol start="128">
+<li>google 浏览器插件
+值得装的是</li>
+</ol>
+<ul>
+<li><code>uBlacklist</code>: 直接屏蔽一个网站，我是把 csdn.net给屏蔽了</li>
+<li><code>YouTube™ 双字幕</code>: youtube 视频翻译</li>
+<li><code>Adblock Plus - 免费的广告拦截器</code>:  拦截广告</li>
+<li><code>Vimium</code>: vim操作</li>
+</ul>
+<ol start="129">
+<li>shell 函数捕捉 <code>ctrl + c</code>
+trap 是 shell 提供的一个 信号函数</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>trap 'rm $JENKINS_RUNNING_FILE; exit 1' INT</span></span></code></pre>
+<p><code>trap -l</code> 可以列出总共的 <code>SIGNAL</code></p>
+<ol start="130">
+<li>在我的 jenkins 编译平台上经常会出现
+<code>.config:129:warning: symbol value 'm' invalid for SCHED_CORE</code> warning。
+这种 warning 主要是由于默认的 <code>.config</code> 中设置为了<code>m</code>,
+但是 CONFIG_SCHED_CORE 只能配置为 y or n, 并不支持配置为 m</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>CONFIG_SCHED_CORE=m</span></span></code></pre>
+<p>改为</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>CONFIG_SCHED_CORE is not set</span></span></code></pre>
+<p>就不会报错了</p>
+<p>在 <code>kernel/Kconfig.preempt</code> 文件中</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>config SCHED_CORE</span></span>
+<span class="line"><span>	bool "Core Scheduling for SMT"</span></span></code></pre>
+<ol start="131">
+<li>host主机上 docker 不用 sudo权限就能看大部分文件</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo chmod 777 /var/run/docker.sock</span></span></code></pre>
+<ol start="132">
+<li>biscuitos 的 docker构建</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>wget https://raw.githubusercontent.com/BiscuitOS/BiscuitOS/Stable_long/scripts/Docker/build.sh</span></span>
+<span class="line"><span>chmod 777 build.sh &#x26;&#x26; ./build.sh</span></span></code></pre>
+<ol start="133">
+<li>qemu 虚拟机和host主机共享文件
+a. 9p 网络文件系统方案</li>
+</ol>
+<p>b. 共享挂载磁盘方案
+<a href="https://blog.csdn.net/u011164819/article/details/121539326">https://blog.csdn.net/u011164819/article/details/121539326</a></p>
+<ol start="134">
+<li>ubuntu-base 构建最小qemu系统
+通过 <code>ubuntu-base</code> 来构建</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>http://cdimage.ubuntu.com/ubuntu-base/releases/jammy/release/</span></span></code></pre>
+<ol start="135">
+<li>last_kmsg 实现</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>mv last_kmsg.5  last_kmsg.6</span></span>
+<span class="line"><span>mv last_kmsg.4  last_kmsg.5</span></span>
+<span class="line"><span>mv last_kmsg.3  last_kmsg.4</span></span>
+<span class="line"><span>mv last_kmsg.2  last_kmsg.3</span></span>
+<span class="line"><span>mv last_kmsg.1  last_kmsg.2</span></span>
+<span class="line"><span>mv last_kmsg    last_kmsg.1</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>dmesg > /tmp/log/kmsg</span></span></code></pre>
+<ol start="136">
+<li>kthread 设置cpu 亲和性</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>void kthread_bind(struct task_struct *p, unsigned int cpu);</span></span></code></pre>
+<ol start="137">
+<li>gdb-multiarch debug vmlinux 设置源码(source code) 目录</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>dir ~/Documents/glibc-2.28/build</span></span></code></pre>
+<ol start="138">
+<li>新建的docker image如何限制资源</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo docker run -it --privileged --name my_ubuntu_01  --cpus=2  -m 1024M ubuntu:latest /bin/bash</span></span></code></pre>
+<ol start="139">
+<li>查看 某个函数的调用栈</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo bpftrace -e 'kprobe:wakeup_softirqd { @[kstack] = count(); }'</span></span></code></pre>
+<ol start="140">
+<li>如何回复一个和自己无关的社区邮件
+在这个网址找到一个patch</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>https://lore.kernel.org/all/164733306005.16921.3541059674681362392.tip-bot2@tip-bot2/</span></span></code></pre>
+<p>其中写明了如何回复这个邮件</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>git send-email \</span></span>
+<span class="line"><span>    --in-reply-to=164733306005.16921.3541059674681362392.tip-bot2@tip-bot2 \</span></span>
+<span class="line"><span>    --to=tip-bot2@linutronix.de \</span></span>
+<span class="line"><span>    --cc=linux-kernel@vger.kernel.org \</span></span>
+<span class="line"><span>    --cc=linux-tip-commits@vger.kernel.org \</span></span>
+<span class="line"><span>    --cc=mingo@kernel.org \</span></span>
+<span class="line"><span>    --cc=peterz@infradead.org \</span></span>
+<span class="line"><span>    --cc=x86@kernel.org \</span></span>
+<span class="line"><span>    --subject='Re: [tip: sched/core] sched/headers: Introduce kernel/sched/build_utility.c and build multiple .c files there' \</span></span>
+<span class="line"><span>    /path/to/YOUR_REPLY</span></span></code></pre>
+<p>新发送一个邮件</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>git send-email /home/ubuntu/workspace/kvmtool/0001-update_headers.sh-Remove-arm-architecture.patch --to=sh_def@163.com</span></span></code></pre>
+<ol start="141">
+<li>zeku qemu 虚拟机密码
+x86</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>rlk:123</span></span>
+<span class="line"><span>ubuntu:hjkl</span></span></code></pre>
+<p>arm64</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>rlk:123</span></span>
+<span class="line"><span>ubuntu:hjkl</span></span></code></pre>
+<ol start="142">
+<li>/sys/kernel/debug 目录是空的</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>mount -t debugfs debugfs /sys/kernel/debug</span></span>
+<span class="line"><span>mkdir /sys/kernel/debug/tracing</span></span>
+<span class="line"><span>mount -t tracefs tracefs /sys/kernel/debug/tracing</span></span></code></pre>
+<ol start="142">
+<li>
+<p>adb 常用命令
+<code>https://www.jianshu.com/p/0693b841c83b</code></p>
+</li>
+<li>
+<p>PS1 定制
+<a href="https://scriptim.github.io/bash-prompt-generator/">https://scriptim.github.io/bash-prompt-generator/</a></p>
+</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>function parse_root() {</span></span>
+<span class="line"><span>        echo `pwd` | sed 's?/remote/swg/users/hsu/?~/?'</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>PS1='\[\e[0;38;5;215m\][\[\e[0;1;4;38;5;173m\]$(git branch 2>/dev/null | grep '"'"'^*'"'"' | colrm 1 2)\[\e[0;38;5;215m\]]\[\e[0m\] \[\e[0;1;38;5;76m\]\t\[\e[0m\] hsu\[\e[0m\]@\[\e[0m\]zeku \[\e[0;1;2m\]`parse_root`\[\e[0m\] \[\e[0;38;5;160m\]$\[\e[0m\] \[\e[0m\]'</span></span></code></pre>
+<ol start="144">
+<li>大小核简称</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>silver: 小核</span></span>
+<span class="line"><span>gold: 大核</span></span>
+<span class="line"><span>prime: 超大核</span></span></code></pre>
+<ol start="145">
+<li>adeb
+adeb又名androdeb，旨在Android手机上搭建了一个基于adb shell命令行的debian操作系统环境，使我们能够直接在Android下运行主流Linux的命令行工具，更加快捷有效地对Android系统进行tracing、debugging、editing … 基于adeb，我们可以利用传统Linux下强大的eBPF相关工具，轻松应对各种kernel诊断及分析。</li>
+</ol>
+<p><a href="https://github.com/joelagnel/adeb">https://github.com/joelagnel/adeb</a>
+<a href="https://android.googlesource.com/platform/external/adeb/">https://android.googlesource.com/platform/external/adeb/</a></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>git clone https://github.com/joelagnel/adeb</span></span>
+<span class="line"><span>cd adeb</span></span>
+<span class="line"><span>sudo ln -s $(pwd)/adeb /usr/bin/adeb</span></span>
+<span class="line"><span>adb root</span></span>
+<span class="line"><span>adeb prepare</span></span>
+<span class="line"><span>adeb prepare --full</span></span>
+<span class="line"><span>adeb shell</span></span></code></pre>
+<p>进到 adeb 中去之后</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>apt update</span></span>
+<span class="line"><span>apt upgrade</span></span>
+<span class="line"><span>apt install bpftrace</span></span>
+<span class="line"><span></span></span></code></pre>
+<ol start="146">
+<li>guestfish kvm 管理工具
+在宿主机和kvm虚拟机中实现文件传输，类似 docker与宿主机之间</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span></span></span></code></pre>
+<ol start="147">
+<li>通过 inode 找到 filename</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>find  -inum 9787 2> /dev/null</span></span></code></pre>
+<ol start="148">
+<li>查看系统中线程数量</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>top -H</span></span></code></pre>
+<p>内核栈大小:
+KernelStack = thread_num * 16kb</p>
+<ol start="149">
+<li>bpftrace 不能使用，缺少 symbols</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo apt-get install bpftrace-dbgsym</span></span></code></pre>
+<p>参考<a href="https://zhuanlan.zhihu.com/p/576186351">为 Ubuntu (22.04, jammy) 添加系统调试信息</a></p>
+<ol start="150">
+<li>中断栈、内核栈、用户栈 是否独立
+用户栈都是独立的，与内核栈相独立
+arm32: 内核栈与中断栈是一起的
+arm64：内核栈与中断栈相独立
+x86：内核栈与中断栈相独立</li>
+</ol>
+<p>如何获取 <code>中断栈</code> 信息？
+<code>arch/arm64/include/asm/stacktrace.h</code> 中</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>stackinfo_get_irq();</span></span>
+<span class="line"><span>stackinfo_get_task();</span></span></code></pre>
+<ol start="150">
+<li>
+<p>在中断中为什么不能睡眠 or 调度
+中断上下文中 current 指向被中断的进程，但是current和当前中断上下文无任何关系。
+如果在中断上下文中 进行睡眠或者调度，那么在执行完其他进程之后，cpu无法返回中断现场，
+会导致当前处理的中断有问题，然后后续中断栈被浪费掉几个栈帧。</p>
+</li>
+<li>
+<p>linux 小版本发布 release note
+地址在：
+<a href="https://kernelnewbies.org/Linux_6.1">https://kernelnewbies.org/Linux_6.1</a>
+每个版本在后面添加 banben号</p>
+</li>
+<li>
+<p>树莓派版本区别</p>
+</li>
+<li>
+<p>armv8 qemu smp 裸机启动
+github： <a href="https://github.com/duanev/pgdb/tree/fdefdbe043dff15fe1069daf6852ea417bed6415/examples/qemu/aarch64/smp">https://github.com/duanev/pgdb/tree/fdefdbe043dff15fe1069daf6852ea417bed6415/examples/qemu/aarch64/smp</a></p>
+</li>
+<li>
+<p>crontab 支持定时任务
+crontab -e 来修改 用户的 crontab 文件</p>
+</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>30 5 * * * stress -c 1</span></span></code></pre>
+<p>每天早上凌晨 5：30 执行 stress -c 1</p>
+<ol start="155">
+<li>rootfs 格式与 cpio.gz 格式区别</li>
+</ol>
+<p>rootfs打包、修改： 需要root权限，然后mount到一个目录，做修改，然后umount。
+cpio.gz 打包修改：不需要root权限，直有 cpio tools 做修改。</p>
+<ol start="156">
+<li>git status 显示中文乱码</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>git config --global core.quotepath false</span></span></code></pre>
+<ol start="157">
+<li>好的博客推荐</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>+ https://wangzhou.github.io/Linux%E9%80%8F%E6%98%8E%E5%A4%A7%E9%A1%B5-THP-%E5%88%86%E6%9E%90/</span></span>
+<span class="line"><span>+ https://github.com/GaoleiBai/linux-learning/tree/master  --各个驱动开发笔记</span></span></code></pre>
+<ol start="158">
+<li>ubuntu安装调试符号
+参考<a href="https://www.cnblogs.com/pengdonglin137/articles/16295482.html">给ubuntu安装调试符号（符号表）和源码</a></li>
+</ol>
+<p><a href="https://launchpad.net/ubuntu/oracular/+search?text=6.11.0-9-generic-dbgsym">https://launchpad.net/ubuntu/oracular/+search?text=6.11.0-9-generic-dbgsym</a></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

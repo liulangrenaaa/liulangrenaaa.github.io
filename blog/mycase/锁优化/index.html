@@ -1,0 +1,24 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>锁优化 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>锁优化</h1><div class="post-meta"><time datetime="2022-11-30T19:00:40.000Z">2022年11月30日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">锁优化</span></div></header><div class="article-body"><h2 id="cfs-持锁线程-wakeup-preempt-优化">cfs 持锁线程 wakeup preempt 优化</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>      T0             T1    T2                   T3               T4</span></span></code></pre>
+<p>thread-1: |-A(a)---running-----|<em><strong><strong>pengding</strong></strong></em>**|---running—R(a)|
+thread-2: |—running-A(a)|***<strong><strong><strong><strong><strong><strong><strong><strong>pengding</strong></strong></strong></strong></strong></strong></strong></strong>|A(a)—running—R(a)---|</p>
+<p>T0: <code>thread-1</code> 线程获取 锁a，<code>thread-1</code>一直运行
+T1: <code>thread-2</code> 线程获取 锁a，被阻塞住
+T2: <code>thread-1</code> 被另一个通cpu上唤醒的 task wakeup_preempt，被抢占pending，runnable，但是未释放锁a
+T3: <code>thread-1</code> 获取cpu资源，继续执行，一直持有锁a
+T4: <code>thread-1</code> 释放锁a， <code>thread-2</code> 获取锁a，开始运行</p>
+<p>可以看到由于thread-1 被 wakeup preempt了，导致thread-1 持锁线程一直处于runnable状态，而 thread-2 也因为被唤醒的进程的抢占而延迟了好久才获得锁。</p>
+<h3 id="优化思路">优化思路</h3>
+<p>cfs类的线程如果处于 <code>mutex</code> <code>rwsem</code> 等上下文中，将不被唤醒的 cfs task所抢占，禁止了 cfs 线程对持锁的cfs 线程的 wakeup preempt。
+但是如果唤醒的是一个 rt的线程(音频线程等)，持锁的线程还是会被抢占。</p>
+<p>实现： 在拿锁(mutex 、rwsem)之后，给task设置标志位，标志其正处于持锁上下文中，cfs 的 wakeup preempt 不能抢占他。
+那么什么时候这个标志位会被清除呢？</p>
+<ol>
+<li>下一个 tick 到来时：此时大概率持锁线程已经运行一段时间了(只是想持锁线程优先运行完，然后释放锁，并不是想让持锁线程多运行)</li>
+<li>进程时间片用完了，虽然还在持锁，但是时间片已经用完了，也需要清除标志位</li>
+<li>释放锁时</li>
+</ol>
+<h2 id="ab锁导致的优先级翻转问题">AB锁导致的优先级翻转问题</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>      T0             T1    T2                   T3               T4</span></span></code></pre>
+<p>thread-1: |-A(a)—running—A(b)|<strong>pengding</strong>*|A(b)---running—R(a)|
+thread-2: |-A(b)--------running----------R(b)|</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

@@ -1,0 +1,72 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>Input-ANR分析方法 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>Input-ANR分析方法</h1><div class="post-meta"><time datetime="2025-04-01T10:00:00.000Z">2025年4月1日</time><span> / android / anr-crash稳定性</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">android</span><span class="tag">ANR</span><span class="tag">Input</span><span class="tag">稳定性</span></div></header><div class="article-body"><h2 id="简介">简介</h2>
+<p>Input ANR 是指应用在 5 秒内未能处理完输入事件，本文介绍 Input ANR 的分析方法。</p>
+<h2 id="anr-类型">ANR 类型</h2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>类型</th><th>超时时间</th><th>说明</th></tr></thead><tbody><tr><td>Key Dispatch Timeout</td><td>5s</td><td>按键事件超时</td></tr><tr><td>Motion Dispatch Timeout</td><td>5s</td><td>触摸事件超时</td></tr></tbody></table>
+<h2 id="日志分析">日志分析</h2>
+<h3 id="1-eventlog">1. EventLog</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>am_anr: [0,进程ID,包名,原因]</span></span></code></pre>
+<h3 id="2-systemlog">2. SystemLog</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Input dispatching timed out (xxx)</span></span></code></pre>
+<h3 id="3-tracestxt">3. traces.txt</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>"main" prio=5 tid=1 Blocked</span></span>
+<span class="line"><span>    at com.example.app.MainActivity.onClick(MainActivity.java:100)</span></span>
+<span class="line"><span>    - waiting to lock &#x3C;0x00000000> (java.lang.Object) held by thread 15</span></span></code></pre>
+<h2 id="分析步骤">分析步骤</h2>
+<h3 id="1-查看主线程状态">1. 查看主线程状态</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">grep</span><span style="color:#79B8FF"> -A</span><span style="color:#79B8FF"> 20</span><span style="color:#9ECBFF"> "</span><span style="color:#79B8FF">\"</span><span style="color:#9ECBFF">main</span><span style="color:#79B8FF">\"</span><span style="color:#9ECBFF">"</span><span style="color:#9ECBFF"> /data/anr/traces.txt</span></span></code></pre>
+<h3 id="2-分析阻塞原因">2. 分析阻塞原因</h3>
+<ul>
+<li>Blocked：等待锁</li>
+<li>Waiting：等待唤醒</li>
+<li>Runnable：CPU 密集</li>
+</ul>
+<h3 id="3-查找锁持有者">3. 查找锁持有者</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">grep</span><span style="color:#9ECBFF"> "held by thread"</span><span style="color:#9ECBFF"> /data/anr/traces.txt</span></span></code></pre>
+<h2 id="常见场景">常见场景</h2>
+<h3 id="1-主线程耗时操作">1. 主线程耗时操作</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>"main" prio=5 tid=1 Runnable</span></span>
+<span class="line"><span>    at com.example.app.MainActivity.onReceive(MainActivity.java:100)</span></span></code></pre>
+<h3 id="2-死锁">2. 死锁</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>"main" tid=1 Blocked</span></span>
+<span class="line"><span>    waiting to lock held by thread 15</span></span>
+<span class="line"><span>"thread-15" tid=15 Blocked</span></span>
+<span class="line"><span>    waiting to lock held by thread 1</span></span></code></pre>
+<h3 id="3-binder-阻塞">3. Binder 阻塞</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>"main" tid=1 Native</span></span>
+<span class="line"><span>    at android.os.BinderProxy.transactNative(Native Method)</span></span></code></pre>
+<h2 id="调试命令">调试命令</h2>
+<h3 id="查看-input-状态">查看 Input 状态</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> input</span></span></code></pre>
+<h3 id="查看窗口焦点">查看窗口焦点</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> window</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -i</span><span style="color:#9ECBFF"> focus</span></span></code></pre>
+<h3 id="查看-cpu-使用">查看 CPU 使用</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> top</span><span style="color:#79B8FF"> -m</span><span style="color:#79B8FF"> 10</span></span></code></pre>
+<h2 id="预防措施">预防措施</h2>
+<ol>
+<li>避免主线程执行耗时操作</li>
+<li>优化锁的使用</li>
+<li>减少 Binder 调用</li>
+<li>监控 Input 队列状态</li>
+</ol>
+<h2 id="总结">总结</h2>
+<p>Input ANR 分析关键是查看主线程状态和阻塞原因，结合日志和 traces 定位问题根源。</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

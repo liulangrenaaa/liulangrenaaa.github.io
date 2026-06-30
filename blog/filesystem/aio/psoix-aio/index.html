@@ -1,0 +1,195 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>psoix aio | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>psoix aio</h1><div class="post-meta"><time datetime="2021-07-27T19:00:40.000Z">2021年7月27日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">psoix aio</span></div></header><div class="article-body"><p>linux上的 aio 方案：</p>
+<ul>
+<li>posix aio：posix 自己实现的 aio</li>
+<li>native aio：内核5.1之前实现的aio，与 posix aio 相比性能更好，但是要求打开文件必须是O_DIRECT</li>
+<li>io_uring: 5.1 版本之后实现的，配合 liburing 使用</li>
+</ul>
+<h2 id="api">api</h2>
+<ul>
+<li><code>aio_read</code></li>
+<li><code>aio_write</code></li>
+<li><code>aio_error</code></li>
+<li><code>aio_cancel</code></li>
+<li><code>aio_fsync</code></li>
+<li><code>aio_return</code></li>
+<li><code>aio_suspend</code></li>
+<li><code>lio_listio</code></li>
+</ul>
+<p><code>posix</code> 提供了很多 aio api，</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>int aio_read(struct aiocb *aiocbp);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>       Link with -lrt.</span></span></code></pre>
+<p>编译链接时 需要添加 <code>-lrt</code></p>
+<h2 id="normal-demo">normal demo</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>void test_normal(struct aiocb *my_aiocb)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>        int ret;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        ret = aio_read(my_aiocb);</span></span>
+<span class="line"><span>        if (ret &#x3C; 0) {</span></span>
+<span class="line"><span>                printf("test_normal aio_read error.\n");</span></span>
+<span class="line"><span>                return;</span></span>
+<span class="line"><span>        }</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        printf("test_normal aio_error = %d\n", aio_error(my_aiocb));</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        while (aio_error(my_aiocb) == EINPROGRESS) {</span></span>
+<span class="line"><span>                write(STDOUT_FILENO, ".", 1);</span></span>
+<span class="line"><span>                sleep(1);</span></span>
+<span class="line"><span>        }</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        printf("test_normal content: %s\n", (char *)(my_aiocb->aio_buf));</span></span>
+<span class="line"><span>        printf("test_normal aio_error=%d\n", aio_error(my_aiocb));</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>int main(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>        int fd, ret;</span></span>
+<span class="line"><span>        struct aiocb my_aiocb;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        memset(&#x26;my_aiocb, 0, sizeof(struct aiocb));</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        my_aiocb.aio_buf = buf;</span></span>
+<span class="line"><span>        my_aiocb.aio_fildes = STDIN_FILENO;</span></span>
+<span class="line"><span>        my_aiocb.aio_nbytes = 64;</span></span>
+<span class="line"><span>        my_aiocb.aio_offset = 0;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        test_normal(&#x26;my_aiocb);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        sleep(5);</span></span>
+<span class="line"><span>        return 0;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<h2 id="signal-demo">signal demo</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>void signal_handler(int sig, siginfo_t *info, void *ctx)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>        int ret;</span></span>
+<span class="line"><span>        struct aiocb *my_aiocb = (struct aiocb *)info->si_value.sival_ptr;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        printf("receive signal: %d\n", sig);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        while (aio_error(my_aiocb) == EINPROGRESS) {</span></span>
+<span class="line"><span>                write(STDOUT_FILENO, ".", 1);</span></span>
+<span class="line"><span>                sleep(1);</span></span>
+<span class="line"><span>        }</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        printf("signal_handler aio_error = %d errno = %d\n", aio_error(my_aiocb), errno);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        ret = aio_return(my_aiocb);</span></span>
+<span class="line"><span>        if (ret &#x3C; 0) {</span></span>
+<span class="line"><span>                printf("signal_handler aio_return = %d\n", ret);</span></span>
+<span class="line"><span>        }</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        printf("signal_handler content: %s\n", (char *)(my_aiocb->aio_buf));</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>void test_signal(struct aiocb *my_aiocb)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>        int ret;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        struct sigaction sa;</span></span>
+<span class="line"><span>        sigemptyset(&#x26;sa.sa_mask);</span></span>
+<span class="line"><span>        sa.sa_flags = SA_SIGINFO; // SA_RESTART, SA_NODEFER</span></span>
+<span class="line"><span>        sa.sa_sigaction = signal_handler;</span></span>
+<span class="line"><span>        sigaction(IO_SIGNAL, &#x26;sa, NULL);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        my_aiocb->aio_sigevent.sigev_notify = SIGEV_SIGNAL;</span></span>
+<span class="line"><span>        my_aiocb->aio_sigevent.sigev_signo = IO_SIGNAL;</span></span>
+<span class="line"><span>        my_aiocb->aio_sigevent.sigev_value.sival_ptr = my_aiocb;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        ret = aio_read(my_aiocb);</span></span>
+<span class="line"><span>        if (ret &#x3C; 0) {</span></span>
+<span class="line"><span>                printf("test_signal aio_read() ret = %d\n", ret);</span></span>
+<span class="line"><span>                return;</span></span>
+<span class="line"><span>        }</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        printf("test_signal aio_error = %d\n", aio_error(my_aiocb));</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        printf("test_signal waiting for aio...\n");</span></span>
+<span class="line"><span>        pause();</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>int main(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>        int fd, ret;</span></span>
+<span class="line"><span>        struct aiocb my_aiocb;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        memset(&#x26;my_aiocb, 0, sizeof(struct aiocb));</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        my_aiocb.aio_buf = buf;</span></span>
+<span class="line"><span>        my_aiocb.aio_fildes = STDIN_FILENO;</span></span>
+<span class="line"><span>        my_aiocb.aio_nbytes = 64;</span></span>
+<span class="line"><span>        my_aiocb.aio_offset = 0;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        test_signal(&#x26;my_aiocb);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        sleep(5);</span></span>
+<span class="line"><span>        return 0;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<h2 id="thread-demo">thread demo</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span></span></span>
+<span class="line"><span>void thread_handler(union sigval val)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>        int ret;</span></span>
+<span class="line"><span>        struct aiocb *my_aiocb = (struct aiocb *)val.sival_ptr;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        printf("thread handler()\n");</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        while (aio_error(my_aiocb) == EINPROGRESS) {</span></span>
+<span class="line"><span>                write(STDOUT_FILENO, ".", 1);</span></span>
+<span class="line"><span>                sleep(1);</span></span>
+<span class="line"><span>        }</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        printf("thread_handler aio_error = %d\n", aio_error(my_aiocb));</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        ret = aio_return(my_aiocb);</span></span>
+<span class="line"><span>        if (ret &#x3C; 0) {</span></span>
+<span class="line"><span>                printf("thread_handler aio_return = %d\n", ret);</span></span>
+<span class="line"><span>        }</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        printf("thread_handler content: %s\n", (char *)(my_aiocb->aio_buf));</span></span>
+<span class="line"><span>        //	printf("content: %s\n", buf);</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>void test_thread(struct aiocb *my_aiocb)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>        int ret;</span></span>
+<span class="line"><span>        const struct aiocb *aio_list[1] = {my_aiocb};</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        my_aiocb->aio_sigevent.sigev_notify = SIGEV_THREAD;</span></span>
+<span class="line"><span>        my_aiocb->aio_sigevent.sigev_notify_function = thread_handler;</span></span>
+<span class="line"><span>        my_aiocb->aio_sigevent.sigev_value.sival_ptr = my_aiocb;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        ret = aio_read(my_aiocb);</span></span>
+<span class="line"><span>        if (ret &#x3C; 0) {</span></span>
+<span class="line"><span>                printf("test_thread aio_read() ret = %d\n", ret);</span></span>
+<span class="line"><span>                return;</span></span>
+<span class="line"><span>        }</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        printf("test_thread aio_error = %d\n", aio_error(my_aiocb));</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        ret = aio_suspend(aio_list, 1, NULL);</span></span>
+<span class="line"><span>        if (ret &#x3C; 0) {</span></span>
+<span class="line"><span>                printf("test_thread aio_suspend() ret = %d\n", ret);</span></span>
+<span class="line"><span>                return;</span></span>
+<span class="line"><span>        }</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        printf("test_thread waiting for aio...\n");</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>int main()</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>        int fd, ret;</span></span>
+<span class="line"><span>        struct aiocb my_aiocb;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        memset(&#x26;my_aiocb, 0, sizeof(struct aiocb));</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        my_aiocb.aio_buf = buf;</span></span>
+<span class="line"><span>        my_aiocb.aio_fildes = STDIN_FILENO;</span></span>
+<span class="line"><span>        my_aiocb.aio_nbytes = 64;</span></span>
+<span class="line"><span>        my_aiocb.aio_offset = 0;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        test_thread(&#x26;my_aiocb);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        sleep(5);</span></span>
+<span class="line"><span>        return 0;</span></span>
+<span class="line"><span>}</span></span></code></pre></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

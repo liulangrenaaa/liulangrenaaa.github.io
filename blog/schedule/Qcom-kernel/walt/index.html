@@ -1,0 +1,334 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>walt | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>walt</h1><div class="post-meta"><time datetime="2021-04-28T19:00:00.000Z">2021年4月28日</time><span> / QCOM</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">QCOM</span></div></header><div class="article-body"><h2 id="why">WHY?</h2>
+<h2 id="what">WHAT?</h2>
+<p>walt (Windows Assisted load tracking—窗口协助负载跟踪算法)，主要是跟踪过去一段时间内 entity，rq的负载，给++调频、预测负载、负载均衡++ 等一些调度行为提供一些参考。</p>
+<h2 id="walt-数据结构">walt 数据结构</h2>
+<p><code>struct walt_task_struct</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>struct walt_task_struct {</span></span>
+<span class="line"><span>	/*</span></span>
+<span class="line"><span>	 * 'mark_start' marks the beginning of an event (task waking up, task</span></span>
+<span class="line"><span>	 * starting to execute, task being preempted) within a window</span></span>
+<span class="line"><span>	 *</span></span>
+<span class="line"><span>	 * 'sum' represents how runnable a task has been within current</span></span>
+<span class="line"><span>	 * window. It incorporates both running time and wait time and is</span></span>
+<span class="line"><span>	 * frequency scaled.</span></span>
+<span class="line"><span>	 *</span></span>
+<span class="line"><span>	 * 'sum_history' keeps track of history of 'sum' seen over previous</span></span>
+<span class="line"><span>	 * RAVG_HIST_SIZE windows. Windows where task was entirely sleeping are</span></span>
+<span class="line"><span>	 * ignored.</span></span>
+<span class="line"><span>	 *</span></span>
+<span class="line"><span>	 * 'demand' represents maximum sum seen over previous</span></span>
+<span class="line"><span>	 * sysctl_sched_ravg_hist_size windows. 'demand' could drive frequency</span></span>
+<span class="line"><span>	 * demand for tasks.</span></span>
+<span class="line"><span>	 *</span></span>
+<span class="line"><span>	 * 'curr_window_cpu' represents task's contribution to cpu busy time on</span></span>
+<span class="line"><span>	 * various CPUs in the current window</span></span>
+<span class="line"><span>	 *</span></span>
+<span class="line"><span>	 * 'prev_window_cpu' represents task's contribution to cpu busy time on</span></span>
+<span class="line"><span>	 * various CPUs in the previous window</span></span>
+<span class="line"><span>	 *</span></span>
+<span class="line"><span>	 * 'curr_window' represents the sum of all entries in curr_window_cpu</span></span>
+<span class="line"><span>	 *</span></span>
+<span class="line"><span>	 * 'prev_window' represents the sum of all entries in prev_window_cpu</span></span>
+<span class="line"><span>	 *</span></span>
+<span class="line"><span>	 * 'pred_demand' represents task's current predicted cpu busy time</span></span>
+<span class="line"><span>	 *</span></span>
+<span class="line"><span>	 * 'busy_buckets' groups historical busy time into different buckets</span></span>
+<span class="line"><span>	 * used for prediction</span></span>
+<span class="line"><span>	 *</span></span>
+<span class="line"><span>	 * 'demand_scaled' represents task's demand scaled to 1024</span></span>
+<span class="line"><span>	 */</span></span>
+<span class="line"><span>	u64				mark_start; // beginning of events(task start executing or waking up)</span></span>
+<span class="line"><span>	u32				sum; // runnable time within a window</span></span>
+<span class="line"><span>	u32				demand; // max sum in past serval(sysctl_sched_ravg_hist_size == 5) windows</span></span>
+<span class="line"><span>	u32				coloc_demand;</span></span>
+<span class="line"><span>	u32				sum_history[RAVG_HIST_SIZE_MAX];</span></span>
+<span class="line"><span>	u32				*curr_window_cpu, *prev_window_cpu;</span></span>
+<span class="line"><span>	u32				curr_window, prev_window;</span></span>
+<span class="line"><span>	u32				pred_demand;</span></span>
+<span class="line"><span>	u8				busy_buckets[NUM_BUSY_BUCKETS];</span></span>
+<span class="line"><span>	u16				demand_scaled;</span></span>
+<span class="line"><span>	u16				pred_demand_scaled;</span></span>
+<span class="line"><span>	u64				active_time;</span></span>
+<span class="line"><span>	int				boost;</span></span>
+<span class="line"><span>	bool				wake_up_idle;</span></span>
+<span class="line"><span>	bool				misfit;</span></span>
+<span class="line"><span>	bool				rtg_high_prio;</span></span>
+<span class="line"><span>	u8				low_latency;</span></span>
+<span class="line"><span>	u64				boost_period;</span></span>
+<span class="line"><span>	u64				boost_expires;</span></span>
+<span class="line"><span>	u64				last_sleep_ts;</span></span>
+<span class="line"><span>	u32				init_load_pct;</span></span>
+<span class="line"><span>	u32				unfilter;</span></span>
+<span class="line"><span>	u64				last_wake_ts;</span></span>
+<span class="line"><span>	u64				last_enqueued_ts;</span></span>
+<span class="line"><span>	struct walt_related_thread_group __rcu	*grp;</span></span>
+<span class="line"><span>	struct list_head		grp_list;</span></span>
+<span class="line"><span>	u64				cpu_cycles;</span></span>
+<span class="line"><span>	cpumask_t			cpus_requested;</span></span>
+<span class="line"><span>	bool				iowaited;</span></span>
+<span class="line"><span>};</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>struct task_struct {</span></span>
+<span class="line"><span>	......</span></span>
+<span class="line"><span>	struct sched_entity		se;</span></span>
+<span class="line"><span>	struct sched_rt_entity		rt;</span></span>
+<span class="line"><span>#ifdef CONFIG_SCHED_WALT</span></span>
+<span class="line"><span>	struct walt_task_struct		wts;</span></span>
+<span class="line"><span>#endif</span></span>
+<span class="line"><span>	......</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<p><code>struct walt_rq</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>struct walt_rq {</span></span>
+<span class="line"><span>	struct task_struct	*push_task;</span></span>
+<span class="line"><span>	struct walt_sched_cluster *cluster;</span></span>
+<span class="line"><span>	struct cpumask		freq_domain_cpumask;</span></span>
+<span class="line"><span>	struct walt_sched_stats walt_stats;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	u64			window_start;</span></span>
+<span class="line"><span>	u32			prev_window_size;</span></span>
+<span class="line"><span>	unsigned long		walt_flags;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	u64			avg_irqload;</span></span>
+<span class="line"><span>	u64			last_irq_window;</span></span>
+<span class="line"><span>	u64			prev_irq_time;</span></span>
+<span class="line"><span>	struct task_struct	*ed_task;</span></span>
+<span class="line"><span>	u64			task_exec_scale;</span></span>
+<span class="line"><span>	u64			old_busy_time;</span></span>
+<span class="line"><span>	u64			old_estimated_time;</span></span>
+<span class="line"><span>	u64			curr_runnable_sum;</span></span>
+<span class="line"><span>	u64			prev_runnable_sum;</span></span>
+<span class="line"><span>	u64			nt_curr_runnable_sum;</span></span>
+<span class="line"><span>	u64			nt_prev_runnable_sum;</span></span>
+<span class="line"><span>	u64			cum_window_demand_scaled;</span></span>
+<span class="line"><span>	struct group_cpu_time	grp_time;</span></span>
+<span class="line"><span>	struct load_subtractions load_subs[NUM_TRACKED_WINDOWS];</span></span>
+<span class="line"><span>	DECLARE_BITMAP_ARRAY(top_tasks_bitmap,</span></span>
+<span class="line"><span>			NUM_TRACKED_WINDOWS, NUM_LOAD_INDICES);</span></span>
+<span class="line"><span>	u8			*top_tasks[NUM_TRACKED_WINDOWS];</span></span>
+<span class="line"><span>	u8			curr_table;</span></span>
+<span class="line"><span>	int			prev_top;</span></span>
+<span class="line"><span>	int			curr_top;</span></span>
+<span class="line"><span>	bool			notif_pending;</span></span>
+<span class="line"><span>	bool			high_irqload;</span></span>
+<span class="line"><span>	u64			last_cc_update;</span></span>
+<span class="line"><span>	u64			cycles;</span></span>
+<span class="line"><span>};</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>struct rq {</span></span>
+<span class="line"><span>#ifdef CONFIG_SCHED_WALT</span></span>
+<span class="line"><span>	struct walt_rq		wrq;</span></span>
+<span class="line"><span>#endif /* CONFIG_SCHED_WALT */</span></span>
+<span class="line"><span>	......</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<h2 id="walt-api使用">walt api使用</h2>
+<ol>
+<li>init</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>void walt_sched_init_rq(struct rq *rq)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	int j;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (cpu_of(rq) == 0)</span></span>
+<span class="line"><span>		walt_init_once();</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	cpumask_set_cpu(cpu_of(rq), &#x26;rq->wrq.freq_domain_cpumask);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	rq->wrq.walt_stats.cumulative_runnable_avg_scaled = 0;</span></span>
+<span class="line"><span>	rq->wrq.prev_window_size = sched_ravg_window;</span></span>
+<span class="line"><span>	rq->wrq.window_start = 0;</span></span>
+<span class="line"><span>	rq->wrq.walt_stats.nr_big_tasks = 0;</span></span>
+<span class="line"><span>    ......</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>void __init sched_init(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>    ......</span></span>
+<span class="line"><span>	for_each_possible_cpu(i) {</span></span>
+<span class="line"><span>		struct rq *rq;</span></span>
+<span class="line"><span> 		walt_sched_init_rq(rq);</span></span>
+<span class="line"><span>    }</span></span>
+<span class="line"><span>    ......</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<ol start="2">
+<li>set_start()</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>void set_window_start(struct rq *rq)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	static int sync_cpu_available;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (likely(rq->wrq.window_start))</span></span>
+<span class="line"><span>		return;</span></span>
+<span class="line"><span>	if (!sync_cpu_available) {</span></span>
+<span class="line"><span>		rq->wrq.window_start = 1;</span></span>
+<span class="line"><span>        ......</span></span>
+<span class="line"><span>    }</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<ol start="3">
+<li>
+<p>’</p>
+</li>
+<li>
+<p>a</p>
+</li>
+<li></li>
+</ol>
+<h3 id="walt-time">WALT TIME</h3>
+<p>由于存在多个cluster，不同 cluster的频率 和架构都不一样，所以同一 task在不同 cluster上运行，
+需要的时间是不一样的。为了更好衡量一个 task的负载或者需求，我们必须考虑 cpu freq 和 ipc的差异，
+所以需要将不同cpu 上运行的task时间 归一化 到同一个度量尺子上：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>// delta 是 task实际 运行时间</span></span>
+<span class="line"><span>// task_exec_scale 是task 执行时间的 刻度，每次在 update_task_rq_cpu_cycles 中更新</span></span>
+<span class="line"><span>static inline u64 scale_exec_time(u64 delta, struct rq *rq)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	return (delta * rq->wrq.task_exec_scale) >> 10;</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>unsigned long topology_get_cpu_scale(int cpu)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	return per_cpu(cpu_scale, cpu);</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span>#define arch_scale_cpu_capacity topology_get_cpu_scale</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static void</span></span>
+<span class="line"><span>update_task_rq_cpu_cycles(struct task_struct *p, struct rq *rq, int event,</span></span>
+<span class="line"><span>			  u64 wallclock, u64 irqtime)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>      rq->wrq.task_exec_scale = DIV64_U64_ROUNDUP(cpu_cur_freq(cpu) *</span></span>
+<span class="line"><span>         	arch_scale_cpu_capacity(cpu),</span></span>
+<span class="line"><span>         	rq->wrq.cluster->max_possible_freq);</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>		cur_freq</span></span></code></pre>
+<p>task_exec_scale  =    ------------ * scale_capacity
+max_freq</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>			cur_freq</span></span></code></pre>
+<p>scale_exec_time  =  delta *   ------------ * scale_capacity
+max_freq</p>
+<p><code>scale_capacity</code> 是driver 初始化的时候设置的。</p>
+<h3 id="walt-update">WALT update</h3>
+<p><code>walt_update_task_ravg()</code> 是 walt的最主要输入，在各种<code>event</code> 下更新负载</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>enum task_event {</span></span>
+<span class="line"><span>	PUT_PREV_TASK   = 0,</span></span>
+<span class="line"><span>	PICK_NEXT_TASK  = 1,</span></span>
+<span class="line"><span>	TASK_WAKE       = 2,</span></span>
+<span class="line"><span>	TASK_MIGRATE    = 3,</span></span>
+<span class="line"><span>	TASK_UPDATE     = 4,</span></span>
+<span class="line"><span>	IRQ_UPDATE      = 5,</span></span>
+<span class="line"><span>};</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>/* Reflect task activity on its demand and cpu's busy time statistics */</span></span>
+<span class="line"><span>void walt_update_task_ravg(struct task_struct *p, struct rq *rq, int event,</span></span>
+<span class="line"><span>						u64 wallclock, u64 irqtime)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	u64 old_window_start;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	// rq没有初始化 or task的 mark_start 与 wallclock相等==>刚刚才更新过</span></span>
+<span class="line"><span>	if (!rq->wrq.window_start || p->wts.mark_start == wallclock)</span></span>
+<span class="line"><span>		return;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	old_window_start = update_window_start(rq, wallclock, event); // 更新 rq->wrq.window_start，方便后面计算</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (!p->wts.mark_start) {</span></span>
+<span class="line"><span>		update_task_cpu_cycles(p, cpu_of(rq), wallclock);</span></span>
+<span class="line"><span>		goto done;</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	update_task_rq_cpu_cycles(p, rq, event, wallclock, irqtime); // 更新 task_exec_scale</span></span>
+<span class="line"><span>	// 更新 task的 demand 和 perd_demand 期望下一个window 的运行时间</span></span>
+<span class="line"><span>	update_task_demand(p, rq, event, wallclock);</span></span>
+<span class="line"><span>	update_cpu_busy_time(p, rq, event, wallclock, irqtime); //</span></span>
+<span class="line"><span>	update_task_pred_demand(rq, p, event);</span></span>
+<span class="line"><span>	if (event == PUT_PREV_TASK &#x26;&#x26; p->state)</span></span>
+<span class="line"><span>		p->wts.iowaited = p->in_iowait;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	trace_sched_update_task_ravg(p, rq, event, wallclock, irqtime,</span></span>
+<span class="line"><span>				&#x26;rq->wrq.grp_time);</span></span>
+<span class="line"><span>	trace_sched_update_task_ravg_mini(p, rq, event, wallclock, irqtime,</span></span>
+<span class="line"><span>				&#x26;rq->wrq.grp_time);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>done:</span></span>
+<span class="line"><span>	p->wts.mark_start = wallclock;</span></span>
+<span class="line"><span>//	void walt_irq_work(struct irq_work *irq_work)</span></span>
+<span class="line"><span>	run_walt_irq_work(old_window_start, rq);</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>下面关注<code>update_task_demand()</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static u64 update_task_demand(struct task_struct *p, struct rq *rq,</span></span>
+<span class="line"><span>			       int event, u64 wallclock)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	u64 mark_start = p->wts.mark_start;</span></span>
+<span class="line"><span>	u64 delta, window_start = rq->wrq.window_start;</span></span>
+<span class="line"><span>	int new_window, nr_full_windows;</span></span>
+<span class="line"><span>	u32 window_size = sched_ravg_window;</span></span>
+<span class="line"><span>	u64 runtime;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	new_window = mark_start &#x3C; window_start;</span></span>
+<span class="line"><span>	// window_start = rq->wrq.window_start 在之前俩函数已经更新过了，</span></span>
+<span class="line"><span>	// 正常如果经历了新的window，new_window =1</span></span>
+<span class="line"><span>	if (!account_busy_for_task_demand(rq, p, event)) {</span></span>
+<span class="line"><span>		if (new_window)</span></span>
+<span class="line"><span>			/*</span></span>
+<span class="line"><span>			 * If the time accounted isn't being accounted as</span></span>
+<span class="line"><span>			 * busy time, and a new window started, only the</span></span>
+<span class="line"><span>			 * previous window need be closed out with the</span></span>
+<span class="line"><span>			 * pre-existing demand. Multiple windows may have</span></span>
+<span class="line"><span>			 * elapsed, but since empty windows are dropped,</span></span>
+<span class="line"><span>			 * it is not necessary to account those.</span></span>
+<span class="line"><span>			 */</span></span>
+<span class="line"><span>			update_history(rq, p, p->wts.sum, 1, event);</span></span>
+<span class="line"><span>		return 0;</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	// case: 没有经历新的window，p->wts.sum += delta， sum是保存所有不满一个 window的时间</span></span>
+<span class="line"><span>	if (!new_window) {</span></span>
+<span class="line"><span>		/*</span></span>
+<span class="line"><span>		 * The simple case - busy time contained within the existing</span></span>
+<span class="line"><span>		 * window.</span></span>
+<span class="line"><span>		 */</span></span>
+<span class="line"><span>		return add_to_task_demand(rq, p, wallclock - mark_start);</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	/*</span></span>
+<span class="line"><span>	 * Busy time spans at least two windows. Temporarily rewind</span></span>
+<span class="line"><span>	 * window_start to first window boundary after mark_start.</span></span>
+<span class="line"><span>	 */</span></span>
+<span class="line"><span>	delta = window_start - mark_start;</span></span>
+<span class="line"><span>	nr_full_windows = div64_u64(delta, window_size);</span></span>
+<span class="line"><span>	window_start -= (u64)nr_full_windows * (u64)window_size;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	/* Process (window_start - mark_start) first */</span></span>
+<span class="line"><span>	runtime = add_to_task_demand(rq, p, window_start - mark_start);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	/* Push new sample(s) into task's demand history */</span></span>
+<span class="line"><span>	update_history(rq, p, p->wts.sum, 1, event);</span></span>
+<span class="line"><span>	if (nr_full_windows) {</span></span>
+<span class="line"><span>		u64 scaled_window = scale_exec_time(window_size, rq);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>		// 为啥这里没有 add_to_task_demand()? ,因为 更新demand也只是更新 p->wts.sum， 这里</span></span>
+<span class="line"><span>		// 因为涉及多个 window，所以 sum肯定会超过一个window的时间。</span></span>
+<span class="line"><span>		// 关注 update_history() 中的 p->wts.sum = 0;</span></span>
+<span class="line"><span>		update_history(rq, p, scaled_window, nr_full_windows, event);</span></span>
+<span class="line"><span>		runtime += nr_full_windows * scaled_window;</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	/*</span></span>
+<span class="line"><span>	 * Roll window_start back to current to process any remainder</span></span>
+<span class="line"><span>	 * in current window.</span></span>
+<span class="line"><span>	 */</span></span>
+<span class="line"><span>	window_start += (u64)nr_full_windows * (u64)window_size;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	/* Process (wallclock - window_start) next */</span></span>
+<span class="line"><span>	mark_start = window_start;</span></span>
+<span class="line"><span>	runtime += add_to_task_demand(rq, p, wallclock - mark_start);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	return runtime;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p><code>add_to_task_demand()</code> 只是在 <code>scale-invariant</code>的尺度上将当前运行时间累计到 <code>task->wts.sum</code>上，<code>update_history()</code> 是 更新 <code>p->wts.sum_history[5]</code> 这个历史窗口的数据，类似不停地滚动，<code>update_history()</code>参数<code>runtime</code>也是 scale之后的，demand是根据不同的WINDOW_STATS_XXX决定的；然后根据 <code>predict_and_update_buckets()</code> 来预测 perd_demand需求，这里用到了buckets算法（不是重点）。</p>
+<p>freq_policy_load() — __cpu_util_freq_walt() — cpu_util_freq_walt() — schedutil 使用此接口去获得 cpu使用率</p>
+<h3 id="walt-输出api">walt 输出api</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>task_util()</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>以can_migrate_task()函数为例：</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>通过task_util()获取该task的demand，即task级负载</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>cpu_util_cum()获取cpu rq的累计demand，即cpu级负载</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>如果 dst_cpu累计demand + task_demand > src_cpu累计demand + task_demand，那么说明不满足迁移条件。</span></span></code></pre></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

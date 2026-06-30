@@ -1,0 +1,341 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>namespace之pid | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>namespace之pid</h1><div class="post-meta"><time datetime="2021-07-06T19:00:00.000Z">2021年7月6日</time><span> / namespace / pid namespace</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">namespace</span><span class="tag">pid namespace</span></div></header><div class="article-body"><h2 id="demo1">demo1</h2>
+<p>shell 1:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>stable_kernel@kernel: /var/crash# echo $$</span></span>
+<span class="line"><span>4371</span></span>
+<span class="line"><span>stable_kernel@kernel: /var/crash# readlink /proc/$$/ns/pid</span></span>
+<span class="line"><span>pid:[4026531836]</span></span>
+<span class="line"><span>stable_kernel@kernel: /var/crash#</span></span>
+<span class="line"><span>stable_kernel@kernel: /var/crash# sudo unshare --pid --mount-proc --fork /bin/bash</span></span>
+<span class="line"><span>xhost:  unable to open display ""</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/var/crash# readlink /proc/$$/ns/pid</span></span>
+<span class="line"><span>pid:[4026532210]</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/var/crash# ps</span></span>
+<span class="line"><span>    PID TTY          TIME CMD</span></span>
+<span class="line"><span>      1 pts/3    00:00:00 bash</span></span>
+<span class="line"><span>     10 pts/3    00:00:00 ps</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/var/crash# stress -c 10</span></span>
+<span class="line"><span>stress: info: [11] dispatching hogs: 10 cpu, 0 io, 0 vm, 0 hdd</span></span>
+<span class="line"><span>^Z</span></span>
+<span class="line"><span>[1]+  Stopped                 stress -c 10</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/var/crash# ps -aux</span></span>
+<span class="line"><span>USER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND</span></span>
+<span class="line"><span>root           1  0.0  0.1  18476  4136 pts/3    S    12:10   0:00 /bin/bash</span></span>
+<span class="line"><span>root          11  0.0  0.0   3864   984 pts/3    T    12:12   0:00 stress -c 10</span></span>
+<span class="line"><span>root          12 36.8  0.0   3864   100 pts/3    T    12:12   1:21 stress -c 10</span></span>
+<span class="line"><span>root          13 39.4  0.0   3864   100 pts/3    T    12:12   1:27 stress -c 10</span></span>
+<span class="line"><span>root          14 40.0  0.0   3864   100 pts/3    T    12:12   1:28 stress -c 10</span></span>
+<span class="line"><span>root          15 38.8  0.0   3864   100 pts/3    T    12:12   1:25 stress -c 10</span></span>
+<span class="line"><span>root          16 39.3  0.0   3864   100 pts/3    T    12:12   1:26 stress -c 10</span></span>
+<span class="line"><span>root          17 38.8  0.0   3864   100 pts/3    T    12:12   1:25 stress -c 10</span></span>
+<span class="line"><span>root          18 40.3  0.0   3864   100 pts/3    T    12:12   1:29 stress -c 10</span></span>
+<span class="line"><span>root          19 39.4  0.0   3864   100 pts/3    T    12:12   1:27 stress -c 10</span></span>
+<span class="line"><span>root          20 40.4  0.0   3864   100 pts/3    T    12:12   1:29 stress -c 10</span></span>
+<span class="line"><span>root          21 38.3  0.0   3864   100 pts/3    T    12:12   1:24 stress -c 10</span></span>
+<span class="line"><span>root          22  0.0  0.0  20312  3608 pts/3    R+   12:16   0:00 ps -aux</span></span></code></pre>
+<p>shell 2</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>root        4501  0.0  0.0   3864   984 pts/3    S+   12:12   0:00 stress -c 10</span></span>
+<span class="line"><span>root        4502 37.2  0.0   3864   100 pts/3    R+   12:12   1:18 stress -c 10</span></span>
+<span class="line"><span>root        4503 40.1  0.0   3864   100 pts/3    R+   12:12   1:24 stress -c 10</span></span>
+<span class="line"><span>root        4504 40.9  0.0   3864   100 pts/3    R+   12:12   1:26 stress -c 10</span></span>
+<span class="line"><span>root        4505 39.4  0.0   3864   100 pts/3    R+   12:12   1:22 stress -c 10</span></span>
+<span class="line"><span>root        4506 39.9  0.0   3864   100 pts/3    R+   12:12   1:23 stress -c 10</span></span>
+<span class="line"><span>root        4507 39.4  0.0   3864   100 pts/3    R+   12:12   1:22 stress -c 10</span></span>
+<span class="line"><span>root        4508 41.0  0.0   3864   100 pts/3    R+   12:12   1:26 stress -c 10</span></span>
+<span class="line"><span>root        4509 40.2  0.0   3864   100 pts/3    R+   12:12   1:24 stress -c 10                       "rlk-Standard-PC-i440F" 12:18 07-7月-21</span></span>
+<span class="line"><span>root        4510 41.0  0.0   3864   100 pts/3    R+   12:12   1:26 stress -c 10</span></span>
+<span class="line"><span>root        4511 39.1  0.0   3864   100 pts/3    R+   12:12   1:22 stress -c 10</span></span>
+<span class="line"><span>rlk         4522  0.0  0.0  20312  3744 pts/2    R+   12:15   0:00 ps -aux</span></span></code></pre>
+<p>debug log</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>[ 2276.675896] [robert] alloc_pid level = 1, pid->numbers[i].nr = 11</span></span>
+<span class="line"><span>[ 2276.679264] [robert] alloc_pid level = 1, pid->numbers[i].nr = 4501</span></span>
+<span class="line"><span>[ 2276.694094] [robert] alloc_pid level = 1, pid->numbers[i].nr = 12</span></span>
+<span class="line"><span>[ 2276.697715] [robert] alloc_pid level = 1, pid->numbers[i].nr = 4502</span></span>
+<span class="line"><span>[ 2276.700705] [robert] alloc_pid level = 1, pid->numbers[i].nr = 13</span></span>
+<span class="line"><span>[ 2276.703495] [robert] alloc_pid level = 1, pid->numbers[i].nr = 4503</span></span>
+<span class="line"><span>[ 2276.706523] [robert] alloc_pid level = 1, pid->numbers[i].nr = 14</span></span>
+<span class="line"><span>[ 2276.709158] [robert] alloc_pid level = 1, pid->numbers[i].nr = 4504</span></span>
+<span class="line"><span>[ 2276.712157] [robert] alloc_pid level = 1, pid->numbers[i].nr = 15</span></span>
+<span class="line"><span>[ 2276.714937] [robert] alloc_pid level = 1, pid->numbers[i].nr = 4505</span></span>
+<span class="line"><span>[ 2276.717940] [robert] alloc_pid level = 1, pid->numbers[i].nr = 16</span></span>
+<span class="line"><span>[ 2276.720724] [robert] alloc_pid level = 1, pid->numbers[i].nr = 4506</span></span>
+<span class="line"><span>[ 2276.723808] [robert] alloc_pid level = 1, pid->numbers[i].nr = 17</span></span>
+<span class="line"><span>[ 2276.726108] [robert] alloc_pid level = 1, pid->numbers[i].nr = 4507</span></span>
+<span class="line"><span>[ 2276.728367] [robert] alloc_pid level = 1, pid->numbers[i].nr = 18</span></span>
+<span class="line"><span>[ 2276.730191] [robert] alloc_pid level = 1, pid->numbers[i].nr = 4508</span></span>
+<span class="line"><span>[ 2276.732382] [robert] alloc_pid level = 1, pid->numbers[i].nr = 19</span></span>
+<span class="line"><span>[ 2276.734118] [robert] alloc_pid level = 1, pid->numbers[i].nr = 4509</span></span>
+<span class="line"><span>[ 2276.736167] [robert] alloc_pid level = 1, pid->numbers[i].nr = 20</span></span>
+<span class="line"><span>[ 2276.737602] [robert] alloc_pid level = 1, pid->numbers[i].nr = 4510</span></span>
+<span class="line"><span>[ 2276.739537] [robert] alloc_pid level = 1, pid->numbers[i].nr = 21</span></span>
+<span class="line"><span>[ 2276.740830] [robert] alloc_pid level = 1, pid->numbers[i].nr = 4511</span></span>
+<span class="line"><span>[ 2279.849411] [robert] alloc_pid level = 0, pid->numbers[i].nr = 4512</span></span></code></pre>
+<p>可以看到， new pid_namespace 中的 21 对应 old pid_namespace 中的 4511…</p>
+<p>添加 log的 patch是：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:~/workspace/linux $ git diff</span></span>
+<span class="line"><span>diff --git a/kernel/pid.c b/kernel/pid.c</span></span>
+<span class="line"><span>index ebdf9c60cd0b..eb80bac14e13 100644</span></span>
+<span class="line"><span>--- a/kernel/pid.c</span></span>
+<span class="line"><span>+++ b/kernel/pid.c</span></span>
+<span class="line"><span>@@ -186,7 +186,6 @@ struct pid *alloc_pid(struct pid_namespace *ns, pid_t *set_tid,</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        for (i = ns->level; i >= 0; i--) {</span></span>
+<span class="line"><span>                int tid = 0;</span></span>
+<span class="line"><span>-</span></span>
+<span class="line"><span>                if (set_tid_size) {</span></span>
+<span class="line"><span>                        tid = set_tid[ns->level - i];</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>@@ -243,6 +242,9 @@ struct pid *alloc_pid(struct pid_namespace *ns, pid_t *set_tid,</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>                pid->numbers[i].nr = nr;</span></span>
+<span class="line"><span>                pid->numbers[i].ns = tmp;</span></span>
+<span class="line"><span>+               pr_err("[robert] alloc_pid level = %d, pid->numbers[i].nr = %d\n",</span></span>
+<span class="line"><span>+                       pid->level, nr);</span></span>
+<span class="line"><span>+</span></span>
+<span class="line"><span>                tmp = tmp->parent;</span></span>
+<span class="line"><span>        }</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>diff --git a/kernel/pid_namespace.c b/kernel/pid_namespace.c</span></span>
+<span class="line"><span>index ca43239a255a..72ad5a3ddf29 100644</span></span>
+<span class="line"><span>--- a/kernel/pid_namespace.c</span></span>
+<span class="line"><span>+++ b/kernel/pid_namespace.c</span></span>
+<span class="line"><span>@@ -46,6 +46,7 @@ static struct kmem_cache *create_pid_cachep(unsigned int level)</span></span>
+<span class="line"><span>        if (kc)</span></span>
+<span class="line"><span>                return kc;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>+       pr_err("[robert] create_pid_cachep level = %d\n", level);</span></span>
+<span class="line"><span>        snprintf(name, sizeof(name), "pid_%u", level + 1);</span></span>
+<span class="line"><span>        len = sizeof(struct pid) + level * sizeof(struct upid);</span></span>
+<span class="line"><span>        mutex_lock(&#x26;pid_caches_mutex);</span></span>
+<span class="line"><span>ubuntu@zeku_server:~/workspace/linux $</span></span></code></pre>
+<h2 id="demo2">demo2</h2>
+<p>shell1:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>rlk@rlk-Standard-PC-i440FX-PIIX-1996:/var/crash$ echo $$</span></span>
+<span class="line"><span>4724</span></span>
+<span class="line"><span>rlk@rlk-Standard-PC-i440FX-PIIX-1996:/var/crash$ sudo unshare --pid --mount-proc --fork /bin/bash</span></span>
+<span class="line"><span>xhost:  unable to open display ""</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/var/crash# echo $$</span></span>
+<span class="line"><span>1</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/var/crash# sudo unshare --pid --mount-proc --fork /bin/bash</span></span>
+<span class="line"><span>xhost:  unable to open display ""</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/var/crash# echo $$</span></span>
+<span class="line"><span>1</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/var/crash# sudo unshare --pid --mount-proc --fork /bin/bash</span></span>
+<span class="line"><span>xhost:  unable to open display ""</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/var/crash# echo $$</span></span>
+<span class="line"><span>1</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/var/crash# sudo unshare --pid --mount-proc --fork /bin/bash</span></span>
+<span class="line"><span>xhost:  unable to open display ""</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/var/crash# stress -c 10</span></span>
+<span class="line"><span>stress: info: [9] dispatching hogs: 10 cpu, 0 io, 0 vm, 0 hdd</span></span></code></pre>
+<p>shell2:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>stable_kernel@kernel: /var/crash# pstree -p 4724</span></span>
+<span class="line"><span>bash(4724)───sudo(4734)───unshare(4735)───bash(4736)───sudo(4744)───unshare(4746)───bash(4747)───sudo(4759)───unshare(4760)───bash(4761)───sudo(4770)──+++</span></span>
+<span class="line"><span>stable_kernel@kernel: /var/crash# grep pid /proc/4761/status</span></span>
+<span class="line"><span>NSpid:	4761	21	11	1</span></span>
+<span class="line"><span>stable_kernel@kernel: /var/crash#</span></span></code></pre>
+<p>第四个 bash 在 四个 pid namespace 中 分配 到的 pid 分别是
+<code>4761</code> <code>21</code>  <code>11</code> <code>1</code></p>
+<h2 id="pid_namespace-实现">pid_namespace 实现</h2>
+<h3 id="create">create</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>copy_processes->copy_namespaces->create_new_namespaces->copy_pid_ns->create_pid_namespace</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span> +----------------------+</span></span>
+<span class="line"><span> |                      |</span></span>
+<span class="line"><span> |                      |</span></span>
+<span class="line"><span> |    copy_processes    |</span></span>
+<span class="line"><span> |                      |</span></span>
+<span class="line"><span> +----------+-----------+</span></span>
+<span class="line"><span>            |</span></span>
+<span class="line"><span>            |</span></span>
+<span class="line"><span>+-----------v------------+</span></span>
+<span class="line"><span>|                        |</span></span>
+<span class="line"><span>|                        |</span></span>
+<span class="line"><span>|    copy_namespaces     |</span></span>
+<span class="line"><span>|                        |</span></span>
+<span class="line"><span>+----------+-------------+</span></span>
+<span class="line"><span>           |</span></span>
+<span class="line"><span>           |</span></span>
+<span class="line"><span>           |</span></span>
+<span class="line"><span>+----------v--------------+</span></span>
+<span class="line"><span>|                         |</span></span>
+<span class="line"><span>|                         |</span></span>
+<span class="line"><span>|  create_new_namespaces  |</span></span>
+<span class="line"><span>|                         |</span></span>
+<span class="line"><span>+----------+--------------+</span></span>
+<span class="line"><span>           |</span></span>
+<span class="line"><span>           |</span></span>
+<span class="line"><span>           |</span></span>
+<span class="line"><span>+----------v------------+</span></span>
+<span class="line"><span>|                       |</span></span>
+<span class="line"><span>|                       |</span></span>
+<span class="line"><span>|     copy_pid_ns       |</span></span>
+<span class="line"><span>|                       |</span></span>
+<span class="line"><span>+----------+------------+</span></span>
+<span class="line"><span>           |</span></span>
+<span class="line"><span>           |</span></span>
+<span class="line"><span>  +--------v------------+</span></span>
+<span class="line"><span>  |                     |</span></span>
+<span class="line"><span>  |                     |</span></span>
+<span class="line"><span>  | create_pid_namespace|</span></span>
+<span class="line"><span>  |                     |</span></span>
+<span class="line"><span>  +---------------------+</span></span></code></pre>
+<p><code>create_pid_namespace</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static struct pid_namespace *create_pid_namespace(struct user_namespace *user_ns,</span></span>
+<span class="line"><span>	struct pid_namespace *parent_pid_ns)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	struct pid_namespace *ns;</span></span>
+<span class="line"><span>	unsigned int level = parent_pid_ns->level + 1; // level 在 parent的基础上 +1</span></span>
+<span class="line"><span>	struct ucounts *ucounts;</span></span>
+<span class="line"><span>	int err;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	err = -ENOMEM;</span></span>
+<span class="line"><span>	ns = kmem_cache_zalloc(pid_ns_cachep, GFP_KERNEL);</span></span>
+<span class="line"><span>	if (ns == NULL)</span></span>
+<span class="line"><span>		goto out_dec;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	idr_init(&#x26;ns->idr);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	ns->pid_cachep = create_pid_cachep(level);  // 创建 cachep, 是根据 level 创建的。最大level 是 32</span></span>
+<span class="line"><span>	if (ns->pid_cachep == NULL)</span></span>
+<span class="line"><span>		goto out_free_idr;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	err = ns_alloc_inum(&#x26;ns->ns);</span></span>
+<span class="line"><span>	if (err)</span></span>
+<span class="line"><span>		goto out_free_idr;</span></span>
+<span class="line"><span>	ns->ns.ops = &#x26;pidns_operations;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	refcount_set(&#x26;ns->ns.count, 1);</span></span>
+<span class="line"><span>	ns->level = level;                      // 设置 level</span></span>
+<span class="line"><span>	ns->parent = get_pid_ns(parent_pid_ns); // 设置 parent</span></span>
+<span class="line"><span>	ns->user_ns = get_user_ns(user_ns);</span></span>
+<span class="line"><span>	ns->ucounts = ucounts;</span></span>
+<span class="line"><span>	ns->pid_allocated = PIDNS_ADDING;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	return ns;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>out_free_idr:</span></span>
+<span class="line"><span>	idr_destroy(&#x26;ns->idr);</span></span>
+<span class="line"><span>	kmem_cache_free(pid_ns_cachep, ns);</span></span>
+<span class="line"><span>out_dec:</span></span>
+<span class="line"><span>	dec_pid_namespaces(ucounts);</span></span>
+<span class="line"><span>out:</span></span>
+<span class="line"><span>	return ERR_PTR(err);</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<h3 id="alloc">alloc</h3>
+<p><code>alloc_pid</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>struct pid *alloc_pid(struct pid_namespace *ns, pid_t *set_tid,</span></span>
+<span class="line"><span>		      size_t set_tid_size)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	struct pid *pid;</span></span>
+<span class="line"><span>	enum pid_type type;</span></span>
+<span class="line"><span>	int i, nr;</span></span>
+<span class="line"><span>	struct pid_namespace *tmp;</span></span>
+<span class="line"><span>	struct upid *upid;</span></span>
+<span class="line"><span>	int retval = -ENOMEM;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	pid = kmem_cache_alloc(ns->pid_cachep, GFP_KERNEL);</span></span>
+<span class="line"><span>	if (!pid)</span></span>
+<span class="line"><span>		return ERR_PTR(retval);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	tmp = ns;</span></span>
+<span class="line"><span>	pid->level = ns->level; // 设置 level</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	for (i = ns->level; i >= 0; i--) {              // 循环遍历 各个level，从大到小，pid的值从小到大（debug log中看到）</span></span>
+<span class="line"><span>		int tid = 0;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>		idr_preload(GFP_KERNEL);</span></span>
+<span class="line"><span>		spin_lock_irq(&#x26;pidmap_lock);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>		if (tid) {</span></span>
+<span class="line"><span>			nr = idr_alloc(&#x26;tmp->idr, NULL, tid,</span></span>
+<span class="line"><span>				       tid + 1, GFP_ATOMIC); // 从 tmp->idr 中分配</span></span>
+<span class="line"><span>			/*</span></span>
+<span class="line"><span>			 * If ENOSPC is returned it means that the PID is</span></span>
+<span class="line"><span>			 * alreay in use. Return EEXIST in that case.</span></span>
+<span class="line"><span>			 */</span></span>
+<span class="line"><span>			if (nr == -ENOSPC)</span></span>
+<span class="line"><span>				nr = -EEXIST;</span></span>
+<span class="line"><span>		} else {</span></span>
+<span class="line"><span>			int pid_min = 1;</span></span>
+<span class="line"><span>			/*</span></span>
+<span class="line"><span>			 * init really needs pid 1, but after reaching the</span></span>
+<span class="line"><span>			 * maximum wrap back to RESERVED_PIDS</span></span>
+<span class="line"><span>			 */</span></span>
+<span class="line"><span>			if (idr_get_cursor(&#x26;tmp->idr) > RESERVED_PIDS)</span></span>
+<span class="line"><span>				pid_min = RESERVED_PIDS;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>			/*</span></span>
+<span class="line"><span>			 * Store a null pointer so find_pid_ns does not find</span></span>
+<span class="line"><span>			 * a partially initialized PID (see below).</span></span>
+<span class="line"><span>			 */</span></span>
+<span class="line"><span>			nr = idr_alloc_cyclic(&#x26;tmp->idr, NULL, pid_min,</span></span>
+<span class="line"><span>					      pid_max, GFP_ATOMIC);</span></span>
+<span class="line"><span>		}</span></span>
+<span class="line"><span>		spin_unlock_irq(&#x26;pidmap_lock);</span></span>
+<span class="line"><span>		idr_preload_end();</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>		if (nr &#x3C; 0) {</span></span>
+<span class="line"><span>			retval = (nr == -ENOSPC) ? -EAGAIN : nr;</span></span>
+<span class="line"><span>			goto out_free;</span></span>
+<span class="line"><span>		}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>		pid->numbers[i].nr = nr; // pid 结构保存 各个level 的 pid数值，获取pid 的时候需要带上当前在哪一个 level上</span></span>
+<span class="line"><span>		pid->numbers[i].ns = tmp;</span></span>
+<span class="line"><span>		pr_err("[robert] alloc_pid level = %d, pid->numbers[i].nr = %d\n",</span></span>
+<span class="line"><span>			pid->level, nr);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>		tmp = tmp->parent; // 获取上层的 pid_namespace</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>......</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<h2 id="unshare--nsenter-用法">unshare 、 nsenter 用法</h2>
+<p>这些都是 shell 提供的和namespace 相关的命令</p>
+<h3 id="unshare">unshare</h3>
+<p>unshare 解除 namespaces share, 创建新的进程，是Linux容器工作的基础之一。
+通过 strace 工具看一下</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>stable_kernel@kernel: /var/crash# sudo strace unshare  -p -u -i /bin/bash</span></span>
+<span class="line"><span>execve("/usr/bin/unshare", ["unshare", "-p", "-u", "-i", "/bin/bash"], 0x7ffeeb2594b0 /* 22 vars */) = 0</span></span>
+<span class="line"><span>unshare(CLONE_NEWUTS|CLONE_NEWIPC|CLONE_NEWPID) = 0</span></span>
+<span class="line"><span>execve("/bin/bash", ["/bin/bash"], 0x7ffc50847728 /* 22 vars */) = 0</span></span></code></pre>
+<p>可以看到 unshare(1) 是通过 unshare(2) 实现的
+<code>mount</code>  <code>mount-proc</code> 区别：</p>
+<ul>
+<li>mount: 创建 mount namespace</li>
+<li>mount-proc: 自动挂载 /proc 文件系统，无需我们手动执行 mount -t proc proc /proc 命令。</li>
+</ul>
+<p>-p -f 一般是一起使用。</p>
+<h3 id="nsenter">nsenter</h3>
+<p>一个最典型的用途就是进入容器的网络命令空间。
+相当多的容器为了轻量级，是不包含较为基础的命令的，比如说ip address，ping，telnet，ss，tcpdump等等命令，
+这就给调试容器网络带来相当大的困扰：只能通过docker inspect ContainerID命令获取到容器IP，
+以及无法测试和其他网络的连通性。这时就可以使用nsenter命令仅进入该容器的网络命名空间，
+使用宿主机的命令调试容器网络。</p>
+<p>此外，nsenter也可以进入mnt, uts, ipc, pid, user命令空间，以及指定根目录和工作目录。
+shell1:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/var/crash# sleep 100000 &#x26;</span></span>
+<span class="line"><span>[2] 23</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/var/crash# dmesg |tail -n 30</span></span>
+<span class="line"><span>[ 1515.281875] [robert] alloc_pid level = 5, pid->numbers[i].nr = 23</span></span>
+<span class="line"><span>[ 1515.285805] [robert] alloc_pid level = 5, pid->numbers[i].nr = 33</span></span>
+<span class="line"><span>[ 1515.287239] [robert] alloc_pid level = 5, pid->numbers[i].nr = 54</span></span>
+<span class="line"><span>[ 1515.288000] [robert] alloc_pid level = 5, pid->numbers[i].nr = 64</span></span>
+<span class="line"><span>[ 1515.288656] [robert] alloc_pid level = 5, pid->numbers[i].nr = 74</span></span>
+<span class="line"><span>[ 1515.289393] [robert] alloc_pid level = 5, pid->numbers[i].nr = 3791</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/var/crash#</span></span></code></pre>
+<p>这是在 一个 独立 namespace 中的 shell，在 global namespace中 pid是 3791</p>
+<p>shell2:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>stable_kernel@kernel: /var/crash# sudo nsenter -p -t3791</span></span>
+<span class="line"><span>xhost:  unable to open display ""</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/var/crash# ls &#x26;</span></span>
+<span class="line"><span>[1] 36</span></span></code></pre>
+<p>通过 strace 工具看一下</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>stable_kernel@1kernel: /var/crash# sudo strace nsenter -p  -t4123 ls -al</span></span>
+<span class="line"><span>execve("/usr/bin/nsenter", ["nsenter", "-p", "-t4123", "ls", "-al"], 0x7fff5f859620 /* 22 vars */) = 0</span></span>
+<span class="line"><span>setns(3, CLONE_NEWPID)                  = 0</span></span></code></pre>
+<p>nsenter相当于在setns的示例程序之上做了一层封装，使我们无需指定命名空间的文件描述符，而是指定进程号即可。</p>
+<h2 id="unshare--setns--clone-用法">unshare 、 setns 、 clone 用法</h2>
+<p>后续有空 用 C实现一下 example。。。</p>
+<p>参考：
+<a href="https://staight.github.io/2019/10/02/%E5%AE%B9%E5%99%A8%E5%AE%9E%E7%8E%B0-namespace/">容器实现-namespace</a>
+<a href=""></a></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

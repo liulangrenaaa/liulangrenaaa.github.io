@@ -1,0 +1,115 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>Perfetto使用方法 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>Perfetto使用方法</h1><div class="post-meta"><time datetime="2025-07-01T10:00:00.000Z">2025年7月1日</time><span> / android / debug-trace工具链</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">android</span><span class="tag">perfetto</span><span class="tag">trace</span><span class="tag">性能分析</span></div></header><div class="article-body"><h2 id="简介">简介</h2>
+<p>Perfetto 是 Android 系统中强大的性能分析工具，用于收集和分析系统级 trace 数据。</p>
+<h2 id="核心功能">核心功能</h2>
+<h3 id="1-系统级-trace">1. 系统级 Trace</h3>
+<ul>
+<li>CPU 调度</li>
+<li>内存使用</li>
+<li>I/O 操作</li>
+<li>图形渲染</li>
+</ul>
+<h3 id="2-应用级-trace">2. 应用级 Trace</h3>
+<ul>
+<li>函数调用</li>
+<li>方法耗时</li>
+<li>线程状态</li>
+</ul>
+<h2 id="使用方式">使用方式</h2>
+<h3 id="1-命令行抓取">1. 命令行抓取</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#6A737D"># 抓取 10 秒 trace</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> perfetto</span><span style="color:#79B8FF"> -o</span><span style="color:#9ECBFF"> /data/misc/perfetto-traces/trace</span><span style="color:#79B8FF"> -t</span><span style="color:#9ECBFF"> 10s</span><span style="color:#9ECBFF"> sched</span><span style="color:#9ECBFF"> freq</span><span style="color:#9ECBFF"> idle</span><span style="color:#9ECBFF"> am</span><span style="color:#9ECBFF"> wm</span><span style="color:#9ECBFF"> gfx</span><span style="color:#9ECBFF"> view</span><span style="color:#9ECBFF"> binder_driver</span><span style="color:#9ECBFF"> hal</span><span style="color:#9ECBFF"> dalvik</span><span style="color:#9ECBFF"> camera</span><span style="color:#9ECBFF"> input</span><span style="color:#9ECBFF"> res</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D"># 拉取 trace 文件</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> pull</span><span style="color:#9ECBFF"> /data/misc/perfetto-traces/trace</span></span></code></pre>
+<h3 id="2-配置文件抓取">2. 配置文件抓取</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#6A737D"># 创建配置文件</span></span>
+<span class="line"><span style="color:#B392F0">cat</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> config.pbtx</span><span style="color:#F97583"> &#x3C;&#x3C;</span><span style="color:#9ECBFF">EOF</span></span>
+<span class="line"><span style="color:#9ECBFF">buffers {</span></span>
+<span class="line"><span style="color:#9ECBFF">  size_kb: 63488</span></span>
+<span class="line"><span style="color:#9ECBFF">  fill_policy: DISCARD</span></span>
+<span class="line"><span style="color:#9ECBFF">}</span></span>
+<span class="line"><span style="color:#9ECBFF">data_sources {</span></span>
+<span class="line"><span style="color:#9ECBFF">  config {</span></span>
+<span class="line"><span style="color:#9ECBFF">    name: "linux.ftrace"</span></span>
+<span class="line"><span style="color:#9ECBFF">    ftrace_config {</span></span>
+<span class="line"><span style="color:#9ECBFF">      ftrace_events: "sched/sched_switch"</span></span>
+<span class="line"><span style="color:#9ECBFF">      ftrace_events: "power/suspend_resume"</span></span>
+<span class="line"><span style="color:#9ECBFF">    }</span></span>
+<span class="line"><span style="color:#9ECBFF">  }</span></span>
+<span class="line"><span style="color:#9ECBFF">}</span></span>
+<span class="line"><span style="color:#9ECBFF">duration_ms: 10000</span></span>
+<span class="line"><span style="color:#9ECBFF">EOF</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D"># 使用配置文件抓取</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> perfetto</span><span style="color:#79B8FF"> -c</span><span style="color:#9ECBFF"> -</span><span style="color:#79B8FF"> -o</span><span style="color:#9ECBFF"> /data/misc/perfetto-traces/trace</span><span style="color:#F97583"> &#x3C;</span><span style="color:#9ECBFF"> config.pbtx</span></span></code></pre>
+<h3 id="3-web-ui-抓取">3. Web UI 抓取</h3>
+<p>访问 <a href="https://ui.perfetto.dev/">https://ui.perfetto.dev/</a> 进行可视化抓取</p>
+<h2 id="分析-trace">分析 Trace</h2>
+<h3 id="1-打开-trace">1. 打开 Trace</h3>
+<p>访问 <a href="https://ui.perfetto.dev/">https://ui.perfetto.dev/</a> 并打开 trace 文件</p>
+<h3 id="2-查看内容">2. 查看内容</h3>
+<ul>
+<li><strong>Timeline</strong>：时间线视图</li>
+<li><strong>CPU</strong>：CPU 调度信息</li>
+<li><strong>Processes</strong>：进程信息</li>
+<li><strong>Threads</strong>：线程信息</li>
+</ul>
+<h3 id="3-常用操作">3. 常用操作</h3>
+<ul>
+<li>缩放：滚轮或快捷键</li>
+<li>选择：点击或拖拽</li>
+<li>搜索：Ctrl+F</li>
+</ul>
+<h2 id="关键指标">关键指标</h2>
+<h3 id="1-cpu-使用率">1. CPU 使用率</h3>
+<ul>
+<li>用户态</li>
+<li>内核态</li>
+<li>空闲</li>
+</ul>
+<h3 id="2-调度延迟">2. 调度延迟</h3>
+<ul>
+<li>线程等待时间</li>
+<li>运行时间</li>
+</ul>
+<h3 id="3-帧率">3. 帧率</h3>
+<ul>
+<li>FPS</li>
+<li>掉帧情况</li>
+</ul>
+<h2 id="与其他工具对比">与其他工具对比</h2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>工具</th><th>优势</th><th>劣势</th></tr></thead><tbody><tr><td>Perfetto</td><td>功能强大、可视化好</td><td>学习成本高</td></tr><tr><td>systrace</td><td>简单易用</td><td>功能有限</td></tr><tr><td>ftrace</td><td>底层详细</td><td>分析复杂</td></tr></tbody></table>
+<h2 id="最佳实践">最佳实践</h2>
+<ol>
+<li>明确分析目标</li>
+<li>选择合适的配置</li>
+<li>抓取足够长的时间</li>
+<li>结合多个指标分析</li>
+</ol>
+<h2 id="总结">总结</h2>
+<p>Perfetto 是 Android 性能分析的利器，掌握其使用方法有助于快速定位性能问题。</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

@@ -1,0 +1,79 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>dumpsys常用命令 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>dumpsys常用命令</h1><div class="post-meta"><time datetime="2025-08-01T10:00:00.000Z">2025年8月1日</time><span> / android / debug-trace工具链</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">android</span><span class="tag">dumpsys</span><span class="tag">调试</span></div></header><div class="article-body"><h2 id="简介">简介</h2>
+<p>dumpsys 是 Android 系统中用于查看系统服务状态的重要工具。</p>
+<h2 id="基本用法">基本用法</h2>
+<h3 id="查看所有服务">查看所有服务</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span></span></code></pre>
+<h3 id="查看特定服务">查看特定服务</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#F97583"> &#x3C;</span><span style="color:#9ECBFF">service_nam</span><span style="color:#E1E4E8">e</span><span style="color:#F97583">></span></span></code></pre>
+<h2 id="常用服务">常用服务</h2>
+<h3 id="1-activity-manager-ams">1. Activity Manager (AMS)</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#6A737D"># 查看 Activity 信息</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> activity</span><span style="color:#9ECBFF"> activities</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D"># 查看进程信息</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> activity</span><span style="color:#9ECBFF"> processes</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D"># 查看服务信息</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> activity</span><span style="color:#9ECBFF"> services</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D"># 查看广播信息</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> activity</span><span style="color:#9ECBFF"> broadcasts</span></span></code></pre>
+<h3 id="2-window-manager-wms">2. Window Manager (WMS)</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#6A737D"># 查看窗口信息</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> window</span><span style="color:#9ECBFF"> windows</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D"># 查看焦点窗口</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> window</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -i</span><span style="color:#9ECBFF"> focus</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D"># 查看显示信息</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> window</span><span style="color:#9ECBFF"> displays</span></span></code></pre>
+<h3 id="3-input-manager">3. Input Manager</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#6A737D"># 查看输入信息</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> input</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D"># 查看输入设备</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> input</span><span style="color:#9ECBFF"> devices</span></span></code></pre>
+<h3 id="4-surfaceflinger">4. SurfaceFlinger</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#6A737D"># 查看图层信息</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> SurfaceFlinger</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D"># 查看显示信息</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> SurfaceFlinger</span><span style="color:#79B8FF"> --display-id</span></span></code></pre>
+<h3 id="5-包管理器">5. 包管理器</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#6A737D"># 查看包信息</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> package</span><span style="color:#F97583"> &#x3C;</span><span style="color:#9ECBFF">package_nam</span><span style="color:#E1E4E8">e</span><span style="color:#F97583">></span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D"># 查看权限</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> package</span><span style="color:#9ECBFF"> permissions</span></span></code></pre>
+<h3 id="6-电池信息">6. 电池信息</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> battery</span></span></code></pre>
+<h3 id="7-内存信息">7. 内存信息</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> meminfo</span><span style="color:#F97583"> &#x3C;</span><span style="color:#9ECBFF">package_nam</span><span style="color:#E1E4E8">e</span><span style="color:#F97583">></span></span></code></pre>
+<h2 id="输出格式">输出格式</h2>
+<h3 id="窗口信息示例">窗口信息示例</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Window #0 Window{xxx u0 com.example.app/xxx}:</span></span>
+<span class="line"><span>  mDisplayId=0 mSession=xxx mClient=xxx</span></span>
+<span class="line"><span>  mOwnerUid=10001 mShowToOwner=true</span></span>
+<span class="line"><span>  mAttrs={(0,0)(fillxfill) sim={adjust=undefined} ty=APPLICATION ...</span></span>
+<span class="line"><span>  Requested w=1080 h=1920</span></span>
+<span class="line"><span>  mBaseLayer=21000 mSubLayer=0</span></span></code></pre>
+<h2 id="输出重定向">输出重定向</h2>
+<h3 id="保存到文件">保存到文件</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> window</span><span style="color:#9ECBFF"> windows</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> window_dump.txt</span></span></code></pre>
+<h3 id="使用-grep-过滤">使用 grep 过滤</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> window</span><span style="color:#9ECBFF"> windows</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -E</span><span style="color:#9ECBFF"> "Window|mAttrs"</span></span></code></pre>
+<h2 id="调试技巧">调试技巧</h2>
+<h3 id="1-查找特定窗口">1. 查找特定窗口</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> window</span><span style="color:#9ECBFF"> windows</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#F97583"> &#x3C;</span><span style="color:#9ECBFF">package_nam</span><span style="color:#E1E4E8">e</span><span style="color:#F97583">></span></span></code></pre>
+<h3 id="2-查看窗口层级">2. 查看窗口层级</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> window</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -E</span><span style="color:#9ECBFF"> "mBaseLayer|mSubLayer"</span></span></code></pre>
+<h3 id="3-监控变化">3. 监控变化</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#F97583">while</span><span style="color:#79B8FF"> true</span><span style="color:#E1E4E8">; </span><span style="color:#F97583">do</span><span style="color:#B392F0"> adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> window</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -i</span><span style="color:#9ECBFF"> focus</span><span style="color:#E1E4E8">; </span><span style="color:#B392F0">sleep</span><span style="color:#79B8FF"> 1</span><span style="color:#E1E4E8">; </span><span style="color:#F97583">done</span></span></code></pre>
+<h2 id="注意事项">注意事项</h2>
+<ol>
+<li>某些服务需要 root 权限</li>
+<li>输出可能很长，建议重定向到文件</li>
+<li>不同 Android 版本输出格式可能不同</li>
+</ol>
+<h2 id="总结">总结</h2>
+<p>dumpsys 是 Android 调试的重要工具，掌握常用命令可以快速查看系统状态和定位问题。</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

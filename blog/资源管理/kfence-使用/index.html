@@ -1,0 +1,163 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>kfence 使用 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>kfence 使用</h1><div class="post-meta"><time datetime="2021-06-11T19:00:00.000Z">2021年6月11日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">内核内存越界</span><span class="tag">use after free</span><span class="tag">double free</span><span class="tag">kfence</span></div></header><div class="article-body"><h2 id="kfence-配置">Kfence 配置</h2>
+<p>看下<code>.config</code>的改变</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:~/workspace/linux $ diff ./out/.config /tmp/.config</span></span>
+<span class="line"><span>4713c4713,4717</span></span>
+<span class="line"><span>&#x3C; # CONFIG_KFENCE is not set</span></span>
+<span class="line"><span>---</span></span>
+<span class="line"><span>> CONFIG_KFENCE=y</span></span>
+<span class="line"><span>> CONFIG_KFENCE_STATIC_KEYS=y</span></span>
+<span class="line"><span>> CONFIG_KFENCE_SAMPLE_INTERVAL=100</span></span>
+<span class="line"><span>> CONFIG_KFENCE_NUM_OBJECTS=255</span></span>
+<span class="line"><span>> CONFIG_KFENCE_STRESS_TEST_FAULTS=0</span></span></code></pre>
+<h2 id="kfence-使用">Kfence 使用</h2>
+<p>写了一个test case，参考<a href="https://github.com/liulangrenaaa/test_modules/blob/main/memory/kfence/kfence_debug.c">代码</a></p>
+<h3 id="oob检测">oob检测</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static int kfence_debug_oob(void *data)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	char *p[100] = {NULL, };</span></span>
+<span class="line"><span>	int i = 0;</span></span>
+<span class="line"><span>	data = data;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	msleep(1000 * 5);</span></span>
+<span class="line"><span>	for (i = 0; i &#x3C; 10; i++) {</span></span>
+<span class="line"><span>		p[i] = (char *)kmalloc(32, GFP_KERNEL);</span></span>
+<span class="line"><span>		p[i][32] = 'a';</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	while(!kthread_should_stop()) {</span></span>
+<span class="line"><span>		msleep_interruptible(1000);</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>	return 1;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>主要就是越界写了 1byte的 kmalloc数据。</p>
+<p>insmod 之后立刻报错</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>[  779.341929] kfence_debug: loading out-of-tree module taints kernel.</span></span>
+<span class="line"><span>[  784.638024] ==================================================================</span></span>
+<span class="line"><span>[  784.641414] BUG: KFENCE: out-of-bounds write in kfence_debug_oob+0x26/0x60 [kfence_debug]</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>[  784.643513] Out-of-bounds write at 0x00000000514f5e22 (32B right of kfence-#176):</span></span>
+<span class="line"><span>[  784.644142]  kfence_debug_oob+0x26/0x60 [kfence_debug]</span></span>
+<span class="line"><span>[  784.644144]  kthread+0xf9/0x130</span></span>
+<span class="line"><span>[  784.644146]  ret_from_fork+0x22/0x30</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>[  784.644283] kfence-#176 [0x000000001f204f03-0x00000000533650da, size=32, cache=kmalloc-32] allocated by task 3757:</span></span>
+<span class="line"><span>[  784.644288]  kfence_debug_oob+0x26/0x60 [kfence_debug]</span></span>
+<span class="line"><span>[  784.644289]  kthread+0xf9/0x130</span></span>
+<span class="line"><span>[  784.644290]  ret_from_fork+0x22/0x30</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>[  784.644423] CPU: 2 PID: 3757 Comm: kfence_debug Kdump: loaded Tainted: G           O      5.13.0-rc5+ #4</span></span>
+<span class="line"><span>[  784.645207] Hardware name: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.13.0-1ubuntu1.1 04/01/2014</span></span>
+<span class="line"><span>[  784.646006] ==================================================================</span></span></code></pre>
+<p><code>oob</code> 的 代码堆栈直接也打印出来了，十分清晰</p>
+<h3 id="use-after-free-检测">use after free 检测</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static int kfence_debug_use_after_free(void *data)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	char *p[100] = {NULL, };</span></span>
+<span class="line"><span>	int i = 0;</span></span>
+<span class="line"><span>	data = data;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	msleep(1000 * 5);</span></span>
+<span class="line"><span>	for (i = 0; i &#x3C; 10; i++) {</span></span>
+<span class="line"><span>		p[i] = (char *)kmalloc(32, GFP_KERNEL);</span></span>
+<span class="line"><span>		p[i][30] = 'a';</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	for (i = 0; i &#x3C; 10; i++) {</span></span>
+<span class="line"><span>		kfree(p[i]);</span></span>
+<span class="line"><span>		msleep_interruptible(100);</span></span>
+<span class="line"><span>		p[i][30] = 'a';</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	while(!kthread_should_stop()) {</span></span>
+<span class="line"><span>		msleep_interruptible(1000);</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>	return 1;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>user after free:</p>
+<ul>
+<li>kmalloc 32 bytes mem => p</li>
+<li>assign val to p[30]</li>
+<li>free p</li>
+<li>assign val to p[30]</li>
+</ul>
+<p>insmod 之后立刻报错</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>[ 1779.536493] ==================================================================</span></span>
+<span class="line"><span>[ 1779.539850] BUG: KFENCE: use-after-free write in kfence_debug_use_after_free+0x7e/0xd0 [kfence_debug]</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>[ 1779.542427] Use-after-free write at 0x0000000013fef528 (in kfence-#218):</span></span>
+<span class="line"><span>[ 1779.542985]  kfence_debug_use_after_free+0x7e/0xd0 [kfence_debug]</span></span>
+<span class="line"><span>[ 1779.542987]  kthread+0xf9/0x130</span></span>
+<span class="line"><span>[ 1779.542990]  ret_from_fork+0x22/0x30</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>[ 1779.543123] kfence-#218 [0x000000007dc7fe8d-0x0000000000dd0a85, size=32, cache=kmalloc-32] allocated by task 3868:</span></span>
+<span class="line"><span>[ 1779.543127]  kfence_debug_use_after_free+0x58/0xd0 [kfence_debug]</span></span>
+<span class="line"><span>[ 1779.543129]  kthread+0xf9/0x130</span></span>
+<span class="line"><span>[ 1779.543130]  ret_from_fork+0x22/0x30</span></span>
+<span class="line"><span>[ 1779.543131]</span></span>
+<span class="line"><span>               freed by task 3868:</span></span>
+<span class="line"><span>[ 1779.543133]  kthread+0xf9/0x130</span></span>
+<span class="line"><span>[ 1779.543134]  ret_from_fork+0x22/0x30</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>[ 1779.543266] CPU: 1 PID: 3868 Comm: kfence_debug Kdump: loaded Tainted: G    B      O      5.13.0-rc5+ #4</span></span>
+<span class="line"><span>[ 1779.544051] Hardware name: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.13.0-1ubuntu1.1 04/01/2014</span></span>
+<span class="line"><span>[ 1779.544818] ==================================================================</span></span></code></pre>
+<p>可以看出这是一个 <code>kmalloc-32</code> 的 mem，且是 <code>allocated</code> by task 3868，<code>freed</code> by task 3868。
+也可以看到详细堆栈。</p>
+<h3 id="double-free-检测">double free 检测</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static int kfence_debug_double_free(void *data)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	char *p[100] = {NULL, };</span></span>
+<span class="line"><span>	int i = 0;</span></span>
+<span class="line"><span>	data = data;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	msleep(1000 * 5);</span></span>
+<span class="line"><span>	for (i = 0; i &#x3C; 10; i++) {</span></span>
+<span class="line"><span>		p[i] = (char *)kmalloc(32, GFP_KERNEL);</span></span>
+<span class="line"><span>		p[i][30] = 'a';</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	for (i = 0; i &#x3C; 10; i++) {</span></span>
+<span class="line"><span>		kfree(p[i]);</span></span>
+<span class="line"><span>		msleep_interruptible(100);</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	for (i = 0; i &#x3C; 10; i++) {</span></span>
+<span class="line"><span>		kfree(p[i]);</span></span>
+<span class="line"><span>		msleep_interruptible(100);</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	while(!kthread_should_stop()) {</span></span>
+<span class="line"><span>		msleep_interruptible(1000);</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	return 1;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>double free:</p>
+<ul>
+<li>kmalloc 32 bytes mem => p</li>
+<li>free p</li>
+<li>free p</li>
+</ul>
+<p>insmod 之后立刻报错</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>[ 2489.576810] ==================================================================</span></span>
+<span class="line"><span>[ 2489.577668] BUG: KFENCE: invalid free in kthread+0xf9/0x130</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>[ 2489.578464] Invalid free of 0x00000000ed008e01 (in kfence-#160):</span></span>
+<span class="line"><span>[ 2489.579128]  kthread+0xf9/0x130</span></span>
+<span class="line"><span>[ 2489.579131]  ret_from_fork+0x22/0x30</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>[ 2489.579305] kfence-#160 [0x00000000ed008e01-0x0000000086ffed42, size=32, cache=kmalloc-32] allocated by task 3914:</span></span>
+<span class="line"><span>[ 2489.579310]  kfence_debug_double_free+0x58/0xd0 [kfence_debug]</span></span>
+<span class="line"><span>[ 2489.579312]  kthread+0xf9/0x130</span></span>
+<span class="line"><span>[ 2489.579313]  ret_from_fork+0x22/0x30</span></span>
+<span class="line"><span>[ 2489.579315]</span></span>
+<span class="line"><span>               freed by task 3914:</span></span>
+<span class="line"><span>[ 2489.579318]  kthread+0xf9/0x130</span></span>
+<span class="line"><span>[ 2489.579319]  ret_from_fork+0x22/0x30</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>[ 2489.579492] CPU: 3 PID: 3914 Comm: kfence_debug Kdump: loaded Tainted: G    B      O      5.13.0-rc5+ #4</span></span>
+<span class="line"><span>[ 2489.580590] Hardware name: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.13.0-1ubuntu1.1 04/01/2014</span></span>
+<span class="line"><span>[ 2489.581698] ==================================================================</span></span></code></pre>
+<p>可以看出这是一个 <code>kmalloc-32</code> 的 mem，且是 <code>allocated</code> by task 3914, <code>freed</code> by task 3914。
+也可以看到详细堆栈。</p>
+<h2 id="kfence-原理">Kfence 原理</h2></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

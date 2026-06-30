@@ -1,0 +1,601 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>功耗调试环境与数据采集方法 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>功耗调试环境与数据采集方法</h1><div class="post-meta"><time datetime="2026-05-31T11:02:00.000Z">2026年5月31日</time><span> / android / power</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">android</span><span class="tag">power</span><span class="tag">adb</span><span class="tag">perfetto</span><span class="tag">aosp14</span></div></header><div class="article-body"><h2 id="为什么采集方法要单独成篇">为什么采集方法要单独成篇</h2>
+<p>功耗问题的定位质量，往往不是输在源码，而是输在采集。很多报告看起来命令很多，实际不可用：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>没有记录是否插USB。</span></span>
+<span class="line"><span>没有记录亮度、网络、温度、起止时间。</span></span>
+<span class="line"><span>只有 dumpsys power，没有 wakeup_sources。</span></span>
+<span class="line"><span>只有 BatteryStats，没有 Perfetto 时间线。</span></span>
+<span class="line"><span>看到 thermalservice 空，就认为没有热问题。</span></span>
+<span class="line"><span>看到某 wakeup source 名字，就直接下结论。</span></span></code></pre>
+<p>功耗采集的目标不是“把所有命令都跑一遍”，而是让后续分析能回答三个问题：</p>
+<ol>
+<li>这个场景是否真实？</li>
+<li>Framework、Kernel、Thermal、BatteryStats 的证据能否互相解释？</li>
+<li>修复前后是否能在同条件下复测？</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    Case[定义场景]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Env[固定测试条件]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Baseline[采集基线]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Repro[复现问题]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Timeline[抓时间线]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Snapshot[抓状态快照]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Compare[前后对比]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Report[形成报告]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    Case --> Env</span></span>
+<span class="line"><span style="color:#E1E4E8">    Env --> Baseline</span></span>
+<span class="line"><span style="color:#E1E4E8">    Baseline --> Repro</span></span>
+<span class="line"><span style="color:#E1E4E8">    Repro --> Timeline</span></span>
+<span class="line"><span style="color:#E1E4E8">    Repro --> Snapshot</span></span>
+<span class="line"><span style="color:#E1E4E8">    Timeline --> Compare</span></span>
+<span class="line"><span style="color:#E1E4E8">    Snapshot --> Compare</span></span>
+<span class="line"><span style="color:#E1E4E8">    Compare --> Report</span></span></code></pre>
+<h2 id="采集前先定义场景">采集前先定义场景</h2>
+<p>先不用急着抓 bugreport。先定义你到底在测什么。</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>场景</th><th>目标指标</th><th>关键变量</th></tr></thead><tbody><tr><td>灭屏待机</td><td>掉电、电流、deep sleep比例、wakeup次数</td><td>USB、Doze、网络、SIM、蓝牙、定位</td></tr><tr><td>亮屏静置</td><td>平均电流、温升、CPU/GPU频率</td><td>亮度、刷新率、壁纸、后台动画</td></tr><tr><td>游戏/高负载</td><td>FPS、温度、频率、thermal限制</td><td>画质、网络、亮度、环境温度</td></tr><tr><td>充电发热</td><td>充电电流、电池温度、PMIC温度</td><td>充电器、线材、亮灭屏、负载</td></tr><tr><td>后台任务</td><td>唤醒次数、wakelock、alarm/job</td><td>Doze、白名单、网络</td></tr></tbody></table>
+<p>错误示例：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>“手机有点耗电，抓个日志看看。”</span></span></code></pre>
+<p>正确示例：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>“Mi MIX 2，Android 14，飞行模式关闭，Wi-Fi连接，</span></span>
+<span class="line"><span>断开USB后灭屏30分钟，观察wakeup_sources delta和BatteryStats。”</span></span></code></pre>
+<h2 id="测试条件清单">测试条件清单</h2>
+<p>每次采集前写一段条件，不然后面谁也复现不了：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>条件</th><th>记录内容</th></tr></thead><tbody><tr><td>设备</td><td>model、device、SoC、Android版本、build fingerprint</td></tr><tr><td>供电</td><td>电池/USB/AC/无线充，是否满电</td></tr><tr><td>屏幕</td><td>亮灭屏、亮度、自动亮度、刷新率</td></tr><tr><td>网络</td><td>Wi-Fi、移动网络、SIM数量、信号强度、飞行模式</td></tr><tr><td>外设</td><td>蓝牙、定位、NFC、传感器</td></tr><tr><td>温度</td><td>环境温度、电池温度、thermal zone</td></tr><tr><td>后台</td><td>是否清后台、是否登录账号、是否同步</td></tr><tr><td>时间</td><td>起止时间、持续多久、是否跨整点</td></tr></tbody></table>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart LR</span></span>
+<span class="line"><span style="color:#E1E4E8">    Power[供电状态]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Display[屏幕亮度/刷新率]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Network[网络/SIM/信号]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Thermal[环境温度/设备温度]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Background[后台任务]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Result[功耗结果]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    Power --> Result</span></span>
+<span class="line"><span style="color:#E1E4E8">    Display --> Result</span></span>
+<span class="line"><span style="color:#E1E4E8">    Network --> Result</span></span>
+<span class="line"><span style="color:#E1E4E8">    Thermal --> Result</span></span>
+<span class="line"><span style="color:#E1E4E8">    Background --> Result</span></span></code></pre>
+<h2 id="真机基线mi-mix-2--msm8998">真机基线：Mi MIX 2 / msm8998</h2>
+<p>当前外接 QCOM 设备：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> devices</span><span style="color:#79B8FF"> -l</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> getprop</span><span style="color:#9ECBFF"> ro.product.model</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> getprop</span><span style="color:#9ECBFF"> ro.product.device</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> getprop</span><span style="color:#9ECBFF"> ro.build.version.release</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> getprop</span><span style="color:#9ECBFF"> ro.hardware</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> getprop</span><span style="color:#9ECBFF"> ro.product.board</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> getprop</span><span style="color:#9ECBFF"> ro.soc.model</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> id</span></span></code></pre>
+<p>当前采集到：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>model=Mi MIX 2</span></span>
+<span class="line"><span>device=chiron</span></span>
+<span class="line"><span>release=14</span></span>
+<span class="line"><span>hardware=qcom</span></span>
+<span class="line"><span>board=msm8998</span></span>
+<span class="line"><span>soc=MSM8998</span></span>
+<span class="line"><span>adb uid=0(root)</span></span></code></pre>
+<p>这说明：</p>
+<ul>
+<li>可以读 <code>/sys/kernel/debug/wakeup_sources</code>。</li>
+<li>可以读 tracefs。</li>
+<li>可以读 thermal/cpufreq/cpuidle sysfs。</li>
+<li>适合做 QCOM 平台 case。</li>
+</ul>
+<p>但当前也有明显限制：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>dumpsys battery:</span></span>
+<span class="line"><span>    USB powered: true</span></span>
+<span class="line"><span>    level: 99</span></span>
+<span class="line"><span>    status: Full</span></span>
+<span class="line"><span>    temperature: 390 = 39.0 C</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>dumpsys power:</span></span>
+<span class="line"><span>    mIsPowered=true</span></span>
+<span class="line"><span>    mPlugType=2</span></span>
+<span class="line"><span>    mStayOn=true</span></span>
+<span class="line"><span>    mWakefulness=Awake</span></span>
+<span class="line"><span>    mHoldingDisplaySuspendBlocker=true</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>dumpsys thermalservice:</span></span>
+<span class="line"><span>    HAL Ready=false</span></span></code></pre>
+<p>结论：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>这台设备当前适合做“插USB调试基线”和“sysfs thermal分析”；</span></span>
+<span class="line"><span>不适合直接作为自然灭屏待机功耗结论。</span></span></code></pre>
+<h2 id="dumpsys背后的源码入口">dumpsys背后的源码入口</h2>
+<p>命令不是魔法。每个 <code>dumpsys</code> 都对应系统服务的 dump 逻辑，读源码可以知道输出字段的含义和局限。</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>命令</th><th>源码入口</th><th>说明</th></tr></thead><tbody><tr><td><code>dumpsys power</code></td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/PowerManagerService.java:7103:1">PowerManagerService.dump:7103</a></td><td>BinderService dump</td></tr><tr><td><code>dumpsys power</code>主体</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/PowerManagerService.java:4792:1">PowerManagerService.dumpInternal:4792</a></td><td>PMS字段输出</td></tr><tr><td><code>dumpsys batterystats</code></td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/am/BatteryStatsService.java:2799:1">BatteryStatsService.dump:2799</a></td><td>BatteryStats dump入口</td></tr><tr><td><code>dumpsys batterystats</code>参数解析</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/am/BatteryStatsService.java:2812:1">BatteryStatsService.dumpUnmonitored:2812</a></td><td><code>--charged</code>、<code>--proto</code> 等</td></tr><tr><td><code>dumpsys battery</code></td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/BatteryService.java:1371:1">BatteryService.dumpInternal:1371</a></td><td>电池状态输出</td></tr><tr><td><code>dumpsys thermalservice</code></td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/ThermalManagerService.java:587:1">ThermalManagerService.dump:587</a></td><td>thermalservice dump入口</td></tr><tr><td>thermal dump主体</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/ThermalManagerService.java:652:1">ThermalManagerService.dumpInternal:652</a></td><td>温度、HAL、cooling输出</td></tr><tr><td><code>dumpsys deviceidle</code></td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/apex/jobscheduler/service/java/com/android/server/DeviceIdleController.java:2302:1">DeviceIdleController.dump:2302</a></td><td>Binder dump入口</td></tr><tr><td>deviceidle主体</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/apex/jobscheduler/service/java/com/android/server/DeviceIdleController.java:5199:1">DeviceIdleController.dump:5199</a></td><td>idle状态、白名单输出</td></tr></tbody></table>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    ADB[adb shell dumpsys xxx]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Binder[ServiceManager找到服务]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Dump[服务dump方法]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Internal[dumpInternal / dumpUnmonitored]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Output[文本/proto输出]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Analysis[人工分析]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    ADB --> Binder</span></span>
+<span class="line"><span style="color:#E1E4E8">    Binder --> Dump</span></span>
+<span class="line"><span style="color:#E1E4E8">    Dump --> Internal</span></span>
+<span class="line"><span style="color:#E1E4E8">    Internal --> Output</span></span>
+<span class="line"><span style="color:#E1E4E8">    Output --> Analysis</span></span></code></pre>
+<p>这就是为什么看源码有用：你能知道某个字段是实时状态、缓存状态、统计状态，还是 HAL 没 ready 时的空状态。</p>
+<h2 id="基线采集最小集合">基线采集：最小集合</h2>
+<p>如果时间很紧，至少采这些：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> devices</span><span style="color:#79B8FF"> -l</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> getprop</span><span style="color:#9ECBFF"> ro.product.model</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> getprop</span><span style="color:#9ECBFF"> ro.product.device</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> getprop</span><span style="color:#9ECBFF"> ro.build.fingerprint</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> getprop</span><span style="color:#9ECBFF"> ro.hardware</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> getprop</span><span style="color:#9ECBFF"> ro.product.board</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> getprop</span><span style="color:#9ECBFF"> ro.soc.model</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> power</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> battery</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> deviceidle</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> thermalservice</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --charged</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/kernel/debug/wakeup_sources</span></span></code></pre>
+<p>这套最小集合能回答：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>问题</th><th>证据</th></tr></thead><tbody><tr><td>是否插电</td><td><code>dumpsys battery</code>、<code>dumpsys power</code></td></tr><tr><td>是否有 wakelock</td><td><code>dumpsys power</code></td></tr><tr><td>是否进入 Doze</td><td><code>dumpsys deviceidle</code></td></tr><tr><td>是否有长周期耗电归因</td><td><code>dumpsys batterystats</code></td></tr><tr><td>Kernel 是否有唤醒源</td><td><code>wakeup_sources</code></td></tr><tr><td>Framework thermal 是否可用</td><td><code>dumpsys thermalservice</code></td></tr></tbody></table>
+<h2 id="扩展采集按场景加项">扩展采集：按场景加项</h2>
+<h3 id="待机场景">待机场景</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> power</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> power.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> deviceidle</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> deviceidle.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> alarm</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> alarm.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> jobscheduler</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> jobscheduler.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --charged</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> batterystats.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/kernel/debug/wakeup_sources</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> wakeup_sources.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/devices/system/cpu/cpu0/cpuidle/state</span><span style="color:#79B8FF">*</span><span style="color:#9ECBFF">/time</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> cpuidle_time.txt</span></span></code></pre>
+<p>待机场景最好做前后 delta：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/kernel/debug/wakeup_sources</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> ws_before.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/devices/system/cpu/cpu0/cpuidle/state</span><span style="color:#79B8FF">*</span><span style="color:#9ECBFF">/time</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> idle_before.txt</span></span>
+<span class="line"><span style="color:#6A737D"># 灭屏等待固定时间</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/kernel/debug/wakeup_sources</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> ws_after.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/devices/system/cpu/cpu0/cpuidle/state</span><span style="color:#79B8FF">*</span><span style="color:#9ECBFF">/time</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> idle_after.txt</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    Before[采before: wakeup_sources/cpuidle]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Wait[灭屏等待固定时间]</span></span>
+<span class="line"><span style="color:#E1E4E8">    After[采after]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Delta[计算delta]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Judge[判断长持锁或周期唤醒]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    Before --> Wait</span></span>
+<span class="line"><span style="color:#E1E4E8">    Wait --> After</span></span>
+<span class="line"><span style="color:#E1E4E8">    After --> Delta</span></span>
+<span class="line"><span style="color:#E1E4E8">    Delta --> Judge</span></span></code></pre>
+<h3 id="亮屏场景">亮屏场景</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> display</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> display.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> SurfaceFlinger</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> sf.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> settings</span><span style="color:#9ECBFF"> get</span><span style="color:#9ECBFF"> system</span><span style="color:#9ECBFF"> screen_brightness</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> settings</span><span style="color:#9ECBFF"> get</span><span style="color:#9ECBFF"> system</span><span style="color:#9ECBFF"> screen_brightness_mode</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/devices/system/cpu/cpufreq/policy</span><span style="color:#79B8FF">*</span><span style="color:#9ECBFF">/scaling_cur_freq</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/class/thermal/thermal_zone</span><span style="color:#79B8FF">*</span><span style="color:#9ECBFF">/temp</span></span></code></pre>
+<p>固定亮度：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> settings</span><span style="color:#9ECBFF"> put</span><span style="color:#9ECBFF"> system</span><span style="color:#9ECBFF"> screen_brightness_mode</span><span style="color:#79B8FF"> 0</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> settings</span><span style="color:#9ECBFF"> put</span><span style="color:#9ECBFF"> system</span><span style="color:#9ECBFF"> screen_brightness</span><span style="color:#79B8FF"> 80</span></span></code></pre>
+<h3 id="充电发热场景">充电发热场景</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> battery</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/class/power_supply/battery/status</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/class/power_supply/battery/capacity</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/class/power_supply/battery/temp</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/class/power_supply/battery/current_now</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/class/thermal/thermal_zone</span><span style="color:#79B8FF">*</span><span style="color:#9ECBFF">/type</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/class/thermal/thermal_zone</span><span style="color:#79B8FF">*</span><span style="color:#9ECBFF">/temp</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/class/thermal/cooling_device</span><span style="color:#79B8FF">*</span><span style="color:#9ECBFF">/type</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/class/thermal/cooling_device</span><span style="color:#79B8FF">*</span><span style="color:#9ECBFF">/cur_state</span></span></code></pre>
+<h3 id="后台网络定位蓝牙">后台网络/定位/蓝牙</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> connectivity</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> netstats</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> wifi</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> location</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> bluetooth_manager</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> sensorservice</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/kernel/debug/wakeup_sources</span></span></code></pre>
+<h2 id="perfetto和ftrace">Perfetto和ftrace</h2>
+<p>Perfetto 是时间线工具。它不是替代 dumpsys，而是回答“某个时刻到底发生了什么”。</p>
+<h3 id="atrace源码对应关系">atrace源码对应关系</h3>
+<p>AOSP 的 atrace category 会打开一组 ftrace event。比如：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>category</th><th>atrace源码</th><th>event</th></tr></thead><tbody><tr><td>sched</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/native/cmds/atrace/atrace.cpp:135:1">atrace.cpp:135</a></td><td><code>sched/sched_switch</code></td></tr><tr><td>freq</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/native/cmds/atrace/atrace.cpp:171:1">atrace.cpp:171</a></td><td><code>power/cpu_frequency</code></td></tr><tr><td>freq limits</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/native/cmds/atrace/atrace.cpp:178:1">atrace.cpp:178</a></td><td><code>power/cpu_frequency_limits</code></td></tr><tr><td>idle</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/native/cmds/atrace/atrace.cpp:188:1">atrace.cpp:188</a></td><td><code>power/cpu_idle</code></td></tr><tr><td>Trace.java</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/core/java/android/os/Trace.java:43:1">Trace.java:43</a></td><td>Java trace section</td></tr></tbody></table>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    Perfetto[perfetto命令]</span></span>
+<span class="line"><span style="color:#E1E4E8">    DataSource[linux.ftrace data source]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Events[sched/freq/idle/power events]</span></span>
+<span class="line"><span style="color:#E1E4E8">    TraceFile[trace.perfetto-trace]</span></span>
+<span class="line"><span style="color:#E1E4E8">    UI[ui.perfetto.dev]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    Perfetto --> DataSource</span></span>
+<span class="line"><span style="color:#E1E4E8">    DataSource --> Events</span></span>
+<span class="line"><span style="color:#E1E4E8">    Events --> TraceFile</span></span>
+<span class="line"><span style="color:#E1E4E8">    TraceFile --> UI</span></span></code></pre>
+<h3 id="短抓命令">短抓命令</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> perfetto</span><span style="color:#79B8FF"> -o</span><span style="color:#9ECBFF"> /data/misc/perfetto-traces/power.trace</span><span style="color:#79B8FF"> -t</span><span style="color:#9ECBFF"> 60s</span><span style="color:#9ECBFF"> sched</span><span style="color:#9ECBFF"> freq</span><span style="color:#9ECBFF"> idle</span><span style="color:#9ECBFF"> power</span><span style="color:#9ECBFF"> am</span><span style="color:#9ECBFF"> wm</span><span style="color:#9ECBFF"> binder_driver</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> pull</span><span style="color:#9ECBFF"> /data/misc/perfetto-traces/power.trace</span></span></code></pre>
+<p>适合：</p>
+<ul>
+<li>复现很快的问题。</li>
+<li>亮屏操作。</li>
+<li>短时间发热或掉帧。</li>
+</ul>
+<h3 id="长抓配置">长抓配置</h3>
+<p>长时间待机建议用配置文件，避免缓冲区太小：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>buffers {</span></span>
+<span class="line"><span>  size_kb: 131072</span></span>
+<span class="line"><span>  fill_policy: RING_BUFFER</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>data_sources {</span></span>
+<span class="line"><span>  config {</span></span>
+<span class="line"><span>    name: "linux.ftrace"</span></span>
+<span class="line"><span>    ftrace_config {</span></span>
+<span class="line"><span>      ftrace_events: "sched/sched_switch"</span></span>
+<span class="line"><span>      ftrace_events: "power/cpu_frequency"</span></span>
+<span class="line"><span>      ftrace_events: "power/cpu_idle"</span></span>
+<span class="line"><span>      ftrace_events: "power/suspend_resume"</span></span>
+<span class="line"><span>      ftrace_events: "wakeup_source/activate"</span></span>
+<span class="line"><span>      ftrace_events: "wakeup_source/deactivate"</span></span>
+<span class="line"><span>    }</span></span>
+<span class="line"><span>  }</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>duration_ms: 300000</span></span></code></pre>
+<p>抓取：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> push</span><span style="color:#9ECBFF"> power.pbtx</span><span style="color:#9ECBFF"> /data/local/tmp/power.pbtx</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> perfetto</span><span style="color:#79B8FF"> -c</span><span style="color:#9ECBFF"> /data/local/tmp/power.pbtx</span><span style="color:#79B8FF"> -o</span><span style="color:#9ECBFF"> /data/misc/perfetto-traces/power.trace</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> pull</span><span style="color:#9ECBFF"> /data/misc/perfetto-traces/power.trace</span></span></code></pre>
+<h2 id="batterystats采集">BatteryStats采集</h2>
+<p>BatteryStats 用来回答“长周期谁在消耗资源”。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --reset</span></span>
+<span class="line"><span style="color:#6A737D"># 复现场景</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --charged</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> batterystats.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --proto</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> batterystats.pb</span></span></code></pre>
+<p>注意：</p>
+<ul>
+<li><code>--reset</code> 会清统计，测试前确认可以这么做。</li>
+<li>插拔电会改变统计周期。</li>
+<li>BatteryStats 是统计和模型，不是电流仪。</li>
+<li>它适合找 UID 和行为，再用 Perfetto 做时间线确认。</li>
+</ul>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart LR</span></span>
+<span class="line"><span style="color:#E1E4E8">    Stats[BatteryStats]</span></span>
+<span class="line"><span style="color:#E1E4E8">    UID[定位UID/行为]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Trace[Perfetto时间线]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Kernel[wakeup_sources验证]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Current[电流/温度验证]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    Stats --> UID</span></span>
+<span class="line"><span style="color:#E1E4E8">    UID --> Trace</span></span>
+<span class="line"><span style="color:#E1E4E8">    Trace --> Kernel</span></span>
+<span class="line"><span style="color:#E1E4E8">    Kernel --> Current</span></span></code></pre>
+<h2 id="打点和时间对齐">打点和时间对齐</h2>
+<p>多份日志最难的是对齐时间。建议每次复现都打点：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> log</span><span style="color:#79B8FF"> -t</span><span style="color:#9ECBFF"> POWER_TEST</span><span style="color:#9ECBFF"> "case start: standby_baseline"</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> date</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D"># 复现问题</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> log</span><span style="color:#79B8FF"> -t</span><span style="color:#9ECBFF"> POWER_TEST</span><span style="color:#9ECBFF"> "case end: standby_baseline"</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> date</span></span></code></pre>
+<p>如果抓 Perfetto，也可以在操作前后打 logcat 点，方便在 logcat、bugreport、手工记录里对齐。</p>
+<h2 id="自动采集脚本">自动采集脚本</h2>
+<p>下面这个脚本适合作为一次功耗 case 的最小采集脚本：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#6A737D">#!/usr/bin/env bash</span></span>
+<span class="line"><span style="color:#79B8FF">set</span><span style="color:#79B8FF"> -euo</span><span style="color:#9ECBFF"> pipefail</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">ts</span><span style="color:#F97583">=</span><span style="color:#E1E4E8">$(</span><span style="color:#B392F0">date</span><span style="color:#9ECBFF"> +%Y%m%d_%H%M%S</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">out</span><span style="color:#F97583">=</span><span style="color:#9ECBFF">"power_case_${</span><span style="color:#E1E4E8">ts</span><span style="color:#9ECBFF">}"</span></span>
+<span class="line"><span style="color:#B392F0">mkdir</span><span style="color:#79B8FF"> -p</span><span style="color:#9ECBFF"> "${</span><span style="color:#E1E4E8">out</span><span style="color:#9ECBFF">}"</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> devices</span><span style="color:#79B8FF"> -l</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "${</span><span style="color:#E1E4E8">out</span><span style="color:#9ECBFF">}/adb_devices.txt"</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> getprop</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "${</span><span style="color:#E1E4E8">out</span><span style="color:#9ECBFF">}/getprop.txt"</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> date</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "${</span><span style="color:#E1E4E8">out</span><span style="color:#9ECBFF">}/device_date_start.txt"</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> log</span><span style="color:#79B8FF"> -t</span><span style="color:#9ECBFF"> POWER_TEST</span><span style="color:#9ECBFF"> "case start ${</span><span style="color:#E1E4E8">ts</span><span style="color:#9ECBFF">}"</span><span style="color:#F97583"> ||</span><span style="color:#79B8FF"> true</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> power</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "${</span><span style="color:#E1E4E8">out</span><span style="color:#9ECBFF">}/power.txt"</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> battery</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "${</span><span style="color:#E1E4E8">out</span><span style="color:#9ECBFF">}/battery.txt"</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> deviceidle</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "${</span><span style="color:#E1E4E8">out</span><span style="color:#9ECBFF">}/deviceidle.txt"</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> thermalservice</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "${</span><span style="color:#E1E4E8">out</span><span style="color:#9ECBFF">}/thermalservice.txt"</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --charged</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "${</span><span style="color:#E1E4E8">out</span><span style="color:#9ECBFF">}/batterystats.txt"</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> alarm</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "${</span><span style="color:#E1E4E8">out</span><span style="color:#9ECBFF">}/alarm.txt"</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> jobscheduler</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "${</span><span style="color:#E1E4E8">out</span><span style="color:#9ECBFF">}/jobscheduler.txt"</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/kernel/debug/wakeup_sources</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "${</span><span style="color:#E1E4E8">out</span><span style="color:#9ECBFF">}/wakeup_sources.txt"</span><span style="color:#F97583"> 2></span><span style="color:#9ECBFF">/dev/null</span><span style="color:#F97583"> ||</span><span style="color:#79B8FF"> true</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/devices/system/cpu/cpufreq/policy</span><span style="color:#79B8FF">*</span><span style="color:#9ECBFF">/scaling_cur_freq</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "${</span><span style="color:#E1E4E8">out</span><span style="color:#9ECBFF">}/cpufreq_cur.txt"</span><span style="color:#F97583"> 2></span><span style="color:#9ECBFF">/dev/null</span><span style="color:#F97583"> ||</span><span style="color:#79B8FF"> true</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/class/thermal/thermal_zone</span><span style="color:#79B8FF">*</span><span style="color:#9ECBFF">/type</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "${</span><span style="color:#E1E4E8">out</span><span style="color:#9ECBFF">}/thermal_zone_type.txt"</span><span style="color:#F97583"> 2></span><span style="color:#9ECBFF">/dev/null</span><span style="color:#F97583"> ||</span><span style="color:#79B8FF"> true</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/class/thermal/thermal_zone</span><span style="color:#79B8FF">*</span><span style="color:#9ECBFF">/temp</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "${</span><span style="color:#E1E4E8">out</span><span style="color:#9ECBFF">}/thermal_zone_temp.txt"</span><span style="color:#F97583"> 2></span><span style="color:#9ECBFF">/dev/null</span><span style="color:#F97583"> ||</span><span style="color:#79B8FF"> true</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/class/thermal/cooling_device</span><span style="color:#79B8FF">*</span><span style="color:#9ECBFF">/cur_state</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "${</span><span style="color:#E1E4E8">out</span><span style="color:#9ECBFF">}/cooling_cur_state.txt"</span><span style="color:#F97583"> 2></span><span style="color:#9ECBFF">/dev/null</span><span style="color:#F97583"> ||</span><span style="color:#79B8FF"> true</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> log</span><span style="color:#79B8FF"> -t</span><span style="color:#9ECBFF"> POWER_TEST</span><span style="color:#9ECBFF"> "case end ${</span><span style="color:#E1E4E8">ts</span><span style="color:#9ECBFF">}"</span><span style="color:#F97583"> ||</span><span style="color:#79B8FF"> true</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> date</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "${</span><span style="color:#E1E4E8">out</span><span style="color:#9ECBFF">}/device_date_end.txt"</span></span></code></pre>
+<h2 id="真机case当前状态能说明什么">真机case：当前状态能说明什么</h2>
+<p>当前 Mi MIX 2 的快速采集：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>dumpsys battery:</span></span>
+<span class="line"><span>    USB powered: true</span></span>
+<span class="line"><span>    level: 99</span></span>
+<span class="line"><span>    status: Full</span></span>
+<span class="line"><span>    temperature: 39.0 C</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>dumpsys power:</span></span>
+<span class="line"><span>    mWakefulness=Awake</span></span>
+<span class="line"><span>    mIsPowered=true</span></span>
+<span class="line"><span>    mPlugType=2</span></span>
+<span class="line"><span>    mStayOn=true</span></span>
+<span class="line"><span>    mHalInteractiveModeEnabled=true</span></span>
+<span class="line"><span>    mHoldingWakeLockSuspendBlocker=false</span></span>
+<span class="line"><span>    mHoldingDisplaySuspendBlocker=true</span></span>
+<span class="line"><span>    Wake Locks: size=0</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>dumpsys thermalservice:</span></span>
+<span class="line"><span>    Thermal Status: 0</span></span>
+<span class="line"><span>    HAL Ready=false</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>sysfs:</span></span>
+<span class="line"><span>    tracefs可用</span></span>
+<span class="line"><span>    wakeup_sources可读</span></span>
+<span class="line"><span>    cpufreq policy0/policy4 governor=interactive</span></span>
+<span class="line"><span>    thermal_zone0 battery=39000</span></span>
+<span class="line"><span>    thermal_zone1 pm8998_tz=34743</span></span></code></pre>
+<h3 id="case结论1测试条件先污染">Case结论1：测试条件先污染</h3>
+<p>这组状态不能用于自然待机结论，因为：</p>
+<ul>
+<li>USB 供电。</li>
+<li>满电状态。</li>
+<li><code>mStayOn=true</code>。</li>
+<li><code>mWakefulness=Awake</code>。</li>
+<li>display suspend blocker 正在持有。</li>
+</ul>
+<p>它可以作为“插 USB 调试条件”的基线，但不能写成“手机待机功耗如何”。</p>
+<h3 id="case结论2thermalservice不是唯一热证据">Case结论2：thermalservice不是唯一热证据</h3>
+<p><code>HAL Ready=false</code> 说明 Framework thermal HAL 不可用。但 sysfs thermal zone 有温度，cooling device 可读，所以热分析要转向：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">/sys/class/thermal/thermal_zone*</span></span>
+<span class="line"><span style="color:#B392F0">/sys/class/thermal/cooling_device*</span></span></code></pre>
+<h3 id="case结论3trace能力足够做perfetto">Case结论3：trace能力足够做Perfetto</h3>
+<p>设备有：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>/sys/kernel/tracing</span></span>
+<span class="line"><span>/sys/kernel/debug/tracing</span></span>
+<span class="line"><span>sched events</span></span>
+<span class="line"><span>power events</span></span>
+<span class="line"><span>wakeup_sources</span></span></code></pre>
+<p>所以后续可以做：</p>
+<ul>
+<li>CPU 频率和 idle 时间线。</li>
+<li>wakeup source activate/deactivate。</li>
+<li>sched_switch 找运行线程。</li>
+<li>thermal/cpufreq 关联分析。</li>
+</ul>
+<h2 id="报告目录建议">报告目录建议</h2>
+<p>一次 case 目录建议这样放：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>power_case_YYYYMMDD_HHMMSS/</span></span>
+<span class="line"><span>    README.md</span></span>
+<span class="line"><span>    env/</span></span>
+<span class="line"><span>        adb_devices.txt</span></span>
+<span class="line"><span>        getprop.txt</span></span>
+<span class="line"><span>        test_conditions.md</span></span>
+<span class="line"><span>    dumpsys/</span></span>
+<span class="line"><span>        power.txt</span></span>
+<span class="line"><span>        battery.txt</span></span>
+<span class="line"><span>        deviceidle.txt</span></span>
+<span class="line"><span>        batterystats.txt</span></span>
+<span class="line"><span>        thermalservice.txt</span></span>
+<span class="line"><span>    sysfs/</span></span>
+<span class="line"><span>        wakeup_sources_before.txt</span></span>
+<span class="line"><span>        wakeup_sources_after.txt</span></span>
+<span class="line"><span>        cpufreq.txt</span></span>
+<span class="line"><span>        thermal_zone.txt</span></span>
+<span class="line"><span>        cooling_device.txt</span></span>
+<span class="line"><span>    traces/</span></span>
+<span class="line"><span>        power.trace</span></span>
+<span class="line"><span>    conclusion.md</span></span></code></pre>
+<h2 id="结论写法">结论写法</h2>
+<p>一份采集报告不能只贴命令输出，要写判断：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>测试条件：</span></span>
+<span class="line"><span>    Mi MIX 2 / msm8998 / Android 14，USB连接，满电，mStayOn=true。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>限制：</span></span>
+<span class="line"><span>    当前不适合作为自然待机数据，只能做插USB调试基线。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Framework：</span></span>
+<span class="line"><span>    PMS显示Awake，无wakelock，但Display suspend blocker持有。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Kernel：</span></span>
+<span class="line"><span>    wakeup_sources可读，后续可做delta对比。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Thermal：</span></span>
+<span class="line"><span>    thermalservice HAL Ready=false，但thermal_zone可读。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>下一步：</span></span>
+<span class="line"><span>    若要做待机case，需要改变供电/屏幕条件，并采before/after delta。</span></span></code></pre>
+<p>这才是可复用、可复盘、可被别人相信的功耗采集。</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

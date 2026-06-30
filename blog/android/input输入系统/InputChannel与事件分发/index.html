@@ -1,0 +1,49 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>InputChannel与事件分发 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>InputChannel与事件分发</h1><div class="post-meta"><time datetime="2024-08-01T10:00:00.000Z">2024年8月1日</time><span> / android / input输入系统</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">android</span><span class="tag">input</span><span class="tag">InputChannel</span><span class="tag">事件分发</span></div></header><div class="article-body"><h2 id="简介">简介</h2>
+<p>InputChannel 是 Android 输入系统中进程间通信的通道，负责将输入事件从 system_server 传递到应用进程。</p>
+<h2 id="inputchannel-结构">InputChannel 结构</h2>
+<h3 id="组成">组成</h3>
+<ul>
+<li><strong>Server 端</strong>：位于 system_server，用于发送事件</li>
+<li><strong>Client 端</strong>：位于应用进程，用于接收事件</li>
+</ul>
+<h3 id="创建时机">创建时机</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>WMS.addWindow()</span></span>
+<span class="line"><span>    → InputChannel.openInputChannelPair()</span></span>
+<span class="line"><span>    → 注册到 InputDispatcher</span></span></code></pre>
+<h2 id="事件分发流程">事件分发流程</h2>
+<h3 id="server-端inputdispatcher">Server 端（InputDispatcher）</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>InputDispatcher.dispatchEvent()</span></span>
+<span class="line"><span>    → InputPublisher.publishMotionEvent()</span></span>
+<span class="line"><span>    → 通过 Socket 发送事件</span></span></code></pre>
+<h3 id="client-端应用进程">Client 端（应用进程）</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>InputConsumer.consume()</span></span>
+<span class="line"><span>    → InputEventReceiver.onInputEvent()</span></span>
+<span class="line"><span>    → ViewRootImpl.enqueueInputEvent()</span></span>
+<span class="line"><span>    → 处理事件</span></span></code></pre>
+<h2 id="事件处理流程">事件处理流程</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ViewRootImpl.processInputEvent()</span></span>
+<span class="line"><span>    → deliverInputEvent()</span></span>
+<span class="line"><span>    → InputStage.deliver()</span></span>
+<span class="line"><span>    → View.postIme()</span></span>
+<span class="line"><span>    → Activity.dispatchTouchEvent()</span></span>
+<span class="line"><span>    → ViewGroup.dispatchTouchEvent()</span></span>
+<span class="line"><span>    → View.onTouchEvent()</span></span></code></pre>
+<h2 id="事件完成通知">事件完成通知</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>App 处理完成</span></span>
+<span class="line"><span>    → InputConsumer.sendFinishedSignal()</span></span>
+<span class="line"><span>    → InputDispatcher.handleReceiveCallback()</span></span>
+<span class="line"><span>    → 更新 ANR 计时</span></span></code></pre>
+<h2 id="双通道机制">双通道机制</h2>
+<p>每个窗口有两个 InputChannel：</p>
+<ol>
+<li><strong>InputChannel</strong>：用于事件分发</li>
+<li><strong>InputChannel</strong>：用于完成通知</li>
+</ol>
+<h2 id="性能优化">性能优化</h2>
+<ol>
+<li><strong>减少事件处理时间</strong>：避免在主线程执行耗时操作</li>
+<li><strong>批量处理</strong>：合并多个事件一起处理</li>
+<li><strong>异步处理</strong>：将耗时操作移到后台线程</li>
+</ol>
+<h2 id="总结">总结</h2>
+<p>InputChannel 是输入事件跨进程传递的核心机制，通过 Socket 实现高效的数据传输。</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

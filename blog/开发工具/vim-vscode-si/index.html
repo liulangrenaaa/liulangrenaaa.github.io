@@ -1,0 +1,22 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>IDE选择 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>IDE选择</h1><div class="post-meta"><time datetime="2020-09-02T19:00:00.000Z">2020年9月2日</time><span> / 开发工具</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">开发工具</span></div></header><div class="article-body"><h2 id="vim-还是-vscode-还是-source-insight">Vim 还是 Vscode 还是 Source Insight</h2>
+<p>相信很多人一开始都是使用的是SI，还是比较方便的，也比较轻量，运行时占用内存也比较少，
+一般也能找到破解的方式。我再到公司之后发现我们公司都是使用linux服务器进行开发，使用SI不太方便，但还有方法：比如使用samba服务器，SI通过samba访问服务器代码，也可以建立完整工程
+但这样有两个致命缺点</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>1. samba 方式修改代码之后，文件被修改成为了可执行的了，每次提交之前都需要手动修改，或者写个脚本在每次提交之前执行</span></span>
+<span class="line"><span>2. samba需要在windows开发机 和 linux服务器之间大量同步，有时候同步很慢</span></span></code></pre>
+<p>基于上面两个原因，我后面开始使用Vim来进行日常开发。</p>
+<p>Vim 使用过的人都知道学习曲线比较陡峭，有个著名的问题：我该怎么退出vim?在使用一段时间Vim之后，插件也越装越多，在远程的时候还是会卡顿，且Vim用起来也不是很方便</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>1. Vim 查找替换十分繁琐</span></span>
+<span class="line"><span>2. Vim 对于散落在不同文件夹的文件，建立工程十分不友好，也可以做</span></span>
+<span class="line"><span>3. 在重构代码的时候，Vim 就不是一个很好的选择，需要经常查找定义等</span></span>
+<span class="line"><span>......</span></span></code></pre>
+<p>过了一段时间之后，我再也不能忍受Vim了，然后看到了vscode，正巧开放了Remote-ssh插件，插件也都可以离线安装，所以我就切换到了 Vscode。</p>
+<p>从我实际使用经验来看，Vscode 除了内存占用大一点之外几乎没有其他缺点，但是优点可以列一堆</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>1. 查找替换十分方便，相比于Vim SI，不要太方便</span></span>
+<span class="line"><span>2. 工作区简历十分方便</span></span>
+<span class="line"><span>3. Pretty!!</span></span>
+<span class="line"><span>4. 各种插件支持，新的语言，只要装一个插件就可以很好支持，且这些插件是社区在维护，基本一段时间就有新的版本（BugFix + New Feature）</span></span>
+<span class="line"><span>5. Remote-ssh: 运算，查找这些操作都是在 服务器进行，不会导致本地卡顿，但是对网络要求比较高</span></span>
+<span class="line"><span>6. 跟随社区，一直有新版本，新功能可以体验</span></span>
+<span class="line"><span>........</span></span></code></pre>
+<p>So, Vscode Yes!</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

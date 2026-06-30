@@ -1,0 +1,60 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>SurfaceControl.Transaction机制 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>SurfaceControl.Transaction机制</h1><div class="post-meta"><time datetime="2024-05-01T10:00:00.000Z">2024年5月1日</time><span> / android / wms窗口系统</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">android</span><span class="tag">SurfaceControl</span><span class="tag">SurfaceFlinger</span><span class="tag">图形</span></div></header><div class="article-body"><h2 id="简介">简介</h2>
+<p>SurfaceControl.Transaction 是 Android 图形系统中控制窗口属性的核心机制，用于批量修改窗口的位置、大小、透明度等属性。</p>
+<h2 id="核心-api">核心 API</h2>
+<h3 id="常用操作">常用操作</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="java"><code><span class="line"><span style="color:#E1E4E8">SurfaceControl.Transaction t </span><span style="color:#F97583">=</span><span style="color:#F97583"> new</span><span style="color:#E1E4E8"> SurfaceControl.</span><span style="color:#B392F0">Transaction</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">// 位置</span></span>
+<span class="line"><span style="color:#E1E4E8">t.</span><span style="color:#B392F0">setPosition</span><span style="color:#E1E4E8">(sc, x, y);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">// 大小</span></span>
+<span class="line"><span style="color:#E1E4E8">t.</span><span style="color:#B392F0">setBufferSize</span><span style="color:#E1E4E8">(sc, width, height);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">// 透明度</span></span>
+<span class="line"><span style="color:#E1E4E8">t.</span><span style="color:#B392F0">setAlpha</span><span style="color:#E1E4E8">(sc, alpha);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">// 可见性</span></span>
+<span class="line"><span style="color:#E1E4E8">t.</span><span style="color:#B392F0">show</span><span style="color:#E1E4E8">(sc);</span></span>
+<span class="line"><span style="color:#E1E4E8">t.</span><span style="color:#B392F0">hide</span><span style="color:#E1E4E8">(sc);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">// 层级</span></span>
+<span class="line"><span style="color:#E1E4E8">t.</span><span style="color:#B392F0">setLayer</span><span style="color:#E1E4E8">(sc, layer);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">// 应用</span></span>
+<span class="line"><span style="color:#E1E4E8">t.</span><span style="color:#B392F0">apply</span><span style="color:#E1E4E8">();</span></span></code></pre>
+<h2 id="批量操作">批量操作</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="java"><code><span class="line"><span style="color:#E1E4E8">SurfaceControl.Transaction t </span><span style="color:#F97583">=</span><span style="color:#F97583"> new</span><span style="color:#E1E4E8"> SurfaceControl.</span><span style="color:#B392F0">Transaction</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">t.</span><span style="color:#B392F0">setPosition</span><span style="color:#E1E4E8">(sc1, x1, y1);</span></span>
+<span class="line"><span style="color:#E1E4E8">t.</span><span style="color:#B392F0">setPosition</span><span style="color:#E1E4E8">(sc2, x2, y2);</span></span>
+<span class="line"><span style="color:#E1E4E8">t.</span><span style="color:#B392F0">setAlpha</span><span style="color:#E1E4E8">(sc3, </span><span style="color:#79B8FF">0.5f</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#E1E4E8">t.</span><span style="color:#B392F0">apply</span><span style="color:#E1E4E8">(); </span><span style="color:#6A737D">// 一次性应用所有修改</span></span></code></pre>
+<h2 id="在动画中的应用">在动画中的应用</h2>
+<h3 id="位移动画">位移动画</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="java"><code><span class="line"><span style="color:#E1E4E8">ValueAnimator animator </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> ValueAnimator.</span><span style="color:#B392F0">ofFloat</span><span style="color:#E1E4E8">(</span><span style="color:#79B8FF">0</span><span style="color:#E1E4E8">, </span><span style="color:#79B8FF">1</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#E1E4E8">animator.</span><span style="color:#B392F0">addUpdateListener</span><span style="color:#E1E4E8">(animation </span><span style="color:#F97583">-></span><span style="color:#E1E4E8"> {</span></span>
+<span class="line"><span style="color:#F97583">    float</span><span style="color:#E1E4E8"> fraction </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> animation.</span><span style="color:#B392F0">getAnimatedFraction</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">    SurfaceControl.Transaction t </span><span style="color:#F97583">=</span><span style="color:#F97583"> new</span><span style="color:#E1E4E8"> SurfaceControl.</span><span style="color:#B392F0">Transaction</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">    t.</span><span style="color:#B392F0">setPosition</span><span style="color:#E1E4E8">(leash, startX </span><span style="color:#F97583">+</span><span style="color:#E1E4E8"> (endX </span><span style="color:#F97583">-</span><span style="color:#E1E4E8"> startX) </span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> fraction, y);</span></span>
+<span class="line"><span style="color:#E1E4E8">    t.</span><span style="color:#B392F0">apply</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">});</span></span></code></pre>
+<h3 id="透明度动画">透明度动画</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="java"><code><span class="line"><span style="color:#E1E4E8">ValueAnimator animator </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> ValueAnimator.</span><span style="color:#B392F0">ofFloat</span><span style="color:#E1E4E8">(</span><span style="color:#79B8FF">1</span><span style="color:#E1E4E8">, </span><span style="color:#79B8FF">0</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#E1E4E8">animator.</span><span style="color:#B392F0">addUpdateListener</span><span style="color:#E1E4E8">(animation </span><span style="color:#F97583">-></span><span style="color:#E1E4E8"> {</span></span>
+<span class="line"><span style="color:#F97583">    float</span><span style="color:#E1E4E8"> alpha </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> (</span><span style="color:#F97583">float</span><span style="color:#E1E4E8">) animation.</span><span style="color:#B392F0">getAnimatedValue</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">    SurfaceControl.Transaction t </span><span style="color:#F97583">=</span><span style="color:#F97583"> new</span><span style="color:#E1E4E8"> SurfaceControl.</span><span style="color:#B392F0">Transaction</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">    t.</span><span style="color:#B392F0">setAlpha</span><span style="color:#E1E4E8">(leash, alpha);</span></span>
+<span class="line"><span style="color:#E1E4E8">    t.</span><span style="color:#B392F0">apply</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">});</span></span></code></pre>
+<h2 id="与-surfaceflinger-的关系">与 SurfaceFlinger 的关系</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>SurfaceControl.Transaction.apply()</span></span>
+<span class="line"><span>    → 通过 Binder 发送到 SurfaceFlinger</span></span>
+<span class="line"><span>    → SurfaceFlinger 处理事务</span></span>
+<span class="line"><span>    → 更新显示</span></span></code></pre>
+<h2 id="性能优化">性能优化</h2>
+<ol>
+<li><strong>批量操作</strong>：减少 Transaction 次数</li>
+<li><strong>复用 Transaction</strong>：避免频繁创建对象</li>
+<li><strong>异步应用</strong>：使用 applyAsync() 减少阻塞</li>
+</ol>
+<h2 id="总结">总结</h2>
+<p>SurfaceControl.Transaction 是控制窗口属性的核心机制，通过批量操作可以高效地实现窗口动画和布局调整。</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

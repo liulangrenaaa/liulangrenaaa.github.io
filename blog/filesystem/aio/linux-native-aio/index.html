@@ -1,0 +1,109 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>linux native aio | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>linux native aio</h1><div class="post-meta"><time datetime="2021-07-27T19:00:40.000Z">2021年7月27日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">linux native aio</span></div></header><div class="article-body"><h2 id="api">api</h2>
+<ul>
+<li><code>io_setup</code></li>
+<li><code>io_cancel</code></li>
+<li><code>io_destroy</code></li>
+<li><code>io_getevents</code></li>
+<li><code>io_submit</code></li>
+</ul>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>IO_SETUP(2)                                          Linux Programmer's Manual                                         IO_SETUP(2)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>NAME</span></span>
+<span class="line"><span>       io_setup - create an asynchronous I/O context</span></span>
+<span class="line"><span>......</span></span>
+<span class="line"><span>NOTES</span></span>
+<span class="line"><span>       Glibc does not provide a wrapper function for this system call.  You could invoke it using syscall(2).   But  instead,  you</span></span>
+<span class="line"><span>       probably want to use the io_setup() wrapper function provided by libaio.</span></span></code></pre>
+<p>open 打开文件的时候，必须要以 <code>O_DIRECT</code> 方式打开</p>
+<h2 id="demo">demo</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>#include &#x3C;stdlib.h></span></span>
+<span class="line"><span>#include &#x3C;stdbool.h></span></span>
+<span class="line"><span>#include &#x3C;string.h></span></span>
+<span class="line"><span>#include &#x3C;errno.h></span></span>
+<span class="line"><span>#include &#x3C;stdio.h></span></span>
+<span class="line"><span>#include &#x3C;unistd.h></span></span>
+<span class="line"><span>#include &#x3C;fcntl.h></span></span>
+<span class="line"><span>#include &#x3C;time.h></span></span>
+<span class="line"><span>#include &#x3C;sys/types.h></span></span>
+<span class="line"><span>#include &#x3C;sys/stat.h></span></span>
+<span class="line"><span>#include &#x3C;libaio.h></span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>#define FILEPATH "/home/ubuntu/workspace/share/test_modules/filesystem/aio/kernel-aio/test.txt"</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>int main(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>        io_context_t context;</span></span>
+<span class="line"><span>        struct iocb io[2], *p[2] = {&#x26;io[0], &#x26;io[1]};</span></span>
+<span class="line"><span>        struct io_event e[2];</span></span>
+<span class="line"><span>        unsigned nr_events = 10;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        struct timespec timeout;</span></span>
+<span class="line"><span>        timeout.tv_sec = 0;</span></span>
+<span class="line"><span>        timeout.tv_nsec = 1000 * 1000 *10; //10ms</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        char *wbuf = 0, *rbuf = 0;</span></span>
+<span class="line"><span>        int wbuflen = 512 * 1024 * 1024;</span></span>
+<span class="line"><span>        int rbuflen = wbuflen + 1;</span></span>
+<span class="line"><span>        posix_memalign((void **)&#x26;wbuf, 512, wbuflen);</span></span>
+<span class="line"><span>        posix_memalign((void **)&#x26;rbuf, 512, rbuflen);</span></span>
+<span class="line"><span>        memset(wbuf, 'a', wbuflen);</span></span>
+<span class="line"><span>        memset(rbuf, 0, rbuflen);</span></span>
+<span class="line"><span>        memset(&#x26;context, 0, sizeof(io_context_t));</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        int ret = 0, comp_num = 0, i = 0;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        int fd = open(FILEPATH, O_CREAT | O_RDWR | O_DIRECT, 0644);</span></span>
+<span class="line"><span>        if (fd &#x3C; 0) {</span></span>
+<span class="line"><span>                printf("open file failed ！fd = %d\n", fd);</span></span>
+<span class="line"><span>                return 0;</span></span>
+<span class="line"><span>        }</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        if (0 != io_setup(nr_events, &#x26;context)) {</span></span>
+<span class="line"><span>                printf("io_setup error:%d\n", errno);</span></span>
+<span class="line"><span>        }</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        io_prep_pwrite(&#x26;io[0], fd, wbuf, wbuflen, 0);</span></span>
+<span class="line"><span>        io_prep_pread(&#x26;io[1], fd, rbuf, rbuflen - 1, 0);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        if ((ret = io_submit(context, 2, p)) != 2) {</span></span>
+<span class="line"><span>                printf("io_submit error:%d\n", ret);</span></span>
+<span class="line"><span>                io_destroy(context);</span></span>
+<span class="line"><span>                return -1;</span></span>
+<span class="line"><span>        }</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        while (true) {</span></span>
+<span class="line"><span>                ret = io_getevents(context, 2, 2, e, &#x26;timeout);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>                if (ret &#x3C; 0) {</span></span>
+<span class="line"><span>                        printf("io_getevents error:%d\n", ret);</span></span>
+<span class="line"><span>                        break;</span></span>
+<span class="line"><span>                } else if (ret > 0) {</span></span>
+<span class="line"><span>                        comp_num += ret;</span></span>
+<span class="line"><span>                        for (i = 0; i &#x3C; ret; ++i) {</span></span>
+<span class="line"><span>                                printf("result,res2:%d, res:%d\n", e[i].res2, e[i].res);</span></span>
+<span class="line"><span>                        }</span></span>
+<span class="line"><span>                }</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>                if (comp_num >= 2) {</span></span>
+<span class="line"><span>                        printf("done !\n");</span></span>
+<span class="line"><span>                        break;</span></span>
+<span class="line"><span>                }</span></span>
+<span class="line"><span>                printf("have not done !\n");</span></span>
+<span class="line"><span>        }</span></span>
+<span class="line"><span>        return 0;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>编译 <code>gcc main.c -laio -D_GNU_SOURCE </code></p>
+<p>a</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:/tmp/123/2 $ touch d</span></span>
+<span class="line"><span>ubuntu@zeku_server:/tmp/123/2 $ cd ../</span></span>
+<span class="line"><span>ubuntu@zeku_server:/tmp/123 $ tree</span></span>
+<span class="line"><span>.</span></span>
+<span class="line"><span>├── 1</span></span>
+<span class="line"><span>│   ├── a</span></span>
+<span class="line"><span>│   └── b</span></span>
+<span class="line"><span>└── 2</span></span>
+<span class="line"><span>    ├── c</span></span>
+<span class="line"><span>    └── d</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>2 directories, 4 files</span></span>
+<span class="line"><span>ubuntu@zeku_server:/tmp/123 $</span></span></code></pre></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

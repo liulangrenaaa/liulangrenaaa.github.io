@@ -1,0 +1,150 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>最简单的空指针oops | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>最简单的空指针oops</h1><div class="post-meta"><time datetime="2021-01-21T15:00:00.000Z">2021年1月21日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">oops</span><span class="tag">panic</span><span class="tag">空指针</span></div></header><div class="article-body"><p>只是做一个记录，为了演示最简单的空指针case, 写了一个demo, 可以参考<a href="https://github.com/liulangrenaaa/test_modules/blob/main/null_pointer/01_null_pointer/01_null_pointer.c">github 代码</a></p>
+<h2 id="用-crash-分析">用 <code>crash</code> 分析</h2>
+<p><code>insmod</code> 出错之后已经生成了相关 <code>dump</code>文件。
+下面直接使用 <code>crash</code> 工具分析：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>stable_kernel@kernel: /var/crash/202101211201# sudo crash vmlinux dump</span></span>
+<span class="line"><span>crash 7.2.9++</span></span>
+<span class="line"><span>GNU gdb (GDB) 7.6</span></span>
+<span class="line"><span>Copyright (C) 2013 Free Software Foundation, Inc.</span></span>
+<span class="line"><span>License GPLv3+: GNU GPL version 3 or later &#x3C;http://gnu.org/licenses/gpl.html></span></span>
+<span class="line"><span>This is free software: you are free to change and redistribute it.</span></span>
+<span class="line"><span>There is NO WARRANTY, to the extent permitted by law.  Type "show copying"</span></span>
+<span class="line"><span>and "show warranty" for details.</span></span>
+<span class="line"><span>This GDB was configured as "x86_64-unknown-linux-gnu"...</span></span>
+<span class="line"><span>WARNING: kernel relocated [704MB]: patching 137170 gdb minimal_symbol values</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>      KERNEL: vmlinux</span></span>
+<span class="line"><span>    DUMPFILE: dump.202101211201  [PARTIAL DUMP]</span></span>
+<span class="line"><span>        CPUS: 4</span></span>
+<span class="line"><span>        DATE: Thu Jan 21 12:00:56 CST 2021</span></span>
+<span class="line"><span>      UPTIME: 00:12:53</span></span>
+<span class="line"><span>LOAD AVERAGE: 0.16, 0.11, 0.10</span></span>
+<span class="line"><span>       TASKS: 454</span></span>
+<span class="line"><span>    NODENAME: rlk-Standard-PC-i440FX-PIIX-1996</span></span>
+<span class="line"><span>     RELEASE: 5.11.0-rc4+</span></span>
+<span class="line"><span>     VERSION: #5 SMP Wed Jan 20 20:41:47 CST 2021</span></span>
+<span class="line"><span>     MACHINE: x86_64  (3692 Mhz)</span></span>
+<span class="line"><span>      MEMORY: 2 GB</span></span>
+<span class="line"><span>       PANIC: "Oops: 0002 [#1] SMP NOPTI" (check log for details)</span></span>
+<span class="line"><span>         PID: 3605</span></span>
+<span class="line"><span>     COMMAND: "krace_thread"</span></span>
+<span class="line"><span>        TASK: ffffa1b006754b40  [THREAD_INFO: ffffa1b006754b40]</span></span>
+<span class="line"><span>         CPU: 2</span></span>
+<span class="line"><span>       STATE: TASK_RUNNING (PANIC)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>crash></span></span></code></pre>
+<p>可以看到 发生问题的 kernel 版本是 <code>5.11.0-rc4+</code>，编译时间是 <code>#5 SMP Wed Jan 20 20:41:47 CST 2021</code>，内存大小是 <code>2G</code>，出问题时刻的负载是<code>0.16, 0.11, 0.10</code></p>
+<p>PANIC 原因是<code>"Oops: 0002 [#1] SMP NOPTI" (check log for details)</code>，CPU:2 上的TASK（krace_thread-3605）: <code>ffffa1b006754b40</code>发生了 oops，具体原因需要看 日志来得到。</p>
+<h2 id="bt-查看出问题的task"><code>bt</code> 查看出问题的task</h2>
+<p>crash 运行之后默认的task是出问题的task，可以通过 <code>set</code> 查看</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>crash> set</span></span>
+<span class="line"><span>    PID: 3605</span></span>
+<span class="line"><span>COMMAND: "krace_thread"</span></span>
+<span class="line"><span>   TASK: ffffa1b006754b40  [THREAD_INFO: ffffa1b006754b40]</span></span>
+<span class="line"><span>    CPU: 2</span></span>
+<span class="line"><span>  STATE: TASK_RUNNING (PANIC)</span></span></code></pre>
+<p>bt 可以查看当前追踪的task的 <code>backtrace</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>crash> bt</span></span>
+<span class="line"><span>PID: 3605   TASK: ffffa1b006754b40  CPU: 2   COMMAND: "krace_thread"</span></span>
+<span class="line"><span> #0 [ffffbbbf004ebc40] machine_kexec at ffffffffad04d87c</span></span>
+<span class="line"><span> #1 [ffffbbbf004ebc88] __crash_kexec at ffffffffad1283b8</span></span>
+<span class="line"><span> #2 [ffffbbbf004ebd50] crash_kexec at ffffffffad1290d0</span></span>
+<span class="line"><span> #3 [ffffbbbf004ebd60] oops_end at ffffffffad021d75</span></span>
+<span class="line"><span> #4 [ffffbbbf004ebd80] no_context at ffffffffad0570e0</span></span>
+<span class="line"><span> #5 [ffffbbbf004ebdf0] __bad_area_nosemaphore at ffffffffad0572c7</span></span>
+<span class="line"><span> #6 [ffffbbbf004ebe38] exc_page_fault at ffffffffadd16b67</span></span>
+<span class="line"><span> #7 [ffffbbbf004ebe60] asm_exc_page_fault at ffffffffade00ace</span></span>
+<span class="line"><span> #8 [ffffbbbf004ebee8] create_oops at ffffffffc0371027 [01_null_pointer]</span></span>
+<span class="line"><span> #9 [ffffbbbf004ebf10] kthread at ffffffffad0930da</span></span>
+<span class="line"><span>#10 [ffffbbbf004ebf50] ret_from_fork at ffffffffad001ae2</span></span></code></pre>
+<p><code>bt -c 1</code>： 可以查看 cpu:1 上当前运行的线程的backtrace
+<code>bt -a</code>  ： 可以查看 当前所有 cpu上运行的线程的backtrace</p>
+<p>这个case 十分显然，是 <code>create_oops</code> 这里出现了问题。</p>
+<h2 id="dis-查看bug地址">dis 查看bug地址</h2>
+<p><code>dis</code> 是 disassemble 反汇编的缩写，可以</p>
+<ol>
+<li>查看出问题 <code>text</code> 地址内容</li>
+<li>某个函数 <code>symbol</code> 符号内容</li>
+<li>某个函数 <code>symbol</code> 符号 + 偏移的内容</li>
+<li>某个符号 或者 <code>text</code> 与 代码行显示在一起（如果是<code>module</code> 中crash需要加载 module.ko）</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>crash> dis ffffffffc0371027</span></span>
+<span class="line"><span>0xffffffffc0371027 &#x3C;create_oops+39>:    movl   $0x0,0x0</span></span>
+<span class="line"><span>crash></span></span>
+<span class="line"><span>crash> dis create_oops</span></span>
+<span class="line"><span>0xffffffffc0371000 &#x3C;create_oops>:       mov    $0x1388,%edi</span></span>
+<span class="line"><span>0xffffffffc0371005 &#x3C;create_oops+5>:     callq  0xffffffffad104b80 &#x3C;msleep></span></span>
+<span class="line"><span>0xffffffffc037100a &#x3C;create_oops+10>:    mov    $0xffffffffc037203c,%rdi</span></span>
+<span class="line"><span>0xffffffffc0371011 &#x3C;create_oops+17>:    callq  0xffffffffadcc96da &#x3C;printk></span></span>
+<span class="line"><span>0xffffffffc0371016 &#x3C;create_oops+22>:    mov    $0x1388,%edi</span></span>
+<span class="line"><span>0xffffffffc037101b &#x3C;create_oops+27>:    callq  0xffffffffad104b80 &#x3C;msleep></span></span>
+<span class="line"><span>0xffffffffc0371020 &#x3C;create_oops+32>:    mov    $0xffffffffc037204f,%rdi</span></span>
+<span class="line"><span>0xffffffffc0371027 &#x3C;create_oops+39>:    movl   $0x0,0x0</span></span>
+<span class="line"><span>0xffffffffc0371032 &#x3C;create_oops+50>:    callq  0xffffffffadcc96da &#x3C;printk></span></span>
+<span class="line"><span>0xffffffffc0371037 &#x3C;create_oops+55>:    xor    %eax,%eax</span></span>
+<span class="line"><span>0xffffffffc0371039 &#x3C;create_oops+57>:    retq</span></span>
+<span class="line"><span>crash> dis create_oops+39</span></span>
+<span class="line"><span>0xffffffffc0371027 &#x3C;create_oops+39>:    movl   $0x0,0x0</span></span>
+<span class="line"><span>crash></span></span></code></pre>
+<p>直接可以看出问题是，将立即数<code>$0x0</code> 赋值到 地址<code>0x0</code>中，所以直接 oops了</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>0xffffffffc0371027 &#x3C;create_oops+39>:    movl   $0x0,0x0</span></span></code></pre>
+<p>但是在哪一行呢，这就需要加载 ko文件了</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>crash> lsmod</span></span>
+<span class="line"><span>     MODULE       NAME              SIZE  OBJECT FILE</span></span>
+<span class="line"><span>ffffffffc0373000  01_null_pointer  16384  (not loaded)  [CONFIG_KALLSYMS]</span></span>
+<span class="line"><span>crash></span></span>
+<span class="line"><span>crash></span></span>
+<span class="line"><span>crash> mod -s 01_null_pointer /tmp/share/test_modules/null_pointer/01_null_pointer/01_null_pointer.ko</span></span>
+<span class="line"><span>     MODULE       NAME              SIZE  OBJECT FILE</span></span>
+<span class="line"><span>ffffffffc0373000  01_null_pointer  16384  /tmp/share/test_modules/null_pointer/01_null_pointer/01_null_pointer.ko</span></span>
+<span class="line"><span>crash></span></span>
+<span class="line"><span>crash> lsmod</span></span>
+<span class="line"><span>     MODULE       NAME              SIZE  OBJECT FILE</span></span>
+<span class="line"><span>ffffffffc0373000  01_null_pointer  16384  /tmp/share/test_modules/null_pointer/01_null_pointer/01_null_pointer.ko</span></span>
+<span class="line"><span>crash></span></span></code></pre>
+<p>加载 ko文件之后，直接 <code>dis -l</code> 反汇编 出问题的函数</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>crash> dis -l create_oops</span></span>
+<span class="line"><span>/home/ubuntu/workspace/share/test_modules/null_pointer/01_null_pointer/01_null_pointer.c: 12</span></span>
+<span class="line"><span>0xffffffffc0371000 &#x3C;create_oops>:       mov    $0x1388,%edi</span></span>
+<span class="line"><span>0xffffffffc0371005 &#x3C;create_oops+5>:     callq  0xffffffffad104b80 &#x3C;msleep></span></span>
+<span class="line"><span>/home/ubuntu/workspace/share/test_modules/null_pointer/01_null_pointer/01_null_pointer.c: 13</span></span>
+<span class="line"><span>0xffffffffc037100a &#x3C;create_oops+10>:    mov    $0xffffffffc037203c,%rdi</span></span>
+<span class="line"><span>0xffffffffc0371011 &#x3C;create_oops+17>:    callq  0xffffffffadcc96da &#x3C;printk></span></span>
+<span class="line"><span>/home/ubuntu/workspace/share/test_modules/null_pointer/01_null_pointer/01_null_pointer.c: 14</span></span>
+<span class="line"><span>0xffffffffc0371016 &#x3C;create_oops+22>:    mov    $0x1388,%edi</span></span>
+<span class="line"><span>0xffffffffc037101b &#x3C;create_oops+27>:    callq  0xffffffffad104b80 &#x3C;msleep></span></span>
+<span class="line"><span>/home/ubuntu/workspace/share/test_modules/null_pointer/01_null_pointer/01_null_pointer.c: 16</span></span>
+<span class="line"><span>0xffffffffc0371020 &#x3C;create_oops+32>:    mov    $0xffffffffc037204f,%rdi</span></span>
+<span class="line"><span>0xffffffffc0371027 &#x3C;create_oops+39>:    movl   $0x0,0x0</span></span>
+<span class="line"><span>/home/ubuntu/workspace/share/test_modules/null_pointer/01_null_pointer/01_null_pointer.c: 17</span></span>
+<span class="line"><span>0xffffffffc0371032 &#x3C;create_oops+50>:    callq  0xffffffffadcc96da &#x3C;printk></span></span>
+<span class="line"><span>/home/ubuntu/workspace/share/test_modules/null_pointer/01_null_pointer/01_null_pointer.c: 18</span></span>
+<span class="line"><span>0xffffffffc0371037 &#x3C;create_oops+55>:    xor    %eax,%eax</span></span>
+<span class="line"><span>0xffffffffc0371039 &#x3C;create_oops+57>:    retq</span></span></code></pre>
+<p>直接定位到</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>01_null_pointer.c: 16</span></span>
+<span class="line"><span>0xffffffffc0371020 &#x3C;create_oops+32>:    mov    $0xffffffffc037204f,%rdi</span></span>
+<span class="line"><span>0xffffffffc0371027 &#x3C;create_oops+39>:    movl   $0x0,0x0</span></span></code></pre>
+<p>代码中看看</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>	*(int *)0 = 0;</span></span></code></pre>
+<p>问题很快解决了。</p>
+<h2 id="试着查看x86-如何调用函数传参的">试着查看x86 如何调用函数传参的</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/home/ubuntu/workspace/share/test_modules/null_pointer/01_null_pointer/01_null_pointer.c: 12</span></span>
+<span class="line"><span>0xffffffffc0371000 &#x3C;create_oops>:       mov    $0x1388,%edi</span></span>
+<span class="line"><span>0xffffffffc0371005 &#x3C;create_oops+5>:     callq  0xffffffffad104b80 &#x3C;msleep></span></span></code></pre>
+<p>对应代码是，<code>0x1388</code> 就是十六进制的 <code>5000</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>	msleep(5000);</span></span></code></pre>
+<p>是不是第一个整形参数是存在 <code>edi</code> 寄存器中的</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/home/ubuntu/workspace/share/test_modules/null_pointer/01_null_pointer/01_null_pointer.c: 13</span></span>
+<span class="line"><span>0xffffffffc037100a &#x3C;create_oops+10>:    mov    $0xffffffffc037203c,%rdi</span></span>
+<span class="line"><span>0xffffffffc0371011 &#x3C;create_oops+17>:    callq  0xffffffffadcc96da &#x3C;printk></span></span></code></pre>
+<p>对应的代码是</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>	printk("create_oops start\n");</span></span></code></pre>
+<p><code>0xffffffffc037203c</code> 是啥呢？可以使用 <code>rd</code> 命令读取一下，原来是字符串的起始的地址</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>crash> rd 0xffffffffc037203c 4</span></span>
+<span class="line"><span>ffffffffc037203c:  6f5f657461657263 726174732073706f   create_oops star</span></span>
+<span class="line"><span>ffffffffc037204c:  7461657263000a74 652073706f6f5f65   t..create_oops e</span></span>
+<span class="line"><span>crash></span></span></code></pre>
+<p>是不是 第一个地址型参数是存放在 <code>rdi</code> 中的呢？</p>
+<p>后面会用不同个数参数，不同类型参数的函数 crash，来实验一下这个是不是对～</p>
+<p>找到<a href="https://zhuanlan.zhihu.com/p/27339191">一篇讲解x86-64寄存器和函数调用的文章</a>，上面说的猜想就是扯淡。。</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

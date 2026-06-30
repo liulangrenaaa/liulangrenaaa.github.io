@@ -1,0 +1,36 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>KASAN 原理分析 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>KASAN 原理分析</h1><div class="post-meta"><time datetime="2021-01-27T19:00:00.000Z">2021年1月27日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">KASAN</span></div></header><div class="article-body"><h2 id="原理">原理</h2>
+<p>granule size == 8
+tags num == 2^8 == 256</p>
+<h2 id="代码实现分析">代码实现分析</h2>
+<h3 id="tag-有哪些怎么产生的">tag 有哪些，怎么产生的</h3>
+<p>kernel 认为 <code>0xFF</code> 的tag 都是有效的，将不可访问的内存都标记为 <code>0xFE</code>，认为是无效的。
+在不使能 <code>CONFIG_KASAN_HW_TAGS</code> 特性下，最小的 TAG是 <code>0x00</code>；使能情况下（只有aarch64支持），最小的 TAG是 <code>0xF0</code>。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>#define KASAN_TAG_KERNEL	0xFF /* native kernel pointers tag */</span></span>
+<span class="line"><span>#define KASAN_TAG_INVALID	0xFE /* inaccessible memory tag */</span></span>
+<span class="line"><span>#define KASAN_TAG_MAX		0xFD /* maximum value for random tags */</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>#ifdef CONFIG_KASAN_HW_TAGS</span></span>
+<span class="line"><span>#define KASAN_TAG_MIN		0xF0 /* minimum value for random tags */</span></span>
+<span class="line"><span>#else</span></span>
+<span class="line"><span>#define KASAN_TAG_MIN		0x00 /* minimum value for random tags */</span></span>
+<span class="line"><span>#endif</span></span></code></pre>
+<p>通过 <code>kasan_random_tag</code> 可以随机产生一个tag val</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>u8 kasan_random_tag(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	u32 state = this_cpu_read(prng_state);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	state = 1664525 * state + 1013904223;</span></span>
+<span class="line"><span>	this_cpu_write(prng_state, state);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	return (u8)(state % (KASAN_TAG_MAX + 1));</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<h3 id="kasan-hook点做了啥">kasan hook点做了啥</h3>
+<p>kasan_kmalloc</p>
+<p>kasan_kfree</p>
+<h2 id="mte">MTE</h2>
+<p>MTE 是一种内存错误检测工具，或者至少是硬件加速工具。
+第一个实现类似功能的硬件架构 是 <code>SPARCE</code>，</p>
+<h2 id="hwkasan">HWKASAN</h2>
+<p>参考<a href="https://www.youtube.com/watch?v=9wRT2hNwbkA&#x26;list=PL7naqTyjyDvBj7dcaTcNp5QSPArZAImv2&#x26;index=3&#x26;ab_channel=AndreyKonovalov">KASAN 原理解释</a></p>
+<p>参考<a href="https://www.youtube.com/watch?v=UwMt0e_dC_Q&#x26;list=PL7naqTyjyDvBj7dcaTcNp5QSPArZAImv2&#x26;index=6&#x26;ab_channel=AndreyKonovalov">MTE HWKASAN 原理解释</a></p>
+<p>参考<a href="https://www.youtube.com/watch?v=qzQNoYwcH2g&#x26;ab_channel=Arm%C2%AE">MTE 是什么</a></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

@@ -1,0 +1,60 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>docker如何使用 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>docker如何使用</h1><div class="post-meta"><time datetime="2020-12-01T19:00:00.000Z">2020年12月1日</time><span> / docker</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">docker</span></div></header><div class="article-body"><p>这是一个简单概括docker 安装，拉取image,docker 命令使用的 记录。</p>
+<ol>
+<li>在ubuntu平台上安装 docker</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo apt install docker</span></span></code></pre>
+<ol start="2">
+<li>拉取ubuntu的 image</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo docker pull ubuntu</span></span></code></pre>
+<p>基于某个tag去拉取 image</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo docker pull arm64v8/ubuntu:jammy</span></span></code></pre>
+<ol start="3">
+<li>基于ubuntu的 image 创建并运行一个docker，限制4MB内存，开启 bash</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo docker run -it -m 4MB ubuntu /bin/bash</span></span></code></pre>
+<p>运行时给予额外 root 权限</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo docker run -it --privileged -m 4MB ubuntu /bin/bash</span></span></code></pre>
+<ol start="4">
+<li>查看当前有哪些运行的docker</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>tencent_clould@ubuntu: ~/workspace# sudo docker ps</span></span>
+<span class="line"><span>CONTAINER ID        IMAGE               COMMAND             CREATED             STATUS              PORTS               NAMES</span></span>
+<span class="line"><span>1f3a24f91059        ubuntu              "/bin/bash"         47 hours ago        Up 47 hours                             hhhh</span></span></code></pre>
+<ol start="5">
+<li>查看当前有哪些的docker(运行中 + 非运行中)</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>tencent_clould@ubuntu: ~/workspace# sudo docker ps -a</span></span>
+<span class="line"><span>CONTAINER ID        IMAGE               COMMAND             CREATED             STATUS              PORTS               NAMES</span></span>
+<span class="line"><span>1f3a24f91059        ubuntu              "/bin/bash"         47 hours ago        Up 47 hours                             hhhhh</span></span></code></pre>
+<ol start="6">
+<li>给 hhh 的容器重命名为 my_ubuntu</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo docker rename  hhh my_ubuntu</span></span></code></pre>
+<ol start="7">
+<li>停止 my_ubuntu 容器</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo docker stop my_ubuntu</span></span></code></pre>
+<ol start="8">
+<li>重启开启 my_ubuntu 容器</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo docker start my_ubuntu</span></span></code></pre>
+<ol start="8">
+<li>进入运行中的 my_ubuntu 容器的 bash</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo docker exec -ti my_ubuntu /bin/bash</span></span></code></pre>
+<ol start="9">
+<li>限制 cpu 使用</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo docker run -it --privileged --name my_ubuntu_01  --cpuset-cpus="1,3"  -m 1024M ubuntu:latest /bin/bash</span></span></code></pre>
+<p>其他常用命令想起来再记录</p>
+<p>这些命令还是比较长的，可以缩写到 bashrc 的alias里面，比较方便</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>tencent_clould@ubuntu: ~/workspace# cat ~/.zshrc | grep "alias d"</span></span>
+<span class="line"><span>alias dn="sudo docker run -t -i -m 128MB ubuntu /bin/bash"</span></span>
+<span class="line"><span>alias ds="sudo docker start my_ubuntu"</span></span>
+<span class="line"><span>alias dk="sudo docker stop my_ubuntu"</span></span>
+<span class="line"><span>alias di="sudo docker exec -ti my_ubuntu /bin/bash"</span></span>
+<span class="line"><span>alias dps="sudo docker ps"</span></span>
+<span class="line"><span>alias dpsa="sudo docker ps -a"</span></span>
+<span class="line"><span>alias drma="sudo  docker container prune"</span></span></code></pre>
+<p>参考<a href="https://blog.51cto.com/liguodong/3918514">Docker资源（CPU/内存/磁盘IO/GPU）限制与分配指南</a></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

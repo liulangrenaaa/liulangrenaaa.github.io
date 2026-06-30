@@ -1,0 +1,40 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>单核cpu卡顿 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>单核cpu卡顿</h1><div class="post-meta"><time datetime="2022-12-10T19:00:40.000Z">2022年12月10日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">single cpu</span><span class="tag">cpu jank</span></div></header><div class="article-body"><h2 id="写在前面">写在前面</h2>
+<p>之前在DJI 某个项目中，使用的自研芯片P1做的飞行眼镜，在后续量产过程中发现回放录制的视频的时候会导致卡音，在pro版本的飞行眼镜中没有这个问题。</p>
+<h2 id="溯源">溯源</h2>
+<p>直接使用 systrace 抓一份trace，因为这是开机第一次回放视频必现的问题，很好复现。</p>
+<p>在 systrace 中看到 <code>snd_soc_dapm_done</code> 中卡了近1s，这个线程是音频线程，所以是rt的，系统中能抢占他的 线程不多。(人耳对音频极敏感，所以音频编解码线程都是rt的，在系统中优先级很高。)</p>
+<p>所以为啥 音频线程被 block了近1s呢？</p>
+<ol>
+<li>关了中断，不能及时调度导致的</li>
+<li>需要获取锁资源，但是一直未能获取到。</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static int dapm_power_widgets(struct snd_soc_card *card, int event)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>//......</span></span>
+<span class="line"><span>/* Run other bias changes in parallel */</span></span>
+<span class="line"><span> list_for_each_entry(d, &#x26;card->dapm_list, list) {</span></span>
+<span class="line"><span>  if (d != &#x26;card->dapm)</span></span>
+<span class="line"><span>   async_schedule_domain(dapm_pre_sequence_async, d,</span></span>
+<span class="line"><span>      &#x26;async_domain);</span></span>
+<span class="line"><span> }</span></span>
+<span class="line"><span> async_synchronize_full_domain(&#x26;async_domain);</span></span>
+<span class="line"><span>//......</span></span>
+<span class="line"><span>trace_snd_soc_dapm_done(card);</span></span>
+<span class="line"><span>return 0;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>查看了相关systrace 发现是 <code>async_synchronize_full_domain</code> 等待时间太久, 这个函数看注释会等 func 执行完成才会返回。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/**</span></span>
+<span class="line"><span> * async_synchronize_full_domain - synchronize all asynchronous function within a certain domain</span></span>
+<span class="line"><span> * @domain: the domain to synchronize</span></span>
+<span class="line"><span> *</span></span>
+<span class="line"><span> * This function waits until all asynchronous function calls for the</span></span>
+<span class="line"><span> * synchronization domain specified by @domain have been done.</span></span>
+<span class="line"><span> */</span></span>
+<span class="line"><span>void async_synchronize_full_domain(struct async_domain *domain)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	async_synchronize_cookie_domain(ASYNC_COOKIE_MAX, domain);</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span>EXPORT_SYMBOL_GPL(async_synchronize_full_domain);</span></span></code></pre>
+<p>由于<code>dapm_power_widgets</code> 是rt优先级的。但是 通过<code>async_synchronize_full_domain</code> 异步执行 func的线程是普通优先级的，相对于音频线程的优先级被降级了，降级到普通cfs线程中去work了，此时系统中正好还有一个 rt 线程，但是比 音频rt线程优先级低的线程。就导致 整个音频线程卡住了，类似于优先级翻转的效果。就是因为一个异步函数调用执行。</p>
+<p>但其实如果是多核SMP系统的话，这个问题其实不一定会暴露出来，但是P1 芯片平台是一个单核的soc，且算力较弱，所以这个问题几乎必现。</p>
+<p>参考<a href="https://mp.weixin.qq.com/s/M35WBcmSt1hlali8dWKikA">ALSA子系统的一次性能优化</a></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

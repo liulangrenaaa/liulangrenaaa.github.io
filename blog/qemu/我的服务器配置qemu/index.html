@@ -1,0 +1,125 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>我的服务器配置 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>我的服务器配置</h1><div class="post-meta"><time datetime="2020-12-19T19:00:00.000Z">2020年12月19日</time><span> / server</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">qemu</span><span class="tag">ubuntu</span><span class="tag">kvm</span><span class="tag">服务器</span></div></header><div class="article-body"><h2 id="服务器配置">服务器配置</h2>
+<p>我之前一直是使用 <code>笔记本windows+ubuntu虚拟机</code> 的开发配置，但是这样有几个限制：</p>
+<ol>
+<li>ubuntu 虚拟机比较耗费资源，一到夏天笔记本风扇狂转，影响体验</li>
+<li>只在本地使用没有问题，但是有时候还想在公司或者出差的时候使用</li>
+</ol>
+<p>基于以上种种限制，我就搞了腾讯云的服务器，<code>1H2G1M3Y</code> 价格好像是 300￥，还是比较便宜的。</p>
+<p>但是直到前些天才真正用起来，主要用于编译和测试，但是一直有几个缺点：</p>
+<ol>
+<li>云服务器基本都是基于 KVM的，然后他还禁止了租户继续使用KVM进行虚拟化</li>
+<li>云服务器禁止了 邮件服务的端口，导致无法收发邮件</li>
+<li>云服务器在低配置（1核心2G）下，费用较低，一旦配置升高，价格急剧上升，性价比不高</li>
+<li>1核2G用来编译效率太低</li>
+<li>云服务器带宽资源比较昂贵，在本地连接云服务器的时候经常会需要连接好久才能连接上</li>
+</ol>
+<p>考虑最近AMD cpu很强势，便配置了一个AMD 4650G的ITX机器，用作我自己的服务器。</p>
+<h2 id="物理服务器安装">物理服务器安装</h2>
+<p>我直接选择了 ubuntu20.04.1 版本，通过UltraISO 工具将iso写入SD卡中，然后开启U盘启动，安装ubuntu。
+还需要通过 主板 BIOS开启 KVM，通过CPU设置开启 SVM:
+如果不开启KVM直接用qemu开启 ubuntu虚拟机，效率比开启KVM虚拟机要慢 50倍左右，这也是我不想用 云服务器的原因。
+换用<a href="https://mirrors.tuna.tsinghua.edu.cn/help/ubuntu/">清华源</a></p>
+<h2 id="物理服务器安装qemu-ubuntu虚拟机">物理服务器安装qemu-ubuntu虚拟机</h2>
+<p>可以参考文章:<a href="https://spyff.github.io/linux/2018/07/20/qemu-vm/">qemu起ubuntu server</a></p>
+<p>在云服务器上按着文章成功配置了qemu虚拟机，但是在服务器上一直是失败的，原因就是起了服务器之后一直无法登陆。所以最后我用了桌面版本ubuntu 20.04.1，而不是 ubuntu server。</p>
+<ol>
+<li>下载 ubuntu iso</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>wget https://mirrors.tuna.tsinghua.edu.cn/ubuntu-releases/20.04.1/ubuntu-20.04.1-desktop-amd64.iso</span></span>
+<span class="line"><span>mv ubuntu-20.04.1-desktop-amd64.iso ubuntu.iso</span></span></code></pre>
+<ol start="2">
+<li>创建磁盘</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>qemu-img create -q -f qcow2 stable_ubuntu.img 32G</span></span></code></pre>
+<ol start="3">
+<li>安装虚拟机
+这一步尽量不要用 ssh做，直接在物理机器上搞比较快，第一次安装需要 -cdrom指定iso文件位置，后面就不需要了。在安装的之后需要指定 用户名密码。</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>安装</span></span>
+<span class="line"><span>sudo qemu-system-x86_64 ubuntu.img -m 1024 -cdrom ubuntu.iso --enable-kvm</span></span></code></pre>
+<ol start="4">
+<li>启动虚拟机
+启动虚拟机分为两种:
+a. 直接启动原来内核的虚拟机(可以直接联网，下载软件)
+也可以ssh链接： ssh -v rlk@127.0.0.1 -p 2222</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo qemu-system-x86_64 \</span></span>
+<span class="line"><span>    -hda /home/ubuntu/myspace/qemu_build/stable_ubuntu.img \</span></span>
+<span class="line"><span>    -smp 4 \</span></span>
+<span class="line"><span>    -m 4096 \</span></span>
+<span class="line"><span>    --enable-kvm \</span></span>
+<span class="line"><span>    -net nic \</span></span>
+<span class="line"><span>    -net user,hostfwd=tcp::2222-:22 \</span></span>
+<span class="line"><span>    --nographic \</span></span>
+<span class="line"><span>    -fsdev local,id=fs1,path=/home/ubuntu/workspace/share,security_model=none \</span></span>
+<span class="line"><span>    -device virtio-9p-pci,fsdev=fs1,mount_tag=host_share</span></span></code></pre>
+<p>b. 用新kernel代替 stable_ubuntu.img中 的 kernel(替代内核)</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo qemu-system-x86_64 \</span></span>
+<span class="line"><span>    -kernel /home/ubuntu/workspace/share/stable/bzImage \</span></span>
+<span class="line"><span>    -hda /home/ubuntu/myspace/qemu_build/stable_ubuntu.img \</span></span>
+<span class="line"><span>    -append "root=/dev/sda5 console=ttyS0" \</span></span>
+<span class="line"><span>    -smp 4 \</span></span>
+<span class="line"><span>    -m 4096 \</span></span>
+<span class="line"><span>    --enable-kvm \</span></span>
+<span class="line"><span>    -net nic \</span></span>
+<span class="line"><span>    -net user,hostfwd=tcp::2222-:22 \</span></span>
+<span class="line"><span>    --nographic \</span></span>
+<span class="line"><span>    -fsdev local,id=fs1,path=/home/ubuntu/workspace/share,security_model=none \</span></span>
+<span class="line"><span>    -device virtio-9p-pci,fsdev=fs1,mount_tag=host_share</span></span></code></pre>
+<ol start="5">
+<li>
+<p>至于开机启动都是 /etc/rc.local 里面配置
+<a href="https://gitee.com/shshshsh/cloud_server_shell">https://gitee.com/shshshsh/cloud_server_shell</a></p>
+</li>
+<li>
+<p>test 相关
+a. ltp（linux kernel test project）：linux内核测试 project 编译安装，运行
+<a href="https://github.com/linux-test-project/ltp">https://github.com/linux-test-project/ltp</a></p>
+</li>
+</ol>
+<p>b. mmetst 可以测试 linux kernel 不同版本之间性能差异
+<a href="https://github.com/gormanm/mmtests">https://github.com/gormanm/mmtests</a>
+<a href="https://lwn.net/Articles/820823/">https://lwn.net/Articles/820823/</a>
+<a href="https://lwn.net/Articles/463339/">https://lwn.net/Articles/463339/</a>
+<a href="https://blog.csdn.net/Linux_Everything/article/details/106485101">https://blog.csdn.net/Linux_Everything/article/details/106485101</a></p>
+<p>c. lkp （linux kernel performance）:是 intel发起的一个kernel performance test项目
+<a href="https://github.com/fengguang/lkp-">https://github.com/fengguang/lkp-</a>
+<a href="https://01.org/lkp">https://01.org/lkp</a>
+<a href="https://01.org/blogs/jdu1/2017/lkp-tests-linux-kernel-performance-test-and-analysis-tool">https://01.org/blogs/jdu1/2017/lkp-tests-linux-kernel-performance-test-and-analysis-tool</a>
+<a href="https://github.com/sammcj/kernel-ci">https://github.com/sammcj/kernel-ci</a>
+<a href="http://hejq.me/2014/10/30/lkp-tests-notes/">http://hejq.me/2014/10/30/lkp-tests-notes/</a>
+<a href="https://libraries.io/github/openthos/lkp-analysis">https://libraries.io/github/openthos/lkp-analysis</a></p>
+<ol start="7">
+<li>学习kvm
+<a href="https://www.linux-kvm.org/page/Kvmtools">https://www.linux-kvm.org/page/Kvmtools</a>
+<a href="https://blog.csdn.net/leoufung/article/details/48781119">https://blog.csdn.net/leoufung/article/details/48781119</a>
+git://git.kernel.org/pub/scm/linux/kernel/git/will/kvmtool.git</li>
+</ol>
+<h2 id="远程访问本地服务器">远程访问本地服务器</h2>
+<p>由于本地服务器其实是没有固定ip的，所以需要一台固定ip的服务器做中转，
+这样才能从任何地方远程访问到我的物理服务器，正好有一个腾讯云服务器，就充当了这个角色。</p>
+<p>我使用的是 nps 这个开源代理工具，相比于其他工具来说，配置简单，直接在网页上就可以配置
+参考<a href="https://zhuanlan.zhihu.com/p/102138783">超好用轻量级NPS内网穿透</a></p>
+<h3 id="nps问题">NPS问题</h3>
+<ol>
+<li>
+<p>稳定性：
+这个我其实已经使用了超过1个月了，机器都没重启过，服务都还正常，对于个人使用来说完全足够了</p>
+</li>
+<li>
+<p>带宽
+由于我的腾讯云服务器带宽了 <code>1Mbps</code>,其实峰值带宽也就 <code>128Kb/s</code>。</p>
+</li>
+</ol>
+<p>我使用服务器主要场景是</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>1. 有编译任务</span></span>
+<span class="line"><span>2. ssh 到服务器</span></span>
+<span class="line"><span>3. vscode ssh 到服务器看代码，写代码</span></span></code></pre>
+<p>其实 1 和 2对 带宽要求都很低，但是 vscode ssh 对于带宽要求还是比较高的，
+从腾讯云后台监控数据上看，我的服务器 每次都是 vscode ssh 到腾讯云的时候
+或者服务器的时候带宽都用满了，导致有时候ssh需要连 几min 才能连接上。</p>
+<p>vscode ssh 在连接上之后对于带宽使用率其实很低，在连接瞬间有较高要求。</p>
+<p>我无奈之下就想给 腾讯云的服务搞成按流量计费的，一通操作下来没想到腾讯云居然不支持
+活动时候买的服务器改网络配置。。</p>
+<p>那就只能升级到2M带宽 或者更高了，升级了一下到 2Mbps,然后再用 vscode shh连接 就很丝滑了，然后我就想能不能通过调整vscode ssh配置来达到这样目的的，发现好像还真有个 timeout 时间，默认 <code>15s</code>，我改到了30s，也可能如果不升级带宽,仅仅将配置改到<code>30s</code> vscode经常超时的问题就好了呢？</p>
+<p>等到5月份之后不续费再继续看看情况。。。</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

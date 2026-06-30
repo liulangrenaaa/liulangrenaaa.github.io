@@ -1,0 +1,26 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>页面迁移流程 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>页面迁移流程</h1><div class="post-meta"><time datetime="2023-02-28T19:00:40.000Z">2023年2月28日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">migrate</span><span class="tag">page</span><span class="tag">memory</span></div></header><div class="article-body"><h2 id="页面迁移属性">页面迁移属性</h2>
+<p>页面迁移属性包含</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>enum migratetype {</span></span>
+<span class="line"><span>	MIGRATE_UNMOVABLE,</span></span>
+<span class="line"><span>	MIGRATE_MOVABLE,</span></span>
+<span class="line"><span>	MIGRATE_RECLAIMABLE,</span></span>
+<span class="line"><span>	MIGRATE_PCPTYPES,	/* the number of types on the pcp lists */</span></span>
+<span class="line"><span>	MIGRATE_HIGHATOMIC = MIGRATE_PCPTYPES,</span></span>
+<span class="line"><span>#ifdef CONFIG_CMA</span></span>
+<span class="line"><span>	MIGRATE_CMA,</span></span>
+<span class="line"><span>#endif</span></span>
+<span class="line"><span>#ifdef CONFIG_MEMORY_ISOLATION</span></span>
+<span class="line"><span>	MIGRATE_ISOLATE,	/* can't allocate from here */</span></span>
+<span class="line"><span>#endif</span></span>
+<span class="line"><span>	MIGRATE_TYPES</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<p>未分配的页面按照这些迁移类型 在 free_list 中 排列。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>struct free_area {</span></span>
+<span class="line"><span>	struct list_head	free_list[MIGRATE_TYPES];</span></span>
+<span class="line"><span>	unsigned long		nr_free;</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<p>只有 <code>MIGRATE_MOVABLE</code> 类型的页面能进行迁移，</p>
+<p>参考<a href="https://docs.kernel.org/mm/page_migration.html">Page migration</a>
+参考<a href=""></a>
+参考<a href=""></a>
+参考<a href=""></a></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

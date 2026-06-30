@@ -1,0 +1,345 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>perf-tools | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>perf-tools</h1><div class="post-meta"><time datetime="2021-01-28T19:00:00.000Z">2021年1月28日</time><span> / kernel debug</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">perf</span></div></header><div class="article-body"><h2 id="介绍">介绍</h2>
+<p>翻译自<a href="https://github.com/brendangregg/perf-tools">github文档</a>
+用于 Linux ftrace 和 perf_events（又名“perf”命令）的一系列开发中和不受支持的性能分析工具。 ftrace 和 perf 都是内核源代码中包含的核心 Linux 跟踪工具。 您的系统可能已经有 ftrace，而 perf 通常只是一个包添加（请参阅先决条件）。</p>
+<p>这些工具被设计为易于安装（最少的依赖项），提供高级性能可观察性，并且易于使用：做一件事并做好。 该集合由 Brendan Gregg（DTraceToolkit 的作者）创建。</p>
+<p>这些工具中的许多都采用了变通方法，以便在现有 Linux 内核上实现功能。 因此，许多工具都有警告（请参阅手册页），在添加未来的内核功能或新的跟踪子系统之前，应将它们的实现视为占位符。</p>
+<p>在 仓库根目录还有各个目录下，有多个 shell 脚本:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>iosnoop: trace disk I/O with details including latency. Examples.</span></span>
+<span class="line"><span>iolatency: summarize disk I/O latency as a histogram. Examples.</span></span>
+<span class="line"><span>execsnoop: trace process exec() with command line argument details. Examples.</span></span>
+<span class="line"><span>opensnoop: trace open() syscalls showing filenames. Examples.</span></span>
+<span class="line"><span>killsnoop: trace kill() signals showing process and signal details. Examples.</span></span>
+<span class="line"><span>fs/cachestat: basic cache hit/miss statistics for the Linux page cache. Examples.</span></span>
+<span class="line"><span>net/tcpretrans: show TCP retransmits, with address and other details. Examples.</span></span>
+<span class="line"><span>system/tpoint: trace a given tracepoint. Examples.</span></span>
+<span class="line"><span>kernel/funccount: count kernel function calls, matching a string with wildcards. Examples.</span></span>
+<span class="line"><span>kernel/functrace: trace kernel function calls, matching a string with wildcards. Examples.</span></span>
+<span class="line"><span>kernel/funcslower: trace kernel functions slower than a threshold. Examples.</span></span>
+<span class="line"><span>kernel/funcgraph: trace a graph of kernel function calls, showing children and times. Examples.</span></span>
+<span class="line"><span>kernel/kprobe: dynamically trace a kernel function call or its return, with variables. Examples.</span></span>
+<span class="line"><span>user/uprobe: dynamically trace a user-level function call or its return, with variables. Examples.</span></span>
+<span class="line"><span>tools/reset-ftrace: reset ftrace state if needed. Examples.</span></span></code></pre>
+<p>在 ./bin 目录下有以上各个shell 的软连接，所以执行这些工具直接到 bin目录即可：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>root@ubuntu-HP-ProDesk-680-G4-MT:/home/ubuntu/workspace/perf-tools/bin# ls</span></span>
+<span class="line"><span>bitesize   funccount   functrace  killsnoop  perf-stat-hist  tcpretrans</span></span>
+<span class="line"><span>cachestat  funcgraph   iolatency  kprobe     reset-ftrace    tpoint</span></span>
+<span class="line"><span>execsnoop  funcslower  iosnoop    opensnoop  syscount        uprobe</span></span>
+<span class="line"><span>root@ubuntu-HP-ProDesk-680-G4-MT:/home/ubuntu/workspace/perf-tools/bin#</span></span></code></pre>
+<h2 id="demo">demo</h2>
+<p>perf-tools 里面的一些工具在 trace 方面很实用，相见恨晚！下面记录几个 demo:</p>
+<h3 id="funccount">funccount</h3>
+<p>count kernel function calls, matching a string with wildcards.
+主要用来统计 函数调用，可以搭配通配符来使用</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>root@ubuntu-HP-ProDesk-680-G4-MT:/home/ubuntu/workspace/perf-tools/bin# ./funccount "bio_*"</span></span>
+<span class="line"><span>Tracing "bio_*"... Ctrl-C to end.</span></span>
+<span class="line"><span>^C</span></span>
+<span class="line"><span>FUNC                              COUNT</span></span>
+<span class="line"><span>bio_attempt_front_merge               1</span></span>
+<span class="line"><span>bio_attempt_back_merge               82</span></span>
+<span class="line"><span>bio_crypt_ctx_mergeable              83</span></span>
+<span class="line"><span>bio_crypt_rq_ctx_compatible         364</span></span>
+<span class="line"><span>bio_alloc_bioset                    378</span></span>
+<span class="line"><span>bio_associate_blkg                  378</span></span>
+<span class="line"><span>bio_endio                           378</span></span>
+<span class="line"><span>bio_free                            378</span></span>
+<span class="line"><span>bio_integrity_prep                  378</span></span>
+<span class="line"><span>bio_put                             378</span></span>
+<span class="line"><span>bio_advance                         382</span></span>
+<span class="line"><span>bio_associate_blkg_from_css         442</span></span>
+<span class="line"><span>bio_uninit                          756</span></span>
+<span class="line"><span>bio_add_page                        815</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Ending tracing...</span></span>
+<span class="line"><span>root@ubuntu-HP-ProDesk-680-G4-MT:/home/ubuntu/workspace/perf-tools/bin#</span></span></code></pre>
+<ul>
+<li>-i : 间隔s输出结果</li>
+<li>-t : 输出 top x 的结果</li>
+<li>-d : 总共trace 的时间多久</li>
+</ul>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>root@ubuntu-HP-ProDesk-680-G4-MT:/home/ubuntu/workspace/perf-tools/bin# ./funccount  -i 2 -t 2 -d 4 "bio_*"</span></span>
+<span class="line"><span>Tracing "bio_*" for 4 seconds. Top 2 only...</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>FUNC                              COUNT</span></span>
+<span class="line"><span>bio_uninit                           22</span></span>
+<span class="line"><span>bio_crypt_rq_ctx_compatible          55</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>FUNC                              COUNT</span></span>
+<span class="line"><span>bio_associate_blkg_from_css          11</span></span>
+<span class="line"><span>bio_uninit                           20</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Ending tracing...</span></span>
+<span class="line"><span>root@ubuntu-HP-ProDesk-680-G4-MT:/home/ubuntu/workspace/perf-tools/bin#</span></span></code></pre>
+<h4 id="为啥可以支持通配符">为啥可以支持通配符？</h4>
+<p>在 <code>/sys/kernel/debug/tracing/available_filter_functions</code> 中记录了所有可以被 trace的 symbol.</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>root@ubuntu-HP-ProDesk-680-G4-MT:/home/ubuntu/workspace/perf-tools/bin# cat /sys/kernel/debug/tracing/available_filter_functions | wc -l</span></span>
+<span class="line"><span>67030</span></span>
+<span class="line"><span>root@ubuntu-HP-ProDesk-680-G4-MT:/home/ubuntu/workspace/perf-tools/bin#</span></span></code></pre>
+<p>可以使用带通配符的 string 到 这个文件中去查找符号条件的 <code>function</code>。</p>
+<h3 id="functrace">functrace</h3>
+<p>trace kernel function calls, matching a string with wildcards,支持通配符</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>root@ubuntu-HP-ProDesk-680-G4-MT:/home/ubuntu/workspace/perf-tools/bin# ./functrace "kmem_cache_alloc_*"</span></span>
+<span class="line"><span>Tracing "kmem_cache_alloc_*"... Ctrl-C to end.</span></span>
+<span class="line"><span>       functrace-1512675 [009] .... 1298127.500687: kmem_cache_alloc_node &#x3C;-dup_task_struct</span></span>
+<span class="line"><span>       functrace-1512675 [009] .... 1298127.500709: kmem_cache_alloc_trace &#x3C;-alloc_fdtable</span></span>
+<span class="line"><span>           &#x3C;...>-1512680 [001] .... 1298127.501196: kmem_cache_alloc_trace &#x3C;-alloc_bprm</span></span>
+<span class="line"><span>           &#x3C;...>-1512680 [001] .... 1298127.501320: kmem_cache_alloc_trace &#x3C;-load_elf_binary</span></span>
+<span class="line"><span>            node-3706960 [008] .... 1298127.503100: kmem_cache_alloc_node &#x3C;-__alloc_skb</span></span>
+<span class="line"><span>            node-3706960 [008] .... 1298127.503428: kmem_cache_alloc_node &#x3C;-__alloc_skb</span></span></code></pre>
+<p>使用 <code>-H</code> 显示 header:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>root@ubuntu-HP-ProDesk-680-G4-MT:/home/ubuntu/workspace/perf-tools/bin# ./functrace -H "kmem_cache_alloc_*"</span></span>
+<span class="line"><span>Tracing "kmem_cache_alloc_*"... Ctrl-C to end.</span></span>
+<span class="line"><span>^C# tracer: function</span></span>
+<span class="line"><span>#</span></span>
+<span class="line"><span># entries-in-buffer/entries-written: 30/30   #P:12</span></span>
+<span class="line"><span>#</span></span>
+<span class="line"><span>#                                _-----=> irqs-off</span></span>
+<span class="line"><span>#                               / _----=> need-resched</span></span>
+<span class="line"><span>#                              | / _---=> hardirq/softirq</span></span>
+<span class="line"><span>#                              || / _--=> preempt-depth</span></span>
+<span class="line"><span>#                              ||| /     delay</span></span>
+<span class="line"><span>#           TASK-PID     CPU#  ||||   TIMESTAMP  FUNCTION</span></span>
+<span class="line"><span>#              | |         |   ||||      |         |</span></span>
+<span class="line"><span>       functrace-1512958 [003] .... 1298157.804761: kmem_cache_alloc_node &#x3C;-dup_task_struct</span></span>
+<span class="line"><span>       functrace-1512958 [003] .... 1298157.804774: kmem_cache_alloc_trace &#x3C;-alloc_fdtable</span></span>
+<span class="line"><span>             cat-1512960 [011] .... 1298157.805012: kmem_cache_alloc_trace &#x3C;-alloc_bprm</span></span></code></pre>
+<h3 id="funcslower">funcslower</h3>
+<p>trace kernel functions slower than a threshold.</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>root@ubuntu-HP-ProDesk-680-G4-MT:/home/ubuntu/workspace/perf-tools/bin# ./funcslower ext4_mpage_readpages 10</span></span>
+<span class="line"><span>Tracing "ext4_mpage_readpages" slower than 10 us... Ctrl-C to end.</span></span>
+<span class="line"><span> 11) + 12.260 us   |  } /* ext4_mpage_readpages */</span></span>
+<span class="line"><span>  8) + 30.049 us   |  } /* ext4_mpage_readpages */</span></span>
+<span class="line"><span>  8) + 13.164 us   |  } /* ext4_mpage_readpages */</span></span>
+<span class="line"><span>  8) + 21.117 us   |  } /* ext4_mpage_readpages */</span></span>
+<span class="line"><span>  9) + 17.850 us   |  } /* ext4_mpage_readpages */</span></span>
+<span class="line"><span>  9) + 13.449 us   |  } /* ext4_mpage_readpages */</span></span>
+<span class="line"><span> 10) + 16.533 us   |  } /* ext4_mpage_readpages */</span></span>
+<span class="line"><span>  0) + 32.654 us   |  } /* ext4_mpage_readpages */</span></span>
+<span class="line"><span>  0) + 12.850 us   |  } /* ext4_mpage_readpages */</span></span>
+<span class="line"><span>  0) + 20.576 us   |  } /* ext4_mpage_readpages */</span></span></code></pre>
+<p>假设 你怀疑系统中某个问题是由于 <code>ext4_mpage_readpages</code> 执行慢导致的，那么可以使用这个 cmd 来确认一下</p>
+<p>可以使用 <code>-Pt</code> 显示更详细信息</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>root@ubuntu-HP-ProDesk-680-G4-MT:/home/ubuntu/workspace/perf-tools/bin# ./funcslower -Pt ext4_mpage_readpages 10</span></span>
+<span class="line"><span>Tracing "ext4_mpage_readpages" slower than 10 us... Ctrl-C to end.</span></span>
+<span class="line"><span>1298799.300724 |    7)  bash-1518301  | + 25.581 us   |  } /* ext4_mpage_readpages */</span></span>
+<span class="line"><span>1298799.305213 |    7) cksum-1518301  | + 14.441 us   |  } /* ext4_mpage_readpages */</span></span></code></pre>
+<h3 id="funcgraph">funcgraph</h3>
+<p>trace a graph of kernel function calls, showing children and times.</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>root@ubuntu-HP-ProDesk-680-G4-MT:/home/ubuntu/workspace/perf-tools/bin# ./funcgraph schedule</span></span>
+<span class="line"><span>Tracing "schedule"... Ctrl-C to end.</span></span>
+<span class="line"><span>  4)   1.768 us    |  file_ra_state_init();</span></span>
+<span class="line"><span>  4)               |  schedule() {</span></span>
+<span class="line"><span>  4)               |    rcu_note_context_switch() {</span></span>
+<span class="line"><span>  4)   0.382 us    |      rcu_qs();</span></span>
+<span class="line"><span>  4)   0.998 us    |    }</span></span>
+<span class="line"><span>  4)   0.320 us    |    _raw_spin_lock();</span></span>
+<span class="line"><span>  4)   0.351 us    |    update_rq_clock();</span></span>
+<span class="line"><span>  4)               |    psi_task_change() {</span></span>
+<span class="line"><span>  4)   0.285 us    |      psi_flags_change();</span></span>
+<span class="line"><span>  4)               |      psi_group_change() {</span></span>
+<span class="line"><span>  4)   0.430 us    |        record_times();</span></span>
+<span class="line"><span>  4)   1.344 us    |      }</span></span>
+<span class="line"><span>  4)               |      psi_group_change() {</span></span>
+<span class="line"><span>  4)   0.333 us    |        record_times();</span></span>
+<span class="line"><span>  4)   0.909 us    |      }</span></span>
+<span class="line"><span>  4)               |      psi_group_change() {</span></span>
+<span class="line"><span>  4)   0.384 us    |        record_times();</span></span>
+<span class="line"><span>  4)   0.965 us    |      }</span></span>
+<span class="line"><span>  4)               |      psi_group_change() {</span></span>
+<span class="line"><span>  4)   0.337 us    |        record_times();</span></span>
+<span class="line"><span>  4)   0.900 us    |      }</span></span>
+<span class="line"><span>  4)   6.000 us    |    }</span></span>
+<span class="line"><span>  4)               |    dequeue_task_fair() {</span></span>
+<span class="line"><span>  4)               |      dequeue_entity() {</span></span>
+<span class="line"><span>  4)               |        update_curr() {</span></span>
+<span class="line"><span>  4)   0.277 us    |          update_min_vruntime();</span></span>
+<span class="line"><span>  4)               |          cpuacct_charge() {</span></span>
+<span class="line"><span>  4)   0.323 us    |            rcu_read_unlock_strict();</span></span>
+<span class="line"><span>  4)   0.874 us    |          }</span></span>
+<span class="line"><span>  4)               |          __cgroup_account_cputime() {</span></span>
+<span class="line"><span>  4)   0.283 us    |            cgroup_rstat_updated();</span></span>
+<span class="line"><span>  4)   0.814 us    |          }</span></span>
+<span class="line"><span>  4)   0.288 us    |          rcu_read_unlock_strict();</span></span>
+<span class="line"><span>  4)   3.616 us    |        }</span></span>
+<span class="line"><span>  4)   0.488 us    |        __update_load_avg_se();</span></span>
+<span class="line"><span>  4)   0.518 us    |        __update_load_avg_cfs_rq();</span></span>
+<span class="line"><span>  4)   0.284 us    |        clear_buddies();</span></span>
+<span class="line"><span>  4)   0.318 us    |        update_cfs_group();</span></span>
+<span class="line"><span>  4)   0.304 us    |        update_min_vruntime();</span></span>
+<span class="line"><span>  4)   7.470 us    |      }</span></span>
+<span class="line"><span>  4)               |      dequeue_entity() {</span></span>
+<span class="line"><span>  4)               |        update_curr() {</span></span>
+<span class="line"><span>  4)   0.328 us    |          __calc_delta();</span></span>
+<span class="line"><span>  4)   0.280 us    |          update_min_vruntime();</span></span>
+<span class="line"><span>  4)   1.505 us    |        }</span></span>
+<span class="line"><span>  4)   0.422 us    |        __update_load_avg_se();</span></span>
+<span class="line"><span>  4)   0.332 us    |        __update_load_avg_cfs_rq();</span></span>
+<span class="line"><span>  4)   0.284 us    |        clear_buddies();</span></span>
+<span class="line"><span>  4)               |        update_cfs_group() {</span></span>
+<span class="line"><span>  4)   0.309 us    |          reweight_entity();</span></span>
+<span class="line"><span>  4)   0.876 us    |        }</span></span>
+<span class="line"><span>  4)   0.293 us    |        update_min_vruntime();</span></span>
+<span class="line"><span>  4)   5.538 us    |      }</span></span>
+<span class="line"><span>  4)   0.282 us    |      hrtick_update();</span></span>
+<span class="line"><span>  4) + 14.506 us   |    }</span></span>
+<span class="line"><span>  4)               |    pick_next_task_fair() {</span></span>
+<span class="line"><span>  4)               |      newidle_balance() {</span></span>
+<span class="line"><span>  4)   0.276 us    |        __msecs_to_jiffies();</span></span>
+<span class="line"><span>  4)   0.271 us    |        rcu_read_unlock_strict();</span></span>
+<span class="line"><span>  4)   0.347 us    |        nohz_newidle_balance();</span></span>
+<span class="line"><span>  4)   2.079 us    |      }</span></span>
+<span class="line"><span>  4)   2.616 us    |    }</span></span>
+<span class="line"><span>  4)               |    put_prev_task_fair() {</span></span>
+<span class="line"><span>  4)               |      put_prev_entity() {</span></span>
+<span class="line"><span>  4)   0.283 us    |        check_cfs_rq_runtime();</span></span>
+<span class="line"><span>  4)   0.927 us    |      }</span></span>
+<span class="line"><span>  4)               |      put_prev_entity() {</span></span>
+<span class="line"><span>  4)   0.283 us    |        check_cfs_rq_runtime();</span></span>
+<span class="line"><span>  4)   0.807 us    |      }</span></span>
+<span class="line"><span>  4)   2.607 us    |    }</span></span>
+<span class="line"><span>  4)               |    pick_next_task_idle() {</span></span>
+<span class="line"><span>  4)               |      __update_idle_core() {</span></span>
+<span class="line"><span>  4)   0.281 us    |        rcu_read_unlock_strict();</span></span>
+<span class="line"><span>  4)   1.031 us    |      }</span></span>
+<span class="line"><span>  4)   1.668 us    |    }</span></span>
+<span class="line"><span>  4)   0.306 us    |    psi_task_switch();</span></span>
+<span class="line"><span>  4)   0.897 us    |    __traceiter_sched_switch();</span></span>
+<span class="line"><span>  4)   0.315 us    |    enter_lazy_tlb();</span></span>
+<span class="line"><span>  4)   0.403 us    |    copy_fpregs_to_fpstate();</span></span>
+<span class="line"><span>  0)   1.234 us    |  finish_task_switch.isra.0();</span></span></code></pre>
+<p>可以看到和 ftrace 很类似，但是这样的 输出很难看，可以 使用 <code>-m</code> 精简一下输出</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>root@ubuntu-HP-ProDesk-680-G4-MT:/home/ubuntu/workspace/perf-tools/bin# ./funcgraph -m2 schedule</span></span>
+<span class="line"><span>Tracing "schedule"... Ctrl-C to end.</span></span>
+<span class="line"><span>  0)   1.265 us    |  file_ra_state_init();</span></span>
+<span class="line"><span>  0)               |  schedule() {</span></span>
+<span class="line"><span>  0)   0.308 us    |    rcu_note_context_switch();</span></span>
+<span class="line"><span>  0)   0.177 us    |    _raw_spin_lock();</span></span>
+<span class="line"><span>  0)   0.190 us    |    update_rq_clock();</span></span>
+<span class="line"><span>  0)   1.267 us    |    psi_task_change();</span></span>
+<span class="line"><span>  0)   3.115 us    |    dequeue_task_fair();</span></span>
+<span class="line"><span>  0) + 16.366 us   |    pick_next_task_fair();</span></span>
+<span class="line"><span>  0)   0.677 us    |    put_prev_task_fair();</span></span>
+<span class="line"><span>  0)   0.520 us    |    pick_next_task_idle();</span></span>
+<span class="line"><span>  0)   0.206 us    |    psi_task_switch();</span></span>
+<span class="line"><span>  0)   0.550 us    |    __traceiter_sched_switch();</span></span>
+<span class="line"><span>  0)   0.176 us    |    enter_lazy_tlb();</span></span>
+<span class="line"><span>  0)   0.241 us    |    copy_fpregs_to_fpstate();</span></span>
+<span class="line"><span>  9)   0.903 us    |    finish_task_switch.isra.0();</span></span>
+<span class="line"><span>  9)   0.567 us    |    wq_worker_running();</span></span>
+<span class="line"><span>  9) @ 103141.5 us |  } /* schedule */</span></span></code></pre>
+<p>可以看到 每个函数的耗费时间，比如这个例子中 可以看到 <code>pick_next_task_fair</code> 耗时较大，可以进一步分析</p>
+<p>还可以使用 -p 来追踪制定 进程的目的</p>
+<h3 id="kprobe">kprobe</h3>
+<p>dynamically trace a kernel function call or its return, with variables.
+与前面的工具不一样的是， kprobe 可以跟踪 return, 还有 内部variables。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>root@ubuntu-HP-ProDesk-680-G4-MT:/home/ubuntu/workspace/perf-tools/bin# ./kprobe p:do_sys_openat2</span></span>
+<span class="line"><span>Tracing kprobe do_sys_openat2. Ctrl-C to end.</span></span>
+<span class="line"><span>           &#x3C;...>-1890130 [003] .... 1304707.196057: do_sys_openat2: (do_sys_openat2+0x0/0x150)</span></span>
+<span class="line"><span>           &#x3C;...>-1890130 [003] .... 1304707.196106: do_sys_openat2: (do_sys_openat2+0x0/0x150)</span></span>
+<span class="line"><span>           &#x3C;...>-1890130 [003] .... 1304707.196676: do_sys_openat2: (do_sys_openat2+0x0/0x150)</span></span>
+<span class="line"><span>           &#x3C;...>-1890130 [003] .... 1304707.196870: do_sys_openat2: (do_sys_openat2+0x0/0x150)</span></span>
+<span class="line"><span>            node-3706960 [008] .... 1304707.252605: do_sys_openat2: (do_sys_openat2+0x0/0x150)</span></span>
+<span class="line"><span>            node-3706960 [008] .... 1304707.252721: do_sys_openat2: (do_sys_openat2+0x0/0x150)</span></span>
+<span class="line"><span>            node-3706960 [008] .... 1304707.252766: do_sys_openat2: (do_sys_openat2+0x0/0x150)</span></span>
+<span class="line"><span>            node-3706960 [008] .... 1304707.252802: do_sys_openat2: (do_sys_openat2+0x0/0x150)</span></span>
+<span class="line"><span>            node-3706960 [008] .... 1304707.252849: do_sys_openat2: (do_sys_openat2+0x0/0x150)</span></span>
+<span class="line"><span>            node-3706960 [008] .... 1304707.252887: do_sys_openat2: (do_sys_openat2+0x0/0x150)</span></span>
+<span class="line"><span>            node-3706960 [008] .... 1304707.252930: do_sys_openat2: (do_sys_openat2+0x0/0x150)</span></span>
+<span class="line"><span>            node-3706960 [008] .... 1304707.253007: do_sys_openat2: (do_sys_openat2+0x0/0x150)</span></span>
+<span class="line"><span>^C</span></span>
+<span class="line"><span>Ending tracing...</span></span>
+<span class="line"><span>root@ubuntu-HP-ProDesk-680-G4-MT:/home/ubuntu/workspace/perf-tools/bin#</span></span></code></pre>
+<p>The “p:” is for creating a probe. Use “r:” to probe the return of the function:
+“p:” 是创建一个kprobe. “r:” 是创建一个kretprobe</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>root@ubuntu-HP-ProDesk-680-G4-MT:/home/ubuntu/workspace/perf-tools/bin# ./kprobe r:do_sys_openat2</span></span>
+<span class="line"><span>Tracing kprobe do_sys_openat2. Ctrl-C to end.</span></span>
+<span class="line"><span>          kprobe-1892194 [007] .... 1305064.017143: do_sys_openat2: (__x64_sys_openat+0x56/0x90 &#x3C;- do_sys_openat2)</span></span>
+<span class="line"><span>           &#x3C;...>-1892196 [009] .... 1305064.018585: do_sys_openat2: (__x64_sys_openat+0x56/0x90 &#x3C;- do_sys_openat2)</span></span>
+<span class="line"><span>           &#x3C;...>-1892196 [009] .... 1305064.018633: do_sys_openat2: (__x64_sys_openat+0x56/0x90 &#x3C;- do_sys_openat2)</span></span>
+<span class="line"><span>           &#x3C;...>-1892196 [009] .... 1305064.019216: do_sys_openat2: (__x64_sys_openat+0x56/0x90 &#x3C;- do_sys_openat2)</span></span>
+<span class="line"><span>           &#x3C;...>-1892196 [009] .... 1305064.019410: do_sys_openat2: (__x64_sys_openat+0x56/0x90 &#x3C;- do_sys_openat2)</span></span>
+<span class="line"><span>            node-3706960 [004] .... 1305064.032758: do_sys_openat2: (__x64_sys_openat+0x56/0x90 &#x3C;- do_sys_openat2)</span></span>
+<span class="line"><span>            node-3706960 [004] .... 1305064.033256: do_sys_openat2: (__x64_sys_openat+0x56/0x90 &#x3C;- do_sys_openat2)</span></span>
+<span class="line"><span>            node-3706960 [004] .... 1305064.033325: do_sys_openat2: (__x64_sys_openat+0x56/0x90 &#x3C;- do_sys_openat2)</span></span>
+<span class="line"><span>            node-3706960 [004] .... 1305064.033363: do_sys_openat2: (__x64_sys_openat+0x56/0x90 &#x3C;- do_sys_openat2)</span></span>
+<span class="line"><span>            node-3706960 [004] .... 1305064.033396: do_sys_openat2: (__x64_sys_openat+0x56/0x90 &#x3C;- do_sys_openat2)</span></span>
+<span class="line"><span>            node-3706960 [004] .... 1305064.033428: do_sys_openat2: (__x64_sys_openat+0x56/0x90 &#x3C;- do_sys_openat2)</span></span>
+<span class="line"><span>            node-3706960 [004] .... 1305064.034963: do_sys_openat2: (__x64_sys_openat+0x56/0x90 &#x3C;- do_sys_openat2)</span></span>
+<span class="line"><span>            node-3706960 [004] .... 1305064.035047: do_sys_openat2: (__x64_sys_openat+0x56/0x90 &#x3C;- do_sys_openat2)</span></span>
+<span class="line"><span>            node-1358618 [000] .... 1305064.191464: do_sys_openat2: (__x64_sys_openat+0x56/0x90 &#x3C;- do_sys_openat2)</span></span>
+<span class="line"><span>^C</span></span>
+<span class="line"><span>Ending tracing...</span></span>
+<span class="line"><span>root@ubuntu-HP-ProDesk-680-G4-MT:/home/ubuntu/workspace/perf-tools/bin#</span></span></code></pre>
+<p><code>-H</code> 是 显示 headers</p>
+<p>可以显示 返回值</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>root@ubuntu-HP-ProDesk-680-G4-MT:/home/ubuntu/workspace/perf-tools/bin# ./kprobe 'r:myopen do_sys_openat2 $retval'</span></span>
+<span class="line"><span>Tracing kprobe myopen. Ctrl-C to end.</span></span>
+<span class="line"><span>          kprobe-1892927 [000] .... 1305161.519664: myopen: (__x64_sys_openat+0x56/0x90 &#x3C;- do_sys_openat2) arg1=0x3</span></span>
+<span class="line"><span>           &#x3C;...>-1892933 [002] .... 1305161.520039: myopen: (__x64_sys_openat+0x56/0x90 &#x3C;- do_sys_openat2) arg1=0x3</span></span>
+<span class="line"><span>           &#x3C;...>-1892933 [002] .... 1305161.520050: myopen: (__x64_sys_openat+0x56/0x90 &#x3C;- do_sys_openat2) arg1=0x3</span></span>
+<span class="line"><span>           &#x3C;...>-1892933 [002] .... 1305161.520178: myopen: (__x64_sys_openat+0x56/0x90 &#x3C;- do_sys_openat2) arg1=0x3</span></span>
+<span class="line"><span>           &#x3C;...>-1892933 [002] .... 1305161.520227: myopen: (__x64_sys_openat+0x56/0x90 &#x3C;- do_sys_openat2) arg1=0x3</span></span>
+<span class="line"><span>              sh-1892932 [010] .... 1305161.521214: myopen: (__x64_sys_openat+0x56/0x90 &#x3C;- do_sys_openat2) arg1=0x3</span></span></code></pre>
+<p>‘r:myopen do_sys_open $retval’ 是一个 kprobe 定义，和 kernel 文档 <code>Documentation/trace/kprobetrace.txt</code> 里面定义的一样；
+除了使用 probe 别名，还可以为参数提供任意名称。例如，将默认值”arg1”改为”rval”:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>root@ubuntu-HP-ProDesk-680-G4-MT:/home/ubuntu/workspace/perf-tools/bin# ./kprobe 'r:myopen do_sys_openat2 ret=$retval'</span></span>
+<span class="line"><span>Tracing kprobe myopen. Ctrl-C to end.</span></span>
+<span class="line"><span>          kprobe-1894758 [009] .... 1305461.694802: myopen: (__x64_sys_openat+0x56/0x90 &#x3C;- do_sys_openat2) ret=0x3</span></span>
+<span class="line"><span>           &#x3C;...>-1894760 [005] .... 1305461.696161: myopen: (__x64_sys_openat+0x56/0x90 &#x3C;- do_sys_openat2) ret=0x3</span></span>
+<span class="line"><span>            node-3706960 [006] .... 1305461.705250: myopen: (__x64_sys_openat+0x56/0x90 &#x3C;- do_sys_openat2) ret=0x19</span></span></code></pre>
+<p>还可以trace 函数func的入口参数的值，比如</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>root@ubuntu-HP-ProDesk-680-G4-MT:/home/ubuntu/workspace/perf-tools/bin# ./kprobe 'p:myopen do_sys_openat2 filename=+0(%si):string'</span></span>
+<span class="line"><span>Tracing kprobe myopen. Ctrl-C to end.</span></span>
+<span class="line"><span>           &#x3C;...>-1897778 [011] .... 1305798.993302: myopen: (do_sys_openat2+0x0/0x150) filename="/etc/ld.so.cache"</span></span>
+<span class="line"><span>           &#x3C;...>-1897778 [011] .... 1305798.993349: myopen: (do_sys_openat2+0x0/0x150) filename="/lib/x86_64-linux-gnu/libc.so.6"</span></span>
+<span class="line"><span>           &#x3C;...>-1897778 [011] .... 1305798.993863: myopen: (do_sys_openat2+0x0/0x150) filename="/usr/lib/locale/locale-archive"</span></span>
+<span class="line"><span>           &#x3C;...>-1897778 [011] .... 1305798.994040: myopen: (do_sys_openat2+0x0/0x150) filename="trace_pipe"</span></span>
+<span class="line"><span>            node-3706960 [003] .... 1305799.184729: myopen: (do_sys_openat2+0x0/0x150) filename="/proc/1452624/cmdline"</span></span>
+<span class="line"><span>            node-3706960 [003] .... 1305799.184848: myopen: (do_sys_openat2+0x0/0x150) filename="/proc/1368025/cmdline"</span></span>
+<span class="line"><span>            node-3706960 [003] .... 1305799.186491: myopen: (do_sys_openat2+0x0/0x150) filename="/proc/29675/cmdline"</span></span>
+<span class="line"><span>            node-3706960 [003] .... 1305799.186586: myopen: (do_sys_openat2+0x0/0x150) filename="/proc/660625/cmdline"</span></span>
+<span class="line"><span>            node-3706960 [003] .... 1305799.186638: myopen: (do_sys_openat2+0x0/0x150) filename="/proc/1368168/cmdline"</span></span>
+<span class="line"><span>            node-3706960 [003] .... 1305799.186678: myopen: (do_sys_openat2+0x0/0x150) filename="/proc/1368591/cmdline"</span></span>
+<span class="line"><span>            node-3706960 [003] .... 1305799.186723: myopen: (do_sys_openat2+0x0/0x150) filename="/proc/1897776/cmdline"</span></span>
+<span class="line"><span>^C</span></span></code></pre>
+<p>因为 <code>do_sys_openat2</code> 原型是：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static long do_sys_openat2(int dfd, const char __user *filename,</span></span>
+<span class="line"><span>			   struct open_how *how)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	struct open_flags op;</span></span>
+<span class="line"><span>	int fd = build_open_flags(how, &#x26;op);</span></span>
+<span class="line"><span>	struct filename *tmp;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>第二个参数是 filename，且类型是 char*, 根据 syscall 的约定，<code>man syscall</code> 可以看到：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>  Arch/ABI      arg1  arg2  arg3  arg4  arg5  arg6  arg7  Notes</span></span>
+<span class="line"><span>       ──────────────────────────────────────────────────────────────</span></span>
+<span class="line"><span>       alpha         a0    a1    a2    a3    a4    a5    -</span></span>
+<span class="line"><span>       arc           r0    r1    r2    r3    r4    r5    -</span></span>
+<span class="line"><span>       arm/OABI      r0    r1    r2    r3    r4    r5    r6</span></span>
+<span class="line"><span>       arm/EABI      r0    r1    r2    r3    r4    r5    r6</span></span>
+<span class="line"><span>       arm64         x0    x1    x2    x3    x4    x5    -</span></span>
+<span class="line"><span>      sparc/32      o0    o1    o2    o3    o4    o5    -</span></span>
+<span class="line"><span>       sparc/64      o0    o1    o2    o3    o4    o5    -</span></span>
+<span class="line"><span>       tile          R00   R01   R02   R03   R04   R05   -</span></span>
+<span class="line"><span>       x86-64        rdi   rsi   rdx   r10   r8    r9    -</span></span>
+<span class="line"><span>       x32           rdi   rsi   rdx   r10   r8    r9    -</span></span>
+<span class="line"><span>       xtensa        a6    a3    a4    a5    a8    a9    -</span></span></code></pre>
+<p>在 x86-64 中，第二个参数存放在 rsi中。。
+所以命令是 <code>kprobe 'p:myopen do_sys_openat2 filename=+0(%si):string'</code></p>
+<p>也可以通过 <code>-p</code> 指定特定进程来 做trace.</p>
+<h3 id="uprobe">uprobe</h3>
+<p>dynamically trace a user-level function call or its return, with variables.</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>root@ubuntu-HP-ProDesk-680-G4-MT:/home/ubuntu/workspace/perf-tools/bin# ./uprobe p:bash:readline</span></span>
+<span class="line"><span>Tracing uprobe readline (p:readline /usr/bin/bash:0xd4950). Ctrl-C to end.</span></span>
+<span class="line"><span>            bash-1452624 [003] d... 1306503.199858: readline: (0x55621dedf950)</span></span>
+<span class="line"><span>            bash-1452624 [003] d... 1306503.443193: readline: (0x55621dedf950)</span></span>
+<span class="line"><span>            bash-1452624 [003] d... 1306503.615018: readline: (0x55621dedf950)</span></span>
+<span class="line"><span>            bash-1452624 [003] d... 1306503.772181: readline: (0x55621dedf950)</span></span>
+<span class="line"><span>            bash-1452624 [003] d... 1306503.954737: readline: (0x55621dedf950)</span></span>
+<span class="line"><span>            bash-1452624 [003] d... 1306505.194449: readline: (0x55621dedf950)</span></span>
+<span class="line"><span>^C</span></span>
+<span class="line"><span>Ending tracing...</span></span></code></pre>
+<h3 id="reset-ftrace">reset-ftrace</h3>
+<p>reset ftrace state if needed.</p>
+<h3 id="tpoint">tpoint</h3>
+<p>有较多语法需要学习。</p>
+<p>参考<a href="https://www.usenix.org/conference/lisa14/conference-program/presentation/gregg">Linux Performance Analysis: New Tools and Old Secrets</a></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

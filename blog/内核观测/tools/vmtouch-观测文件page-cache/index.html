@@ -1,0 +1,80 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>vmtouch 观测文件page cache | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>vmtouch 观测文件page cache</h1><div class="post-meta"><time datetime="2021-01-07T20:00:40.000Z">2021年1月7日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">vmtouch</span><span class="tag">pagecache</span></div></header><div class="article-body"><h2 id="vmtouch-介绍">vmtouch 介绍</h2>
+<p><code>便携式文件系统缓存诊断和控制</code> 是 <code>vmtouch</code> 作者对于vmtouch的的定义。
+首先他可以很方便的知道某一个文件当前有多少在 kernel memory 里面作为
+<code>pagecache</code> 存在。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@ubuntu-Inspiron-5548:~$ vmtouch haha</span></span>
+<span class="line"><span>           Files: 1</span></span>
+<span class="line"><span>     Directories: 0</span></span>
+<span class="line"><span>  Resident Pages: 11584/1024000  45M/3G  1.13%</span></span>
+<span class="line"><span>         Elapsed: 0.031335 seconds</span></span>
+<span class="line"><span>ubuntu@ubuntu-Inspiron-5548:~$</span></span>
+<span class="line"><span>ubuntu@ubuntu-Inspiron-5548:~$</span></span>
+<span class="line"><span>ubuntu@ubuntu-Inspiron-5548:~$ cat haha</span></span>
+<span class="line"><span>^C</span></span>
+<span class="line"><span>ubuntu@ubuntu-Inspiron-5548:~$ vmtouch haha</span></span>
+<span class="line"><span>           Files: 1</span></span>
+<span class="line"><span>     Directories: 0</span></span>
+<span class="line"><span>  Resident Pages: 36800/1024000  143M/3G  3.59%</span></span>
+<span class="line"><span>         Elapsed: 0.033472 seconds</span></span>
+<span class="line"><span>ubuntu@ubuntu-Inspiron-5548:~$</span></span></code></pre>
+<p>明显可以看到在经过 <code>cat</code> 访问之后 文件更多部分被读入 memory，作为 pagecache。</p>
+<p>作者对于他的功能介绍：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>1. 发现你的操作系统正在缓存哪些文件</span></span>
+<span class="line"><span>2. 告诉操作系统缓存或清除某些文件或文件区域</span></span>
+<span class="line"><span>3. 将文件锁定在内存中，这样操作系统就不会删除它们</span></span>
+<span class="line"><span>4. 在服务器故障转移时保留虚拟内存配置文件</span></span>
+<span class="line"><span>5. 保持“热备”文件服务器</span></span>
+<span class="line"><span>6. 绘制文件系统缓存随时间的使用情况</span></span>
+<span class="line"><span>7. 维护缓存使用的“软配额”</span></span></code></pre>
+<h2 id="vmtouch-使用">vmtouch 使用</h2>
+<h3 id="控制增加-pagecache">控制增加 pagecache</h3>
+<p>可以将整个文件读入内存，其实我们通过访问这个文件（从头到尾）也可以做到</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@ubuntu-Inspiron-5548:~$ vmtouch -vt haha</span></span>
+<span class="line"><span>haha</span></span>
+<span class="line"><span>[OOo                                                         ] 44737/1024000</span></span>
+<span class="line"><span>[OOOOOo                                                      ] 90849/1024000</span></span>
+<span class="line"><span>[OOOOOOOOo                                                   ] 150209/1024000</span></span>
+<span class="line"><span>[OOOOOOOOOOOOo                                               ] 215937/1024000</span></span>
+<span class="line"><span>[OOOOOOOOOOOOOOOo                                            ] 271489/1024000</span></span>
+<span class="line"><span>[OOOOOOOOOOOOOOOOOOOo                                        ] 326305/1024000</span></span>
+<span class="line"><span>[OOOOOOOOOOOOOOOOOOOOOo                                      ] 370721/1024000</span></span>
+<span class="line"><span>[OOOOOOOOOOOOOOOOOOOOOOOOo                                   ] 414305/1024000</span></span>
+<span class="line"><span>[OOOOOOOOOOOOOOOOOOOOOOOOOOOo                                ] 469697/1024000</span></span>
+<span class="line"><span>[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo                             ] 524289/1024000</span></span>
+<span class="line"><span>[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo                          ] 577153/1024000</span></span>
+<span class="line"><span>[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo                     ] 652481/1024000</span></span>
+<span class="line"><span>[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo                  ] 705953/1024000</span></span>
+<span class="line"><span>[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo               ] 757281/1024000</span></span>
+<span class="line"><span>[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo            ] 810593/1024000</span></span>
+<span class="line"><span>[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo        ] 876769/1024000</span></span>
+<span class="line"><span>[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo      ] 920545/1024000</span></span>
+<span class="line"><span>[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo  ] 973473/1024000</span></span>
+<span class="line"><span>[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO] 1024000/1024000</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>           Files: 1</span></span>
+<span class="line"><span>     Directories: 0</span></span>
+<span class="line"><span>   Touched Pages: 1024000 (3G)</span></span>
+<span class="line"><span>         Elapsed: 9.4376 seconds</span></span>
+<span class="line"><span>ubuntu@ubuntu-Inspiron-5548:~$</span></span></code></pre>
+<h3 id="控制减少-pagecache">控制减少 pagecache</h3>
+<p>evict a file from memory
+将一个文件的pagecache 从内存中移除</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@ubuntu-Inspiron-5548:~$ vmtouch -ve haha</span></span>
+<span class="line"><span>Evicting haha</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>           Files: 1</span></span>
+<span class="line"><span>     Directories: 0</span></span>
+<span class="line"><span>   Evicted Pages: 1024000 (3G)</span></span>
+<span class="line"><span>         Elapsed: 0.085208 seconds</span></span></code></pre>
+<p>与<code>drop cache</code>不同，<code>vmtouch</code>做到了精准控制单个文件page_cache的效果，而 drop cache不行</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>root@ubuntu-Inspiron-5548:/home/ubuntu# echo 1 >  /proc/sys/vm/drop_caches</span></span>
+<span class="line"><span>root@ubuntu-Inspiron-5548:/home/ubuntu# echo 3 >  /proc/sys/vm/drop_caches</span></span></code></pre>
+<h3 id="保持文件在pagecache中">保持文件在pagecache中</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@ubuntu-Inspiron-5548:~$ vmtouch -dl haha</span></span>
+<span class="line"><span>ubuntu@ubuntu-Inspiron-5548:~$ vmtouch: FATAL: mlock: haha (Cannot allocate memory)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>ubuntu@ubuntu-Inspiron-5548:~$</span></span></code></pre>
+<p>(内存4G，文件4G 是没办法将文件常驻在 内存中的)
+从此报错信息可以看出 <code>vmtouch</code> 也是通过 <code>mlock</code> 系统调用来实现 文件内容 或者 文件目录内容锁定在 内存中的</p>
+<p><a href="https://hoytech.com/vmtouch/">vmtouch 作者的文章</a></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

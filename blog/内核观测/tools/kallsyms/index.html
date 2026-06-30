@@ -1,0 +1,192 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>kallsyms | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>kallsyms</h1><div class="post-meta"><time datetime="2021-01-07T20:00:40.000Z">2021年1月7日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">kallsyms</span></div></header><div class="article-body"><h2 id="介绍">介绍</h2>
+<p><code>kallsyms</code> 是内核的一个机制，和内核符号表有关，和他有关的宏是</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:~/workspace/linux $ cat ./out/.config | grep CONFIG_KALLSYMS</span></span>
+<span class="line"><span>CONFIG_KALLSYMS=y</span></span>
+<span class="line"><span>CONFIG_KALLSYMS_ALL=y</span></span>
+<span class="line"><span>CONFIG_KALLSYMS_ABSOLUTE_PERCPU=y</span></span>
+<span class="line"><span>CONFIG_KALLSYMS_BASE_RELATIVE=y</span></span>
+<span class="line"><span>ubuntu@zeku_server:~/workspace/linux $</span></span></code></pre>
+<p>在 <code>scripts/link-vmlinux.sh</code> 脚本中加入 下面的patch, 重新编译内核</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>diff --git a/scripts/link-vmlinux.sh b/scripts/link-vmlinux.sh</span></span>
+<span class="line"><span>index d74cee5c4326..c85541cbdd9d 100755</span></span>
+<span class="line"><span>--- a/scripts/link-vmlinux.sh</span></span>
+<span class="line"><span>+++ b/scripts/link-vmlinux.sh</span></span>
+<span class="line"><span>@@ -309,6 +309,14 @@ cleanup()</span></span>
+<span class="line"><span>        rm -f .vmlinux.d</span></span>
+<span class="line"><span> }</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>+echo "link-vmlinux.sh starting ......"</span></span>
+<span class="line"><span>+echo "xxxxx \$KBUILD_VERBOSE = "$KBUILD_VERBOSE</span></span>
+<span class="line"><span>+echo "xxxxx \$1              = "$1</span></span>
+<span class="line"><span>+echo "xxxxx \$2              = "$2</span></span>
+<span class="line"><span>+echo "xxxxx \$3              = "$3</span></span>
+<span class="line"><span>+echo "xxxxx \${MAKE}         = "${MAKE}</span></span>
+<span class="line"><span>+</span></span>
+<span class="line"><span>+# echo "xxxxx \$4          = "$4</span></span>
+<span class="line"><span> # Use "make V=1" to debug this script</span></span>
+<span class="line"><span> case "${KBUILD_VERBOSE}" in</span></span>
+<span class="line"><span> *1*)</span></span>
+<span class="line"><span>@@ -338,8 +346,11 @@ fi;</span></span>
+<span class="line"><span> ${MAKE} -f "${srctree}/scripts/Makefile.build" obj=init need-builtin=1</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span> #link vmlinux.o</span></span>
+<span class="line"><span>+echo "xxxxx modpost_link start......"</span></span>
+<span class="line"><span> modpost_link vmlinux.o</span></span>
+<span class="line"><span>+echo "xxxxx objtool_link start...... "</span></span>
+<span class="line"><span> objtool_link vmlinux.o</span></span>
+<span class="line"><span>+echo "xxxxx objtool_link end......"</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span> # modpost vmlinux.o to check for section mismatches</span></span>
+<span class="line"><span> ${MAKE} -f "${srctree}/scripts/Makefile.modpost" MODPOST_VMLINUX=1</span></span>
+<span class="line"><span> @@ -369,14 +380,14 @@ if [ -n "${CONFIG_KALLSYMS}" ]; then</span></span>
+<span class="line"><span>        # kallsyms support</span></span>
+<span class="line"><span>        # Generate section listing all symbols and add it into vmlinux</span></span>
+<span class="line"><span>        # It's a three step process:</span></span>
+<span class="line"><span>-       # 1)  Link .tmp_vmlinux1 so it has all symbols and sections,</span></span>
+<span class="line"><span>+       # 1)  Link .tmp_vmlinux.kallsyms1 so it has all symbols and sections,</span></span>
+<span class="line"><span>        #     but __kallsyms is empty.</span></span>
+<span class="line"><span>        #     Running kallsyms on that gives us .tmp_kallsyms1.o with</span></span>
+<span class="line"><span>        #     the right size</span></span>
+<span class="line"><span>-       # 2)  Link .tmp_vmlinux2 so it now has a __kallsyms section of</span></span>
+<span class="line"><span>+       # 2)  Link .tmp_vmlinux.kallsyms2 so it now has a __kallsyms section of</span></span>
+<span class="line"><span>        #     the right size, but due to the added section, some</span></span>
+<span class="line"><span>        #     addresses have shifted.</span></span>
+<span class="line"><span>-       #     From here, we generate a correct .tmp_kallsyms2.o</span></span>
+<span class="line"><span>+       #     From here, we generate a correct .tmp_vmlinux.kallsyms2.o</span></span>
+<span class="line"><span>        # 3)  That link may have expanded the kernel image enough that</span></span>
+<span class="line"><span>        #     more linker branch stubs / trampolines had to be added, which</span></span>
+<span class="line"><span>        #     introduces new names, which further expands kallsyms. Do another</span></span>
+<span class="line"><span>@@ -389,7 +400,9 @@ if [ -n "${CONFIG_KALLSYMS}" ]; then</span></span>
+<span class="line"><span>        # a)  Verify that the System.map from vmlinux matches the map from</span></span>
+<span class="line"><span>        #     ${kallsymso}.</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>+       echo "xxxxx kallsyms_step 1......"</span></span>
+<span class="line"><span>        kallsyms_step 1</span></span>
+<span class="line"><span>+       echo "xxxxx kallsyms_step 2......"</span></span>
+<span class="line"><span>        kallsyms_step 2</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        # step 3</span></span>
+<span class="line"><span>@@ -433,3 +446,5 @@ fi</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span> # For fixdep</span></span>
+<span class="line"><span> echo "vmlinux: $0" > .vmlinux.d</span></span>
+<span class="line"><span>+</span></span>
+<span class="line"><span>+echo "link-vmlinux.sh ending ......"</span></span></code></pre>
+<p>在编译阶段可以看到：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>make[1]: 进入目录“/home/ubuntu/workspace/linux/out”</span></span>
+<span class="line"><span>  GEN     Makefile</span></span>
+<span class="line"><span>  DESCEND objtool</span></span>
+<span class="line"><span>  CALL    ../scripts/atomic/check-atomics.sh</span></span>
+<span class="line"><span>  CALL    ../scripts/checksyscalls.sh</span></span>
+<span class="line"><span>  CHK     include/generated/compile.h</span></span>
+<span class="line"><span>link-vmlinux.sh starting ......</span></span>
+<span class="line"><span>xxxxx $KBUILD_VERBOSE = 0</span></span>
+<span class="line"><span>xxxxx $1              = ld</span></span>
+<span class="line"><span>xxxxx $2              = -m elf_x86_64</span></span>
+<span class="line"><span>xxxxx $3              = --emit-relocs --discard-none -z max-page-size=0x200000 --build-id=sha1 --orphan-handling=warn</span></span>
+<span class="line"><span>xxxxx ${MAKE}         = make</span></span>
+<span class="line"><span>  GEN     .version</span></span>
+<span class="line"><span>  CHK     include/generated/compile.h</span></span>
+<span class="line"><span>  UPD     include/generated/compile.h</span></span>
+<span class="line"><span>  CC      init/version.o</span></span>
+<span class="line"><span>  AR      init/built-in.a</span></span>
+<span class="line"><span>xxxxx modpost_link start......</span></span>
+<span class="line"><span>  LD      vmlinux.o</span></span>
+<span class="line"><span>xxxxx objtool_link start......</span></span>
+<span class="line"><span>xxxxx objtool_link end......</span></span>
+<span class="line"><span>  MODPOST vmlinux.symvers</span></span>
+<span class="line"><span>  MODINFO modules.builtin.modinfo</span></span>
+<span class="line"><span>  GEN     modules.builtin</span></span>
+<span class="line"><span>xxxxx kallsyms_step 1......</span></span>
+<span class="line"><span>  LD      .tmp_vmlinux.kallsyms1</span></span>
+<span class="line"><span>  KSYMS   .tmp_vmlinux.kallsyms1.S</span></span>
+<span class="line"><span>  AS      .tmp_vmlinux.kallsyms1.S</span></span>
+<span class="line"><span>xxxxx kallsyms_step 2......</span></span>
+<span class="line"><span>  LD      .tmp_vmlinux.kallsyms2</span></span>
+<span class="line"><span>  KSYMS   .tmp_vmlinux.kallsyms2.S</span></span>
+<span class="line"><span>  AS      .tmp_vmlinux.kallsyms2.S</span></span>
+<span class="line"><span>  LD      vmlinux</span></span>
+<span class="line"><span>  SORTTAB vmlinux</span></span>
+<span class="line"><span>  SYSMAP  System.map</span></span>
+<span class="line"><span>link-vmlinux.sh ending ......</span></span>
+<span class="line"><span>  CC      arch/x86/boot/version.o</span></span>
+<span class="line"><span>  VOFFSET arch/x86/boot/compressed/../voffset.h</span></span>
+<span class="line"><span>  OBJCOPY arch/x86/boot/compressed/vmlinux.bin</span></span>
+<span class="line"><span>  RELOCS  arch/x86/boot/compressed/vmlinux.relocs</span></span>
+<span class="line"><span>  CC      arch/x86/boot/compressed/kaslr.o</span></span>
+<span class="line"><span>  CC      arch/x86/boot/compressed/misc.o</span></span>
+<span class="line"><span>  GZIP    arch/x86/boot/compressed/vmlinux.bin.gz</span></span>
+<span class="line"><span>  MKPIGGY arch/x86/boot/compressed/piggy.S</span></span>
+<span class="line"><span>  AS      arch/x86/boot/compressed/piggy.o</span></span>
+<span class="line"><span>  LD      arch/x86/boot/compressed/vmlinux</span></span>
+<span class="line"><span>  ZOFFSET arch/x86/boot/zoffset.h</span></span>
+<span class="line"><span>  OBJCOPY arch/x86/boot/vmlinux.bin</span></span>
+<span class="line"><span>  AS      arch/x86/boot/header.o</span></span>
+<span class="line"><span>  LD      arch/x86/boot/setup.elf</span></span>
+<span class="line"><span>  OBJCOPY arch/x86/boot/setup.bin</span></span>
+<span class="line"><span>  BUILD   arch/x86/boot/bzImage</span></span>
+<span class="line"><span>Kernel: arch/x86/boot/bzImage is ready  (#136)</span></span></code></pre>
+<h2 id="代码分析">代码分析</h2>
+<h3 id="link_vmlinuxsh-脚本分析">link_vmlinux.sh 脚本分析</h3>
+<h3 id="systemmap-生成解析">System.map 生成解析</h3>
+<p>link-vmlinux.sh 中可以看到 <code>System.map</code> 生成过程：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span># Create map file with all symbols from ${1}</span></span>
+<span class="line"><span># See mksymap for additional details</span></span>
+<span class="line"><span>mksysmap()</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	${CONFIG_SHELL} "${srctree}/scripts/mksysmap" ${1} ${2}</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>......</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>info SYSMAP System.map</span></span>
+<span class="line"><span>mksysmap vmlinux System.map</span></span></code></pre>
+<p>主要是用 <code>scripts/mksysmap vmlinux System.map</code> 命令生成的</p>
+<p><code>scripts/mksysmap</code> 脚本内容：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>#!/bin/sh -x</span></span>
+<span class="line"><span># Based on the vmlinux file create the System.map file</span></span>
+<span class="line"><span># System.map is used by module-init tools and some debugging</span></span>
+<span class="line"><span># tools to retrieve the actual addresses of symbols in the kernel.</span></span>
+<span class="line"><span>#</span></span>
+<span class="line"><span># Usage</span></span>
+<span class="line"><span># mksysmap vmlinux System.map</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>#####</span></span>
+<span class="line"><span># Generate System.map (actual filename passed as second argument)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span># $NM produces the following output:</span></span>
+<span class="line"><span># f0081e80 T alloc_vfsmnt</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>#   The second row specify the type of the symbol:</span></span>
+<span class="line"><span>#   A = Absolute</span></span>
+<span class="line"><span>#   B = Uninitialised data (.bss)</span></span>
+<span class="line"><span>#   C = Common symbol</span></span>
+<span class="line"><span>#   D = Initialised data</span></span>
+<span class="line"><span>#   G = Initialised data for small objects</span></span>
+<span class="line"><span>#   I = Indirect reference to another symbol</span></span>
+<span class="line"><span>#   N = Debugging symbol</span></span>
+<span class="line"><span>#   R = Read only</span></span>
+<span class="line"><span>#   S = Uninitialised data for small objects</span></span>
+<span class="line"><span>#   T = Text code symbol</span></span>
+<span class="line"><span>#   U = Undefined symbol</span></span>
+<span class="line"><span>#   V = Weak symbol</span></span>
+<span class="line"><span>#   W = Weak symbol</span></span>
+<span class="line"><span>#   Corresponding small letters are local symbols</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span># For System.map filter away:</span></span>
+<span class="line"><span>#   a - local absolute symbols</span></span>
+<span class="line"><span>#   U - undefined global symbols</span></span>
+<span class="line"><span>#   N - debugging symbols</span></span>
+<span class="line"><span>#   w - local weak symbols</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span># readprofile starts reading symbols when _stext is found, and</span></span>
+<span class="line"><span># continue until it finds a symbol which is not either of 'T', 't',</span></span>
+<span class="line"><span># 'W' or 'w'. __crc_ are 'A' and placed in the middle</span></span>
+<span class="line"><span># so we just ignore them to let readprofile continue to work.</span></span>
+<span class="line"><span># (At least sparc64 has __crc_ in the middle).</span></span>
+<span class="line"><span># NM=gcc-nm</span></span>
+<span class="line"><span>$NM -n $1 | grep -v '\( [aNUw] \)\|\(__crc_\)\|\( \$[adt]\)\|\( \.L\)' > $2</span></span></code></pre>
+<p>实际最后生成 <code>System.map</code> 的命令是：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>gcc-nm -n vmlinux | grep -v '\( [aNUw] \)\|\(__crc_\)\|\( \$[adt]\)\|\( \.L\)' > System.map</span></span></code></pre>
+<h3 id="kernelkallsymsc-模块分析">kernel/kallsyms.c 模块分析</h3></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

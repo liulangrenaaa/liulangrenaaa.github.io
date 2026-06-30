@@ -1,0 +1,179 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>sched_features | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>sched_features</h1><div class="post-meta"><time datetime="2021-05-25T19:00:00.000Z">2021年5月25日</time><span> / linux kernel / linux schedule</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">linux kernel</span></div></header><div class="article-body"><h2 id="what">WHAT?</h2>
+<p><code>sched features</code> 是 linux scheduler 的一些 feature实现开关，可以在系统运行中动态开关，相关 feature 在 <code>kernel/sched/features.h</code> 有定义。</p>
+<h2 id="feature-拆解">feature 拆解</h2>
+<p>每个 feature 对调度行为都有一定影响或者优化，但是需要根据实际情况来选择是否开启 这个 feature.</p>
+<h3 id="gentle_fair_sleepers">GENTLE_FAIR_SLEEPERS</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/*</span></span>
+<span class="line"><span> * Only give sleepers 50% of their service deficit. This allows</span></span>
+<span class="line"><span> * them to run sooner, but does not allow tons of sleepers to</span></span>
+<span class="line"><span> * rip the spread apart.</span></span>
+<span class="line"><span> */</span></span>
+<span class="line"><span>SCHED_FEAT(GENTLE_FAIR_SLEEPERS, true)</span></span></code></pre>
+<p><code>GENTLE_FAIR_SLEEPERS</code> 主要是 减少对 sleep task的 vruntime 补偿。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/*</span></span>
+<span class="line"><span>		 * Halve their sleep time's effect, to allow</span></span>
+<span class="line"><span>		 * for a gentler effect of sleepers:</span></span>
+<span class="line"><span>		 */</span></span>
+<span class="line"><span>		if (sched_feat(GENTLE_FAIR_SLEEPERS))</span></span>
+<span class="line"><span>			thresh >>= 1;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>		vruntime -= thresh;</span></span></code></pre>
+<p>实际 使用时，仅仅是将 补偿时间减少一半。</p>
+<h3 id="start_debit">START_DEBIT</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/*</span></span>
+<span class="line"><span> * Place new tasks ahead so that they do not starve already running</span></span>
+<span class="line"><span> * tasks</span></span>
+<span class="line"><span> */</span></span>
+<span class="line"><span>SCHED_FEAT(START_DEBIT, true)</span></span></code></pre>
+<p><code>START_DEBIT</code> 主要是 对 initial task 的一种惩罚，对 vruntime 增加，可以让运行时间减少 和 不会立刻运行。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static void</span></span>
+<span class="line"><span>place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int initial)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	u64 vruntime = cfs_rq->min_vruntime;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	/*</span></span>
+<span class="line"><span>	 * The 'current' period is already promised to the current tasks,</span></span>
+<span class="line"><span>	 * however the extra weight of the new task will slow them down a</span></span>
+<span class="line"><span>	 * little, place the new task so that it fits in the slot that</span></span>
+<span class="line"><span>	 * stays open at the end.</span></span>
+<span class="line"><span>	 */</span></span>
+<span class="line"><span>	if (initial &#x26;&#x26; sched_feat(START_DEBIT))</span></span>
+<span class="line"><span>		vruntime += sched_vslice(cfs_rq, se);</span></span></code></pre>
+<h3 id="next_buddy">NEXT_BUDDY</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/*</span></span>
+<span class="line"><span> * Prefer to schedule the task we woke last (assuming it failed</span></span>
+<span class="line"><span> * wakeup-preemption), since its likely going to consume data we</span></span>
+<span class="line"><span> * touched, increases cache locality.</span></span>
+<span class="line"><span> */</span></span>
+<span class="line"><span>SCHED_FEAT(NEXT_BUDDY, false)</span></span></code></pre>
+<p><code>NEXT_BUDDY</code> 主要是 希望可以 尽快调度到 抢占 <code>curr</code>的 task.</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static void check_preempt_wakeup(struct rq *rq, struct task_struct *p, int wake_flags)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	......</span></span>
+<span class="line"><span>	if (sched_feat(NEXT_BUDDY) &#x26;&#x26; scale &#x26;&#x26; !(wake_flags &#x26; WF_FORK)) {</span></span>
+<span class="line"><span>		set_next_buddy(pse);</span></span>
+<span class="line"><span>		next_buddy_marked = 1;</span></span>
+<span class="line"><span>	}</span></span></code></pre>
+<h3 id="last_buddy">LAST_BUDDY</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/*</span></span>
+<span class="line"><span> * Prefer to schedule the task that ran last (when we did</span></span>
+<span class="line"><span> * wake-preempt) as that likely will touch the same data, increases</span></span>
+<span class="line"><span> * cache locality.</span></span>
+<span class="line"><span> */</span></span>
+<span class="line"><span>SCHED_FEAT(LAST_BUDDY, true)</span></span></code></pre>
+<p><code>LAST_BUDDY</code> 主要是 希望可以尽快调度到上次被 <code>wakeup task</code> <code>preempt</code> 的task。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static void check_preempt_wakeup(struct rq *rq, struct task_struct *p, int wake_flags)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	......</span></span>
+<span class="line"><span>	if (sched_feat(LAST_BUDDY) &#x26;&#x26; scale &#x26;&#x26; entity_is_task(se))</span></span>
+<span class="line"><span>		set_last_buddy(se);</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<h3 id="cache_hot_buddy">CACHE_HOT_BUDDY</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/*</span></span>
+<span class="line"><span> * Consider buddies to be cache hot, decreases the likeliness of a</span></span>
+<span class="line"><span> * cache buddy being migrated away, increases cache locality.</span></span>
+<span class="line"><span> */</span></span>
+<span class="line"><span>SCHED_FEAT(CACHE_HOT_BUDDY, true)</span></span></code></pre>
+<p>认为 [last|next]buddies 是 cache hot的，所以不能让他们 migrate away，增加 cache 命中率。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/*</span></span>
+<span class="line"><span> * Is this task likely cache-hot:</span></span>
+<span class="line"><span> */</span></span>
+<span class="line"><span>static int task_hot(struct task_struct *p, struct lb_env *env)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	......</span></span>
+<span class="line"><span>	/*</span></span>
+<span class="line"><span>	 * Buddy candidates are cache hot:</span></span>
+<span class="line"><span>	 */</span></span>
+<span class="line"><span>	if (sched_feat(CACHE_HOT_BUDDY) &#x26;&#x26; env->dst_rq->nr_running &#x26;&#x26;</span></span>
+<span class="line"><span>			(&#x26;p->se == cfs_rq_of(&#x26;p->se)->next ||</span></span>
+<span class="line"><span>			 &#x26;p->se == cfs_rq_of(&#x26;p->se)->last))</span></span>
+<span class="line"><span>		return 1;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<h3 id="wakeup_preemption">WAKEUP_PREEMPTION</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/*</span></span>
+<span class="line"><span> * Allow wakeup-time preemption of the current task:</span></span>
+<span class="line"><span> */</span></span>
+<span class="line"><span>SCHED_FEAT(WAKEUP_PREEMPTION, true)</span></span></code></pre>
+<p>是否可以唤醒强占， 后续补充</p>
+<h3 id="hrtick-hrtick_dl-double_tick">HRTICK HRTICK_DL DOUBLE_TICK</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>SCHED_FEAT(HRTICK, false)</span></span>
+<span class="line"><span>SCHED_FEAT(HRTICK_DL, false)</span></span>
+<span class="line"><span>SCHED_FEAT(DOUBLE_TICK, false)</span></span></code></pre>
+<p><code>HRTICK HRTICK_DL DOUBLE_TICK</code> 这三个 feature 主要是利用 <code>rq->hrtick_timer</code> 优化调度行为的。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static void __sched notrace __schedule(bool preempt)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	......</span></span>
+<span class="line"><span>	if (sched_feat(HRTICK) || sched_feat(HRTICK_DL))</span></span>
+<span class="line"><span>		hrtick_clear(rq);</span></span></code></pre>
+<p>主要是 <code>dl task</code> 会使用 这个 hrtimer 在<code>dl->runtime</code>到期的时候 发生一个 tick，使得任务运行时间更加精准</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static void start_hrtick_dl(struct rq *rq, struct task_struct *p)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	hrtick_start(rq, p->dl.runtime);</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static void set_next_task_dl(struct rq *rq, struct task_struct *p, bool first)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	p->se.exec_start = rq_clock_task(rq);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (hrtick_enabled_dl(rq))</span></span>
+<span class="line"><span>		start_hrtick_dl(rq, p);</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p><code>cfs task</code> 会使用 这个 hrtimer 在<code>delta</code> 期望运行时间 到期的时候 发生一个 tick_fair，使得运行时间更加精准。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static void hrtick_start_fair(struct rq *rq, struct task_struct *p)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	struct sched_entity *se = &#x26;p->se;</span></span>
+<span class="line"><span>	struct cfs_rq *cfs_rq = cfs_rq_of(se);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	SCHED_WARN_ON(task_rq(p) != rq);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (rq->cfs.h_nr_running > 1) {</span></span>
+<span class="line"><span>		u64 slice = sched_slice(cfs_rq, se);</span></span>
+<span class="line"><span>		u64 ran = se->sum_exec_runtime - se->prev_sum_exec_runtime;</span></span>
+<span class="line"><span>		s64 delta = slice - ran;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>		if (delta &#x3C; 0) {</span></span>
+<span class="line"><span>			if (task_current(rq, p))</span></span>
+<span class="line"><span>				resched_curr(rq);</span></span>
+<span class="line"><span>			return;</span></span>
+<span class="line"><span>		}</span></span>
+<span class="line"><span>		hrtick_start(rq, delta);</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>struct task_struct *</span></span>
+<span class="line"><span>pick_next_task_fair(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	......</span></span>
+<span class="line"><span>	if (hrtick_enabled_fair(rq))</span></span>
+<span class="line"><span>		hrtick_start_fair(rq, p);</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<h3 id="nontask_capacity">NONTASK_CAPACITY</h3>
+<h3 id="ttwu_queue">TTWU_QUEUE</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/*</span></span>
+<span class="line"><span> * Queue remote wakeups on the target CPU and process them</span></span>
+<span class="line"><span> * using the scheduler IPI. Reduces rq->lock contention/bounces.</span></span>
+<span class="line"><span> */</span></span>
+<span class="line"><span>SCHED_FEAT(TTWU_QUEUE, true)</span></span></code></pre>
+<p><code>TTWU_QUEUE</code> 主要是 使用 <code>IPI</code> 去唤醒 <code>remote queue</code> 上的task，而不是操作<code>rq->lock</code>，然后操作队列上的 entity，这会减少 <code>rq->lock</code>的争用。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static bool ttwu_queue_wakelist(struct task_struct *p, int cpu, int wake_flags)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	if (sched_feat(TTWU_QUEUE) &#x26;&#x26; ttwu_queue_cond(cpu, wake_flags)) {</span></span>
+<span class="line"><span>		if (WARN_ON_ONCE(cpu == smp_processor_id()))</span></span>
+<span class="line"><span>			return false;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>		sched_clock_cpu(cpu); /* Sync clocks across CPUs */</span></span>
+<span class="line"><span>		__ttwu_queue_wakelist(p, cpu, wake_flags);</span></span>
+<span class="line"><span>		return true;</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	return false;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<h3 id="sis_prop">SIS_PROP</h3>
+<h3 id="warn_double_clock">WARN_DOUBLE_CLOCK</h3>
+<h3 id="rt_push_ipi">RT_PUSH_IPI</h3>
+<h3 id="rt_runtime_share">RT_RUNTIME_SHARE</h3>
+<h3 id="lb_min">LB_MIN</h3>
+<h3 id="attach_age_load">ATTACH_AGE_LOAD</h3>
+<h3 id="wa_idle">WA_IDLE</h3>
+<h3 id="wa_weight">WA_WEIGHT</h3>
+<h3 id="wa_bias">WA_BIAS</h3></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

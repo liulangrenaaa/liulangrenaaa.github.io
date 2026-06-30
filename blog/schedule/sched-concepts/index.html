@@ -1,0 +1,101 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>sched concepts | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>sched concepts</h1><div class="post-meta"><time datetime="2021-04-12T19:00:00.000Z">2021年4月12日</time><span> / linux kernel / linux schedule</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">schedule</span></div></header><div class="article-body"><h2 id="eas">EAS</h2>
+<p>what?</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>This patch series introduces Energy Aware Scheduling (EAS) for CFS tasks</span></span>
+<span class="line"><span>on platforms with asymmetric CPU topologies (e.g. Arm big.LITTLE).</span></span></code></pre>
+<p>参考 <a href="https://lore.kernel.org/lkml/20181016101513.26919-1-quentin.perret@arm.com/">lkml EAS cover letter</a>
+参考 <a href="https://marc.info/?l=linux-kernel&#x26;m=153243513908731&#x26;w=2">lkml EAS overall design V5</a></p>
+<h2 id="misfit">misfit</h2>
+<p>应该是指 task运行位置不合适：
+运行 此 task需要的算力 比 当前 CPU or rq的最大算力还要高，实际代码里面使用的是
+task需求算力  &#x3C;  （CPU 最大算力 * 1.2）？</p>
+<p>task需求算力如何计算：
+uclamp_task_util(p)</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/*</span></span>
+<span class="line"><span> * The margin used when comparing utilization with CPU capacity.</span></span>
+<span class="line"><span> *</span></span>
+<span class="line"><span> * (default: ~20%)</span></span>
+<span class="line"><span> */</span></span>
+<span class="line"><span>#define fits_capacity(cap, max)	((cap) * 1280 &#x3C; (max) * 1024)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static inline int task_fits_capacity(struct task_struct *p, long capacity)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	return fits_capacity(uclamp_task_util(p), capacity);</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span></span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (task_fits_capacity(p, capacity_of(cpu_of(rq)))) {</span></span>
+<span class="line"><span>		rq->misfit_task_load = 0;</span></span>
+<span class="line"><span>		return;</span></span>
+<span class="line"><span>	}</span></span></code></pre>
+<h2 id="utilization-clamping">utilization clamping</h2>
+<p>The main use-cases for utilization clamping are:</p>
+<ul>
+<li>
+<p>boosting: better interactive response for small tasks which
+are affecting the user experience.</p>
+<p>Consider for example the case of a small control thread for an external
+accelerator (e.g. GPU, DSP, other devices). Here, from the task utilization
+the scheduler does not have a complete view of what the task’s requirements
+are and, if it’s a small utilization task, it keeps selecting a more energy
+efficient CPU, with smaller capacity and lower frequency, thus negatively
+impacting the overall time required to complete task activations.</p>
+</li>
+<li>
+<p>capping: increase energy efficiency for background tasks not affecting the
+user experience.</p>
+<p>Since running on a lower capacity CPU at a lower frequency is more energy
+efficient, when the completion time is not a main goal, then capping the
+utilization considered for certain (maybe big) tasks can have positive
+effects, both on energy consumption and thermal headroom.
+This feature allows also to make RT tasks more energy friendly on mobile
+systems where running them on high capacity CPUs and at the maximum
+frequency is not required.</p>
+</li>
+</ul>
+<p>参考 <a href="https://lwn.net/Articles/791682/">LWN 文章-Add utilization clamping support</a></p>
+<h2 id="isolation">isolation</h2>
+<p>WHY?</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Dedicating a CPU to a specific performance-critical process/task is desired.</span></span></code></pre>
+<p>需要将某些CPU 专用于 特定的性能关键的进程/任务。</p>
+<p>HOW?
+需要在boot的时候设置启动参数。
+四核SMP系统上，加入需要 isolate CPU 0,1,2,3 中的 CPU2 与 CPU3，可以配置 kernel的启动参数</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>isolcpus=2,3</span></span></code></pre>
+<p>完整启动参数是</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>    sudo qemu-system-x86_64 \</span></span>
+<span class="line"><span>	-kernel /home/ubuntu/workspace/share/stable/bzImage \</span></span>
+<span class="line"><span>	-hda /home/ubuntu/myspace/qemu_build/stable_ubuntu.img \</span></span>
+<span class="line"><span>	-append "root=/dev/sda5 console=ttyS0 crashkernel=256M isolcpus=2,3" \</span></span>
+<span class="line"><span>	-smp 4 \</span></span>
+<span class="line"><span>	-m 4096 \</span></span>
+<span class="line"><span>	--enable-kvm \</span></span>
+<span class="line"><span>	-net nic \</span></span>
+<span class="line"><span>	-net user,hostfwd=tcp::2222-:22 \</span></span>
+<span class="line"><span>	--nographic \</span></span>
+<span class="line"><span>	-fsdev local,id=fs1,path=/home/ubuntu/workspace/share,security_model=none \</span></span>
+<span class="line"><span>	-device virtio-9p-pci,fsdev=fs1,mount_tag=host_share</span></span></code></pre>
+<p>一旦系统用这个参数启动，进程/任务将不会被分配给或从指定的CPU，除非通过taskset或cset命令分配进程到 isolate的CPU。
+在Linux上，可以使用taskset命令设置进程的CPU亲和度，使用cset命令设置进程的CPU亲和度。</p>
+<p>可以使用 taskset 设置task的 cpu 亲和性
+查看某个进程的亲和性</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@wsl:~/workspace/linux-stable $ ps -aux | grep sleep</span></span>
+<span class="line"><span>ubuntu    4445  0.0  0.0  15276   824 tty2     S    11:19   0:00 sleep 1000</span></span>
+<span class="line"><span>ubuntu    4448  0.0  0.0  16208  1284 pts/0    S    11:19   0:00 grep --color=auto sleep</span></span>
+<span class="line"><span>ubuntu@wsl:~/workspace/linux-stable $ taskset -c -p 4445</span></span>
+<span class="line"><span>pid 4445's current affinity list: 0-11</span></span></code></pre>
+<p>设置某个进程的亲和性</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@wsl:~/workspace/linux-stable $ taskset -cp 1 4445</span></span>
+<span class="line"><span>pid 4445's current affinity list: 0-11</span></span>
+<span class="line"><span>pid 4445's new affinity list: 1</span></span>
+<span class="line"><span>ubuntu@wsl:~/workspace/linux-stable $ taskset -c -p 4445</span></span>
+<span class="line"><span>pid 4445's current affinity list: 1</span></span>
+<span class="line"><span>ubuntu@wsl:~/workspace/linux-stable $</span></span></code></pre>
+<p>在server上实际测试结果：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>测试环境：0-3共有四核 CPU，启动时 isolate出2-3俩核心。</span></span>
+<span class="line"><span>1. 开机之后，0-1核 有正常task在跑，2-3核无任何 task。（此时task的 allow_cpumask都是 0-1）</span></span>
+<span class="line"><span>2. userspace &#x26; kernelspace 的 cfs可以正常绑定到2-3核心，且可以正常跑</span></span>
+<span class="line"><span>3. userspace 与 kernelspace 的rt 进程均可绑定到2-3核心，且可以正常跑</span></span>
+<span class="line"><span>4. usespace 的 cfs绑定到0-3核心，可以跑到2-3核心上。</span></span></code></pre>
+<p>参考 <a href="https://www.suse.com/support/kb/doc/?id=000017747">Suse 的官方文档</a></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

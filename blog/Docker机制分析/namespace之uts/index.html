@@ -1,0 +1,222 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>namespace之uts | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>namespace之uts</h1><div class="post-meta"><time datetime="2021-07-06T19:00:00.000Z">2021年7月6日</time><span> / namespace / uts namespace</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">namespace</span><span class="tag">uts namespace</span></div></header><div class="article-body"><h2 id="demo1">demo1</h2>
+<p>shell1:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>stable_kernel@1kernel: /var/crash# hostname</span></span>
+<span class="line"><span>rlk-Standard-PC-i440FX-PIIX-1996</span></span>
+<span class="line"><span>stable_kernel@kernel: /var/crash# sudo unshare -p -f /bin/bash</span></span>
+<span class="line"><span>xhost:  unable to open display ""</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/var/crash# hostname</span></span>
+<span class="line"><span>rlk-Standard-PC-i440FX-PIIX-1996</span></span></code></pre>
+<p>shell2:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>stable_kernel@kernel: /var/crash# sudo unshare -p -f /bin/bash</span></span>
+<span class="line"><span>xhost:  unable to open display ""</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/var/crash# hostname</span></span>
+<span class="line"><span>rlk-Standard-PC-i440FX-PIIX-1996</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/var/crash# hostname hhh</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/var/crash# hostname</span></span>
+<span class="line"><span>hhh</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/var/crash#</span></span></code></pre>
+<p>shell1:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>stable_kernel@1kernel: /var/crash# hostname</span></span>
+<span class="line"><span>rlk-Standard-PC-i440FX-PIIX-1996</span></span>
+<span class="line"><span>stable_kernel@kernel: /var/crash# sudo unshare -p -f /bin/bash</span></span>
+<span class="line"><span>xhost:  unable to open display ""</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/var/crash# hostname</span></span>
+<span class="line"><span>rlk-Standard-PC-i440FX-PIIX-1996</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/var/crash# hostname</span></span>
+<span class="line"><span>hhh</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/var/crash#</span></span></code></pre>
+<p>可以看出在没有新建uts namespace的时候， 他们都是同一个 uts name；
+只要修改任何一个 uts 中的 hostname 的话，所有的都会被修改</p>
+<h2 id="demo2">demo2</h2>
+<p>shell1:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>stable_kernel@kernel: /var/crash# sudo unshare -p -f -u /bin/bash</span></span>
+<span class="line"><span>xhost:  unable to open display ""</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/var/crash# hostname</span></span>
+<span class="line"><span>rlk-Standard-PC-i440FX-PIIX-1996</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/var/crash# hostname shell1</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/var/crash# hostname</span></span>
+<span class="line"><span>shell1</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/var/crash#</span></span></code></pre>
+<p>shell2:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>stable_kernel@kernel: /var/crash# sudo unshare -p -f -u /bin/bash</span></span>
+<span class="line"><span>xhost:  unable to open display ""</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/var/crash# hostname</span></span>
+<span class="line"><span>rlk-Standard-PC-i440FX-PIIX-1996</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/var/crash# hostname shell2</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/var/crash# hostname</span></span>
+<span class="line"><span>shell2</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/var/crash#</span></span></code></pre>
+<p>shell3:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>stable_kernel@kernel: /var/crash# hostname</span></span>
+<span class="line"><span>rlk-Standard-PC-i440FX-PIIX-1996</span></span>
+<span class="line"><span>stable_kernel@kernel: /var/crash#</span></span></code></pre>
+<p>可以看出，只要新建了 uts namespace 之后，在 new uts namespace中做任何对 hostname 的修改，都不会影响到 其他 old uts namespace 的 hostname.</p>
+<h2 id="demo3">demo3</h2>
+<p>shell1:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/var/crash# hostname</span></span>
+<span class="line"><span>shell1</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/var/crash# sleep 10000 &#x26;</span></span>
+<span class="line"><span>[1] 18</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/var/crash#</span></span></code></pre>
+<p>shell2:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>stable_kernel@kernel: /var/crash# ps -aux | grep sleep</span></span>
+<span class="line"><span>root        3860  0.0  0.0  16716   528 pts/0    S    17:02   0:00 sleep 10000</span></span>
+<span class="line"><span>rlk         3862  0.0  0.0  17676   728 pts/1    S+   17:02   0:00 grep --color=auto --exclude-dir=.bzr --exclude-dir=CVS --exclude-dir=.git --exclude-dir=.hg --exclude-dir=.svn --exclude-dir=.idea --exclude-dir=.tox sleep</span></span>
+<span class="line"><span>stable_kernel@1kernel: /var/crash# sudo nsenter -u -t3860</span></span>
+<span class="line"><span>xhost:  unable to open display ""</span></span>
+<span class="line"><span>root@shell1:/var/crash# hostname</span></span>
+<span class="line"><span>shell1</span></span>
+<span class="line"><span>root@shell1:/var/crash#</span></span></code></pre>
+<h2 id="uts_namespace-实现">uts_namespace 实现</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>copy_processes->copy_namespaces->create_new_namespaces->copy_utsname</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span> +----------------------+</span></span>
+<span class="line"><span> |                      |</span></span>
+<span class="line"><span> |                      |</span></span>
+<span class="line"><span> |    copy_processes    |</span></span>
+<span class="line"><span> |                      |</span></span>
+<span class="line"><span> +----------+-----------+</span></span>
+<span class="line"><span>            |</span></span>
+<span class="line"><span>            |</span></span>
+<span class="line"><span>+-----------v------------+</span></span>
+<span class="line"><span>|                        |</span></span>
+<span class="line"><span>|                        |</span></span>
+<span class="line"><span>|    copy_namespaces     |</span></span>
+<span class="line"><span>|                        |</span></span>
+<span class="line"><span>+----------+-------------+</span></span>
+<span class="line"><span>           |</span></span>
+<span class="line"><span>           |</span></span>
+<span class="line"><span>           |</span></span>
+<span class="line"><span>+----------v--------------+</span></span>
+<span class="line"><span>|                         |</span></span>
+<span class="line"><span>|                         |</span></span>
+<span class="line"><span>|  create_new_namespaces  |</span></span>
+<span class="line"><span>|                         |</span></span>
+<span class="line"><span>+----------+--------------+</span></span>
+<span class="line"><span>           |</span></span>
+<span class="line"><span>           |</span></span>
+<span class="line"><span>           |</span></span>
+<span class="line"><span>+----------v------------+</span></span>
+<span class="line"><span>|                       |</span></span>
+<span class="line"><span>|                       |</span></span>
+<span class="line"><span>|     copy_utsname      |</span></span>
+<span class="line"><span>|                       |</span></span>
+<span class="line"><span>+----------+------------+</span></span></code></pre>
+<p><code>clone_uts_ns</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static struct uts_namespace *clone_uts_ns(struct user_namespace *user_ns,</span></span>
+<span class="line"><span>					  struct uts_namespace *old_ns)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	struct uts_namespace *ns;</span></span>
+<span class="line"><span>	struct ucounts *ucounts;</span></span>
+<span class="line"><span>	int err;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	err = -ENOSPC;</span></span>
+<span class="line"><span>	ucounts = inc_uts_namespaces(user_ns);</span></span>
+<span class="line"><span>	if (!ucounts)</span></span>
+<span class="line"><span>		goto fail;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	err = -ENOMEM;</span></span>
+<span class="line"><span>	ns = create_uts_ns();</span></span>
+<span class="line"><span>	if (!ns)</span></span>
+<span class="line"><span>		goto fail_dec;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	err = ns_alloc_inum(&#x26;ns->ns);</span></span>
+<span class="line"><span>	if (err)</span></span>
+<span class="line"><span>		goto fail_free;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	ns->ucounts = ucounts;</span></span>
+<span class="line"><span>	ns->ns.ops = &#x26;utsns_operations;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	down_read(&#x26;uts_sem);</span></span>
+<span class="line"><span>	memcpy(&#x26;ns->name, &#x26;old_ns->name, sizeof(ns->name)); 	// name 是 struct new_utsname 类型，不是 string</span></span>
+<span class="line"><span>	ns->user_ns = get_user_ns(user_ns);</span></span>
+<span class="line"><span>	up_read(&#x26;uts_sem);</span></span>
+<span class="line"><span>	return ns;</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>struct uts_namespace *copy_utsname(unsigned long flags,</span></span>
+<span class="line"><span>	struct user_namespace *user_ns, struct uts_namespace *old_ns)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	struct uts_namespace *new_ns;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	BUG_ON(!old_ns);</span></span>
+<span class="line"><span>	get_uts_ns(old_ns);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (!(flags &#x26; CLONE_NEWUTS))</span></span>
+<span class="line"><span>		return old_ns;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	new_ns = clone_uts_ns(user_ns, old_ns);  // 完全 clone parent 的 uts_namespace</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	put_uts_ns(old_ns);</span></span>
+<span class="line"><span>	return new_ns;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<h3 id="set">set</h3>
+<p>看一下 strace:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/var/crash# strace hostname shell0</span></span>
+<span class="line"><span>execve("/usr/bin/hostname", ["hostname", "shell0"], 0x7ffd8feacde8 /* 27 vars */) = 0</span></span>
+<span class="line"><span>sethostname("shell0", 6)                = 0</span></span></code></pre>
+<p>linux 是通过 sethostname syscall 来修改 hostname(保存在 nodename 中)的。
+<code>sethostname</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static struct ctl_table uts_kern_table[] = {</span></span>
+<span class="line"><span>	{</span></span>
+<span class="line"><span>		.procname	= "hostname",</span></span>
+<span class="line"><span>		.data		= init_uts_ns.name.nodename,</span></span>
+<span class="line"><span>		.maxlen		= sizeof(init_uts_ns.name.nodename),</span></span>
+<span class="line"><span>		.mode		= 0644,</span></span>
+<span class="line"><span>		.proc_handler	= proc_do_uts_string,</span></span>
+<span class="line"><span>		.poll		= &#x26;hostname_poll,</span></span>
+<span class="line"><span>	},</span></span>
+<span class="line"><span>......</span></span>
+<span class="line"><span>};</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>SYSCALL_DEFINE2(sethostname, char __user *, name, int, len)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	int errno;</span></span>
+<span class="line"><span>	char tmp[__NEW_UTS_LEN];</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (!ns_capable(current->nsproxy->uts_ns->user_ns, CAP_SYS_ADMIN))</span></span>
+<span class="line"><span>		return -EPERM;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (len &#x3C; 0 || len > __NEW_UTS_LEN)</span></span>
+<span class="line"><span>		return -EINVAL;</span></span>
+<span class="line"><span>	errno = -EFAULT;</span></span>
+<span class="line"><span>	if (!copy_from_user(tmp, name, len)) {</span></span>
+<span class="line"><span>		struct new_utsname *u;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>		down_write(&#x26;uts_sem);</span></span>
+<span class="line"><span>		u = utsname();</span></span>
+<span class="line"><span>		memcpy(u->nodename, tmp, len);</span></span>
+<span class="line"><span>		memset(u->nodename + len, 0, sizeof(u->nodename) - len);</span></span>
+<span class="line"><span>		errno = 0;</span></span>
+<span class="line"><span>		uts_proc_notify(UTS_PROC_HOSTNAME);</span></span>
+<span class="line"><span>		up_write(&#x26;uts_sem);</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>	return errno;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<h3 id="get">get</h3>
+<p>看一下 strace:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/var/crash# strace hostname</span></span>
+<span class="line"><span>execve("/usr/bin/hostname", ["hostname"], 0x7ffe740a5980 /* 27 vars */) = 0</span></span>
+<span class="line"><span>uname({sysname="Linux", nodename="shell2", ...}) = 0</span></span></code></pre>
+<p>linux 是通过 uname syscall 来获取 uts 相关信息的。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>SYSCALL_DEFINE1(uname, struct old_utsname __user *, name)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	struct old_utsname tmp;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (!name)</span></span>
+<span class="line"><span>		return -EFAULT;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	down_read(&#x26;uts_sem);</span></span>
+<span class="line"><span>	memcpy(&#x26;tmp, utsname(), sizeof(tmp));		// 获取 task相关utsname 信息</span></span>
+<span class="line"><span>	up_read(&#x26;uts_sem);</span></span>
+<span class="line"><span>	if (copy_to_user(name, &#x26;tmp, sizeof(tmp)))	// copy 到 user space</span></span>
+<span class="line"><span>		return -EFAULT;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (override_release(name->release, sizeof(name->release)))</span></span>
+<span class="line"><span>		return -EFAULT;</span></span>
+<span class="line"><span>	if (override_architecture(name))</span></span>
+<span class="line"><span>		return -EFAULT;</span></span>
+<span class="line"><span>	return 0;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>参考：
+<a href="https://www.cnblogs.com/sparkdev/p/9377072.html">Linux Namespace : UTS</a></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

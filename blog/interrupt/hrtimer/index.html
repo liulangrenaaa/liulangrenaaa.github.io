@@ -1,0 +1,84 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>hrtimer | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>hrtimer</h1><div class="post-meta"><time datetime="2021-03-04T19:00:40.000Z">2021年3月4日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">intrrrupt</span><span class="tag">hrtimer</span></div></header><div class="article-body"><p>hrtimer没有使用时间轮对定时器进行管理，而是选用了更加通用、性能稳定的红黑树。红黑树查找，插入和删除平均时间复杂度是O(logN)。虽然查找的时间复杂度达不到O(1)，但是避免了时间轮的迁移。</p>
+<p>因此在平均性能上红黑树和时间轮会较为接近。 hrtimer红黑树是在红黑树的基础上做了简单的封装，hrtimer红黑树节点使用数据结构struct timerqueue_node，比rb_node多了一个expires字段，用于记录超时时刻。
+hrtimer的数据结构与动态定时器的数据结构类似。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>struct timerqueue_node {</span></span>
+<span class="line"><span>	struct rb_node node;</span></span>
+<span class="line"><span>	ktime_t expires;</span></span>
+<span class="line"><span>};</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>// include/linux/hrtimer.h</span></span>
+<span class="line"><span>/**</span></span>
+<span class="line"><span> * struct hrtimer - the basic hrtimer structure</span></span>
+<span class="line"><span> * @node:	timerqueue node, which also manages node.expires,</span></span>
+<span class="line"><span> *		the absolute expiry time in the hrtimers internal</span></span>
+<span class="line"><span> *		representation. The time is related to the clock on</span></span>
+<span class="line"><span> *		which the timer is based. Is setup by adding</span></span>
+<span class="line"><span> *		slack to the _softexpires value. For non range timers</span></span>
+<span class="line"><span> *		identical to _softexpires.</span></span>
+<span class="line"><span> * @_softexpires: the absolute earliest expiry time of the hrtimer.</span></span>
+<span class="line"><span> *		The time which was given as expiry time when the timer</span></span>
+<span class="line"><span> *		was armed.</span></span>
+<span class="line"><span> * @function:	timer expiry callback function</span></span>
+<span class="line"><span> * @base:	pointer to the timer base (per cpu and per clock)</span></span>
+<span class="line"><span> * @state:	state information (See bit values above)</span></span>
+<span class="line"><span> * @is_rel:	Set if the timer was armed relative</span></span>
+<span class="line"><span> * @is_soft:	Set if hrtimer will be expired in soft interrupt context.</span></span>
+<span class="line"><span> * @is_hard:	Set if hrtimer will be expired in hard interrupt context</span></span>
+<span class="line"><span> *		even on RT.</span></span>
+<span class="line"><span> *</span></span>
+<span class="line"><span> * The hrtimer structure must be initialized by hrtimer_init()</span></span>
+<span class="line"><span> */</span></span>
+<span class="line"><span>struct hrtimer {</span></span>
+<span class="line"><span>	struct timerqueue_node		node;</span></span>
+<span class="line"><span>	ktime_t				_softexpires;</span></span>
+<span class="line"><span>	enum hrtimer_restart		(*function)(struct hrtimer *);</span></span>
+<span class="line"><span>	struct hrtimer_clock_base	*base;</span></span>
+<span class="line"><span>	u8				state;</span></span>
+<span class="line"><span>	u8				is_rel;</span></span>
+<span class="line"><span>	u8				is_soft;</span></span>
+<span class="line"><span>	u8				is_hard;</span></span>
+<span class="line"><span>};</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>/**</span></span>
+<span class="line"><span> * struct hrtimer_sleeper - simple sleeper structure</span></span>
+<span class="line"><span> * @timer:	embedded timer structure</span></span>
+<span class="line"><span> * @task:	task to wake up</span></span>
+<span class="line"><span> *</span></span>
+<span class="line"><span> * task is set to NULL, when the timer expires.</span></span>
+<span class="line"><span> */</span></span>
+<span class="line"><span>struct hrtimer_sleeper {</span></span>
+<span class="line"><span>	struct hrtimer timer;</span></span>
+<span class="line"><span>	struct task_struct *task;</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<p>hrtimer和动态定时器一样拥有超时计数字段_softexpires和超时后的回调函数。 通过比较当前时间是否大于_softexpires来决定定时器超时，执行回调函数。 在红黑树的node中同样保存了一份expires，node.expires大于等于_softexpires。 这样做的目的是在高精度模式下，在_softexpires到node.expires期间设定定时器被触发的时间。</p>
+<p>hrtimer管理器结构</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>struct hrtimer_cpu_base {</span></span>
+<span class="line"><span>	raw_spinlock_t			lock;</span></span>
+<span class="line"><span>	unsigned int			cpu;</span></span>
+<span class="line"><span>	unsigned int			active_bases;</span></span>
+<span class="line"><span>	unsigned int			clock_was_set_seq;</span></span>
+<span class="line"><span>	unsigned int			hres_active		: 1,</span></span>
+<span class="line"><span>					in_hrtirq		: 1,</span></span>
+<span class="line"><span>					hang_detected		: 1,</span></span>
+<span class="line"><span>					softirq_activated       : 1;</span></span>
+<span class="line"><span>#ifdef CONFIG_HIGH_RES_TIMERS</span></span>
+<span class="line"><span>	unsigned int			nr_events;</span></span>
+<span class="line"><span>	unsigned short			nr_retries;</span></span>
+<span class="line"><span>	unsigned short			nr_hangs;</span></span>
+<span class="line"><span>	unsigned int			max_hang_time;</span></span>
+<span class="line"><span>#endif</span></span>
+<span class="line"><span>	ktime_t				expires_next;</span></span>
+<span class="line"><span>	struct hrtimer			*next_timer;</span></span>
+<span class="line"><span>	ktime_t				softirq_expires_next;</span></span>
+<span class="line"><span>	struct hrtimer			*softirq_next_timer;</span></span>
+<span class="line"><span>	struct hrtimer_clock_base	clock_base[HRTIMER_MAX_CLOCK_BASES];</span></span>
+<span class="line"><span>} ____cacheline_aligned;</span></span></code></pre>
+<p><code>running</code> 字段指向正在执行的 <code>hrtimer</code>。 next_timer字段指向第一个超时的hrtimer。 clock_base字段是当前CPU维护的定时器树。 目前每个CPU都维护了若干组定时器树，其中包括单条递增时间HRTIMER_BASE_MONOTONIC,上墙时间HRTIMER_BASE_REALTIME等。
+。</p>
+<p>hrtimer有两种精度模式，高精度模式和低精度模式。那么同样的数据设计，如何实现两种精度呢？ 这里的关键就是调用检查hrtimer函数的地方。我们来看看两种精度的调用栈。</p>
+<p>低精度</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>timer_interrupt() -> update_process_times() -> run_local_timers() -> hrtimer_run_queues() -> __hrtimer_run_queues()</span></span></code></pre>
+<p>高精度</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>hrtimer_interrupt() -> __hrtimer_run_queues()</span></span></code></pre>
+<p>当hrtimer处于低精度模式时，每次irq0上的时间中断，即每次tick事件，调用一次检查hrtimer函数。 tick的频率是1000hz，此时，hrtimer处于低精度模式。 在第一篇文章中，我们提到TSC、HPET都是可以提供纳秒级的时间设备。 当hrtimer处于高精度模式时，Linux把hrtimer_interrupt()绑定到高精度的时间设备，这时就可以提供纳秒级的定时器服务了。 但是频繁的调用检查hrtimer函数会非常消耗机器性能。 为了避免这个缺陷，hrtimer_interrupt()的调用采用了one-shot的模式。每一次调用都会设定下一次调用的时间。</p>
+<p>参考<a href="http://rangechow.com/2016/04/19/%E9%AB%98%E7%B2%BE%E5%BA%A6%E5%AE%9A%E6%97%B6%E5%99%A8Hrtimer.html">高精度定时器Hrtimer</a></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

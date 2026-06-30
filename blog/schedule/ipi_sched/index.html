@@ -1,0 +1,277 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>ipi_sched | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>ipi_sched</h1><div class="post-meta"><time datetime="2021-04-21T19:00:00.000Z">2021年4月21日</time><span> / linux kernel / linux schedule</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">schedule</span></div></header><div class="article-body"><h2 id="what">WHAT?</h2>
+<p>IPI 中断 (Inter-Processor Interrupts) ，核间中断可以通过向这个寄存器写入需要的值来产生。若硬件线程 A 想要发送一个核间中断给硬件线程 B，它只需要向寄存器 IPIBase 中写入 B
+的 Thread ID、中断向量、中断类型等值就可以了，PIC 会通知 B 所在的核挂起它当前的执行序列，并根据中断向量跳转到中断服务例程 ISR 的入口</p>
+<h2 id="how">HOW?</h2>
+<p>linux上将 IPI 中断分为以下几类</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>enum ipi_msg_type {</span></span>
+<span class="line"><span>	IPI_RESCHEDULE,</span></span>
+<span class="line"><span>	IPI_CALL_FUNC,</span></span>
+<span class="line"><span>	IPI_CPU_STOP,</span></span>
+<span class="line"><span>	IPI_CPU_CRASH_STOP,</span></span>
+<span class="line"><span>	IPI_TIMER,</span></span>
+<span class="line"><span>	IPI_IRQ_WORK,</span></span>
+<span class="line"><span>	IPI_WAKEUP</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<p>通过接口 <code>smp_cross_call</code> 调用，For example:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>void smp_send_reschedule(int cpu)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	smp_cross_call(cpumask_of(cpu), IPI_RESCHEDULE);</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>CPUa 给 CPUb 发送一个 <code>IPI_RESCHEDULE</code> 信号，然后 CPUb执行相关函数</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/*</span></span>
+<span class="line"><span> * Main handler for inter-processor interrupts</span></span>
+<span class="line"><span> */</span></span>
+<span class="line"><span>void handle_IPI(int ipinr, struct pt_regs *regs)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	unsigned int cpu = smp_processor_id();</span></span>
+<span class="line"><span>	struct pt_regs *old_regs = set_irq_regs(regs);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	switch (ipinr) {</span></span>
+<span class="line"><span>	case IPI_RESCHEDULE:</span></span>
+<span class="line"><span>		scheduler_ipi();</span></span>
+<span class="line"><span>		break;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	case IPI_CALL_FUNC:</span></span>
+<span class="line"><span>		irq_enter();</span></span>
+<span class="line"><span>		generic_smp_call_function_interrupt();</span></span>
+<span class="line"><span>		irq_exit();</span></span>
+<span class="line"><span>		break;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        }</span></span>
+<span class="line"><span>        ......</span></span>
+<span class="line"><span>	set_irq_regs(old_regs);</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<h2 id="scheduler_ipi-主要工作">scheduler_ipi 主要工作？</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>void scheduler_ipi(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	/*</span></span>
+<span class="line"><span>	 * Fold TIF_NEED_RESCHED into the preempt_count; anybody setting</span></span>
+<span class="line"><span>	 * TIF_NEED_RESCHED remotely (for the first time) will also send</span></span>
+<span class="line"><span>	 * this IPI.</span></span>
+<span class="line"><span>	 */</span></span>
+<span class="line"><span>	preempt_fold_need_resched();</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (llist_empty(&#x26;this_rq()->wake_list) &#x26;&#x26; !got_nohz_idle_kick())</span></span>
+<span class="line"><span>		return;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	/*</span></span>
+<span class="line"><span>	 * Not all reschedule IPI handlers call irq_enter/irq_exit, since</span></span>
+<span class="line"><span>	 * traditionally all their work was done from the interrupt return</span></span>
+<span class="line"><span>	 * path. Now that we actually do some work, we need to make sure</span></span>
+<span class="line"><span>	 * we do call them.</span></span>
+<span class="line"><span>	 *</span></span>
+<span class="line"><span>	 * Some archs already do call them, luckily irq_enter/exit nest</span></span>
+<span class="line"><span>	 * properly.</span></span>
+<span class="line"><span>	 *</span></span>
+<span class="line"><span>	 * Arguably we should visit all archs and update all handlers,</span></span>
+<span class="line"><span>	 * however a fair share of IPIs are still resched only so this would</span></span>
+<span class="line"><span>	 * somewhat pessimize the simple resched case.</span></span>
+<span class="line"><span>	 */</span></span>
+<span class="line"><span>	irq_enter();</span></span>
+<span class="line"><span>	sched_ttwu_pending();</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	/*</span></span>
+<span class="line"><span>	 * Check if someone kicked us for doing the nohz idle load balance.</span></span>
+<span class="line"><span>	 */</span></span>
+<span class="line"><span>	if (unlikely(got_nohz_idle_kick())) {</span></span>
+<span class="line"><span>		this_rq()->idle_balance = 1;</span></span>
+<span class="line"><span>		raise_softirq_irqoff(SCHED_SOFTIRQ);</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>	irq_exit();</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>如果 <code>llist_empty(&#x26;this_rq()->wake_list)</code> 成立，意味着rq上没有需要wake_up的thread，且同时 <code>!got_nohz_idle_kick()</code>也成立的话，就直接返回了，这个 IPI就是无效的。</p>
+<p>正常都会继续往下继续走，重点是 <code>sched_ttwu_pending</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>void sched_ttwu_pending(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	struct rq *rq = this_rq();</span></span>
+<span class="line"><span>	struct llist_node *llist = llist_del_all(&#x26;rq->wake_list);</span></span>
+<span class="line"><span>	struct task_struct *p, *t;</span></span>
+<span class="line"><span>	struct rq_flags rf;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (!llist)</span></span>
+<span class="line"><span>		return;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	rq_lock_irqsave(rq, &#x26;rf);</span></span>
+<span class="line"><span>	update_rq_clock(rq);</span></span>
+<span class="line"><span>        // 一次性唤醒所有 `wake_list` 上的task。</span></span>
+<span class="line"><span>	llist_for_each_entry_safe(p, t, llist, wake_entry)</span></span>
+<span class="line"><span>		ttwu_do_activate(rq, p, p->sched_remote_wakeup ? WF_MIGRATED : 0, &#x26;rf);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	rq_unlock_irqrestore(rq, &#x26;rf);</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>然后查看是否需要做 <code>load_balance</code></p>
+<h2 id="什么情况下会发送-ipi_reschedule">什么情况下会发送 IPI_RESCHEDULE？</h2>
+<ol>
+<li>resched_curr()
+如果cpu == smp_processor_id()，(这里分为俩种情况，1. UP架构只有一个CPU 2. SMP架构上恰好resched_curr()的是本cpu)
+那仅仅是设置 当前 curr的thread_info的 need_resched标志位。
+如果是需要其他cpu执行 resched_curr()，就需要 <code>smp_send_reschedule(cpu)</code> 来发送 <code>IPI_RESCHEDULE</code>了。</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/*</span></span>
+<span class="line"><span> * resched_curr - mark rq's current task 'to be rescheduled now'.</span></span>
+<span class="line"><span> *</span></span>
+<span class="line"><span> * On UP this means the setting of the need_resched flag, on SMP it</span></span>
+<span class="line"><span> * might also involve a cross-CPU call to trigger the scheduler on</span></span>
+<span class="line"><span> * the target CPU.</span></span>
+<span class="line"><span> */</span></span>
+<span class="line"><span>void resched_curr(struct rq *rq)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	struct task_struct *curr = rq->curr;</span></span>
+<span class="line"><span>	int cpu;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	lockdep_assert_held(&#x26;rq->lock);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (test_tsk_need_resched(curr))</span></span>
+<span class="line"><span>		return;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	cpu = cpu_of(rq);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (cpu == smp_processor_id()) {</span></span>
+<span class="line"><span>		set_tsk_need_resched(curr);</span></span>
+<span class="line"><span>		set_preempt_need_resched();</span></span>
+<span class="line"><span>		return;</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (set_nr_and_not_polling(curr))</span></span>
+<span class="line"><span>		smp_send_reschedule(cpu);</span></span>
+<span class="line"><span>	else</span></span>
+<span class="line"><span>		trace_sched_wake_idle_without_ipi(cpu);</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<ol start="2">
+<li>wake_up_idle_cpu()</li>
+</ol>
+<p>在唤醒一个 idle的cpu时，</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static void wake_up_idle_cpu(int cpu)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	struct rq *rq = cpu_rq(cpu);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (cpu == smp_processor_id())</span></span>
+<span class="line"><span>		return;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (set_nr_and_not_polling(rq->idle))</span></span>
+<span class="line"><span>		smp_send_reschedule(cpu);</span></span>
+<span class="line"><span>	else</span></span>
+<span class="line"><span>		trace_sched_wake_idle_without_ipi(cpu);</span></span>
+<span class="line"><span>}s</span></span></code></pre>
+<ol start="3">
+<li>kick_process()</li>
+</ol>
+<p>让一个 task立刻进入 kernel mode（without any delay），从而来处理 signal信号。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/***</span></span>
+<span class="line"><span> * kick_process - kick a running thread to enter/exit the kernel</span></span>
+<span class="line"><span> * @p: the to-be-kicked thread</span></span>
+<span class="line"><span> *</span></span>
+<span class="line"><span> * Cause a process which is running on another CPU to enter</span></span>
+<span class="line"><span> * kernel-mode, without any delay. (to get signals handled.)</span></span>
+<span class="line"><span> *</span></span>
+<span class="line"><span> * NOTE: this function doesn't have to take the runqueue lock,</span></span>
+<span class="line"><span> * because all it wants to ensure is that the remote task enters</span></span>
+<span class="line"><span> * the kernel. If the IPI races and the task has been migrated</span></span>
+<span class="line"><span> * to another CPU then no harm is done and the purpose has been</span></span>
+<span class="line"><span> * achieved as well.</span></span>
+<span class="line"><span> */</span></span>
+<span class="line"><span>void kick_process(struct task_struct *p)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	int cpu;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	preempt_disable();</span></span>
+<span class="line"><span>	cpu = task_cpu(p);</span></span>
+<span class="line"><span>	if ((cpu != smp_processor_id()) &#x26;&#x26; task_curr(p))</span></span>
+<span class="line"><span>		smp_send_reschedule(cpu);</span></span>
+<span class="line"><span>	preempt_enable();</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span>EXPORT_SYMBOL_GPL(kick_process);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>void signal_wake_up_state(struct task_struct *t, unsigned int state)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	set_tsk_thread_flag(t, TIF_SIGPENDING);</span></span>
+<span class="line"><span>	/*</span></span>
+<span class="line"><span>	 * TASK_WAKEKILL also means wake it up in the stopped/traced/killable</span></span>
+<span class="line"><span>	 * case. We don't check t->state here because there is a race with it</span></span>
+<span class="line"><span>	 * executing another processor and just now entering stopped state.</span></span>
+<span class="line"><span>	 * By using wake_up_state, we ensure the process will wake up and</span></span>
+<span class="line"><span>	 * handle its death signal.</span></span>
+<span class="line"><span>	 */</span></span>
+<span class="line"><span>	if (!wake_up_state(t, state | TASK_INTERRUPTIBLE))</span></span>
+<span class="line"><span>		kick_process(t);</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<ol start="4">
+<li>ttwu_queue_remote()</li>
+</ol>
+<p>try_to_wake_up() 一个thread之后，需要将 这个task入队
+a. 如果是 task不是在 <code>本cpu</code> 唤醒的，那就需要IPI中断<code>smp_send_reschedule</code>来搞了
+b. 如果是在 <code>本地cpu</code> 唤醒的，就直接 lock_rq() 之后进行 <code>ttwu_do_activate</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static void ttwu_queue_remote(struct task_struct *p, int cpu, int wake_flags)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	struct rq *rq = cpu_rq(cpu);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	p->sched_remote_wakeup = !!(wake_flags &#x26; WF_MIGRATED);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (llist_add(&#x26;p->wake_entry, &#x26;cpu_rq(cpu)->wake_list)) {</span></span>
+<span class="line"><span>		if (!set_nr_if_polling(rq->idle))</span></span>
+<span class="line"><span>			smp_send_reschedule(cpu);</span></span>
+<span class="line"><span>		else</span></span>
+<span class="line"><span>			trace_sched_wake_idle_without_ipi(cpu);</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static void ttwu_queue(struct task_struct *p, int cpu, int wake_flags)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	struct rq *rq = cpu_rq(cpu);</span></span>
+<span class="line"><span>	struct rq_flags rf;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>#if defined(CONFIG_SMP)</span></span>
+<span class="line"><span>	if (sched_feat(TTWU_QUEUE) &#x26;&#x26; !cpus_share_cache(smp_processor_id(), cpu)) {</span></span>
+<span class="line"><span>		sched_clock_cpu(cpu); /* Sync clocks across CPUs */</span></span>
+<span class="line"><span>		ttwu_queue_remote(p, cpu, wake_flags);</span></span>
+<span class="line"><span>		return;</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>#endif</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	rq_lock(rq, &#x26;rf);</span></span>
+<span class="line"><span>	update_rq_clock(rq);</span></span>
+<span class="line"><span>	ttwu_do_activate(rq, p, wake_flags, &#x26;rf);</span></span>
+<span class="line"><span>	rq_unlock(rq, &#x26;rf);</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<ol start="5">
+<li>wake_up_if_idle()
+<code>wake_up_if_idle()</code> 只有在 <code>wake_up_all_idle_cpus()</code> 中被调用，主要是看此 cpu 是否idle空闲，就是看他 <code>is_idle_task(cpu_rq(cpu)->curr)</code> 是否成立，成立的话就需要 IPI中断去唤醒。</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>void wake_up_if_idle(int cpu)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	struct rq *rq = cpu_rq(cpu);</span></span>
+<span class="line"><span>	struct rq_flags rf;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	rcu_read_lock();</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (!is_idle_task(rcu_dereference(rq->curr)))</span></span>
+<span class="line"><span>		goto out;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (set_nr_if_polling(rq->idle)) {</span></span>
+<span class="line"><span>		trace_sched_wake_idle_without_ipi(cpu);</span></span>
+<span class="line"><span>	} else {</span></span>
+<span class="line"><span>		rq_lock_irqsave(rq, &#x26;rf);</span></span>
+<span class="line"><span>		if (is_idle_task(rq->curr))</span></span>
+<span class="line"><span>			smp_send_reschedule(cpu);</span></span>
+<span class="line"><span>		/* Else CPU is not idle, do nothing here: */</span></span>
+<span class="line"><span>		rq_unlock_irqrestore(rq, &#x26;rf);</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>out:</span></span>
+<span class="line"><span>	rcu_read_unlock();</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>void wake_up_all_idle_cpus(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	int cpu;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	preempt_disable();</span></span>
+<span class="line"><span>	for_each_online_cpu(cpu) {</span></span>
+<span class="line"><span>		if (cpu == smp_processor_id())</span></span>
+<span class="line"><span>			continue;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>		wake_up_if_idle(cpu);</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>	preempt_enable();</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>參考linux-5.4.61代码</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

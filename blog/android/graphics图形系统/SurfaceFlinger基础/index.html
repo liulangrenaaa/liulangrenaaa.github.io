@@ -1,0 +1,85 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>SurfaceFlinger基础 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>SurfaceFlinger基础</h1><div class="post-meta"><time datetime="2025-01-01T10:00:00.000Z">2025年1月1日</time><span> / android / graphics图形系统</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">android</span><span class="tag">graphics</span><span class="tag">SurfaceFlinger</span><span class="tag">合成</span></div></header><div class="article-body"><h2 id="简介">简介</h2>
+<p>SurfaceFlinger 是 Android 图形系统的核心组件，负责将多个应用的图形缓冲区合成并显示到屏幕上。</p>
+<h2 id="核心职责">核心职责</h2>
+<h3 id="1-缓冲区管理">1. 缓冲区管理</h3>
+<ul>
+<li>接收应用提交的图形缓冲区</li>
+<li>管理缓冲区的生命周期</li>
+</ul>
+<h3 id="2-合成">2. 合成</h3>
+<ul>
+<li>将多个图层合成到一起</li>
+<li>处理图层的变换和混合</li>
+</ul>
+<h3 id="3-显示">3. 显示</h3>
+<ul>
+<li>将合成结果发送到显示器</li>
+<li>管理 VSync 信号</li>
+</ul>
+<h2 id="架构">架构</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>App 进程</span></span>
+<span class="line"><span>    ↓ (BufferQueue)</span></span>
+<span class="line"><span>SurfaceFlinger</span></span>
+<span class="line"><span>    ↓ (Hardware Composer)</span></span>
+<span class="line"><span>Display</span></span></code></pre>
+<h2 id="工作流程">工作流程</h2>
+<h3 id="1-接收缓冲区">1. 接收缓冲区</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>App 绘制完成</span></span>
+<span class="line"><span>    → 通过 BufferQueue 提交缓冲区</span></span>
+<span class="line"><span>    → SurfaceFlinger 接收</span></span></code></pre>
+<h3 id="2-合成处理">2. 合成处理</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>SurfaceFlinger.onMessageReceived(INVALIDATE)</span></span>
+<span class="line"><span>    → handleMessageInvalidat()</span></span>
+<span class="line"><span>    → 合成所有图层</span></span></code></pre>
+<h3 id="3-显示输出">3. 显示输出</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>SurfaceFlinger.onMessageReceived(REFRESH)</span></span>
+<span class="line"><span>    → handleMessageRefresh()</span></span>
+<span class="line"><span>    → 提交到 Hardware Composer</span></span>
+<span class="line"><span>    → 显示到屏幕</span></span></code></pre>
+<h2 id="vsync-机制">VSync 机制</h2>
+<h3 id="app-vsync">App VSync</h3>
+<ul>
+<li>通知应用开始绘制</li>
+<li>通过 Choreographer 管理</li>
+</ul>
+<h3 id="sf-vsync">SF VSync</h3>
+<ul>
+<li>通知 SurfaceFlinger 开始合成</li>
+<li>保证合成时机正确</li>
+</ul>
+<h2 id="关键类">关键类</h2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>类名</th><th>职责</th></tr></thead><tbody><tr><td>SurfaceFlinger</td><td>主服务</td></tr><tr><td>Layer</td><td>图层抽象</td></tr><tr><td>BufferQueue</td><td>缓冲区队列</td></tr><tr><td>HWComposer</td><td>硬件合成器</td></tr></tbody></table>
+<h2 id="性能优化">性能优化</h2>
+<ol>
+<li><strong>减少图层数量</strong></li>
+<li><strong>避免不必要的合成</strong></li>
+<li><strong>使用 Hardware Composer</strong></li>
+<li><strong>合理使用 VSync</strong></li>
+</ol>
+<h2 id="总结">总结</h2>
+<p>SurfaceFlinger 是 Android 图形系统的核心，负责将应用的图形内容合成并显示到屏幕上。</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

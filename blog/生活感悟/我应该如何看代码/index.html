@@ -1,0 +1,133 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>我应该如何看代码 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>我应该如何看代码</h1><div class="post-meta"><time datetime="2021-01-11T23:00:00.000Z">2021年1月11日</time><span> / 生活感悟</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">生活感悟</span><span class="tag">read code</span></div></header><div class="article-body"><p>每次看一个模块源码都比较痛苦，在 <code>kernel</code> 的代码海洋里面像一只无头苍蝇一样，看来半天却
+不知所云，记录一下之后在看某个模块源码时 应该注意什么，比较快的熟悉，警醒自己！</p>
+<h2 id="庞大的linux内核">庞大的linux内核</h2>
+<p>现在是 2021-01-11号，上个月linus发布了 Linux-5.10 LTS版本，往往每年的最后一个 kernel 版本就是作为LTS的版本，今年是12月13号。</p>
+<p>linus 会在每个大版本发布之后都会 开启 一个merge window的时间，这个时间大家都可以尽量
+的合入之前早就开发好的已经在next tree的 patch，大概有一两周？今年这时候恰好是圣诞节，
+老外是基本周末都不会工作的，更何况是 <code>圣诞+元旦</code> 这种节日了，看了基本 2020-12-23 — 2021-01-04 都是没有daily next tree 版本更新的。</p>
+<p>A total of 1,971 developers contributed to 5.10 — again, just short of the record set by 5.8. Of those developers, 252 (just under 13%) made their first contribution in 5.10; that is the lowest number seen since 5.6. The most active 5.10 developers were:</p>
+<p><a href="https://lwn.net/Articles/839772/">Linux 5.10代码统计</a></p>
+<h2 id="新的模块应该如何涉及">新的模块应该如何涉及</h2>
+<p>首先要高明白他是干什么的</p>
+<ol>
+<li>结合注释去看，谷歌翻译，vscode在线、离线插件都很好用</li>
+<li>结合 git log 看：
+git log -S’xxx’ file_name</li>
+<li>根据Makefile看：如果这个目录下Makefile 都没直接包含这个文件.o
+需要使能之后才会编译到内核中的话，结合是否工作实际需要再看</li>
+<li>谷歌、百度：中文 英文都可以作为关键次搜索</li>
+<li>LWN 找到Archives，看看有没有介绍的文章</li>
+<li>看看 Documents 目录下有没有介绍的文档</li>
+<li>看这个模块 关键数据结构 和关键数据结构数据成员 如 struct_task struct_mm
+address_space等</li>
+</ol>
+<h3 id="新的子系统">新的子系统</h3>
+<ol>
+<li>知道模块子系统作用</li>
+<li>找个方法实践一下，比如 docker 可以很好实践 cgroups</li>
+<li>关键数据结构</li>
+<li>导出到用户空间的接口，看他在 kernel中实现
+比如</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>tencent_clould@127ubuntu: /proc/sys/fs# ls</span></span>
+<span class="line"><span>aio-max-nr    dir-notify-enable  inode-nr          leases-enable  overflowgid           pipe-user-pages-soft  protected_symlinks</span></span>
+<span class="line"><span>aio-nr        epoll              inode-state       mount-max      overflowuid           protected_fifos       quota</span></span>
+<span class="line"><span>binfmt_misc   file-max           inotify           mqueue         pipe-max-size         protected_hardlinks   suid_dumpable</span></span>
+<span class="line"><span>dentry-state  file-nr            lease-break-time  nr_open        pipe-user-pages-hard  protected_regular     verity</span></span>
+<span class="line"><span>tencent_clould@ubuntu: /proc/sys/fs#</span></span>
+<span class="line"><span>tencent_clould@ubuntu: /proc/sys/fs#</span></span>
+<span class="line"><span>tencent_clould@ubuntu: /proc/sys/fs# cat file-nr</span></span>
+<span class="line"><span>3200    0       9223372036854775807</span></span>
+<span class="line"><span>tencent_clould@ubuntu: /proc/sys/fs# cat file-max</span></span>
+<span class="line"><span>9223372036854775807</span></span>
+<span class="line"><span>tencent_clould@ubuntu: /proc/sys/fs#</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static struct ctl_table fs_table[] = {</span></span>
+<span class="line"><span>	{</span></span>
+<span class="line"><span>		.procname	= "inode-nr",</span></span>
+<span class="line"><span>		.data		= &#x26;inodes_stat,</span></span>
+<span class="line"><span>		.maxlen		= 2*sizeof(long),</span></span>
+<span class="line"><span>		.mode		= 0444,</span></span>
+<span class="line"><span>		.proc_handler	= proc_nr_inodes,</span></span>
+<span class="line"><span>	},</span></span>
+<span class="line"><span>	{</span></span>
+<span class="line"><span>		.procname	= "inode-state",</span></span>
+<span class="line"><span>		.data		= &#x26;inodes_stat,</span></span>
+<span class="line"><span>		.maxlen		= 7*sizeof(long),</span></span>
+<span class="line"><span>		.mode		= 0444,</span></span>
+<span class="line"><span>		.proc_handler	= proc_nr_inodes,</span></span>
+<span class="line"><span>	},</span></span>
+<span class="line"><span>	{</span></span>
+<span class="line"><span>		.procname	= "file-nr",</span></span>
+<span class="line"><span>		.data		= &#x26;files_stat,</span></span>
+<span class="line"><span>		.maxlen		= sizeof(files_stat),</span></span>
+<span class="line"><span>		.mode		= 0444,</span></span>
+<span class="line"><span>		.proc_handler	= proc_nr_files,</span></span>
+<span class="line"><span>	},</span></span></code></pre>
+<h2 id="如何深入">如何深入</h2>
+<p>比如我知道 page_cache 的大概了，也知道他的作用，但是看代码的时候比较迷茫？</p>
+<ol>
+<li>看看 page_cache 的API</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>amd_server@ubuntu: ~/workspace/linux-stable/mm# grep "EXPORT_SYMBOL" ./filemap.c -nr</span></span>
+<span class="line"><span>279:EXPORT_SYMBOL(delete_from_page_cache);</span></span>
+<span class="line"><span>377:EXPORT_SYMBOL(filemap_check_errors);</span></span>
+<span class="line"><span>437:EXPORT_SYMBOL(filemap_fdatawrite);</span></span>
+<span class="line"><span>444:EXPORT_SYMBOL(filemap_fdatawrite_range);</span></span>
+<span class="line"><span>459:EXPORT_SYMBOL(filemap_flush);</span></span>
+<span class="line"><span>502:EXPORT_SYMBOL(filemap_range_has_page);</span></span>
+<span class="line"><span>557:EXPORT_SYMBOL(filemap_fdatawait_range);</span></span></code></pre>
+<ol start="2">
+<li>在.c 文件中搜索trace_ 看看，找到他的静态追踪点 <code>tracepoints</code></li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>amd_server@130ubuntu: ~/workspace/linux-stable/mm# grep "trace_" ./filemap.c -nr</span></span>
+<span class="line"><span>236:    trace_mm_filemap_delete_from_page_cache(page);</span></span>
+<span class="line"><span>354:            trace_mm_filemap_delete_from_page_cache(pvec->pages[i]);</span></span>
+<span class="line"><span>683:    trace_filemap_set_wb_err(mapping, eseq);</span></span>
+<span class="line"><span>724:            trace_file_check_and_advance_wb_err(file, old);</span></span>
+<span class="line"><span>902:    trace_mm_filemap_add_to_page_cache(page);</span></span>
+<span class="line"><span>amd_server@ubuntu: ~/workspace/linux-stable/mm#</span></span></code></pre>
+<ol start="3">
+<li>直接使用 bpftrace -l 这个根据搜索你的模块，看看有那些比较重要的函数，这些重要函数往
+往是掌握这个模块的关键，也是经常出现问题需要debug 或者观测的地方，所以 kernel 才会为他
+设置一个静态追踪点</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>amd_server@ubuntu: ~/workspace/linux-stable/mm# sudo bpftrace -l | grep tracepoint: | grep page_cache</span></span>
+<span class="line"><span>tracepoint:filemap:mm_filemap_delete_from_page_cache</span></span>
+<span class="line"><span>tracepoint:filemap:mm_filemap_add_to_page_cache</span></span>
+<span class="line"><span>amd_server@ubuntu: ~/workspace/linux-stable/mm#</span></span></code></pre>
+<ol start="4">
+<li>stat 统计数据入手
+类似于 <code>slub</code> 这种内存分配器，内核提供了很多统计数据，可以利用这些事件统计 来跟踪关键代
+码路径</li>
+</ol>
+<p>如</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>enum stat_item {</span></span>
+<span class="line"><span>	ALLOC_FASTPATH,		/* Allocation from cpu slab */</span></span>
+<span class="line"><span>	ALLOC_SLOWPATH,		/* Allocation by getting a new cpu slab */</span></span>
+<span class="line"><span>	FREE_FASTPATH,		/* Free to cpu slab */</span></span>
+<span class="line"><span>	FREE_SLOWPATH,		/* Freeing not to cpu slab */</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>amd_server@ubuntu: ~/workspace/linux-stable/mm# grep ALLOC_FASTPATH . -nr</span></span>
+<span class="line"><span>./slub.c:2883:          stat(s, ALLOC_FASTPATH);</span></span>
+<span class="line"><span>./slub.c:5390:STAT_ATTR(ALLOC_FASTPATH, alloc_fastpath);</span></span>
+<span class="line"><span>amd_server@ubuntu: ~/workspace/linux-stable/mm# grep ALLOC_SLOWPATH . -nr</span></span>
+<span class="line"><span>./slub.c:2666:  stat(s, ALLOC_SLOWPATH);</span></span>
+<span class="line"><span>./slub.c:5391:STAT_ATTR(ALLOC_SLOWPATH, alloc_slowpath);</span></span>
+<span class="line"><span>amd_server@ubuntu: ~/workspace/linux-stable/mm#</span></span></code></pre>
+<p>struct_task 的 context switch 事件计数</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>struct task_struct {</span></span>
+<span class="line"><span>......</span></span>
+<span class="line"><span>	unsigned long			nvcsw;</span></span>
+<span class="line"><span>	unsigned long			nivcsw;</span></span>
+<span class="line"><span>......</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>amd_server@ubuntu: ~/workspace/linux-stable/kernel/sched# grep "nivcsw" . -nr</span></span>
+<span class="line"><span>./debug.c:497:          (long long)(p->nvcsw + p->nivcsw),</span></span>
+<span class="line"><span>./debug.c:934:  nr_switches = p->nvcsw + p->nivcsw;</span></span>
+<span class="line"><span>./debug.c:989:  __PS("nr_involuntary_switches", p->nivcsw);</span></span>
+<span class="line"><span>./core.c:4988:  switch_count = &#x26;prev->nivcsw;</span></span>
+<span class="line"><span>amd_server@ubuntu: ~/workspace/linux-stable/kernel/sched#</span></span></code></pre>
+<ol start="5">
+<li>看到静态追踪点 或者stat统计数据 之后，看看附近的函数，更上层函数等</li>
+</ol></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

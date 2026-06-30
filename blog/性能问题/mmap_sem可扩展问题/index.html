@@ -1,0 +1,125 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>mmap_sem可扩展问题 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>mmap_sem可扩展问题</h1><div class="post-meta"><time datetime="2020-09-14T19:00:00.000Z">2020年9月14日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">内核同步</span><span class="tag">锁粒度</span></div></header><div class="article-body"><p>在 Linux 中，同进程的不同线程虽然对应不同的 task_struct ，但都共享同一个 mm_struct ，即 task_struct::mm 指向同一个变量，其描述了该进程的整个虚拟地址空间。</p>
+<p>mm_struct 包含的主要成员如下：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>struct mm_struct {</span></span>
+<span class="line"><span>  struct vm_area_struct *mmap;    /* list of VMAs */</span></span>
+<span class="line"><span>  struct rb_root mm_rb;</span></span>
+<span class="line"><span>  pgd_t * pgd;</span></span>
+<span class="line"><span>  struct rw_semaphore mmap_sem;</span></span>
+<span class="line"><span>...</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<p>其中， mmap 指向了 vm_area_struct 双向链表，每个 vm_area_struct (VMA) 描述了虚拟地址空间的一个区间，比如 text / data / bss / heap / stack 各对应一个 VMA ，mmap 每次调用会产生 VMA(如果可和之前合并的话则不会产生新 VMA)。同时为了加速 VMA 查找，vm_area_struct 之间亦通过红黑树串起来，通过 mm_rb 指向。</p>
+<p>接下来就是大家都很熟悉的页表，在 x86_64 下，分页采用 PGD - PUD - PMD - PTE 四级页表，在此通过 pgd 指向 PGD 页表项。</p>
+<p>mmap_sem 是一把很大的锁 (信号量)，进程内大部分的内存操作都需要拿它：</p>
+<p>所有对 VMA 的操作 (mmap、munmap)
+所有对页表的修改 (page fault 等)
+madvise (如 jemalloc 经常使用的 MADV_DONTNEED)</p>
+<h2 id="problem">Problem</h2>
+<p>某业务进程包含若干个工作线程和一个数据加载线程，每隔一段时间数据加载线程会映射一份新的数据到内存供工作线程使用，并负责将工作线程不再使用的上一份数据释放。结果发现在释放期间，工作线程受到了影响，导致失败率上升。通过一波分析后发现是 mummap 大块内存 (20G+) 造成的。</p>
+<p>我们来看内核中 munmap 的实现：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>SYSCALL_DEFINE2(munmap, unsigned long, addr, size_t, len)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>  int ret;</span></span>
+<span class="line"><span>  struct mm_struct *mm = current->mm;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>  profile_munmap(addr);</span></span>
+<span class="line"><span>  if (down_write_killable(&#x26;mm->mmap_sem))</span></span>
+<span class="line"><span>    return -EINTR;</span></span>
+<span class="line"><span>  ret = do_munmap(mm, addr, len);</span></span>
+<span class="line"><span>  up_write(&#x26;mm->mmap_sem);</span></span>
+<span class="line"><span>  return ret;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>可以发现刚进来就把 mmap_sem 的写锁拿上了，然后执行 do_munmap ：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>int do_munmap(struct mm_struct *mm, unsigned long start, size_t len)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>  unsigned long end;</span></span>
+<span class="line"><span>  struct vm_area_struct *vma, *prev, *last;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>  if ((offset_in_page(start)) || start > TASK_SIZE || len > TASK_SIZE-start)</span></span>
+<span class="line"><span>    return -EINVAL;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>  len = PAGE_ALIGN(len);</span></span>
+<span class="line"><span>  if (len == 0)</span></span>
+<span class="line"><span>    return -EINVAL;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>  /* Find the first overlapping VMA */</span></span>
+<span class="line"><span>  vma = find_vma(mm, start);</span></span>
+<span class="line"><span>  if (!vma)</span></span>
+<span class="line"><span>    return 0;</span></span>
+<span class="line"><span>  prev = vma->vm_prev;</span></span>
+<span class="line"><span>  /* we have  start &#x3C; vma->vm_end  */</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>  /* if it doesn't overlap, we have nothing.. */</span></span>
+<span class="line"><span>  end = start + len;</span></span>
+<span class="line"><span>  if (vma->vm_start >= end)</span></span>
+<span class="line"><span>    return 0;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>  /*</span></span>
+<span class="line"><span>   * If we need to split any vma, do it now to save pain later.</span></span>
+<span class="line"><span>   *</span></span>
+<span class="line"><span>   * Note: mremap's move_vma VM_ACCOUNT handling assumes a partially</span></span>
+<span class="line"><span>   * unmapped vm_area_struct will remain in use: so lower split_vma</span></span>
+<span class="line"><span>   * places tmp vma above, and higher split_vma places tmp vma below.</span></span>
+<span class="line"><span>   */</span></span>
+<span class="line"><span>  if (start > vma->vm_start) {</span></span>
+<span class="line"><span>    int error;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>    /*</span></span>
+<span class="line"><span>     * Make sure that map_count on return from munmap() will</span></span>
+<span class="line"><span>     * not exceed its limit; but let map_count go just above</span></span>
+<span class="line"><span>     * its limit temporarily, to help free resources as expected.</span></span>
+<span class="line"><span>     */</span></span>
+<span class="line"><span>    if (end &#x3C; vma->vm_end &#x26;&#x26; mm->map_count >= sysctl_max_map_count)</span></span>
+<span class="line"><span>      return -ENOMEM;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>    error = __split_vma(mm, vma, start, 0);</span></span>
+<span class="line"><span>    if (error)</span></span>
+<span class="line"><span>      return error;</span></span>
+<span class="line"><span>    prev = vma;</span></span>
+<span class="line"><span>  }</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>  /* Does it split the last one? */</span></span>
+<span class="line"><span>  last = find_vma(mm, end);</span></span>
+<span class="line"><span>  if (last &#x26;&#x26; end > last->vm_start) {</span></span>
+<span class="line"><span>    int error = __split_vma(mm, last, end, 1);</span></span>
+<span class="line"><span>    if (error)</span></span>
+<span class="line"><span>      return error;</span></span>
+<span class="line"><span>  }</span></span>
+<span class="line"><span>  vma = prev ? prev->vm_next : mm->mmap;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>  /*</span></span>
+<span class="line"><span>   * unlock any mlock()ed ranges before detaching vmas</span></span>
+<span class="line"><span>   */</span></span>
+<span class="line"><span>  if (mm->locked_vm) {</span></span>
+<span class="line"><span>    struct vm_area_struct *tmp = vma;</span></span>
+<span class="line"><span>    while (tmp &#x26;&#x26; tmp->vm_start &#x3C; end) {</span></span>
+<span class="line"><span>      if (tmp->vm_flags &#x26; VM_LOCKED) {</span></span>
+<span class="line"><span>        mm->locked_vm -= vma_pages(tmp);</span></span>
+<span class="line"><span>        munlock_vma_pages_all(tmp);</span></span>
+<span class="line"><span>      }</span></span>
+<span class="line"><span>      tmp = tmp->vm_next;</span></span>
+<span class="line"><span>    }</span></span>
+<span class="line"><span>  }</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>  /*</span></span>
+<span class="line"><span>   * Remove the vma's, and unmap the actual pages</span></span>
+<span class="line"><span>   */</span></span>
+<span class="line"><span>  detach_vmas_to_be_unmapped(mm, vma, prev, end);</span></span>
+<span class="line"><span>  unmap_region(mm, vma, prev, start, end);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>  arch_unmap(mm, vma, start, end);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>  /* Fix up all other VM information */</span></span>
+<span class="line"><span>  remove_vma_list(mm, vma);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>  return 0;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>个函数做了很多事：首先通过 find_vma 找到 start 到 end 之间相应的 VMA ，必要时通过 __split_vma 对 VMA 进行切分。随后将 VMA 从链表和红黑树中移除，并对移除的区域调用 unmap_region => free_pgtables 清空该区域对应的页表项。</p>
+<p>对于 mummap 大块内存 (20G+) 这样的操作，其中最耗时的应该是 free_pgtables ：20G 内存对应 20 * 1024 * 1024 / 4 = 5242880 个 4KB 页，要清空这 5242880 个页的页表项无疑是非常耗时的，实测需要好几秒。在此期间，进程的 mmap_sem 的写锁一直被拿住，导致其他线程的对内存的相关操作阻塞在 mmap_sem 锁上，从而导致了性能抖动。</p>
+<p>为了解决这个问题，同事实现了分段 unmap ：在业务程序对 munmap 再进行一层封装，当遇到大块内存释放时，将内存切分成若干段，比如 128MB 一段，依次对每段调用 munmap ，并在调用后 sleep 若干毫秒，这样避免了长时间拿 mmap_sem ，卡住其他工作进程导致影响服务质量的问题。和 Yang Shi 在 Drop mmap_sem during unmapping large map 提出的内核态实现有异曲同工之妙。</p>
+<h2 id="总结">总结</h2>
+<p>从用户的角度来看，一个线程不应该受到另外一个线程的干扰。然而从这次的 case 来看，多个线程对进程级共享的 mmap_sem 的竞争是问题产生的主要原因，换句话说，mmap_sem 管太多，导致干啥都要拿它，从而限制了进程的可扩展性。</p>
+<p>能否换用更细粒度的锁？Laurent DUFOUR 在 LPC2019 上提出用 VMA 层级的锁来取代 mmap_sem ，这样在上述的 case 中数据加载线程只会拿住 20G 内存对应的 VMA 锁，而不会影响到早已不使用这块内存的其他工作线程。当然，换用更细粒度的锁带来的就是内核实现上复杂度的提升，比如需要遵循一些规则来避免死锁。</p>
+<p>参考：
+<a href="https://www.binss.me/blog/the-scalability-of-mmap_sem/">mmap_sem 的可扩展性</a>
+<a href="https://lwn.net/Articles/753269/">LWN文章</a>
+<a href="https://linuxplumbersconf.org/event/4/contributions/279/attachments/302/512/vma_locking.pdf">PDF文档</a></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

@@ -1,0 +1,50 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>Android系统服务注册与获取 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>Android系统服务注册与获取</h1><div class="post-meta"><time datetime="2023-10-15T10:00:00.000Z">2023年10月15日</time><span> / android / framework基础</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">android</span><span class="tag">framework</span><span class="tag">ServiceManager</span><span class="tag">Binder</span></div></header><div class="article-body"><h2 id="简介">简介</h2>
+<p>Android 系统服务是系统功能的核心，应用通过 ServiceManager 获取系统服务的代理对象。</p>
+<h2 id="服务注册">服务注册</h2>
+<h3 id="注册流程">注册流程</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>SystemServer.startXxxService()</span></span>
+<span class="line"><span>    └── ServiceManager.addService("xxx", service)</span></span>
+<span class="line"><span>        └── 向 ServiceManager 注册 Binder 代理</span></span></code></pre>
+<h3 id="服务注册表">服务注册表</h3>
+<p>ServiceManager 维护了一个服务名到 Binder 代理的映射表。</p>
+<h2 id="服务获取">服务获取</h2>
+<h3 id="获取流程">获取流程</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Context.getSystemService("xxx")</span></span>
+<span class="line"><span>    └── ServiceManager.getService("xxx")</span></span>
+<span class="line"><span>        └── 返回 Binder 代理对象</span></span></code></pre>
+<h3 id="常用服务获取方式">常用服务获取方式</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="java"><code><span class="line"><span style="color:#6A737D">// 方式一：通过 Context</span></span>
+<span class="line"><span style="color:#E1E4E8">ActivityManager am </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> (ActivityManager) </span><span style="color:#B392F0">getSystemService</span><span style="color:#E1E4E8">(Context.ACTIVITY_SERVICE);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">// 方式二：直接通过 ServiceManager</span></span>
+<span class="line"><span style="color:#E1E4E8">IBinder binder </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> ServiceManager.</span><span style="color:#B392F0">getService</span><span style="color:#E1E4E8">(</span><span style="color:#9ECBFF">"activity"</span><span style="color:#E1E4E8">);</span></span></code></pre>
+<h2 id="核心类">核心类</h2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>类名</th><th>职责</th></tr></thead><tbody><tr><td>ServiceManager</td><td>管理所有系统服务的注册和获取</td></tr><tr><td>IServiceManager</td><td>ServiceManager 的 Binder 接口</td></tr><tr><td>SystemServiceManager</td><td>管理系统服务的生命周期</td></tr></tbody></table>
+<h2 id="服务分类">服务分类</h2>
+<ol>
+<li><strong>本地服务</strong>：运行在 SystemServer 进程</li>
+<li><strong>远程服务</strong>：运行在独立进程（如 SurfaceFlinger）</li>
+</ol>
+<h2 id="总结">总结</h2>
+<p>系统服务通过 ServiceManager 进行注册和管理，应用通过 Binder 机制获取服务代理，实现跨进程调用。</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

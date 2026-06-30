@@ -1,0 +1,740 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>充电、Health HAL与充电发热分析 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>充电、Health HAL与充电发热分析</h1><div class="post-meta"><time datetime="2026-05-31T11:09:00.000Z">2026年5月31日</time><span> / android / power</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">android</span><span class="tag">power</span><span class="tag">battery</span><span class="tag">charging</span><span class="tag">thermal</span></div></header><div class="article-body"><p>充电问题不要只看“电量有没有涨”。Android 里充电链路横跨 PMIC/charger/fuel gauge、kernel <code>power_supply</code>、Health HAL、BatteryService、BatteryStats、SystemUI、Thermal 策略和厂商限流逻辑。一个“充电慢”可能是充电器协商问题，也可能是电池温度高，也可能是亮屏导航叠加负载，也可能是 USB 只拿到 500mA。</p>
+<p>这篇记录重点回答四个问题：</p>
+<ul>
+<li>Android 从哪里拿到电池和充电状态？</li>
+<li>BatteryService 拿到 HealthInfo 后做了什么？</li>
+<li>充电发热和限流应该怎么拆？</li>
+<li>如何写一个能站住的充电问题 case？</li>
+</ul>
+<h2 id="总览">总览</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    Charger[USB Type-C / Charger]</span></span>
+<span class="line"><span style="color:#E1E4E8">    PMIC[PMIC Charger IC]</span></span>
+<span class="line"><span style="color:#E1E4E8">    FG[Fuel Gauge]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Kernel[Kernel power_supply]</span></span>
+<span class="line"><span style="color:#E1E4E8">    HealthHAL[Health HAL IHealth]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Wrapper[HealthServiceWrapper]</span></span>
+<span class="line"><span style="color:#E1E4E8">    BS[BatteryService]</span></span>
+<span class="line"><span style="color:#E1E4E8">    BStats[BatteryStatsService]</span></span>
+<span class="line"><span style="color:#E1E4E8">    UI[SystemUI / Settings]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Thermal[thermal_zone / cooling_device]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Vendor[Vendor thermal / charging policy]</span></span>
+<span class="line"><span style="color:#E1E4E8">    Limit[Charging current limit]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    Charger --> PMIC</span></span>
+<span class="line"><span style="color:#E1E4E8">    PMIC --> Kernel</span></span>
+<span class="line"><span style="color:#E1E4E8">    FG --> Kernel</span></span>
+<span class="line"><span style="color:#E1E4E8">    Kernel --> HealthHAL</span></span>
+<span class="line"><span style="color:#E1E4E8">    HealthHAL --> Wrapper</span></span>
+<span class="line"><span style="color:#E1E4E8">    Wrapper --> BS</span></span>
+<span class="line"><span style="color:#E1E4E8">    BS --> BStats</span></span>
+<span class="line"><span style="color:#E1E4E8">    BS --> UI</span></span>
+<span class="line"><span style="color:#E1E4E8">    Kernel --> Thermal</span></span>
+<span class="line"><span style="color:#E1E4E8">    Thermal --> Vendor</span></span>
+<span class="line"><span style="color:#E1E4E8">    Vendor --> Limit</span></span>
+<span class="line"><span style="color:#E1E4E8">    Limit --> PMIC</span></span></code></pre>
+<p>关键分层：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>层级</th><th>作用</th><th>典型证据</th></tr></thead><tbody><tr><td>Charger/PMIC</td><td>协商电压电流、实际充电路径</td><td>USB/PD/QC 日志、charger 节点</td></tr><tr><td>Fuel gauge</td><td>电量、容量、电压、电流、温度估算</td><td><code>capacity</code>、<code>charge_counter</code>、<code>voltage_now</code></td></tr><tr><td>Kernel <code>power_supply</code></td><td>向用户态暴露电池/USB/charger 属性</td><td><code>/sys/class/power_supply/*</code></td></tr><tr><td>Health HAL</td><td>把 kernel 电池信息封装成 <code>HealthInfo</code></td><td>IHealth / health service</td></tr><tr><td>BatteryService</td><td>处理状态变化、广播、低电、关机、BatteryStats</td><td><code>dumpsys battery</code></td></tr><tr><td>Thermal/Vendor</td><td>根据温度限制充电/CPU/GPU/亮度</td><td>thermal zone、cooling device</td></tr></tbody></table>
+<h2 id="源码入口">源码入口</h2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>模块</th><th>源码</th></tr></thead><tbody><tr><td>BatteryService</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/BatteryService.java:127:1">BatteryService.java line 127</a></td></tr><tr><td>HealthInfo 字段</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/BatteryService.java:157:1">BatteryService.java line 157</a></td></tr><tr><td>BatteryPropertiesRegistrar</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/BatteryService.java:318:1">BatteryService.java line 318</a></td></tr><tr><td>BatteryService.update</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/BatteryService.java:542:1">BatteryService.java line 542</a></td></tr><tr><td>processValuesLocked</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/BatteryService.java:590:1">BatteryService.java line 590</a></td></tr><tr><td>sendBatteryChangedIntentLocked</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/BatteryService.java:845:1">BatteryService.java line 845</a></td></tr><tr><td>dumpsys battery</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/BatteryService.java:1371:1">BatteryService.java line 1371</a></td></tr><tr><td>BatteryStatsService.setBatteryState</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/am/BatteryStatsService.java:2510:1">BatteryStatsService.java line 2510</a></td></tr><tr><td>HealthServiceWrapper</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/health/HealthServiceWrapper.java:43:1">HealthServiceWrapper.java line 43</a></td></tr><tr><td>HealthServiceWrapperAidl</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/health/HealthServiceWrapperAidl.java:49:1">HealthServiceWrapperAidl.java line 49</a></td></tr><tr><td>HealthRegCallbackAidl</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/health/HealthRegCallbackAidl.java:32:1">HealthRegCallbackAidl.java line 32</a></td></tr></tbody></table>
+<h2 id="healthinfo是什么">HealthInfo是什么</h2>
+<p>BatteryService 的核心输入是 <code>android.hardware.health.HealthInfo</code>。里面包含：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>字段</th><th>含义</th></tr></thead><tbody><tr><td><code>chargerAcOnline</code></td><td>AC 是否在线</td></tr><tr><td><code>chargerUsbOnline</code></td><td>USB 是否在线</td></tr><tr><td><code>chargerWirelessOnline</code></td><td>无线充是否在线</td></tr><tr><td><code>chargerDockOnline</code></td><td>Dock 供电是否在线</td></tr><tr><td><code>batteryStatus</code></td><td>Charging / Discharging / Full / Not charging</td></tr><tr><td><code>batteryHealth</code></td><td>Good / Overheat / Dead / Over voltage 等</td></tr><tr><td><code>batteryPresent</code></td><td>电池是否存在</td></tr><tr><td><code>batteryLevel</code></td><td>电量百分比</td></tr><tr><td><code>batteryVoltageMillivolts</code></td><td>电池电压，mV</td></tr><tr><td><code>batteryTemperatureTenthsCelsius</code></td><td>电池温度，0.1 摄氏度</td></tr><tr><td><code>batteryCurrentMicroamps</code></td><td>当前电流，uA</td></tr><tr><td><code>batteryCurrentAverageMicroamps</code></td><td>平均电流，uA</td></tr><tr><td><code>maxChargingCurrentMicroamps</code></td><td>最大充电电流，uA</td></tr><tr><td><code>maxChargingVoltageMicrovolts</code></td><td>最大充电电压，uV</td></tr><tr><td><code>batteryChargeCounterUah</code></td><td>剩余容量，uAh</td></tr><tr><td><code>batteryFullChargeUah</code></td><td>满充容量，uAh</td></tr><tr><td><code>batteryCycleCount</code></td><td>循环次数</td></tr><tr><td><code>chargingState</code></td><td>充电状态</td></tr><tr><td><code>chargingPolicy</code></td><td>充电策略</td></tr></tbody></table>
+<p>注意单位：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>temperature: 370  -> 37.0 C</span></span>
+<span class="line"><span>voltage: 4282     -> 4282 mV</span></span>
+<span class="line"><span>current_now: uA   -> 正负号因平台定义不同</span></span>
+<span class="line"><span>charge_counter: uAh</span></span></code></pre>
+<h2 id="batteryservice处理流程">BatteryService处理流程</h2>
+<p><code>BatteryService.update(HealthInfo info)</code> 收到 HAL 更新后会：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>保存 mHealthInfo</span></span>
+<span class="line"><span>应用 dumpsys battery set 注入值</span></span>
+<span class="line"><span>processValuesLocked(false)</span></span>
+<span class="line"><span>保存 last HealthInfo</span></span></code></pre>
+<p><code>processValuesLocked()</code> 是重点，它会：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>计算是否 critical battery</span></span>
+<span class="line"><span>计算 mPlugType</span></span>
+<span class="line"><span>调用 BatteryStatsService.setBatteryState</span></span>
+<span class="line"><span>处理 chargingPolicy 变化</span></span>
+<span class="line"><span>判断电池状态、电量、电压、温度、最大充电电流等是否变化</span></span>
+<span class="line"><span>记录 EventLog</span></span>
+<span class="line"><span>发送低电/电量变化广播</span></span>
+<span class="line"><span>发送 ACTION_BATTERY_CHANGED</span></span>
+<span class="line"><span>更新 LED / UI 相关状态</span></span>
+<span class="line"><span>保存 last 状态</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[HealthInfo update]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B[BatteryService.update]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C[processValuesLocked]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D[plugType]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E[critical battery check]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F[BatteryStatsService.setBatteryState]</span></span>
+<span class="line"><span style="color:#E1E4E8">    G{state changed}</span></span>
+<span class="line"><span style="color:#E1E4E8">    H[EventLog]</span></span>
+<span class="line"><span style="color:#E1E4E8">    I[Low battery intent]</span></span>
+<span class="line"><span style="color:#E1E4E8">    J[ACTION_BATTERY_CHANGED]</span></span>
+<span class="line"><span style="color:#E1E4E8">    K[Update last values]</span></span>
+<span class="line"><span style="color:#E1E4E8">    L[SystemUI Settings]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    A --> B</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> D</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> E</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> F</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> G</span></span>
+<span class="line"><span style="color:#E1E4E8">    G -->|yes| H</span></span>
+<span class="line"><span style="color:#E1E4E8">    G -->|yes| I</span></span>
+<span class="line"><span style="color:#E1E4E8">    G -->|yes| J</span></span>
+<span class="line"><span style="color:#E1E4E8">    J --> L</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> K</span></span></code></pre>
+<p>这里的关键是：BatteryService 不是负责“实际限流”的地方。它主要负责接收、判断、广播、统计。真正充电电流怎么调，更多在 charger driver、PMIC、vendor thermal、Health HAL 或厂商充电策略里。</p>
+<h2 id="action_battery_changed">ACTION_BATTERY_CHANGED</h2>
+<p><code>sendBatteryChangedIntentLocked()</code> 会向系统广播电池状态。常见 extras：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Extra</th><th>来源</th></tr></thead><tbody><tr><td><code>EXTRA_STATUS</code></td><td><code>batteryStatus</code></td></tr><tr><td><code>EXTRA_HEALTH</code></td><td><code>batteryHealth</code></td></tr><tr><td><code>EXTRA_LEVEL</code></td><td><code>batteryLevel</code></td></tr><tr><td><code>EXTRA_SCALE</code></td><td>100</td></tr><tr><td><code>EXTRA_PLUGGED</code></td><td><code>mPlugType</code></td></tr><tr><td><code>EXTRA_VOLTAGE</code></td><td><code>batteryVoltageMillivolts</code></td></tr><tr><td><code>EXTRA_TEMPERATURE</code></td><td><code>batteryTemperatureTenthsCelsius</code></td></tr><tr><td><code>EXTRA_MAX_CHARGING_CURRENT</code></td><td><code>maxChargingCurrentMicroamps</code></td></tr><tr><td><code>EXTRA_MAX_CHARGING_VOLTAGE</code></td><td><code>maxChargingVoltageMicrovolts</code></td></tr><tr><td><code>EXTRA_CHARGE_COUNTER</code></td><td><code>batteryChargeCounterUah</code></td></tr><tr><td><code>EXTRA_CHARGING_STATUS</code></td><td><code>chargingState</code></td></tr></tbody></table>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">sequenceDiagram</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant HAL as Health HAL</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant BS as BatteryService</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Stats as BatteryStatsService</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant AMS as ActivityManager</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant UI as SystemUI</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    HAL->>BS: HealthInfo changed</span></span>
+<span class="line"><span style="color:#E1E4E8">    BS->>BS: processValuesLocked</span></span>
+<span class="line"><span style="color:#E1E4E8">    BS->>Stats: setBatteryState</span></span>
+<span class="line"><span style="color:#E1E4E8">    BS->>AMS: ACTION_BATTERY_CHANGED</span></span>
+<span class="line"><span style="color:#E1E4E8">    AMS->>UI: sticky broadcast</span></span>
+<span class="line"><span style="color:#E1E4E8">    UI->>UI: update icon and charging text</span></span></code></pre>
+<p>所以如果 UI 显示不对，要看：</p>
+<ul>
+<li>HealthInfo 是否正确。</li>
+<li>BatteryService <code>dumpsys battery</code> 是否正确。</li>
+<li>Broadcast 是否被发送。</li>
+<li>SystemUI 是否正确解释。</li>
+</ul>
+<p>如果 sysfs 已经不对，优先回到底层节点和驱动链路确认。</p>
+<h2 id="power_supply节点">power_supply节点</h2>
+<p>常用命令：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> ls</span><span style="color:#79B8FF"> -al</span><span style="color:#9ECBFF"> /sys/class/power_supply</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for d in /sys/class/power_supply/*; do echo "== $d =="; ls "$d"; done'</span></span></code></pre>
+<p>电池：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/class/power_supply/battery/status</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/class/power_supply/battery/capacity</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/class/power_supply/battery/temp</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/class/power_supply/battery/voltage_now</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/class/power_supply/battery/current_now</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/class/power_supply/battery/charge_counter</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/class/power_supply/battery/health</span></span></code></pre>
+<p>USB/charger 节点要先发现：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for d in /sys/class/power_supply/*; do echo "== $d =="; cat "$d/type" 2>/dev/null; cat "$d/online" 2>/dev/null; cat "$d/current_max" 2>/dev/null; cat "$d/voltage_max" 2>/dev/null; done'</span></span></code></pre>
+<p>不同平台节点名可能是：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>battery</span></span>
+<span class="line"><span>usb</span></span>
+<span class="line"><span>usb_main</span></span>
+<span class="line"><span>dc</span></span>
+<span class="line"><span>wireless</span></span>
+<span class="line"><span>bms</span></span>
+<span class="line"><span>parallel</span></span>
+<span class="line"><span>main</span></span>
+<span class="line"><span>pc_port</span></span></code></pre>
+<p>不要固定假设节点名，先 <code>ls /sys/class/power_supply</code>。</p>
+<h2 id="dumpsys-battery">dumpsys battery</h2>
+<p>基础命令：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> battery</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> battery</span><span style="color:#9ECBFF"> unplug</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> battery</span><span style="color:#9ECBFF"> reset</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> battery</span><span style="color:#9ECBFF"> set</span><span style="color:#9ECBFF"> level</span><span style="color:#79B8FF"> 15</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> battery</span><span style="color:#9ECBFF"> set</span><span style="color:#9ECBFF"> usb</span><span style="color:#79B8FF"> 1</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> battery</span><span style="color:#9ECBFF"> set</span><span style="color:#9ECBFF"> ac</span><span style="color:#79B8FF"> 1</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> battery</span><span style="color:#9ECBFF"> set</span><span style="color:#9ECBFF"> status</span><span style="color:#79B8FF"> 2</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> battery</span><span style="color:#9ECBFF"> set</span><span style="color:#9ECBFF"> temp</span><span style="color:#79B8FF"> 450</span></span></code></pre>
+<p>注意：<code>dumpsys battery set ...</code> 是 BatteryService 层模拟，主要用于 UI/策略测试，不代表 PMIC 真变了。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[dumpsys battery set]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B[BatteryService mBatteryModProps]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C[processValuesLocked force]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D[ACTION_BATTERY_CHANGED]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E[SystemUI changes]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F[PMIC charger current]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    A --> B</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> D</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E</span></span>
+<span class="line"><span style="color:#E1E4E8">    A -.does not directly change.-> F</span></span></code></pre>
+<p>也就是说，用它可以测试低电广播、充电 UI、策略分支，但不能用它证明真实充电电流变化。</p>
+<h2 id="充电电流怎么看">充电电流怎么看</h2>
+<p>常见字段：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>字段</th><th>含义</th><th>注意</th></tr></thead><tbody><tr><td><code>current_now</code></td><td>当前电池电流</td><td>正负号平台定义不同</td></tr><tr><td><code>current_avg</code></td><td>平均电流</td><td>不是所有设备有</td></tr><tr><td><code>constant_charge_current</code></td><td>充电恒流目标</td><td>可能是配置目标</td></tr><tr><td><code>input_current_limit</code></td><td>输入电流限制</td><td>节点名平台差异大</td></tr><tr><td><code>voltage_now</code></td><td>当前电池电压</td><td>uV 或 mV 看节点</td></tr><tr><td><code>capacity</code></td><td>电量百分比</td><td>fuel gauge 估算</td></tr><tr><td><code>charge_counter</code></td><td>剩余容量</td><td>uAh</td></tr><tr><td><code>status</code></td><td>Charging / Full / Discharging</td><td>满电后可能 current 接近 0</td></tr></tbody></table>
+<p>采样脚本：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'while true; do date; for f in status capacity temp voltage_now current_now charge_counter; do [ -f /sys/class/power_supply/battery/$f ] &#x26;&#x26; echo "$f=$(cat /sys/class/power_supply/battery/$f)"; done; sleep 5; done'</span></span></code></pre>
+<p>充电功率粗略估算：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>P_battery ~= voltage_now * current_now</span></span></code></pre>
+<p>但要小心：</p>
+<ul>
+<li><code>current_now</code> 可能是电池端电流，不是 USB 输入电流。</li>
+<li>输入功率、系统负载和电池充入功率不是一回事。</li>
+<li>充电时整机运行负载会分走输入功率。</li>
+<li>满电或涓流阶段电流自然下降。</li>
+</ul>
+<h2 id="充电发热拆解">充电发热拆解</h2>
+<p>充电发热至少四个热源：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>热源</th><th>说明</th><th>证据</th></tr></thead><tbody><tr><td>充电路径</td><td>PMIC、charger IC、电池内阻发热</td><td>电流高、电池/PMIC 温度上升</td></tr><tr><td>系统负载</td><td>CPU/GPU/display/modem 同时耗电</td><td>Perfetto、频率、亮屏、网络</td></tr><tr><td>环境散热</td><td>室温、手机壳、握持、车载</td><td>环境记录</td></tr><tr><td>策略行为</td><td>thermal 限流、充电保护、满电保护</td><td>cooling device、current 下降</td></tr></tbody></table>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[Charging input power]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B[Battery charging]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C[PMIC charger loss]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D[Device runtime load]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E[CPU GPU Display Modem]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F[Heat rises]</span></span>
+<span class="line"><span style="color:#E1E4E8">    G[Thermal policy]</span></span>
+<span class="line"><span style="color:#E1E4E8">    H[Reduce charge current]</span></span>
+<span class="line"><span style="color:#E1E4E8">    I[Limit CPU/GPU]</span></span>
+<span class="line"><span style="color:#E1E4E8">    J[Dim display]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    A --> B</span></span>
+<span class="line"><span style="color:#E1E4E8">    A --> C</span></span>
+<span class="line"><span style="color:#E1E4E8">    A --> D</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> F</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> F</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> F</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> G</span></span>
+<span class="line"><span style="color:#E1E4E8">    G --> H</span></span>
+<span class="line"><span style="color:#E1E4E8">    G --> I</span></span>
+<span class="line"><span style="color:#E1E4E8">    G --> J</span></span></code></pre>
+<p>充电发热不要只看 <code>battery temp</code>。至少同时看：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> battery</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> thermalservice</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for z in /sys/class/thermal/thermal_zone*; do echo "== $z =="; cat $z/type; cat $z/temp; done'</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for c in /sys/class/thermal/cooling_device*; do echo "== $c =="; cat $c/type; cat $c/cur_state; cat $c/max_state; done'</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for p in /sys/devices/system/cpu/cpufreq/policy*; do echo "== $p =="; cat $p/scaling_cur_freq; cat $p/scaling_max_freq; done'</span></span></code></pre>
+<h2 id="充电限流判断">充电限流判断</h2>
+<p>充电电流下降不一定是异常：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>场景</th><th>是否正常</th><th>说明</th></tr></thead><tbody><tr><td>电量接近满电</td><td>正常</td><td>从恒流进入恒压/涓流</td></tr><tr><td>电池温度升高</td><td>正常策略</td><td>保护电池和外壳温度</td></tr><tr><td>USB 只协商 500mA</td><td>条件限制</td><td>线材/口/协议问题</td></tr><tr><td>亮屏高负载</td><td>条件叠加</td><td>输入功率被系统负载分走</td></tr><tr><td>thermal cooling 触发</td><td>正常策略或阈值问题</td><td>要看阈值和体验</td></tr><tr><td>电流突然掉 0 再恢复</td><td>可能异常</td><td>充电器、接触、PMIC、温控抖动</td></tr></tbody></table>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[Charging current drops]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B{Battery near full}</span></span>
+<span class="line"><span style="color:#E1E4E8">    C[CV or trickle normal]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D{Battery or PMIC temp high}</span></span>
+<span class="line"><span style="color:#E1E4E8">    E[Thermal charge limit]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F{USB current limit low}</span></span>
+<span class="line"><span style="color:#E1E4E8">    G[Cable charger negotiation]</span></span>
+<span class="line"><span style="color:#E1E4E8">    H{Runtime load high}</span></span>
+<span class="line"><span style="color:#E1E4E8">    I[Input shared by system load]</span></span>
+<span class="line"><span style="color:#E1E4E8">    J[Need driver/vendor log]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    A --> B</span></span>
+<span class="line"><span style="color:#E1E4E8">    B -->|yes| C</span></span>
+<span class="line"><span style="color:#E1E4E8">    B -->|no| D</span></span>
+<span class="line"><span style="color:#E1E4E8">    D -->|yes| E</span></span>
+<span class="line"><span style="color:#E1E4E8">    D -->|no| F</span></span>
+<span class="line"><span style="color:#E1E4E8">    F -->|yes| G</span></span>
+<span class="line"><span style="color:#E1E4E8">    F -->|no| H</span></span>
+<span class="line"><span style="color:#E1E4E8">    H -->|yes| I</span></span>
+<span class="line"><span style="color:#E1E4E8">    H -->|no| J</span></span></code></pre>
+<h2 id="当前qcom设备观察">当前QCOM设备观察</h2>
+<p>当前外接设备曾观察到：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>USB powered: true</span></span>
+<span class="line"><span>level: 100</span></span>
+<span class="line"><span>status: Full</span></span>
+<span class="line"><span>voltage: 4282 mV</span></span>
+<span class="line"><span>temperature: 370 = 37.0 C</span></span>
+<span class="line"><span>max charging current: 500000 uA</span></span></code></pre>
+<p>这组数据的第一结论不是“功耗正常”，而是：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>当前是 USB 供电 + 满电 + 调试状态。</span></span>
+<span class="line"><span>它不适合作为自然待机基线，也不适合作为快充发热分析样本。</span></span>
+<span class="line"><span>最多能说明 BatteryService 能看到 USB powered、满电、电压、温度、最大充电电流等状态。</span></span></code></pre>
+<p>如果要做充电发热，需要换成：</p>
+<ul>
+<li>电量 20%~60% 区间。</li>
+<li>固定充电器和线材。</li>
+<li>记录室温。</li>
+<li>尽量断开 adb 或本地脚本落盘。</li>
+<li>固定亮度/灭屏状态。</li>
+<li>至少跑 10~30 分钟。</li>
+</ul>
+<h2 id="case-1usb只拿到500ma">Case 1：USB只拿到500mA</h2>
+<p>现象：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>插 USB 后显示 charging，但电流低，充电慢。</span></span>
+<span class="line"><span>dumpsys battery: Max charging current: 500000 uA</span></span></code></pre>
+<p>排查：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> battery</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for d in /sys/class/power_supply/*; do echo "== $d =="; cat $d/type 2>/dev/null; cat $d/online 2>/dev/null; cat $d/current_max 2>/dev/null; done'</span></span></code></pre>
+<p>我会这样写结论：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>当前设备通过 USB 供电，最大充电电流约 500mA。</span></span>
+<span class="line"><span>这是 USB 默认/低电流供电场景，不是快充场景。</span></span>
+<span class="line"><span>该条件下充电慢不能直接判定为 charger driver 异常，需要更换支持快充的适配器和线材复测。</span></span></code></pre>
+<h2 id="case-2充电发热后电流下降">Case 2：充电发热后电流下降</h2>
+<p>现象：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>开始充电电流高。</span></span>
+<span class="line"><span>几分钟后 battery/pmic/skin 温度上升。</span></span>
+<span class="line"><span>随后 current_now 或 input current limit 下降。</span></span></code></pre>
+<p>证据：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>battery temp: 35C -> 43C</span></span>
+<span class="line"><span>pmic thermal_zone: 上升</span></span>
+<span class="line"><span>cooling_device cur_state: 0 -> 2</span></span>
+<span class="line"><span>current_now: 高位 -> 下降</span></span></code></pre>
+<p>我会这样写结论：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>充电电流下降与温度上升同步，thermal cooling 状态发生变化。</span></span>
+<span class="line"><span>该问题属于温升触发充电限流，而不是 BatteryService UI 显示问题。</span></span>
+<span class="line"><span>需要继续确认限流阈值是否合理，以及亮屏/网络/CPU 负载是否叠加导致过热。</span></span></code></pre>
+<h2 id="case-3亮屏导航边充边热">Case 3：亮屏导航边充边热</h2>
+<p>现象：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>边充电边导航，温度快速上升，充电变慢。</span></span></code></pre>
+<p>拆解：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>贡献</th><th>证据</th></tr></thead><tbody><tr><td>充电路径发热</td><td>电池电流/PMIC 温度</td></tr><tr><td>亮屏显示</td><td>dumpsys display、亮度</td></tr><tr><td>GPS/定位</td><td>dumpsys location、Loc_hal</td></tr><tr><td>移动网络</td><td>netstats、modem/radio</td></tr><tr><td>CPU/GPU</td><td>Perfetto、频率</td></tr></tbody></table>
+<p>我会这样写报告：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>该场景不是单一充电问题，而是充电功耗与导航运行负载叠加。</span></span>
+<span class="line"><span>降低亮度或切换离线地图后温升下降，说明显示/网络/定位负载参与了热累积。</span></span>
+<span class="line"><span>充电电流下降是 thermal 保护结果。</span></span></code></pre>
+<h2 id="case-4满电不进电或电流接近0">Case 4：满电不进电或电流接近0</h2>
+<p>现象：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>level=100</span></span>
+<span class="line"><span>status=Full</span></span>
+<span class="line"><span>current_now 接近 0 或方向变化</span></span></code></pre>
+<p>结论：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>满电后进入截止/维持/涓流策略，电流下降是正常现象。</span></span>
+<span class="line"><span>此状态不能用于评估快充速度，也不能用于评估自然待机功耗，因为 USB powered 改变了设备策略。</span></span></code></pre>
+<h2 id="采集脚本">采集脚本</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#6A737D">#!/system/bin/sh</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">OUT</span><span style="color:#F97583">=</span><span style="color:#9ECBFF">/data/local/tmp/charging_case_</span><span style="color:#E1E4E8">$(</span><span style="color:#B392F0">date</span><span style="color:#9ECBFF"> +%Y%m%d_%H%M%S</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">DURATION</span><span style="color:#F97583">=</span><span style="color:#FFAB70">${1</span><span style="color:#F97583">:-</span><span style="color:#FFAB70">1800}</span></span>
+<span class="line"><span style="color:#B392F0">mkdir</span><span style="color:#79B8FF"> -p</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">"</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">date</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/meta.txt"</span></span>
+<span class="line"><span style="color:#B392F0">getprop</span><span style="color:#9ECBFF"> ro.product.device</span><span style="color:#F97583"> >></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/meta.txt"</span></span>
+<span class="line"><span style="color:#B392F0">getprop</span><span style="color:#9ECBFF"> ro.board.platform</span><span style="color:#F97583"> >></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/meta.txt"</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> battery</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/battery_before.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> power</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/power_before.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> thermalservice</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/thermal_before.txt"</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">for</span><span style="color:#E1E4E8"> d </span><span style="color:#F97583">in</span><span style="color:#9ECBFF"> /sys/class/power_supply/*</span><span style="color:#E1E4E8">; </span><span style="color:#F97583">do</span></span>
+<span class="line"><span style="color:#E1E4E8">    name</span><span style="color:#F97583">=</span><span style="color:#E1E4E8">$(</span><span style="color:#B392F0">basename</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$d</span><span style="color:#9ECBFF">"</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#B392F0">    mkdir</span><span style="color:#79B8FF"> -p</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/power_supply_</span><span style="color:#E1E4E8">$name</span><span style="color:#9ECBFF">"</span></span>
+<span class="line"><span style="color:#F97583">    for</span><span style="color:#E1E4E8"> f </span><span style="color:#F97583">in</span><span style="color:#9ECBFF"> type</span><span style="color:#9ECBFF"> online</span><span style="color:#9ECBFF"> status</span><span style="color:#9ECBFF"> capacity</span><span style="color:#9ECBFF"> temp</span><span style="color:#9ECBFF"> voltage_now</span><span style="color:#9ECBFF"> current_now</span><span style="color:#9ECBFF"> current_avg</span><span style="color:#9ECBFF"> charge_counter</span><span style="color:#9ECBFF"> current_max</span><span style="color:#9ECBFF"> voltage_max</span><span style="color:#9ECBFF"> input_current_limit</span><span style="color:#9ECBFF"> constant_charge_current</span><span style="color:#9ECBFF"> health</span><span style="color:#E1E4E8">; </span><span style="color:#F97583">do</span></span>
+<span class="line"><span style="color:#E1E4E8">        [ </span><span style="color:#F97583">-f</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$d</span><span style="color:#9ECBFF">/</span><span style="color:#E1E4E8">$f</span><span style="color:#9ECBFF">"</span><span style="color:#E1E4E8"> ] &#x26;&#x26; </span><span style="color:#B392F0">cat</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$d</span><span style="color:#9ECBFF">/</span><span style="color:#E1E4E8">$f</span><span style="color:#9ECBFF">"</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/power_supply_</span><span style="color:#E1E4E8">$name</span><span style="color:#9ECBFF">/${</span><span style="color:#E1E4E8">f</span><span style="color:#9ECBFF">}_before.txt"</span></span>
+<span class="line"><span style="color:#F97583">    done</span></span>
+<span class="line"><span style="color:#F97583">done</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">for</span><span style="color:#E1E4E8"> z </span><span style="color:#F97583">in</span><span style="color:#9ECBFF"> /sys/class/thermal/thermal_zone*</span><span style="color:#E1E4E8">; </span><span style="color:#F97583">do</span></span>
+<span class="line"><span style="color:#79B8FF">    echo</span><span style="color:#9ECBFF"> "$(</span><span style="color:#B392F0">basename</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$z</span><span style="color:#9ECBFF">") $(</span><span style="color:#B392F0">cat</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$z</span><span style="color:#9ECBFF">/type" </span><span style="color:#F97583">2></span><span style="color:#9ECBFF">/dev/null) $(</span><span style="color:#B392F0">cat</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$z</span><span style="color:#9ECBFF">/temp" </span><span style="color:#F97583">2></span><span style="color:#9ECBFF">/dev/null)"</span><span style="color:#F97583"> >></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/thermal_zones_before.txt"</span></span>
+<span class="line"><span style="color:#F97583">done</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">sleep</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$DURATION</span><span style="color:#9ECBFF">"</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> battery</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/battery_after.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> power</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/power_after.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> thermalservice</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/thermal_after.txt"</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">for</span><span style="color:#E1E4E8"> d </span><span style="color:#F97583">in</span><span style="color:#9ECBFF"> /sys/class/power_supply/*</span><span style="color:#E1E4E8">; </span><span style="color:#F97583">do</span></span>
+<span class="line"><span style="color:#E1E4E8">    name</span><span style="color:#F97583">=</span><span style="color:#E1E4E8">$(</span><span style="color:#B392F0">basename</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$d</span><span style="color:#9ECBFF">"</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#F97583">    for</span><span style="color:#E1E4E8"> f </span><span style="color:#F97583">in</span><span style="color:#9ECBFF"> type</span><span style="color:#9ECBFF"> online</span><span style="color:#9ECBFF"> status</span><span style="color:#9ECBFF"> capacity</span><span style="color:#9ECBFF"> temp</span><span style="color:#9ECBFF"> voltage_now</span><span style="color:#9ECBFF"> current_now</span><span style="color:#9ECBFF"> current_avg</span><span style="color:#9ECBFF"> charge_counter</span><span style="color:#9ECBFF"> current_max</span><span style="color:#9ECBFF"> voltage_max</span><span style="color:#9ECBFF"> input_current_limit</span><span style="color:#9ECBFF"> constant_charge_current</span><span style="color:#9ECBFF"> health</span><span style="color:#E1E4E8">; </span><span style="color:#F97583">do</span></span>
+<span class="line"><span style="color:#E1E4E8">        [ </span><span style="color:#F97583">-f</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$d</span><span style="color:#9ECBFF">/</span><span style="color:#E1E4E8">$f</span><span style="color:#9ECBFF">"</span><span style="color:#E1E4E8"> ] &#x26;&#x26; </span><span style="color:#B392F0">cat</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$d</span><span style="color:#9ECBFF">/</span><span style="color:#E1E4E8">$f</span><span style="color:#9ECBFF">"</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/power_supply_</span><span style="color:#E1E4E8">$name</span><span style="color:#9ECBFF">/${</span><span style="color:#E1E4E8">f</span><span style="color:#9ECBFF">}_after.txt"</span></span>
+<span class="line"><span style="color:#F97583">    done</span></span>
+<span class="line"><span style="color:#F97583">done</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">for</span><span style="color:#E1E4E8"> z </span><span style="color:#F97583">in</span><span style="color:#9ECBFF"> /sys/class/thermal/thermal_zone*</span><span style="color:#E1E4E8">; </span><span style="color:#F97583">do</span></span>
+<span class="line"><span style="color:#79B8FF">    echo</span><span style="color:#9ECBFF"> "$(</span><span style="color:#B392F0">basename</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$z</span><span style="color:#9ECBFF">") $(</span><span style="color:#B392F0">cat</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$z</span><span style="color:#9ECBFF">/type" </span><span style="color:#F97583">2></span><span style="color:#9ECBFF">/dev/null) $(</span><span style="color:#B392F0">cat</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$z</span><span style="color:#9ECBFF">/temp" </span><span style="color:#F97583">2></span><span style="color:#9ECBFF">/dev/null)"</span><span style="color:#F97583"> >></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/thermal_zones_after.txt"</span></span>
+<span class="line"><span style="color:#F97583">done</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">tar</span><span style="color:#79B8FF"> -czf</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">.tar.gz"</span><span style="color:#79B8FF"> -C</span><span style="color:#9ECBFF"> "$(</span><span style="color:#B392F0">dirname</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">")"</span><span style="color:#9ECBFF"> "$(</span><span style="color:#B392F0">basename</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">")"</span></span>
+<span class="line"><span style="color:#79B8FF">echo</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">.tar.gz"</span></span></code></pre>
+<h2 id="我会这样说明">我会这样说明</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>充电问题我会先分层：充电器/线材协商、PMIC/charger driver、fuel gauge、Health HAL、BatteryService、thermal/vendor策略。</span></span>
+<span class="line"><span>BatteryService 主要消费 Health HAL 的 HealthInfo，并把状态同步给 BatteryStats、SystemUI 和 ACTION_BATTERY_CHANGED；它一般不是实际限流的执行点。</span></span>
+<span class="line"><span>如果充电慢，我会同时看 power_supply 节点、电池温度、PMIC/skin thermal zone、cooling device、电流变化和系统运行负载。</span></span>
+<span class="line"><span>如果电流下降和温度/cooling 同步，那就是温控限流；如果一开始 max charging current 就只有 500mA，就先查 USB/线材/协议。</span></span></code></pre>
+<h2 id="复盘">复盘</h2>
+<p>充电分析要记住：</p>
+<ul>
+<li><code>dumpsys battery</code> 是 BatteryService 视角。</li>
+<li><code>/sys/class/power_supply</code> 是 kernel/driver 视角。</li>
+<li>Health HAL 把 kernel 信息传给 Framework。</li>
+<li>充电限流多半在 driver/vendor thermal/PMIC 策略里。</li>
+<li>充电发热是充电路径和运行负载叠加。</li>
+<li>满电/USB 调试状态不能当快充或自然待机基线。</li>
+</ul>
+<p>我的判断口径：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>BatteryService 告诉你系统看到的电池状态；真正的充电电流和限流原因，要回到 charger、thermal 和运行负载一起看。</span></span></code></pre></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

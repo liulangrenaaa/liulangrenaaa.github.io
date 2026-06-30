@@ -1,0 +1,126 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>内核线程退出不正确导致的问题 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>内核线程退出不正确导致的问题</h1><div class="post-meta"><time datetime="2020-09-06T18:11:40.000Z">2020年9月6日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">进程调度</span><span class="tag">kthread</span></div></header><div class="article-body"><h2 id="什么是内核线程">什么是内核线程？</h2>
+<p>内核线程就是一直运行在内核态的线程，与一般用户态进程的明显区别是 task->mm == NULL，
+就是没有自己的地址空间，所有的内核线程都共享一个地址空间</p>
+<p>前段时间遇到一个模块卸载之后，crash的问题，我大概抽象了一下源码：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>int run_flag = 0;</span></span>
+<span class="line"><span>struct my_struct {int a; char c;};</span></span>
+<span class="line"><span>struct my_struct a;</span></span>
+<span class="line"><span>static int les_test(void *arg)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>    while(run_flag){</span></span>
+<span class="line"><span>        msleep(1000);</span></span>
+<span class="line"><span>        func(&#x26;a);// 操作较为耗时</span></span>
+<span class="line"><span>    }</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>    return 0;</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static int les_init(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>    run_flag = 1;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	task = kthread_run(les_test, NULL, "les_test");</span></span>
+<span class="line"><span>	return 0;</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static void les_exit(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>    run_flag = 0;</span></span>
+<span class="line"><span>    msleep(100);</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span>module_init(les_init); module_exit(les_exit);</span></span>
+<span class="line"><span>MODULE_LICENSE("GPL"); MODULE_AUTHOR("XXXX");</span></span></code></pre>
+<p>这个模块在insmod 之后work的很好，偶尔在rmmod的时候就会系统crash
+查看crash现场之后发现是</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>       PANIC: "Oops: 0010 [#1] SMP PTI" (check log for details)</span></span>
+<span class="line"><span>         PID: 4270</span></span>
+<span class="line"><span>     COMMAND: "test"</span></span>
+<span class="line"><span>        TASK: ffff8e881d3b5f00  [THREAD_INFO: ffff8e881d3b5f00]</span></span>
+<span class="line"><span>         CPU: 1</span></span>
+<span class="line"><span>       STATE: TASK_RUNNING (PANIC)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>crash> bt</span></span>
+<span class="line"><span>PID: 4270   TASK: ffff8e881d3b5f00  CPU: 1   COMMAND: "test"</span></span>
+<span class="line"><span> #0 [ffffb9c74092bb58] machine_kexec at ffffffff9546fa63</span></span>
+<span class="line"><span> #1 [ffffb9c74092bbb8] __crash_kexec at ffffffff95557502</span></span>
+<span class="line"><span> #2 [ffffb9c74092bc88] crash_kexec at ffffffff95558289</span></span>
+<span class="line"><span> #3 [ffffb9c74092bca0] oops_end at ffffffff954353a9</span></span>
+<span class="line"><span> #4 [ffffb9c74092bcc8] no_context at ffffffff9547efee</span></span>
+<span class="line"><span> #5 [ffffb9c74092bd38] __bad_area_nosemaphore at ffffffff9547f200</span></span>
+<span class="line"><span> #6 [ffffb9c74092bd80] bad_area_nosemaphore at ffffffff9547f366</span></span>
+<span class="line"><span> #7 [ffffb9c74092bd90] do_kern_addr_fault at ffffffff9547fd16</span></span>
+<span class="line"><span> #8 [ffffb9c74092bdb8] __do_page_fault at ffffffff9547fdd7</span></span>
+<span class="line"><span> #9 [ffffb9c74092bde0] do_page_fault at ffffffff9547fe0c</span></span>
+<span class="line"><span>#10 [ffffb9c74092be10] page_fault at ffffffff96001284</span></span>
+<span class="line"><span>    [exception RIP: unknown or invalid address]</span></span>
+<span class="line"><span>    RIP: ffffffffc08500aa  RSP: ffffb9c74092bec0  RFLAGS: 00010246</span></span>
+<span class="line"><span>    RAX: 0000000000000000  RBX: 00004b3f0220450c  RCX: 0000000000000000</span></span>
+<span class="line"><span>    RDX: 0000000000000000  RSI: 0000000000000246  RDI: 0000000000000000</span></span>
+<span class="line"><span>    RBP: ffffb9c74092bf00   R8: 0000000000000000   R9: 0000000000000001</span></span>
+<span class="line"><span>    R10: 0000000000100000  R11: 0000000000000000  R12: 00004b3f02204508</span></span>
+<span class="line"><span>    R13: 00004b3f02206ac0  R14: 000000000002d020  R15: 0000000000000001</span></span>
+<span class="line"><span>    ORIG_RAX: ffffffffffffffff  CS: 0010  SS: 0018</span></span>
+<span class="line"><span>#11 [ffffb9c74092bf08] kthread at ffffffff954c7124</span></span>
+<span class="line"><span>#12 [ffffb9c74092bf50] ret_from_fork at ffffffff96000215</span></span></code></pre>
+<p>可以看到crash原因是 “Oops: 0010 [#1] SMP PTI”，
+出问题的test线程正是 内核模块起的线程，为什么内核模块卸载的时候这个test内核线程就出问题了呢?</p>
+<p>其实仔细看一下module_exit的源码就会发现，这里用 run_flag 来同步线程是否运行，且 msleep(100)等待 test线程退出。</p>
+<p>这种写法就看起来无比诡异</p>
+<h2 id="实验">实验</h2>
+<p>我首先将这个 msleep(100) 去掉之后重新编译安装，在rmmod的时候
+就几乎是100%必现内核crash的问题，这里msleep(100) 也应该是驱动开发者自己debug的时候加上的。
+看test线程代码我们发现在func(&#x26;a)函数中，会使用一个全局变量a。这个操作也比较长，看调用栈也发现大概是这里crash了，再结合是卸载模块的时候crash，应该是可以想到，模块卸载之后模块的相关资源已经被释放，但是这个内核线程由于刚刚msleep(100)结束，并没有退出，此时变量a的资源已经被module_exit释放了，再去将&#x26;a 传给func，后续执行crash也不意外了。</p>
+<p>这个去掉module_exit 里面msleep(100)的操作，为什么就会导致几乎必现crash问题呢。
+加上module_exit 里面msleep(100)的操作，概率就会很低了，这是为什么呢。
+考虑加上msleep(100)的情况，run_flag 被置位，module_exit 会等待100ms再退出，这100ms内大概率test内核线程已经被wakeup起来，然后已经退出了，但是在某些场景下（系统有RT进程，或者load比较重的情况下），test线程刚刚醒来就又被抢占了，而module_exit会释放模块资源，
+等test线程在此醒来的时候，a的资源其实已经被释放了后续操作很有可能会导致crash。
+其中test进程何时会再次得到运行呢？答案是不确定的，取决于系统繁忙程度，但只要test一运行就会导致crash。</p>
+<p><a href="https://github.com/liulangrenaaa/gernerate_config">模块加载、模块卸载都干了啥</a></p>
+<h2 id="修改">修改</h2>
+<p>其实熟悉内核线程API接口的人看到这抽象的源码基本一眼就能看出端倪，内核线程的框架本来就不是这么用的
+修改之后源码如下</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>int run_flag = 0;</span></span>
+<span class="line"><span>struct my_struct {int a; char c;};</span></span>
+<span class="line"><span>struct my_struct a;</span></span>
+<span class="line"><span>static int les_test(void *arg)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>    while(kthread_should_stop){</span></span>
+<span class="line"><span>        msleep(1000);</span></span>
+<span class="line"><span>        func(&#x26;a);// 操作较为耗时</span></span>
+<span class="line"><span>    }</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>    return 0;</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static int les_init(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>    run_flag = 1;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	task = kthread_run(les_test, NULL, "les_test");</span></span>
+<span class="line"><span>	return 0;</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static void les_exit(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>    kthread_stop(task);</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span>module_init(les_init); module_exit(les_exit);</span></span>
+<span class="line"><span>MODULE_LICENSE("GPL"); MODULE_AUTHOR("XXXX");</span></span></code></pre>
+<p>其中 kthread_stop会设置 kthread的 flag为 KTHREAD_SHOULD_STOP，
+然后等待 test 内核线程退出</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>int kthread_stop(struct task_struct *k)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	struct kthread *kthread;</span></span>
+<span class="line"><span>	int ret;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	kthread = to_kthread(k);</span></span>
+<span class="line"><span>	set_bit(KTHREAD_SHOULD_STOP, &#x26;kthread->flags);</span></span>
+<span class="line"><span>	kthread_unpark(k);</span></span>
+<span class="line"><span>	wake_up_process(k);</span></span>
+<span class="line"><span>	wait_for_completion(&#x26;kthread->exited);</span></span>
+<span class="line"><span>	ret = k->exit_code;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	return ret;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>关于内核线程API的实现后面再讲
+<a href="https://github.com/liulangrenaaa/gernerate_config">内核线程API</a></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

@@ -1,0 +1,76 @@
+<mxfile host="65bd71144e">
+    <diagram id="34TDguZRN9p-tWETnqmx" name="第 1 页">
+        <mxGraphModel dx="2006" dy="764" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="5" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontSize=14;" parent="1" source="3" target="4" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="3" value="进程启动，Render_thread 启动" style="rounded=1;whiteSpace=wrap;html=1;fontSize=14;" parent="1" vertex="1">
+                    <mxGeometry x="120" y="80" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="8" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontSize=14;" parent="1" source="4" target="7" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="4" value="Uclamp 设置进程的 UI_thread + Render_thread + hwui_task1 + hwui_task2 为默认值，直接设置为默认值 512，导致 进程的这四个线程上&lt;b style=&quot;font-size: 14px;&quot;&gt;超大核心&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontSize=14;" parent="1" vertex="1">
+                    <mxGeometry x="70" y="170" width="300" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="30" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontSize=14;" parent="1" source="7" target="13" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="31" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontSize=14;" parent="1" source="7" target="14" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="7" value="&lt;a class=&quot;semantic-decoration&quot; href=&quot;https://cs.android.com/android/platform/superproject/+/master:frameworks/base/native/android/performance_hint.cpp;bpv=1;bpt=1;l=176?q=reportActualWorkDuration&amp;amp;ss=android%2Fplatform%2Fsuperproject&amp;amp;gsn=APerformanceHintSession&amp;amp;gs=kythe%3A%2F%2Fandroid.googlesource.com%2Fplatform%2Fsuperproject%3Flang%3Dc%252B%252B%23sEjEuJNrjQhG-GQVPRX7Psh9nab4K8k8abGdV0JlrpU&quot; style=&quot;color: inherit; margin: 0px; padding: 0px; box-sizing: border-box; font-family: monospace; font-size: 14px; background-color: rgb(16, 16, 18);&quot;&gt;APerformanceHintSession&lt;/a&gt;&lt;span style=&quot;color: rgb(181, 188, 197); font-family: monospace; font-size: 14px; background-color: rgb(16, 16, 18);&quot;&gt;::&lt;/span&gt;&lt;a class=&quot;semantic-decoration&quot; href=&quot;https://cs.android.com/android/platform/superproject/+/master:frameworks/base/native/android/performance_hint.cpp;bpv=1;bpt=1;l=176?q=reportActualWorkDuration&amp;amp;ss=android%2Fplatform%2Fsuperproject&amp;amp;gsn=reportActualWorkDuration&amp;amp;gs=kythe%3A%2F%2Fandroid.googlesource.com%2Fplatform%2Fsuperproject%3Flang%3Dc%252B%252B%3Fpath%3Dframeworks%2Fbase%2Fnative%2Fandroid%2Fperformance_hint.cpp%23UAvm5iCJ1zu8LtfDFmNcOa3B0VVkCjRLfFoGJ2opwis&amp;amp;gs=kythe%3A%2F%2Fandroid.googlesource.com%2Fplatform%2Fsuperproject%3Flang%3Dc%252B%252B%3Fpath%3Dframeworks%2Fbase%2Fnative%2Fandroid%2Fperformance_hint.cpp%23G-wGRQLkjtaDkSSI0qP0BkqYfBHYxKfAiUDq-N4nxCQ&quot; style=&quot;color: inherit; margin: 0px; padding: 0px; box-sizing: border-box; font-family: monospace; font-size: 14px; background-color: rgb(16, 16, 18);&quot;&gt;reportActualWorkDuration&lt;/a&gt;&lt;br style=&quot;font-size: 14px;&quot;&gt;&lt;span style=&quot;font-size: 14px;&quot;&gt;看dequene_buffer 时间是否超过下一次 vsync时间。&lt;/span&gt;" style="rhombus;whiteSpace=wrap;html=1;fontSize=14;" parent="1" vertex="1">
+                    <mxGeometry x="75" y="320" width="290" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="28" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontSize=14;" parent="1" source="9" target="27" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="9" value="根据上次的输出，和taregt 计算出此次的 pidoutput，然后对 pidoutput 进行限幅，&lt;br style=&quot;font-size: 14px;&quot;&gt;通过&amp;nbsp;setUclamp 将 uclamp-min的值设置到kernel中" style="rounded=1;whiteSpace=wrap;html=1;fontSize=14;" parent="1" vertex="1">
+                    <mxGeometry x="120" y="610" width="240" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="11" value="超过，说明丢帧了" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=14;" parent="1" vertex="1">
+                    <mxGeometry x="-50" y="410" width="120" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="33" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontSize=14;" parent="1" source="13" target="19" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="35" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=14;" parent="1" source="13" target="9" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="13" value="确定&amp;nbsp;rateLimit 数值为&amp;nbsp;mPreferredRateNanos，&lt;br style=&quot;font-size: 14px;&quot;&gt;当前时刻 now 距离上次更新时间是否低于 rateLimit&amp;nbsp;&lt;br style=&quot;font-size: 14px;&quot;&gt;&amp;nbsp;" style="rhombus;whiteSpace=wrap;html=1;fontSize=14;" parent="1" vertex="1">
+                    <mxGeometry x="-150" y="460" width="290" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="32" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontSize=14;" parent="1" source="14" target="19" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="36" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;fontSize=14;" parent="1" source="14" target="9" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="14" value="确定&amp;nbsp;rateLimit 数值为 10 * mPreferredRateNanos，&lt;br style=&quot;font-size: 14px;&quot;&gt;当前时刻 now 距离上次更新时间是否低于 rateLimit&amp;nbsp;&lt;br style=&quot;font-size: 14px;&quot;&gt;&amp;nbsp;" style="rhombus;whiteSpace=wrap;html=1;fontSize=14;" parent="1" vertex="1">
+                    <mxGeometry x="340" y="460" width="290" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="17" value="没超过，说明没丢帧" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=14;" parent="1" vertex="1">
+                    <mxGeometry x="425" y="410" width="120" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="19" value="直接返回，此次不更新 uclamp" style="rounded=1;whiteSpace=wrap;html=1;fontSize=14;" parent="1" vertex="1">
+                    <mxGeometry x="180" y="525" width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="22" value="低于" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=14;" parent="1" vertex="1">
+                    <mxGeometry x="180" y="485" width="120" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="25" value="间隔大于 ratelimit" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=14;" parent="1" vertex="1">
+                    <mxGeometry x="-50" y="590" width="120" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="26" value="间隔大于 ratelimit" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=14;" parent="1" vertex="1">
+                    <mxGeometry x="430" y="585" width="120" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="27" value="setUclamp 通过 sched_setattr 系统调用来设置线程的 uclamp_min" style="rounded=1;whiteSpace=wrap;html=1;fontSize=14;" parent="1" vertex="1">
+                    <mxGeometry x="15" y="730" width="450" height="80" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

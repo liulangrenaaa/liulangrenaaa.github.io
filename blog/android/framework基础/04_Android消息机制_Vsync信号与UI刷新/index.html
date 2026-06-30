@@ -1,0 +1,298 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>Android消息机制(四)：Vsync 信号与 UI 刷新 (vsyncfd) | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>Android消息机制(四)：Vsync 信号与 UI 刷新 (vsyncfd)</h1><div class="post-meta"><time datetime="2026-05-13T10:15:03.000Z">2026年5月13日</time><span> / android / framework基础</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">Vsync</span><span class="tag">Choreographer</span><span class="tag">同步屏障</span><span class="tag">源码分析</span></div></header><div class="article-body"><h1 id="android消息机制四vsync-信号与-ui-刷新-vsyncfd">Android消息机制(四)：Vsync 信号与 UI 刷新 (vsyncfd)</h1>
+<p>前面几篇已经把两件事拆开说明了：</p>
+<ol>
+<li>主线程真正睡眠/唤醒的位置，在 Native <code>Looper + epoll</code>。</li>
+<li><code>Input</code>、自定义 fd 事件，并不是通过普通 <code>Handler</code> 消息进入主线程。</li>
+</ol>
+<p><code>Vsync</code> 也是同一套思路。很多人会把 UI 刷新理解成“主线程每隔 16.6ms 自己发一条消息”，但在 <code>aosp14</code> 视角下，这个理解并不准确。应用并不是主动轮询时间片，而是被显示系统的节拍推着走：<strong>Vsync 到来，fd 就绪，Native Looper 醒来，Java <code>Choreographer</code> 再接管这一帧的调度。</strong></p>
+<p>所以这一篇要回答三个问题：</p>
+<ol>
+<li><code>Vsync</code> 为什么不是普通 <code>Handler</code> 消息？</li>
+<li><code>DisplayEventReceiver</code> 和 <code>Choreographer</code> 分别做什么？</li>
+<li>同步屏障为什么能让绘制相关消息“插队”？</li>
+</ol>
+<h2 id="1-先看结论">1. 先看结论</h2>
+<p>先把最重要的结论放前面：</p>
+<ol>
+<li>UI 刷新节拍并不是主线程自己定时轮询出来的，而是由显示系统发给应用。</li>
+<li>应用主线程底层监听的是一个显示事件 fd，本文为了便于理解，统一称为 <code>vsyncfd</code>。</li>
+<li>这个 fd 被注册进 Native <code>Looper</code>，因此 Vsync 到达时本质上是一次 fd readable 事件。</li>
+<li>Native 层收到显示事件后，会桥接到 Java <code>DisplayEventReceiver</code>。</li>
+<li>Java <code>Choreographer</code> 再基于这次 Vsync 执行 <code>doFrame()</code>，按顺序调度 Input、Animation、Traversal、Commit 等阶段。</li>
+<li>为了保证绘制相关任务不要被普通同步消息堵住，<code>ViewRootImpl</code> 会配合同步屏障和异步消息来确保这一帧及时执行。</li>
+</ol>
+<p>所以站在主线程角度看，真正的第一现场不是：</p>
+<ul>
+<li>“消息队列里多了一条刷新 UI 的普通消息”</li>
+</ul>
+<p>而是：</p>
+<ul>
+<li>“显示事件 fd 就绪了，<code>epoll_wait()</code> 返回了”</li>
+</ul>
+<h2 id="2-为什么-ui-刷新必须由-vsync-驱动">2. 为什么 UI 刷新必须由 Vsync 驱动</h2>
+<p>如果应用自己按定时器刷新，会有两个直接问题：</p>
+<ol>
+<li>它不知道屏幕真正的显示节拍，只能“猜”一个周期。</li>
+<li>即使猜中了大概周期，也可能和屏幕扫描时机错开，导致掉帧、抖动、撕裂感更明显。</li>
+</ol>
+<p><code>Vsync</code> 的价值就在这里：</p>
+<ul>
+<li>它代表“显示系统准备开始下一帧”的节拍信号。</li>
+<li>应用收到这个信号后，再去执行这一帧的输入处理、动画推进、布局绘制。</li>
+<li>这样应用侧产出的 frame，更容易和 SurfaceFlinger / 显示管线对齐。</li>
+</ul>
+<p>可以先把整体关系理解成下面这张图：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart LR</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[Display / HWC 节拍] --> B[SurfaceFlinger]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C[DisplayEventDispatcher / EventThread]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> D[应用进程显示事件 fd]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E[Native Looper epoll_wait 返回]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> F[DisplayEventReceiver]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> G[Choreographer.doFrame]</span></span>
+<span class="line"><span style="color:#E1E4E8">    G --> H[ViewRootImpl.performTraversals]</span></span>
+<span class="line"><span style="color:#E1E4E8">    H --> I[生成新的 UI 绘制结果]</span></span></code></pre>
+<p>这里最关键的一点是：<strong>应用不是自己决定“现在该不该画”，而是等显示系统通知“这一帧可以开始了”。</strong></p>
+<h2 id="3-vsyncfd-到底是什么">3. <code>vsyncfd</code> 到底是什么</h2>
+<p>严格说，<code>aosp14</code> 里并没有一个源码变量名就叫 <code>vsyncfd</code>。这里的 <code>vsyncfd</code> 是为了帮助理解，指代“应用主线程监听的那个显示事件接收 fd”。</p>
+<p>它的职责和上一篇的 <code>inputfd</code> 很像：</p>
+<ul>
+<li><code>inputfd</code>：有输入数据到了，fd 变可读。</li>
+<li><code>vsyncfd</code>：有显示事件到了，fd 变可读。</li>
+</ul>
+<p>两者的共同点是：</p>
+<ul>
+<li>都不是 Java <code>MessageQueue.mMessages</code> 里的普通消息。</li>
+<li>都先经过 Native <code>Looper</code> 的 <code>epoll</code> 监听。</li>
+<li>都是在 fd ready 之后，再桥接给 Java 上层处理。</li>
+</ul>
+<p>差别在于后续语义不同：</p>
+<ul>
+<li><code>inputfd</code> 对应的是输入分发。</li>
+<li><code>vsyncfd</code> 对应的是帧调度。</li>
+</ul>
+<h2 id="4-从-surfaceflinger-到-app-的-vsync-传递路径">4. 从 SurfaceFlinger 到 App 的 Vsync 传递路径</h2>
+<p>这一段如果只用文字说很容易绕，直接看时序图更清楚：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">sequenceDiagram</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant SF as SurfaceFlinger / EventThread</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Channel as 显示事件通道</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant NLooper as App主线程 Native Looper</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant NRecv as NativeDisplayEventReceiver</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant JNI as JNI Bridge</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant JRecv as Java DisplayEventReceiver</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Choreo as Choreographer</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    SF->>Channel: 写入 Vsync 显示事件</span></span>
+<span class="line"><span style="color:#E1E4E8">    Channel-->>NLooper: vsyncfd readable</span></span>
+<span class="line"><span style="color:#E1E4E8">    NLooper->>NRecv: 分发 fd callback</span></span>
+<span class="line"><span style="color:#E1E4E8">    NRecv->>Channel: 读取时间戳 / frame 信息</span></span>
+<span class="line"><span style="color:#E1E4E8">    NRecv->>JNI: 桥接到 Java</span></span>
+<span class="line"><span style="color:#E1E4E8">    JNI->>JRecv: dispatchVsync(...)</span></span>
+<span class="line"><span style="color:#E1E4E8">    JRecv->>Choreo: onVsync / scheduleVsyncLocked</span></span>
+<span class="line"><span style="color:#E1E4E8">    Choreo->>Choreo: 安排 doFrame()</span></span></code></pre>
+<p>这条链路里有几个职责边界要分清：</p>
+<h3 id="41-surfaceflinger-负责发节拍">4.1 SurfaceFlinger 负责“发节拍”</h3>
+<p>它是显示系统里的核心调度者。对应用来说，最重要的不是它内部怎么生成硬件节拍，而是：</p>
+<ul>
+<li>它会把当前显示节拍转成应用可消费的显示事件。</li>
+<li>这个事件最终通过通道送到应用进程。</li>
+</ul>
+<h3 id="42-native-displayeventreceiver-负责接节拍">4.2 Native <code>DisplayEventReceiver</code> 负责“接节拍”</h3>
+<p>它的定位类似上一篇里的 Native 输入接收侧：</p>
+<ul>
+<li>先把显示事件 fd 注册进 Native <code>Looper</code></li>
+<li>等 fd readable</li>
+<li>读出 Vsync 事件内容</li>
+<li>再通过 JNI 往上抛给 Java</li>
+</ul>
+<p>所以 Native 层解决的是“怎么接到 Vsync”。</p>
+<h3 id="43-java-choreographer-负责消费节拍">4.3 Java <code>Choreographer</code> 负责“消费节拍”</h3>
+<p><code>Choreographer</code> 不负责生成 Vsync，也不负责底层 fd 监听。它真正负责的是：</p>
+<ul>
+<li>收到这次 Vsync 后，确定这一帧是否要执行</li>
+<li>按固定顺序调度各类 frame callback</li>
+<li>驱动 <code>ViewRootImpl</code> 进入 <code>performTraversals()</code></li>
+</ul>
+<p>所以 Java 层解决的是“收到 Vsync 后这一帧怎么跑”。</p>
+<h2 id="5-为什么-vsync-是被动接收不是主动轮询">5. 为什么 Vsync 是“被动接收”，不是“主动轮询”</h2>
+<p>这是很多人第一次看这条链路时最容易问的问题。</p>
+<p>如果用主动轮询，应用线程就得反复检查：</p>
+<ul>
+<li>到没到下一帧时间？</li>
+<li>现在该不该画？</li>
+<li>屏幕节拍是不是已经变化了？</li>
+</ul>
+<p>这样的问题有三个：</p>
+<ol>
+<li>空转浪费 CPU。</li>
+<li>定时精度和实际显示节拍未必一致。</li>
+<li>多个系统组件各自轮询，整体调度会变得更散、更难对齐。</li>
+</ol>
+<p>而走 <code>epoll + fd</code> 的被动接收方式，主线程可以做到：</p>
+<ul>
+<li>平时彻底睡下去</li>
+<li>真正有 Vsync 事件时再被唤醒</li>
+<li>输入、Vsync、Native 自定义 fd 统一复用一个事件循环</li>
+</ul>
+<p>这也是 Android 主线程模型很重要的一点：<strong>不是每类事件都重新发明一套等待机制，而是都尽量挂到同一个 <code>Looper</code> 基建上。</strong></p>
+<h2 id="6-displayeventreceiver-和-choreographer-是什么关系">6. <code>DisplayEventReceiver</code> 和 <code>Choreographer</code> 是什么关系</h2>
+<p>一句话概括：</p>
+<ul>
+<li><code>DisplayEventReceiver</code> 是“Vsync 的接收器”。</li>
+<li><code>Choreographer</code> 是“这一帧的调度器”。</li>
+</ul>
+<p>两者的分工可以抽象成：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart LR</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[Vsync 到达] --> B[DisplayEventReceiver]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C[dispatchVsync]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> D[Choreographer]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E[doFrame]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> F[Input 回调]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> G[Animation 回调]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> H[Traversal 回调]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> I[Commit 回调]</span></span></code></pre>
+<p>如果只记一个判断标准，可以这么记：</p>
+<ul>
+<li>和“怎么监听显示事件 fd”相关，优先看 <code>DisplayEventReceiver</code>。</li>
+<li>和“这一帧内部先做什么后做什么”相关，优先看 <code>Choreographer</code>。</li>
+</ul>
+<h2 id="7-doframe-到底做了什么">7. <code>doFrame()</code> 到底做了什么</h2>
+<p><code>doFrame()</code> 可以理解成“消费这一拍 Vsync，并把这一帧该做的事按顺序执行掉”。</p>
+<p>在 <code>aosp14</code> 视角下，可以先抓住它的主干阶段：</p>
+<ol>
+<li><code>CALLBACK_INPUT</code></li>
+<li><code>CALLBACK_ANIMATION</code></li>
+<li><code>CALLBACK_INSETS_ANIMATION</code></li>
+<li><code>CALLBACK_TRAVERSAL</code></li>
+<li><code>CALLBACK_COMMIT</code></li>
+</ol>
+<p>关键不是把所有常量背下来，而是理解为什么要分阶段：不同类别的工作必须在一帧内按顺序完成，避免相互打架。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[Vsync 到达] --> B[Choreographer.doFrame]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C[Input 阶段]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> D[Animation 阶段]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E[InsetsAnimation 阶段]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> F[Traversal 阶段]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> G[Commit 阶段]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    C --> C1[处理本帧输入相关回调]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> D1[推进属性动画/时间线]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> E1[处理窗口 Insets 动画]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> F1[measure/layout/draw]</span></span>
+<span class="line"><span style="color:#E1E4E8">    G --> G1[提交本帧收尾信息]</span></span></code></pre>
+<p>其中最值得关注的是 <code>Traversal</code>：</p>
+<ul>
+<li><code>ViewRootImpl</code> 会在这里进入 <code>performTraversals()</code></li>
+<li>进一步触发 <code>measure</code> / <code>layout</code> / <code>draw</code></li>
+<li>最终把这一帧需要更新的 UI 内容准备出来</li>
+</ul>
+<p>所以可以把前几个阶段理解为“为绘制做准备”，把 <code>Traversal</code> 理解为“真正进入 View 树刷新”。</p>
+<h2 id="8-为什么还需要同步屏障">8. 为什么还需要同步屏障</h2>
+<p>到这里还差最后一块拼图。</p>
+<p>既然已经有 Vsync 了，为什么还需要同步屏障？原因是：<strong>主线程的 Java 消息队列里，可能早就排着一堆普通同步消息。</strong> 如果不做优先级控制，那么这一帧的绘制任务完全可能被前面的普通消息堵住。</p>
+<p>举个最简单的场景：</p>
+<ol>
+<li>队列头部堆了很多普通同步消息。</li>
+<li>这时一拍新的 Vsync 到来。</li>
+<li><code>Choreographer</code> 想尽快执行本帧回调。</li>
+<li>如果还是老老实实排到队尾，那这一帧很可能直接错过。</li>
+</ol>
+<p>所以 Android 引入了同步屏障：</p>
+<ul>
+<li>屏障本身不是给你执行的消息。</li>
+<li>它只是插在消息队列里，拦住后面的同步消息继续出队。</li>
+<li>但异步消息可以越过它继续执行。</li>
+</ul>
+<p>而 <code>Choreographer</code>/<code>ViewRootImpl</code> 正是利用这一点，让和帧刷新强相关的异步消息优先跑起来。</p>
+<h2 id="9-同步屏障是怎么工作的">9. 同步屏障是怎么工作的</h2>
+<p>可以把同步屏障理解成“临时交通管制”：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart LR</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[MessageQueue 队头] --> B{是否是同步屏障}</span></span>
+<span class="line"><span style="color:#E1E4E8">    B -- 否 --> C[按正常规则取消息]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B -- 是 --> D[继续向后找异步消息]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E{找到异步消息?}</span></span>
+<span class="line"><span style="color:#E1E4E8">    E -- 找到 --> F[异步消息越过屏障执行]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E -- 没找到 --> G[继续等待]</span></span></code></pre>
+<p>这意味着在屏障存在期间：</p>
+<ul>
+<li>普通同步消息会被挡住。</li>
+<li>标记为异步的消息仍然可以被取出执行。</li>
+</ul>
+<p>因此同步屏障并不是“提高所有消息优先级”，而是更精确地做到：</p>
+<ul>
+<li>暂时压住不紧急的同步工作</li>
+<li>先把当前帧最关键的异步调度跑完</li>
+</ul>
+<h2 id="10-postsyncbarrier异步消息removesyncbarrier-如何配合">10. <code>postSyncBarrier()</code>、异步消息、<code>removeSyncBarrier()</code> 如何配合</h2>
+<p>这三者是一整套机制，单看任何一个都容易误解。</p>
+<h3 id="101-postsyncbarrier">10.1 <code>postSyncBarrier()</code></h3>
+<p>它会在 <code>MessageQueue</code> 里插入一个屏障节点。这个节点没有可执行的 <code>target</code>，作用只是告诉队列：</p>
+<ul>
+<li>从这里开始，后面的同步消息先别过</li>
+</ul>
+<h3 id="102-异步消息">10.2 异步消息</h3>
+<p>异步消息的意义不是“更快一点”，而是“在屏障期间依然允许出队”。</p>
+<p><code>Choreographer</code> 依赖的内部 <code>Handler</code> 会把相关帧调度消息标记成异步，因此当屏障立起来后：</p>
+<ul>
+<li>普通同步消息被卡住</li>
+<li>帧相关异步消息还能继续执行</li>
+</ul>
+<h3 id="103-removesyncbarrier">10.3 <code>removeSyncBarrier()</code></h3>
+<p>一帧关键工作安排完成后，屏障不能一直留着，否则整个同步消息世界都会被饿死。因此在合适时机会把屏障移除，让消息队列恢复正常调度。</p>
+<p>这套关系可以压缩成一张图：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">sequenceDiagram</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant VRI as ViewRootImpl</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant MQ as MessageQueue</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Choreo as Choreographer/Handler</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    VRI->>MQ: postSyncBarrier()</span></span>
+<span class="line"><span style="color:#E1E4E8">    Choreo->>MQ: 发送异步帧消息</span></span>
+<span class="line"><span style="color:#E1E4E8">    MQ-->>Choreo: 异步消息越过屏障执行</span></span>
+<span class="line"><span style="color:#E1E4E8">    Choreo->>VRI: doFrame / doTraversal</span></span>
+<span class="line"><span style="color:#E1E4E8">    VRI->>MQ: removeSyncBarrier()</span></span></code></pre>
+<p>所以同步屏障真正保证的不是“这一帧一定不卡”，而是：</p>
+<ul>
+<li>在主线程已经很忙的时候</li>
+<li>给绘制相关任务争取一个合理的执行优先级</li>
+</ul>
+<h2 id="11-一帧从-vsync-到-view-刷新的完整链路">11. 一帧从 Vsync 到 View 刷新的完整链路</h2>
+<p>把前面的内容串起来，应用侧一帧大致就是这样：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">sequenceDiagram</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant SF as SurfaceFlinger</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant FD as vsyncfd</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant NL as Native Looper</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant DER as DisplayEventReceiver</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant CH as Choreographer</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant MQ as MessageQueue</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant VRI as ViewRootImpl</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    SF->>FD: 写入本帧显示事件</span></span>
+<span class="line"><span style="color:#E1E4E8">    FD-->>NL: fd readable</span></span>
+<span class="line"><span style="color:#E1E4E8">    NL->>DER: 回调接收显示事件</span></span>
+<span class="line"><span style="color:#E1E4E8">    DER->>CH: dispatchVsync(...)</span></span>
+<span class="line"><span style="color:#E1E4E8">    CH->>CH: scheduleFrameLocked / doFrame</span></span>
+<span class="line"><span style="color:#E1E4E8">    CH->>MQ: 取执行异步帧消息</span></span>
+<span class="line"><span style="color:#E1E4E8">    CH->>VRI: 执行 Traversal 回调</span></span>
+<span class="line"><span style="color:#E1E4E8">    VRI->>MQ: 移除同步屏障</span></span>
+<span class="line"><span style="color:#E1E4E8">    VRI->>VRI: performTraversals()</span></span>
+<span class="line"><span style="color:#E1E4E8">    VRI->>VRI: measure / layout / draw</span></span></code></pre>
+<p>只要把这条线记住，很多零碎问题都会自然顺下来：</p>
+<ul>
+<li>为什么 Vsync 不是普通 <code>Handler</code> 消息？</li>
+<li>为什么主线程既能处理 Java 消息，又能接 fd 事件？</li>
+<li>为什么绘制阶段需要同步屏障和异步消息配合？</li>
+</ul>
+<h2 id="12-这一篇要记住什么">12. 这一篇要记住什么</h2>
+<p>最后收敛成 5 句话：</p>
+<ol>
+<li>Vsync 本质上是显示系统推给应用的帧节拍，不是应用自己定时轮询出来的。</li>
+<li>应用主线程监听的是显示事件 fd，因此 Vsync 先在 Native <code>Looper</code> 的 <code>epoll</code> 层被感知。</li>
+<li><code>DisplayEventReceiver</code> 负责接收和桥接 Vsync，<code>Choreographer</code> 负责消费这次 Vsync 并调度整帧工作。</li>
+<li><code>doFrame()</code> 会把一帧拆成多个阶段，<code>Traversal</code> 才是真正进入 <code>ViewRootImpl</code> 刷新 View 树的关键节点。</li>
+<li>同步屏障配合异步消息的意义，是在主线程繁忙时让这一帧的关键调度不要轻易被普通同步消息堵死。</li>
+</ol>
+<p>下一步如果继续往下挖，最自然的方向就是：</p>
+<ul>
+<li><code>ViewRootImpl.scheduleTraversals()</code> 为什么要先插同步屏障再申请 Vsync</li>
+<li><code>performTraversals()</code> 里 <code>measure/layout/draw</code> 是怎么一步步串起来的</li>
+<li>最终绘制结果又是怎么继续交给 RenderThread / Surface 去提交的</li>
+</ul></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

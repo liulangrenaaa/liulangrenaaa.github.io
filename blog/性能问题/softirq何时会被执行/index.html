@@ -1,0 +1,246 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>softirq何时会被执行 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>softirq何时会被执行</h1><div class="post-meta"><time datetime="2020-09-20T19:00:00.000Z">2020年9月20日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">内核同步</span><span class="tag">软中断</span><span class="tag">tasklet</span><span class="tag">ksoftirqd</span></div></header><div class="article-body"><p>很多人可能都知道中断irq，但是对软中断softfirq却比较陌生，软中断这个概念是纯软件意义上的，与中断依赖于硬件行为不一样。在linux中，软中断主要用于执行irq中没有执行，但又不是很紧急的事情，现在linux内核中为每个CPU都分配了一个线程 <code>[ksoftirqd/n]</code>，用来执行软中断。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sh@ubuntu[root]:/sys/kernel/debug/tracing# ps -aux |grep soft</span></span>
+<span class="line"><span>root          10  0.0  0.0      0     0 ?        S    9月19   0:19 [ksoftirqd/0]</span></span>
+<span class="line"><span>root          18  0.0  0.0      0     0 ?        S    9月19   0:17 [ksoftirqd/1]</span></span>
+<span class="line"><span>root          24  0.0  0.0      0     0 ?        S    9月19   0:18 [ksoftirqd/2]</span></span>
+<span class="line"><span>root          30  0.0  0.0      0     0 ?        S    9月19   0:21 [ksoftirqd/3]</span></span></code></pre>
+<p>具体软中断分以下几种</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>enum{</span></span>
+<span class="line"><span>	HI_SOFTIRQ=0,</span></span>
+<span class="line"><span>	TIMER_SOFTIRQ,</span></span>
+<span class="line"><span>	NET_TX_SOFTIRQ,</span></span>
+<span class="line"><span>	NET_RX_SOFTIRQ,</span></span>
+<span class="line"><span>	BLOCK_SOFTIRQ,</span></span>
+<span class="line"><span>	IRQ_POLL_SOFTIRQ,</span></span>
+<span class="line"><span>	TASKLET_SOFTIRQ,</span></span>
+<span class="line"><span>	SCHED_SOFTIRQ,</span></span>
+<span class="line"><span>	HRTIMER_SOFTIRQ, /* Unused, but kept as tools rely on the numbering. Sigh! */</span></span>
+<span class="line"><span>	RCU_SOFTIRQ,    /* Preferable RCU should always be the last softirq */</span></span>
+<span class="line"><span>	NR_SOFTIRQS</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<p>通过 <code>open_softirq</code> 初始化</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static struct softirq_action softirq_vec[NR_SOFTIRQS] __cacheline_aligned_in_smp;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>void open_softirq(int nr, void (*action)(struct softirq_action *))</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	softirq_vec[nr].action = action;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>触发软中断的时候通过 <code>raise_softirq</code> 来触发</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>void raise_softirq(unsigned int nr)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	unsigned long flags;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	local_irq_save(flags);</span></span>
+<span class="line"><span>	raise_softirq_irqoff(nr);</span></span>
+<span class="line"><span>	local_irq_restore(flags);</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>但tasklet机制直接使用了 <code>raise_softirq_irqoff</code>，搜索代码可以发现其他类型的softirq也基本都是用 <code>raise_softirq_irqoff</code> 触发。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static void __tasklet_schedule_common(struct tasklet_struct *t,</span></span>
+<span class="line"><span>				      struct tasklet_head __percpu *headp,</span></span>
+<span class="line"><span>				      unsigned int softirq_nr)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	struct tasklet_head *head;</span></span>
+<span class="line"><span>	unsigned long flags;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	local_irq_save(flags);</span></span>
+<span class="line"><span>	head = this_cpu_ptr(headp);</span></span>
+<span class="line"><span>	t->next = NULL;</span></span>
+<span class="line"><span>	*head->tail = t;</span></span>
+<span class="line"><span>	head->tail = &#x26;(t->next);</span></span>
+<span class="line"><span>	raise_softirq_irqoff(softirq_nr);</span></span>
+<span class="line"><span>	local_irq_restore(flags);</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>来看下 <code>raise_softirq_irqoff</code> 实现，</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>#define local_softirq_pending_ref irq_stat.__softirq_pending</span></span>
+<span class="line"><span>#define or_softirq_pending(x)	(__this_cpu_or(local_softirq_pending_ref, (x)))</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>void __raise_softirq_irqoff(unsigned int nr)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	trace_softirq_raise(nr);       // 软中断 raise 的 tracepoint 点</span></span>
+<span class="line"><span>	or_softirq_pending(1UL &#x3C;&#x3C; nr); // 设置当前cpu的软中断pending状态</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>inline void raise_softirq_irqoff(unsigned int nr)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	__raise_softirq_irqoff(nr);</span></span>
+<span class="line"><span>	if (!in_interrupt())</span></span>
+<span class="line"><span>		wakeup_softirqd(); //如果不是中断上下文，就需要唤醒 ksoftirqd来执行相关软中断，这也保证了在线程上下文中软中断可以得到较快执行</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>__raise_softirq_irqoff 仅仅是设置 __softirq_pending 标志位，这有两个作用</p>
+<ol>
+<li>如果当前是中断irq上下文，在 irq_exit 之后，检查 local_softirq_pending，判断有软中断需要执行</li>
+<li>如果当前是线程上下文，在 ksoftirq 线程中检查标志位，最后执行相关的软中断</li>
+<li>如果当前在临界区上，在打开中断时，可以检测pending的软中断如何去执行</li>
+</ol>
+<p>irq_exit的情况</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static inline void invoke_softirq(void)</span></span>
+<span class="line"><span>{ //不考虑软中断强制线程化，简化代码</span></span>
+<span class="line"><span>	if (ksoftirqd_running(local_softirq_pending()))</span></span>
+<span class="line"><span>		return;</span></span>
+<span class="line"><span>   __do_softirq();</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>void irq_exit(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>#ifndef __ARCH_IRQ_EXIT_IRQS_DISABLED</span></span>
+<span class="line"><span>	local_irq_disable();</span></span>
+<span class="line"><span>#else</span></span>
+<span class="line"><span>	lockdep_assert_irqs_disabled();</span></span>
+<span class="line"><span>#endif</span></span>
+<span class="line"><span>	account_irq_exit_time(current);</span></span>
+<span class="line"><span>	preempt_count_sub(HARDIRQ_OFFSET);</span></span>
+<span class="line"><span>	if (!in_interrupt() &#x26;&#x26; local_softirq_pending())</span></span>
+<span class="line"><span>		invoke_softirq();   //在中断退出之后，如果有 pending的软中断，就需要执行 软中断</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	tick_irq_exit();</span></span>
+<span class="line"><span>	rcu_irq_exit();</span></span>
+<span class="line"><span>	trace_hardirq_exit(); /* must be last! */</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>ksoftirq线程</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static void run_ksoftirqd(unsigned int cpu)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	local_irq_disable();</span></span>
+<span class="line"><span>	if (local_softirq_pending()) {</span></span>
+<span class="line"><span>		/*</span></span>
+<span class="line"><span>		 * We can safely run softirq on inline stack, as we are not deep</span></span>
+<span class="line"><span>		 * in the task stack here.</span></span>
+<span class="line"><span>		 */</span></span>
+<span class="line"><span>		__do_softirq();</span></span>
+<span class="line"><span>		local_irq_enable();</span></span>
+<span class="line"><span>		cond_resched();</span></span>
+<span class="line"><span>		return;</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>	local_irq_enable();</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>开启中断的情况下</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>void __local_bh_enable_ip(unsigned long ip, unsigned int cnt)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	WARN_ON_ONCE(in_irq());</span></span>
+<span class="line"><span>	lockdep_assert_irqs_enabled();</span></span>
+<span class="line"><span>	preempt_count_sub(cnt - 1);</span></span>
+<span class="line"><span>	if (unlikely(!in_interrupt() &#x26;&#x26; local_softirq_pending())) {</span></span>
+<span class="line"><span>        // 如果不在中断中，且 softirq 有pending的位，就需要执行软中断</span></span>
+<span class="line"><span>		do_softirq();</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>	preempt_count_dec();</span></span>
+<span class="line"><span>	preempt_check_resched();</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span>EXPORT_SYMBOL(__local_bh_enable_ip);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static inline void local_bh_enable(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	__local_bh_enable_ip(_THIS_IP_, SOFTIRQ_DISABLE_OFFSET);</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<h2 id="__do_softirq">__do_softirq</h2>
+<p>不管是退出中断时执行软中断，还是在ksoftirqd中執行软中断，最终都会执行到 <code>__do_softirq</code> 这个函数</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>#define MAX_SOFTIRQ_TIME  msecs_to_jiffies(2)       //2ms</span></span>
+<span class="line"><span>#define MAX_SOFTIRQ_RESTART 10</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>asmlinkage __visible void __softirq_entry __do_softirq(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	unsigned long end = jiffies + MAX_SOFTIRQ_TIME;</span></span>
+<span class="line"><span>	unsigned long old_flags = current->flags;</span></span>
+<span class="line"><span>	int max_restart = MAX_SOFTIRQ_RESTART;</span></span>
+<span class="line"><span>	struct softirq_action *h;</span></span>
+<span class="line"><span>	bool in_hardirq;</span></span>
+<span class="line"><span>	__u32 pending;</span></span>
+<span class="line"><span>	int softirq_bit;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	/*</span></span>
+<span class="line"><span>	 * Mask out PF_MEMALLOC as the current task context is borrowed for the</span></span>
+<span class="line"><span>	 * softirq. A softirq handled, such as network RX, might set PF_MEMALLOC</span></span>
+<span class="line"><span>	 * again if the socket is related to swapping.</span></span>
+<span class="line"><span>	 */</span></span>
+<span class="line"><span>	current->flags &#x26;= ~PF_MEMALLOC;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	pending = local_softirq_pending();</span></span>
+<span class="line"><span>	account_irq_enter_time(current);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	__local_bh_disable_ip(_RET_IP_, SOFTIRQ_OFFSET);</span></span>
+<span class="line"><span>	in_hardirq = lockdep_softirq_start();</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>restart:</span></span>
+<span class="line"><span>	/* Reset the pending bitmask before enabling irqs */</span></span>
+<span class="line"><span>	set_softirq_pending(0);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	local_irq_enable();</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	h = softirq_vec;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	while ((softirq_bit = ffs(pending))) { //循环执行 pending的软中断</span></span>
+<span class="line"><span>		unsigned int vec_nr;</span></span>
+<span class="line"><span>		int prev_count;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>		h += softirq_bit - 1;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>		vec_nr = h - softirq_vec;</span></span>
+<span class="line"><span>		prev_count = preempt_count();</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>		kstat_incr_softirqs_this_cpu(vec_nr);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>		trace_softirq_entry(vec_nr);  //trace 软中断执行</span></span>
+<span class="line"><span>		h->action(h);</span></span>
+<span class="line"><span>		trace_softirq_exit(vec_nr);   //trace 软中断退出</span></span>
+<span class="line"><span>		if (unlikely(prev_count != preempt_count())) {</span></span>
+<span class="line"><span>			pr_err("huh, entered softirq %u %s %p with preempt_count %08x, exited with %08x?\n",</span></span>
+<span class="line"><span>			       vec_nr, softirq_to_name[vec_nr], h->action,</span></span>
+<span class="line"><span>			       prev_count, preempt_count());</span></span>
+<span class="line"><span>			preempt_count_set(prev_count);</span></span>
+<span class="line"><span>		}</span></span>
+<span class="line"><span>		h++;</span></span>
+<span class="line"><span>		pending >>= softirq_bit;</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (__this_cpu_read(ksoftirqd) == current)</span></span>
+<span class="line"><span>		rcu_softirq_qs();</span></span>
+<span class="line"><span>	local_irq_disable();</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	pending = local_softirq_pending();</span></span>
+<span class="line"><span>	if (pending) {</span></span>
+<span class="line"><span>		if (time_before(jiffies, end) &#x26;&#x26; !need_resched() &#x26;&#x26;</span></span>
+<span class="line"><span>		    --max_restart) //如果又有pending的软中断了，看看是否执行超时了 2ms，且 restart 不能超过10次</span></span>
+<span class="line"><span>			goto restart; //未超时</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>		wakeup_softirqd(); //超时 2ms，唤醒softirqd去执行软中断</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	lockdep_softirq_end(in_hardirq);</span></span>
+<span class="line"><span>	account_irq_exit_time(current);</span></span>
+<span class="line"><span>	__local_bh_enable(SOFTIRQ_OFFSET);</span></span>
+<span class="line"><span>	WARN_ON_ONCE(in_interrupt());</span></span>
+<span class="line"><span>	current_restore_flags(old_flags, PF_MEMALLOC);</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<h2 id="do_softirq">do_softirq</h2>
+<p><code>do_softirq</code> 和 其他代码路径下执行软中断不一样，最终执行代码的是 <code>do_softirq_own_stack</code>，后续分析 -=-！</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>void do_softirq_own_stack(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	struct irq_stack *irqstk;</span></span>
+<span class="line"><span>	u32 *isp, *prev_esp;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	irqstk = __this_cpu_read(softirq_stack_ptr);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	/* build the stack frame on the softirq stack */</span></span>
+<span class="line"><span>	isp = (u32 *) ((char *)irqstk + sizeof(*irqstk));</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	/* Push the previous esp onto the stack */</span></span>
+<span class="line"><span>	prev_esp = (u32 *)irqstk;</span></span>
+<span class="line"><span>	*prev_esp = current_stack_pointer;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	call_on_stack(__do_softirq, isp);</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>asmlinkage __visible void do_softirq(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	unsigned long flags;</span></span>
+<span class="line"><span>	local_irq_save(flags);</span></span>
+<span class="line"><span>	if (local_softirq_pending() &#x26;&#x26; !ksoftirqd_running(pending))</span></span>
+<span class="line"><span>		do_softirq_own_stack();</span></span>
+<span class="line"><span>	local_irq_restore(flags);</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<h2 id="如何观察softirq">如何观察softirq</h2>
+<p>在softirq处理过程中（非ksoftirqd线程），在该local cpu上的其他进程是无法进行调度的，不管进程有多高的优先级。因此这点势必对系统实时性造成影响。</p>
+<ol>
+<li>通过 <code>/proc/softirqs</code> ，配合 <code>watch</code> 命令来观察</li>
+<li>通过一些tracepoint来观察</li>
+</ol></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

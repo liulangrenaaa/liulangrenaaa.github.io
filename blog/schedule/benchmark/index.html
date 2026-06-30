@@ -1,0 +1,197 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>benchmark | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>benchmark</h1><div class="post-meta"><time datetime="2021-06-01T19:00:00.000Z">2021年6月1日</time><span> / linux kernel / linux schedule</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">linux kernel</span></div></header><div class="article-body"><p>参考<a href="https://lwn.net/Articles/725238/">LWN文章</a></p>
+<h2 id="how-to-benchmark-your-linux-system">how to benchmark your linux system</h2>
+<p>参考
+<a href="https://linuxconfig.org/how-to-benchmark-your-linux-system">https://linuxconfig.org/how-to-benchmark-your-linux-system</a></p>
+<h2 id="hackbench">hackbench</h2>
+<p><code>hackbench</code> 包含在 <code>rt-tests</code> 中，主要是 rt性能 的测试。
+可以下载<a href="https://git.kernel.org/pub/scm/utils/rt-tests/rt-tests.git">源码</a>编译安装
+或者<code>rt-tests</code>安装包安装</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:/tmp/test $ sudo apt-cache search hackbench</span></span>
+<span class="line"><span>rt-tests - Test programs for rt kernels</span></span>
+<span class="line"><span>ubuntu@zeku_server:/tmp/test $</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:/tmp/test $ hackbench</span></span>
+<span class="line"><span>Running in process mode with 10 groups using 40 file descriptors each (== 400 tasks)</span></span>
+<span class="line"><span>Each sender will pass 100 messages of 100 bytes</span></span>
+<span class="line"><span>Time: 0.093</span></span>
+<span class="line"><span>ubuntu@zeku_server:/tmp/test $</span></span></code></pre>
+<h2 id="schbench">schbench</h2>
+<p><code>schbench</code> 需要自己手动编译安装，地址在 <a href="https://git.kernel.org/pub/scm/linux/kernel/git/mason/schbench.git/tree/">这里</a>
+下载</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>git clone git://git.kernel.org/pub/scm/linux/kernel/git/mason/schbench.git</span></span></code></pre>
+<p>编译</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:/tmp/schbench $ ls</span></span>
+<span class="line"><span>Makefile  schbench.c  schedstat.py</span></span>
+<span class="line"><span>ubuntu@zeku_server:/tmp/schbench $</span></span>
+<span class="line"><span>ubuntu@zeku_server:/tmp/schbench $ make</span></span>
+<span class="line"><span>gcc -o schbench.o -c -Wall -O2 -g -W -D_GNU_SOURCE -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64 schbench.c</span></span>
+<span class="line"><span>gcc -Wall -O2 -g -W -D_GNU_SOURCE -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64 -o schbench schbench.o -lpthread</span></span>
+<span class="line"><span>ubuntu@zeku_server:/tmp/schbench $ ls</span></span>
+<span class="line"><span>Makefile  schbench  schbench.c  schbench.o  schedstat.py</span></span>
+<span class="line"><span>ubuntu@zeku_server:/tmp/schbench $</span></span></code></pre>
+<p>安装</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:/tmp/schbench $ ls</span></span>
+<span class="line"><span>Makefile  schbench  schbench.c  schbench.o  schedstat.py</span></span>
+<span class="line"><span>ubuntu@zeku_server:/tmp/schbench $ sudo mv schbench /usr/bin/</span></span>
+<span class="line"><span>ubuntu@zeku_server:/tmp/schbench $ ls</span></span>
+<span class="line"><span>Makefile  schbench.c  schbench.o  schedstat.py</span></span>
+<span class="line"><span>ubuntu@zeku_server:/tmp/schbench $</span></span></code></pre>
+<p>测试结果</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:/tmp/schbench $ schbench</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>warmup done, zeroing stats</span></span>
+<span class="line"><span>Latency percentiles (usec) runtime 10 (s) (1649 total samples)</span></span>
+<span class="line"><span>	50.0th: 80 (833 samples)</span></span>
+<span class="line"><span>	75.0th: 8040 (404 samples)</span></span>
+<span class="line"><span>	90.0th: 14352 (248 samples)</span></span>
+<span class="line"><span>	95.0th: 16016 (95 samples)</span></span>
+<span class="line"><span>	*99.0th: 24992 (54 samples)</span></span>
+<span class="line"><span>	99.5th: 28960 (7 samples)</span></span>
+<span class="line"><span>	99.9th: 31968 (8 samples)</span></span>
+<span class="line"><span>	min=4, max=31999</span></span>
+<span class="line"><span>Latency percentiles (usec) runtime 20 (s) (4929 total samples)</span></span>
+<span class="line"><span>	50.0th: 77 (2473 samples)</span></span>
+<span class="line"><span>	75.0th: 8056 (1234 samples)</span></span>
+<span class="line"><span>	90.0th: 14160 (735 samples)</span></span>
+<span class="line"><span>	95.0th: 15824 (247 samples)</span></span>
+<span class="line"><span>	*99.0th: 24736 (193 samples)</span></span>
+<span class="line"><span>	99.5th: 28000 (24 samples)</span></span>
+<span class="line"><span>	99.9th: 32032 (22 samples)</span></span>
+<span class="line"><span>	min=3, max=39652</span></span>
+<span class="line"><span>Latency percentiles (usec) runtime 30 (s) (8274 total samples)</span></span>
+<span class="line"><span>	50.0th: 75 (4163 samples)</span></span>
+<span class="line"><span>	75.0th: 8008 (2059 samples)</span></span>
+<span class="line"><span>	90.0th: 14096 (1226 samples)</span></span>
+<span class="line"><span>	95.0th: 15760 (415 samples)</span></span>
+<span class="line"><span>	*99.0th: 24096 (329 samples)</span></span>
+<span class="line"><span>	99.5th: 26976 (41 samples)</span></span>
+<span class="line"><span>	99.9th: 31968 (34 samples)</span></span>
+<span class="line"><span>	min=3, max=39652</span></span>
+<span class="line"><span>ubuntu@zeku_server:/tmp/schbench $</span></span></code></pre>
+<h2 id="adrestia">adrestia</h2>
+<p><code>adrestia</code> 需要自己手动编译安装，地址在 <a href="https://github.com/mfleming/adrestia.git">这里</a></p>
+<p>下载</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>git clone https://github.com/mfleming/adrestia.git</span></span></code></pre>
+<p>编译</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:/tmp/schbench/adrestia $ make</span></span>
+<span class="line"><span>cc -Wall -lpthread -I /tmp/schbench/adrestia/include -g   -c -o wake.o wake.c</span></span>
+<span class="line"><span>cc -Wall -lpthread -I /tmp/schbench/adrestia/include -g   -c -o stats.o stats.c</span></span>
+<span class="line"><span>cc -Wall -lpthread -I /tmp/schbench/adrestia/include -g adrestia.c wake.o stats.o -o adrestia -lpthread</span></span></code></pre>
+<p>测试结果</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:/tmp/schbench/adrestia $ ./adrestia</span></span>
+<span class="line"><span>wakeup cost (single): 11us</span></span>
+<span class="line"><span>wakeup cost (periodic, 10us): 12us</span></span>
+<span class="line"><span>ubuntu@zeku_server:/tmp/schbench/adrestia $</span></span></code></pre>
+<h2 id="rt-app">rt-app</h2>
+<p><code>rt-app</code> 需要自己手动编译安装，地址在 <a href="https://github.com/scheduler-tools/rt-app">这里</a></p>
+<p>下载 编译 安装</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>git clone https://github.com/scheduler-tools/rt-app</span></span></code></pre>
+<p>也可以直接安装包安装</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:~/workspace/rt-tests $ sudo apt-cache search rt-app</span></span>
+<span class="line"><span>pixelmed-webstart-apps - DICOM implementation containing Image Viewer and a ECG Viewer - jnlp</span></span>
+<span class="line"><span>rt-app - Test application which simulates a real-time periodic load</span></span></code></pre>
+<p>guide 在 <code>rt-app/doc/tutorial.txt</code> 目录下，有几个比较重要的 配置：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>"cpus" : [2,3], /*  set cpu affinity*/</span></span>
+<span class="line"><span>.......</span></span></code></pre>
+<p>运行直接</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>rt-app tmp.json</span></span></code></pre>
+<p>利用rt-app 可以做很多场景的模拟，doc/example目录中有模拟 mp3 codec的json文件，
+后续再研究。</p>
+<h2 id="cyclictest">cyclictest</h2>
+<p>也是 <code>rt-tests</code> 中一个组件</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:~/workspace/rt-tests $ ./cyclictest --help</span></span>
+<span class="line"><span>cyclictest V 2.30</span></span>
+<span class="line"><span>Usage:</span></span>
+<span class="line"><span>cyclictest &#x3C;options></span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>-a [CPUSET] --affinity     Run thread #N on processor #N, if possible, or if CPUSET</span></span>
+<span class="line"><span>                           given, pin threads to that set of processors in round-</span></span>
+<span class="line"><span>                           robin order.  E.g. -a 2 pins all threads to CPU 2,</span></span>
+<span class="line"><span>                           but -a 3-5,0 -t 5 will run the first and fifth</span></span>
+<span class="line"><span>                           threads on CPU (0),thread #2 on CPU 3, thread #3</span></span>
+<span class="line"><span>                           on CPU 4, and thread #5 on CPU 5.</span></span>
+<span class="line"><span>-A USEC  --aligned=USEC    align thread wakeups to a specific offset</span></span>
+<span class="line"><span>-b USEC  --breaktrace=USEC send break trace command when latency > USEC</span></span>
+<span class="line"><span>-c CLOCK --clock=CLOCK     select clock</span></span>
+<span class="line"><span>                           0 = CLOCK_MONOTONIC (default)</span></span>
+<span class="line"><span>                           1 = CLOCK_REALTIME</span></span>
+<span class="line"><span>         --default-system  Don't attempt to tune the system from cyclictest.</span></span>
+<span class="line"><span>                           Power management is not suppressed.</span></span>
+<span class="line"><span>                           This might give poorer results, but will allow you</span></span>
+<span class="line"><span>                           to discover if you need to tune the system</span></span>
+<span class="line"><span>-d DIST  --distance=DIST   distance of thread intervals in us, default=500</span></span>
+<span class="line"><span>-D       --duration=TIME   specify a length for the test run.</span></span>
+<span class="line"><span>                           Append 'm', 'h', or 'd' to specify minutes, hours or days.</span></span>
+<span class="line"><span>-F       --fifo=&#x3C;path>     create a named pipe at path and write stats to it</span></span>
+<span class="line"><span>-h       --histogram=US    dump a latency histogram to stdout after the run</span></span>
+<span class="line"><span>                           US is the max latency time to be tracked in microseconds</span></span>
+<span class="line"><span>                           This option runs all threads at the same priority.</span></span>
+<span class="line"><span>-H       --histofall=US    same as -h except with an additional summary column</span></span>
+<span class="line"><span>         --histfile=&#x3C;path> dump the latency histogram to &#x3C;path> instead of stdout</span></span>
+<span class="line"><span>-i INTV  --interval=INTV   base interval of thread in us default=1000</span></span>
+<span class="line"><span>         --json=FILENAME   write final results into FILENAME, JSON formatted</span></span>
+<span class="line"><span>         --laptop          Save battery when running cyclictest</span></span>
+<span class="line"><span>                           This will give you poorer realtime results</span></span>
+<span class="line"><span>                           but will not drain your battery so quickly</span></span>
+<span class="line"><span>         --latency=PM_QOS  power management latency target value</span></span>
+<span class="line"><span>                           This value is written to /dev/cpu_dma_latency</span></span>
+<span class="line"><span>                           and affects c-states. The default is 0</span></span>
+<span class="line"><span>-l LOOPS --loops=LOOPS     number of loops: default=0(endless)</span></span>
+<span class="line"><span>         --mainaffinity=CPUSET</span></span>
+<span class="line"><span>                           Run the main thread on CPU #N. This only affects</span></span>
+<span class="line"><span>                           the main thread and not the measurement threads</span></span>
+<span class="line"><span>-m       --mlockall        lock current and future memory allocations</span></span>
+<span class="line"><span>-M       --refresh_on_max  delay updating the screen until a new max</span></span>
+<span class="line"><span>                           latency is hit. Useful for low bandwidth.</span></span>
+<span class="line"><span>-N       --nsecs           print results in ns instead of us (default us)</span></span>
+<span class="line"><span>-o RED   --oscope=RED      oscilloscope mode, reduce verbose output by RED</span></span>
+<span class="line"><span>-p PRIO  --priority=PRIO   priority of highest prio thread</span></span>
+<span class="line"><span>         --policy=NAME     policy of measurement thread, where NAME may be one</span></span>
+<span class="line"><span>                           of: other, normal, batch, idle, fifo or rr.</span></span>
+<span class="line"><span>         --priospread      spread priority levels starting at specified value</span></span>
+<span class="line"><span>-q       --quiet           print a summary only on exit</span></span>
+<span class="line"><span>-r       --relative        use relative timer instead of absolute</span></span>
+<span class="line"><span>-R       --resolution      check clock resolution, calling clock_gettime() many</span></span>
+<span class="line"><span>                           times.  List of clock_gettime() values will be</span></span>
+<span class="line"><span>                           reported with -X</span></span>
+<span class="line"><span>         --secaligned [USEC] align thread wakeups to the next full second</span></span>
+<span class="line"><span>                           and apply the optional offset</span></span>
+<span class="line"><span>-s       --system          use sys_nanosleep and sys_setitimer</span></span>
+<span class="line"><span>-S       --smp             Standard SMP testing: options -a -t and same priority</span></span>
+<span class="line"><span>                           of all threads</span></span>
+<span class="line"><span>        --spike=&#x3C;trigger>  record all spikes > trigger</span></span>
+<span class="line"><span>        --spike-nodes=[num of nodes]</span></span>
+<span class="line"><span>                           These are the maximum number of spikes we can record.</span></span>
+<span class="line"><span>                           The default is 1024 if not specified</span></span>
+<span class="line"><span>         --smi             Enable SMI counting</span></span>
+<span class="line"><span>-t       --threads         one thread per available processor</span></span>
+<span class="line"><span>-t [NUM] --threads=NUM     number of threads:</span></span>
+<span class="line"><span>                           without NUM, threads = max_cpus</span></span>
+<span class="line"><span>                           without -t default = 1</span></span>
+<span class="line"><span>         --tracemark       write a trace mark when -b latency is exceeded</span></span>
+<span class="line"><span>-u       --unbuffered      force unbuffered output for live processing</span></span>
+<span class="line"><span>-v       --verbose         output values on stdout for statistics</span></span>
+<span class="line"><span>                           format: n:c:v n=tasknum c=count v=value in us</span></span>
+<span class="line"><span>         --dbg_cyclictest  print info useful for debugging cyclictest</span></span>
+<span class="line"><span>-x       --posix_timers    use POSIX timers instead of clock_nanosleep.</span></span></code></pre>
+<p>example:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:~/workspace/linux-5.15 $ sudo cyclictest -t1 -p  -n -i 10000 -l 100</span></span>
+<span class="line"><span>defaulting realtime priority to 2</span></span>
+<span class="line"><span># /dev/cpu_dma_latency set to 0us</span></span>
+<span class="line"><span>policy: fifo: loadavg: 0.02 0.04 0.00 1/879 1758988</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>T: 0 (1758988) P: 2 I:10000 C:    100 Min:      3 Act:    4 Avg:    3 Max:       4</span></span>
+<span class="line"><span>ubuntu@zeku_server:~/workspace/linux-5.15 $</span></span></code></pre>
+<h2 id="cpu-benchmark">cpu benchmark</h2>
+<ul>
+<li>GeekBench</li>
+<li>as</li>
+</ul>
+<h3 id="geekbench">geekbench</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>cd /tmp/</span></span>
+<span class="line"><span>wget  http://cdn.geekbench.com/Geekbench-5.1.0-Linux.tar.gz</span></span>
+<span class="line"><span>ls</span></span>
+<span class="line"><span>tar -xzvf Geekbench-5.1.0-Linux.tar.gz</span></span>
+<span class="line"><span>cd Geekbench-5.1.0-Linux</span></span>
+<span class="line"><span>ls</span></span></code></pre>
+<h2 id="memory-benchmark">memory benchmark</h2>
+<p>参考<a href="https://elinux.org/Realtime_Testing_Best_Practices">Realtime Testing Best Practices</a></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

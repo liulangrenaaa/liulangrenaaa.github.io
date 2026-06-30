@@ -1,0 +1,255 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>KASAN 定位越界访问 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>KASAN 定位越界访问</h1><div class="post-meta"><time datetime="2021-01-27T19:00:00.000Z">2021年1月27日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">内核内存越界</span><span class="tag">use after free</span><span class="tag">double free</span><span class="tag">KASAN</span></div></header><div class="article-body"><h2 id="kasan-配置">KASAN 配置</h2>
+<p>首先想使用这类根据肯定是需要重新编译内核的。
+看下<code>.config</code>的改变</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>if [ $debug_KASAN == 1 ]</span></span>
+<span class="line"><span>then</span></span>
+<span class="line"><span>## KASAN detect and panic start</span></span>
+<span class="line"><span>	#---- add</span></span>
+<span class="line"><span>	echo "CONFIG_CONSTRUCTORS=y" >> /tmp/.config</span></span>
+<span class="line"><span>	echo "CONFIG_KASAN_SHADOW_OFFSET=0xdffffc0000000000" >> /tmp/.config</span></span>
+<span class="line"><span>	echo "CONFIG_STACKDEPOT=y" >> /tmp/.config</span></span>
+<span class="line"><span>	echo "CONFIG_KASAN=y" >> /tmp/.config</span></span>
+<span class="line"><span>	echo "CONFIG_KASAN_GENERIC=y" >> /tmp/.config</span></span>
+<span class="line"><span>	echo "CONFIG_KASAN_OUTLINE=y" >> /tmp/.config</span></span>
+<span class="line"><span>	echo "CONFIG_KASAN_STACK=1" >> /tmp/.config</span></span>
+<span class="line"><span>	#---- delect</span></span>
+<span class="line"><span>	sed -i '/CONFIG_VMAP_STACK=y/d' /tmp/.config</span></span>
+<span class="line"><span>## KASAN detect and panic end</span></span>
+<span class="line"><span>fi</span></span></code></pre>
+<p>当然，我在别的地方将$debug_slub_debug也已经打开了.</p>
+<h2 id="kasan-使用">KASAN 使用</h2>
+<p>写了一个test case，参考<a href="https://github.com/liulangrenaaa/test_modules/blob/main/memory/kasan_debug/kasan_debug.c">代码</a></p>
+<h3 id="oob检测">oob检测</h3>
+<p>编译安装模块之后，直接panic了(我设置了<code>panic_on_warn</code>。。)，只能通过 <code>crash</code> 根据查看 现场的 dmesg log</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>crash> log | tail -n 70</span></span>
+<span class="line"><span>==================================================================</span></span>
+<span class="line"><span>[  114.816452] BUG: KASAN: slab-out-of-bounds in kasan_debug_oob+0x35/0x70 [kasan_debug]</span></span>
+<span class="line"><span>[  114.816452] Write of size 1 at addr ffff8880076053c0 by task kasan_debug/3229</span></span>
+<span class="line"><span>[  114.816452]</span></span>
+<span class="line"><span>[  114.816452] CPU: 1 PID: 3229 Comm: kasan_debug Kdump: loaded Tainted: G           O      5.11.0-rc5+ #6</span></span>
+<span class="line"><span>[  114.816452] Hardware name: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.13.0-1ubuntu1.1 04/01/2014</span></span>
+<span class="line"><span>[  114.816452] Call Trace:</span></span>
+<span class="line"><span>[  114.816452]  dump_stack+0x9a/0xcc</span></span>
+<span class="line"><span>[  114.816452]  ? kasan_debug_oob+0x35/0x70 [kasan_debug]</span></span>
+<span class="line"><span>[  114.816452]  print_address_description.constprop.0+0x1a/0x140</span></span>
+<span class="line"><span>[  114.816452]  ? kasan_debug_oob+0x35/0x70 [kasan_debug]</span></span>
+<span class="line"><span>[  114.816452]  ? kasan_debug_oob+0x35/0x70 [kasan_debug]</span></span>
+<span class="line"><span>[  114.816452]  kasan_report.cold+0x7f/0x10e</span></span>
+<span class="line"><span>[  114.816452]  ? ____kasan_kmalloc.constprop.0+0x1/0xa0</span></span>
+<span class="line"><span>[  114.816452]  ? kasan_debug_oob+0x35/0x70 [kasan_debug]</span></span>
+<span class="line"><span>[  114.816452]  ? 0xffffffffc0880000</span></span>
+<span class="line"><span>[  114.816452]  kasan_debug_oob+0x35/0x70 [kasan_debug]</span></span>
+<span class="line"><span>[  114.816452]  kthread+0x1aa/0x200</span></span>
+<span class="line"><span>[  114.816452]  ? kthread_create_on_node+0xd0/0xd0</span></span>
+<span class="line"><span>[  114.816452]  ret_from_fork+0x22/0x30</span></span>
+<span class="line"><span>[  114.816452]</span></span>
+<span class="line"><span>[  114.816452] Allocated by task 3229:</span></span>
+<span class="line"><span>[  114.816452]  kasan_save_stack+0x1b/0x40</span></span>
+<span class="line"><span>[  114.816452]  ____kasan_kmalloc.constprop.0+0x84/0xa0</span></span>
+<span class="line"><span>[  114.816452]  kasan_debug_oob+0x29/0x70 [kasan_debug]</span></span>
+<span class="line"><span>[  114.816452]  kthread+0x1aa/0x200</span></span>
+<span class="line"><span>[  114.816452]  ret_from_fork+0x22/0x30</span></span>
+<span class="line"><span>[  114.816452]</span></span>
+<span class="line"><span>[  114.816452] The buggy address belongs to the object at ffff8880076053a0</span></span>
+<span class="line"><span>                which belongs to the cache kmalloc-32 of size 32</span></span>
+<span class="line"><span>[  114.816452] The buggy address is located 0 bytes to the right of</span></span>
+<span class="line"><span>                32-byte region [ffff8880076053a0, ffff8880076053c0)</span></span>
+<span class="line"><span>[  114.816452] The buggy address belongs to the page:</span></span>
+<span class="line"><span>[  114.816452] page:00000000352cff66 refcount:1 mapcount:0 mapping:0000000000000000 index:0x0 pfn:0x7604</span></span>
+<span class="line"><span>[  114.816452] head:00000000352cff66 order:1 compound_mapcount:0</span></span>
+<span class="line"><span>[  114.816452] flags: 0x100000000010200(slab|head)</span></span>
+<span class="line"><span>[  114.816452] raw: 0100000000010200 ffffea0000441688 ffffea0000466d88 ffff888001042540</span></span>
+<span class="line"><span>[  114.816452] raw: 0000000000000000 0000000000130013 00000001ffffffff 0000000000000000</span></span>
+<span class="line"><span>[  114.816452] page dumped because: kasan: bad access detected</span></span>
+<span class="line"><span>[  114.816452]</span></span>
+<span class="line"><span>[  114.816452] Memory state around the buggy address:</span></span>
+<span class="line"><span>[  114.816452]  ffff888007605280: fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc</span></span>
+<span class="line"><span>[  114.816452]  ffff888007605300: fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc</span></span>
+<span class="line"><span>[  114.816452] >ffff888007605380: fc fc fc fc 00 00 00 00 fc fc fc fc fc fc fc fc</span></span>
+<span class="line"><span>[  114.816452]                                            ^</span></span>
+<span class="line"><span>[  114.816452]  ffff888007605400: fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc</span></span>
+<span class="line"><span>[  114.816452]  ffff888007605480: fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc</span></span>
+<span class="line"><span>[  114.816452] ==================================================================</span></span>
+<span class="line"><span>[  114.816452] Disabling lock debugging due to kernel taint</span></span>
+<span class="line"><span>[  114.833983] Kernel panic - not syncing: panic_on_warn set ...</span></span>
+<span class="line"><span>[  114.834833] CPU: 1 PID: 3229 Comm: kasan_debug Kdump: loaded Tainted: G    B      O      5.11.0-rc5+ #6</span></span>
+<span class="line"><span>[  114.835925] Hardware name: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.13.0-1ubuntu1.1 04/01/2014</span></span>
+<span class="line"><span>[  114.836979] Call Trace:</span></span>
+<span class="line"><span>[  114.836979]  dump_stack+0x9a/0xcc</span></span>
+<span class="line"><span>[  114.836979]  ? 0xffffffffc0880000</span></span>
+<span class="line"><span>[  114.836979]  panic+0x1ae/0x3c3</span></span>
+<span class="line"><span>[  114.836979]  ? print_oops_end_marker.cold+0x10/0x10</span></span>
+<span class="line"><span>[  114.839656]  ? kasan_debug_oob+0x35/0x70 [kasan_debug]</span></span>
+<span class="line"><span>[  114.840336]  ? kasan_debug_oob+0x35/0x70 [kasan_debug]</span></span>
+<span class="line"><span>[  114.841598]  end_report+0x58/0x5e</span></span>
+<span class="line"><span>[  114.841598]  kasan_report.cold+0x9d/0x10e</span></span>
+<span class="line"><span>[  114.841598]  ? ____kasan_kmalloc.constprop.0+0x1/0xa0</span></span>
+<span class="line"><span>[  114.841598]  ? kasan_debug_oob+0x35/0x70 [kasan_debug]</span></span>
+<span class="line"><span>[  114.841598]  ? 0xffffffffc0880000</span></span>
+<span class="line"><span>[  114.841598]  kasan_debug_oob+0x35/0x70 [kasan_debug]</span></span>
+<span class="line"><span>[  114.841598]  kthread+0x1aa/0x200</span></span>
+<span class="line"><span>[  114.841598]  ? kthread_create_on_node+0xd0/0xd0</span></span>
+<span class="line"><span>[  114.841598]  ret_from_fork+0x22/0x30</span></span></code></pre>
+<p>可以看到报错信息很明显</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>[  114.816452] BUG: KASAN: slab-out-of-bounds in kasan_debug_oob+0x35/0x70 [kasan_debug]</span></span>
+<span class="line"><span>[  114.816452] Write of size 1 at addr ffff8880076053c0 by task kasan_debug/3229</span></span>
+<span class="line"><span>[  114.816452] The buggy address belongs to the object at ffff8880076053a0</span></span>
+<span class="line"><span>                which belongs to the cache kmalloc-32 of size 32</span></span>
+<span class="line"><span>[  114.816452] The buggy address is located 0 bytes to the right of</span></span>
+<span class="line"><span>                32-byte region [ffff8880076053a0, ffff8880076053c0)</span></span></code></pre>
+<p>基本<code>dis</code>反汇编一下就能看到出错逻辑</p>
+<h3 id="use-after-free检测">use after free检测</h3>
+<p>使用<code>kasan_debug_use_after_free（）</code>
+重新编译安装（这次我关掉了<code>panic_on_warn</code>）,报错信息如下</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>[   98.719080] ==================================================================</span></span>
+<span class="line"><span>[   98.719793] BUG: KASAN: use-after-free in kasan_debug_use_after_free+0x109/0x180 [kasan_debug]</span></span>
+<span class="line"><span>[   98.719793] Write of size 1 at addr ffff8880432ce85e by task kasan_debug/3203</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>[   98.719793] CPU: 0 PID: 3203 Comm: kasan_debug Kdump: loaded Tainted: G           O      5.11.0-rc5+ #6</span></span>
+<span class="line"><span>[   98.719793] Hardware name: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.13.0-1ubuntu1.1 04/01/2014</span></span>
+<span class="line"><span>[   98.719793] Call Trace:</span></span>
+<span class="line"><span>[   98.719793]  dump_stack+0x9a/0xcc</span></span>
+<span class="line"><span>[   98.719793]  ? kasan_debug_use_after_free+0x109/0x180 [kasan_debug]</span></span>
+<span class="line"><span>[   98.719793]  print_address_description.constprop.0+0x1a/0x140</span></span>
+<span class="line"><span>[   98.719793]  ? kasan_debug_use_after_free+0x109/0x180 [kasan_debug]</span></span>
+<span class="line"><span>[   98.719793]  ? kasan_debug_use_after_free+0x109/0x180 [kasan_debug]</span></span>
+<span class="line"><span>[   98.719793]  kasan_report.cold+0x7f/0x10e</span></span>
+<span class="line"><span>[   98.719793]  ? kasan_debug_use_after_free+0x109/0x180 [kasan_debug]</span></span>
+<span class="line"><span>[   98.719793]  kasan_debug_use_after_free+0x109/0x180 [kasan_debug]</span></span>
+<span class="line"><span>[   98.719793]  ? 0xffffffffc07b8000</span></span>
+<span class="line"><span>[   98.719793]  ? mark_held_locks+0x24/0x90</span></span>
+<span class="line"><span>[   98.719793]  ? lockdep_hardirqs_on_prepare+0x12e/0x1f0</span></span>
+<span class="line"><span>[   98.719793]  ? _raw_spin_unlock_irqrestore+0x34/0x40</span></span>
+<span class="line"><span>[   98.719793]  ? trace_hardirqs_on+0x1c/0x100</span></span>
+<span class="line"><span>[   98.719793]  ? 0xffffffffc07b8000</span></span>
+<span class="line"><span>[   98.719793]  kthread+0x1aa/0x200</span></span>
+<span class="line"><span>[   98.719793]  ? kthread_create_on_node+0xd0/0xd0</span></span>
+<span class="line"><span>[   98.719793]  ret_from_fork+0x22/0x30</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>[   98.719793] Allocated by task 3203:</span></span>
+<span class="line"><span>[   98.719793]  kasan_save_stack+0x1b/0x40</span></span>
+<span class="line"><span>[   98.719793]  ____kasan_kmalloc.constprop.0+0x84/0xa0</span></span>
+<span class="line"><span>[   98.719793]  kasan_debug_use_after_free+0xb8/0x180 [kasan_debug]</span></span>
+<span class="line"><span>[   98.719793]  kthread+0x1aa/0x200</span></span>
+<span class="line"><span>[   98.719793]  ret_from_fork+0x22/0x30</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>[   98.719793] Freed by task 3203:</span></span>
+<span class="line"><span>[   98.719793]  kasan_save_stack+0x1b/0x40</span></span>
+<span class="line"><span>[   98.719793]  kasan_set_track+0x1c/0x30</span></span>
+<span class="line"><span>[   98.719793]  kasan_set_free_info+0x20/0x30</span></span>
+<span class="line"><span>[   98.719793]  ____kasan_slab_free+0xec/0x120</span></span>
+<span class="line"><span>[   98.719793]  kfree+0xcc/0x2e0</span></span>
+<span class="line"><span>[   98.719793]  kasan_debug_use_after_free+0xf6/0x180 [kasan_debug]</span></span>
+<span class="line"><span>[   98.719793]  kthread+0x1aa/0x200</span></span>
+<span class="line"><span>[   98.719793]  ret_from_fork+0x22/0x30</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>[   98.719793] The buggy address belongs to the object at ffff8880432ce840</span></span>
+<span class="line"><span>                which belongs to the cache kmalloc-32 of size 32</span></span>
+<span class="line"><span>[   98.719793] The buggy address is located 30 bytes inside of</span></span>
+<span class="line"><span>                32-byte region [ffff8880432ce840, ffff8880432ce860)</span></span>
+<span class="line"><span>[   98.719793] The buggy address belongs to the page:</span></span>
+<span class="line"><span>[   98.719793] page:00000000d04b265b refcount:1 mapcount:0 mapping:0000000000000000 index:0xffff8880432ce1c0 pfn:0x432ce</span></span>
+<span class="line"><span>[   98.719793] head:00000000d04b265b order:1 compound_mapcount:0</span></span>
+<span class="line"><span>[   98.719793] flags: 0x100000000010200(slab|head)</span></span>
+<span class="line"><span>[   98.719793] raw: 0100000000010200 ffffea0000720f08 ffff888001041b88 ffff888001042540</span></span>
+<span class="line"><span>[   98.719793] raw: ffff8880432ce1c0 0000000000130011 00000001ffffffff 0000000000000000</span></span>
+<span class="line"><span>[   98.719793] page dumped because: kasan: bad access detected</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>[   98.719793] Memory state around the buggy address:</span></span>
+<span class="line"><span>[   98.719793]  ffff8880432ce700: fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc</span></span>
+<span class="line"><span>[   98.719793]  ffff8880432ce780: fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc</span></span>
+<span class="line"><span>[   98.719793] >ffff8880432ce800: fc fc fc fc fc fc fc fc fa fb fb fb fc fc fc fc</span></span>
+<span class="line"><span>[   98.719793]                                                     ^</span></span>
+<span class="line"><span>[   98.719793]  ffff8880432ce880: fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc</span></span>
+<span class="line"><span>[   98.719793]  ffff8880432ce900: fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc</span></span>
+<span class="line"><span>[   98.719793] ==================================================================</span></span>
+<span class="line"><span>[   98.719793] Disabling lock debugging due to kernel taint</span></span></code></pre>
+<p>可以看到报错信息</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>[   98.719793] BUG: KASAN: use-after-free in kasan_debug_use_after_free+0x109/0x180 [kasan_debug]</span></span>
+<span class="line"><span>[   98.719793] Allocated by task 3203:</span></span>
+<span class="line"><span>[   98.719793] Freed by task 3203:</span></span>
+<span class="line"><span>[   98.719793] The buggy address belongs to the object at ffff8880432ce840</span></span>
+<span class="line"><span>                which belongs to the cache kmalloc-32 of size 32</span></span>
+<span class="line"><span>[   98.719793] The buggy address is located 30 bytes inside of</span></span>
+<span class="line"><span>                32-byte region [ffff8880432ce840, ffff8880432ce860)</span></span></code></pre>
+<p>直接反汇编，基本直接可以找到问题</p>
+<h3 id="double-free检测">double free检测</h3>
+<p>使用<code>kasan_debug_double_free</code>
+重新编译安装（这次我关掉了<code>panic_on_warn</code>）,报错信息如下</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>[   80.381499] ==================================================================</span></span>
+<span class="line"><span>[   80.508872] ==================================================================</span></span>
+<span class="line"><span>[   80.509767] BUG: KASAN: double-free or invalid-free in kasan_debug_double_free+0x119/0x180 [kasan_debug]</span></span>
+<span class="line"><span>[   80.509767] CPU: 3 PID: 3407 Comm: kasan_debug Kdump: loaded Tainted: G    B      O      5.11.0-rc5+ #6</span></span>
+<span class="line"><span>[   80.509767] Hardware name: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.13.0-1ubuntu1.1 04/01/2014</span></span>
+<span class="line"><span>[   80.509767] Call Trace:</span></span>
+<span class="line"><span>......</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>[   80.509767] The buggy address belongs to the object at ffff888010e3b540</span></span>
+<span class="line"><span>                which belongs to the cache kmalloc-32 of size 32</span></span>
+<span class="line"><span>[   80.509767] The buggy address is located 0 bytes inside of</span></span>
+<span class="line"><span>                32-byte region [ffff888010e3b540, ffff888010e3b560)</span></span>
+<span class="line"><span>[   80.509767] The buggy address belongs to the page:</span></span>
+<span class="line"><span>[   80.509767] page:000000001edff74e refcount:1 mapcount:0 mapping:0000000000000000 index:0x0 pfn:0x10e3a</span></span>
+<span class="line"><span>[   80.509767] head:000000001edff74e order:1 compound_mapcount:0</span></span>
+<span class="line"><span>[   80.509767] flags: 0x100000000010200(slab|head)</span></span>
+<span class="line"><span>[   80.509767] raw: 0100000000010200 ffffea0000955888 ffff888001041ba8 ffff888001042540</span></span>
+<span class="line"><span>[   80.509767] raw: 0000000000000000 0000000000130013 00000001ffffffff 0000000000000000</span></span>
+<span class="line"><span>[   80.509767] page dumped because: kasan: bad access detected</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>[   80.509767] Memory state around the buggy address:</span></span>
+<span class="line"><span>[   80.509767]  ffff888010e3b400: fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc</span></span>
+<span class="line"><span>[   80.509767]  ffff888010e3b480: fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc</span></span>
+<span class="line"><span>[   80.509767] >ffff888010e3b500: fc fc fc fc fc fc fc fc fa fb fb fb fc fc fc fc</span></span>
+<span class="line"><span>[   80.509767]                                            ^</span></span>
+<span class="line"><span>[   80.509767]  ffff888010e3b580: fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc</span></span>
+<span class="line"><span>[   80.509767]  ffff888010e3b600: fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc</span></span></code></pre>
+<p>可以看到报错信息</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>[   80.509767] BUG: KASAN: double-free or invalid-free in kasan_debug_double_free+0x119/0x180 [kasan_debug]</span></span>
+<span class="line"><span>[   80.509767] The buggy address belongs to the object at ffff888010e3b540</span></span>
+<span class="line"><span>                which belongs to the cache kmalloc-32 of size 32</span></span>
+<span class="line"><span>[   80.509767] The buggy address is located 0 bytes inside of</span></span>
+<span class="line"><span>                32-byte region [ffff888010e3b540, ffff888010e3b560)</span></span></code></pre>
+<p>根据这提示信息和 backtrace，反汇编一下基本就可以找到问题所在</p>
+<h3 id="vmalloc-内存检测">vmalloc 内存检测</h3>
+<p>由于 <code>vmalloc</code>存在的 <code>guard page</code>的原因，基本上只要 <code>vmalloc</code>内存存在越界的问题，就会立即报出来
+后面加上 <code>guard page</code>分析。</p>
+<h2 id="kasan-overhead">KASAN overhead</h2>
+<p>当然假设我们场景允许 使能KASAN之后，重新编译 kernel，也要关系 KASAN 所带来的
+overhead是否允许。</p>
+<p>关于使能 KASAN的 overhead:</p>
+<ol>
+<li>image 变大
+on</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>amd_server@ubuntu: ~/workspace/share/debug# ls -alh</span></span>
+<span class="line"><span>total 1.1G</span></span>
+<span class="line"><span>-rw-r--r-- 1 root   root    17M 1月  26 21:56 bzImage</span></span>
+<span class="line"><span>-rwxr-xr-x 1 root   root   1.1G 1月  26 21:56 vmlinux</span></span></code></pre>
+<p>off</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>amd_server@ubuntu: ~/workspace/share/stable# ls -alh</span></span>
+<span class="line"><span>total 970M</span></span>
+<span class="line"><span>-rw-r--r-- 1 root   root   9.6M 1月  26 11:05 bzImage</span></span>
+<span class="line"><span>-rwxr-xr-x 1 root   root   967M 1月  26 11:05 vmlinux</span></span></code></pre>
+<ol start="2">
+<li>
+<p>运行速度
+原来我自己qemu虚拟机开机12s，开启 kasan 之后开机时间是 20s.</p>
+</li>
+<li>
+<p>cpu使用率</p>
+</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>on          off</span></span></code></pre>
+<p>我的qemu虚拟机看起来好像区别不大，后面需要用公司机器看一下</p>
+<ol start="4">
+<li>内存使用
+我的qemu上（2G）
+on</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>stable_kernel@kernel: /tmp/share/test_modules/memory/kasan_debug# free -m</span></span>
+<span class="line"><span>              total        used        free      shared  buff/cache   available</span></span>
+<span class="line"><span>Mem:           1419         783          44           6         591         592</span></span>
+<span class="line"><span>Swap:          1497           0        1496</span></span></code></pre>
+<h2 id="总结">总结</h2>
+<p>KASAN 和 slub_debug一样也可以使由于内存越界的检查。
+但是原理上截然不同，后续等搞明白原理再分析一波。</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

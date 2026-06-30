@@ -1,0 +1,93 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>idle 进程的由来 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>idle 进程的由来</h1><div class="post-meta"><time datetime="2021-06-15T19:00:00.000Z">2021年6月15日</time><span> / linux kernel / linux schedule / idle</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">schedule</span></div></header><div class="article-body"><h2 id="idle-线程">idle 线程</h2>
+<p>linux 中给 per cpu都安排了一个结构<code>runqueue</code>，只要此 runqueue中有 runnable的thread,
+scheduler 就不会进入 idle状态；相反，只要没有runnable的task，scheduler就会执行 <code>idle task</code>，使得cpu进入 idle模式。</p>
+<h2 id="idle-线程如何产生的">idle 线程如何产生的？</h2>
+<h3 id="单cpu-core架构中">单cpu core架构中</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>void cpu_startup_entry(enum cpuhp_state state)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	arch_cpu_idle_prepare();</span></span>
+<span class="line"><span>	cpuhp_online_idle(state);</span></span>
+<span class="line"><span>	while (1)</span></span>
+<span class="line"><span>		do_idle();</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>noinline void __ref rest_init(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>        ......</span></span>
+<span class="line"><span>	cpu_startup_entry(CPUHP_ONLINE);</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>void __init __weak arch_call_rest_init(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	rest_init();</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>asmlinkage __visible void __init __no_sanitize_address start_kernel(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>        ......</span></span>
+<span class="line"><span>      	arch_call_rest_init();</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<h3 id="smp架构中">smp架构中</h3>
+<p>smp 架构在boot的时候也是单cpu 先boot,然后结果smp_init()，将系统中其他cpu boot起来。
+所以在 boot cpu中，idle线程还是通过 <code>rest_init()</code> 产生的。</p>
+<p>非 <code>boot cpu</code> 的情况下，idle 线程是通过<code>idle_threads_init()</code> 产生的：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static inline void idle_init(unsigned int cpu)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	struct task_struct *tsk = per_cpu(idle_threads, cpu);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (!tsk) {</span></span>
+<span class="line"><span>		tsk = fork_idle(cpu);</span></span>
+<span class="line"><span>		if (IS_ERR(tsk))</span></span>
+<span class="line"><span>			pr_err("SMP: fork_idle() failed for CPU %u\n", cpu);</span></span>
+<span class="line"><span>		else</span></span>
+<span class="line"><span>			per_cpu(idle_threads, cpu) = tsk;</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>/**</span></span>
+<span class="line"><span> * idle_threads_init - Initialize idle threads for all cpus</span></span>
+<span class="line"><span> */</span></span>
+<span class="line"><span>void __init idle_threads_init(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	unsigned int cpu, boot_cpu;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	boot_cpu = smp_processor_id();</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	for_each_possible_cpu(cpu) {</span></span>
+<span class="line"><span>		if (cpu != boot_cpu)</span></span>
+<span class="line"><span>			idle_init(cpu);</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>/* Called by boot processor to activate the rest. */</span></span>
+<span class="line"><span>void __init smp_init(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>        ......</span></span>
+<span class="line"><span>	idle_threads_init();</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static noinline void __init kernel_init_freeable(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>        ......</span></span>
+<span class="line"><span>	smp_init();</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static int __ref kernel_init(void *unused)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	......</span></span>
+<span class="line"><span>	kernel_init_freeable();</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>noinline void __ref rest_init(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>        ......</span></span>
+<span class="line"><span>	pid = kernel_thread(kernel_init, NULL, CLONE_FS);</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>rest_init
+— kernel_init
+— kernel_init_freeable
+— smp_init
+— idle_threads_init
+— idle_init</p>
+<h2 id="idle-线程干了啥">idle 线程干了啥？</h2>
+<p>后续熟悉 arm cpu指令再补充..</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

@@ -1,0 +1,196 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>perf example | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>perf example</h1><div class="post-meta"><time datetime="2021-07-15T19:00:40.000Z">2021年7月15日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">perf</span><span class="tag">filesystem</span></div></header><div class="article-body"><h2 id="perf_event_open-demo">perf_event_open demo</h2>
+<p>performance counters 是在现代cpu上的一种特殊硬件寄存器，可以对某些特定hw events进行计数，比如指令执行数目，cache miss数量等。
+perf 子系统给应用层单独开放的接口 是 <code>perf_event_open</code>，会返回 一个fd，后续的操作都是围绕这个 fd来的，可以用 ioctl,fcntl 来控制这个fd。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>#include &#x3C;stdio.h></span></span>
+<span class="line"><span>#include &#x3C;string.h></span></span>
+<span class="line"><span>#include &#x3C;stdint.h></span></span>
+<span class="line"><span>#include &#x3C;unistd.h></span></span>
+<span class="line"><span>#include &#x3C;sys/syscall.h></span></span>
+<span class="line"><span>#include &#x3C;linux/perf_event.h></span></span>
+<span class="line"><span>#include &#x3C;sys/ioctl.h></span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>//目前perf_event_open在glibc中没有封装，需要手工封装一下</span></span>
+<span class="line"><span>int perf_event_open(struct perf_event_attr *attr, pid_t pid, int cpu, int group_fd, unsigned long flags)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>    return syscall(__NR_perf_event_open, attr, pid, cpu, group_fd, flags);</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>/**</span></span>
+<span class="line"><span> * read instructions</span></span>
+<span class="line"><span>*/</span></span>
+<span class="line"><span>int main(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>    struct perf_event_attr attr;</span></span>
+<span class="line"><span>    memset(&#x26;attr, 0, sizeof(struct perf_event_attr));</span></span>
+<span class="line"><span>    attr.size = sizeof(struct perf_event_attr);</span></span>
+<span class="line"><span>    //监测硬件</span></span>
+<span class="line"><span>    attr.type = PERF_TYPE_HARDWARE;</span></span>
+<span class="line"><span>    //监测指令数</span></span>
+<span class="line"><span>    attr.config = PERF_COUNT_HW_INSTRUCTIONS;</span></span>
+<span class="line"><span>    //初始状态为禁用</span></span>
+<span class="line"><span>    attr.disabled = 1;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>    //创建perf文件描述符，其中pid=0,cpu=-1表示监测当前进程，不论运行在那个cpu上</span></span>
+<span class="line"><span>    int fd = perf_event_open(&#x26;attr, 0, -1, -1, 0);</span></span>
+<span class="line"><span>    if (fd &#x3C; 0) {</span></span>
+<span class="line"><span>        perror("Cannot open perf fd!");</span></span>
+<span class="line"><span>        return 1;</span></span>
+<span class="line"><span>    }</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>    //启用（开始计数）</span></span>
+<span class="line"><span>    ioctl(fd, PERF_EVENT_IOC_ENABLE, 0);</span></span>
+<span class="line"><span>    while (1) {</span></span>
+<span class="line"><span>        uint64_t instructions;</span></span>
+<span class="line"><span>        //读取最新的计数值</span></span>
+<span class="line"><span>        read(fd, &#x26;instructions, sizeof(instructions));</span></span>
+<span class="line"><span>        printf("instructions = %ld\n", instructions);</span></span>
+<span class="line"><span>        sleep(1);</span></span>
+<span class="line"><span>    }</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>编译运行</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:~/workspace/share/test_modules/performance/perf_event_open $ gcc perf_count.c</span></span>
+<span class="line"><span>ubuntu@zeku_server:~/workspace/share/test_modules/performance/perf_event_open $ sudo ./a.out</span></span>
+<span class="line"><span>instructions = 7516</span></span>
+<span class="line"><span>instructions = 82866</span></span>
+<span class="line"><span>^C</span></span></code></pre>
+<h2 id="接口分析">接口分析</h2>
+<p>通过 <code>perf_event_open</code>、<code>ioctl</code> 等实现了 <code>perf</code> 部分功能。
+调用<code>perf_event_open</code> 之前需要先构造<code>attr</code>，attr属性主要有
+<code>type</code>，主要有六类</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/*</span></span>
+<span class="line"><span> * attr.type</span></span>
+<span class="line"><span> */</span></span>
+<span class="line"><span>enum perf_type_id {</span></span>
+<span class="line"><span>	PERF_TYPE_HARDWARE			= 0,</span></span>
+<span class="line"><span>	PERF_TYPE_SOFTWARE			= 1,</span></span>
+<span class="line"><span>	PERF_TYPE_TRACEPOINT			= 2,</span></span>
+<span class="line"><span>	PERF_TYPE_HW_CACHE			= 3,</span></span>
+<span class="line"><span>	PERF_TYPE_RAW				= 4,</span></span>
+<span class="line"><span>	PERF_TYPE_BREAKPOINT			= 5,</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	PERF_TYPE_MAX,				/* non-ABI */</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<p>每个type还有具体细分
+如 <code>perf_hw_cache_id</code> <code>perf_hw_cache_op_id</code> <code>perf_hw_cache_op_result_id</code> <code>perf_sw_ids</code> 等：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/*</span></span>
+<span class="line"><span> * Generalized hardware cache events:</span></span>
+<span class="line"><span> *</span></span>
+<span class="line"><span> *       { L1-D, L1-I, LLC, ITLB, DTLB, BPU, NODE } x</span></span>
+<span class="line"><span> *       { read, write, prefetch } x</span></span>
+<span class="line"><span> *       { accesses, misses }</span></span>
+<span class="line"><span> */</span></span>
+<span class="line"><span>enum perf_hw_cache_id {</span></span>
+<span class="line"><span>	PERF_COUNT_HW_CACHE_L1D			= 0,</span></span>
+<span class="line"><span>	PERF_COUNT_HW_CACHE_L1I			= 1,</span></span>
+<span class="line"><span>	PERF_COUNT_HW_CACHE_LL			= 2,</span></span>
+<span class="line"><span>	PERF_COUNT_HW_CACHE_DTLB		= 3,</span></span>
+<span class="line"><span>	PERF_COUNT_HW_CACHE_ITLB		= 4,</span></span>
+<span class="line"><span>	PERF_COUNT_HW_CACHE_BPU			= 5,</span></span>
+<span class="line"><span>	PERF_COUNT_HW_CACHE_NODE		= 6,</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	PERF_COUNT_HW_CACHE_MAX,		/* non-ABI */</span></span>
+<span class="line"><span>};</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>enum perf_hw_cache_op_id {</span></span>
+<span class="line"><span>	PERF_COUNT_HW_CACHE_OP_READ		= 0,</span></span>
+<span class="line"><span>	PERF_COUNT_HW_CACHE_OP_WRITE		= 1,</span></span>
+<span class="line"><span>	PERF_COUNT_HW_CACHE_OP_PREFETCH		= 2,</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	PERF_COUNT_HW_CACHE_OP_MAX,		/* non-ABI */</span></span>
+<span class="line"><span>};</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>enum perf_hw_cache_op_result_id {</span></span>
+<span class="line"><span>	PERF_COUNT_HW_CACHE_RESULT_ACCESS	= 0,</span></span>
+<span class="line"><span>	PERF_COUNT_HW_CACHE_RESULT_MISS		= 1,</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	PERF_COUNT_HW_CACHE_RESULT_MAX,		/* non-ABI */</span></span>
+<span class="line"><span>};</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>/*</span></span>
+<span class="line"><span> * Special "software" events provided by the kernel, even if the hardware</span></span>
+<span class="line"><span> * does not support performance events. These events measure various</span></span>
+<span class="line"><span> * physical and sw events of the kernel (and allow the profiling of them as</span></span>
+<span class="line"><span> * well):</span></span>
+<span class="line"><span> */</span></span>
+<span class="line"><span>enum perf_sw_ids {</span></span>
+<span class="line"><span>	PERF_COUNT_SW_CPU_CLOCK			= 0,</span></span>
+<span class="line"><span>	PERF_COUNT_SW_TASK_CLOCK		= 1,</span></span>
+<span class="line"><span>	PERF_COUNT_SW_PAGE_FAULTS		= 2,</span></span>
+<span class="line"><span>	PERF_COUNT_SW_CONTEXT_SWITCHES		= 3,</span></span>
+<span class="line"><span>	PERF_COUNT_SW_CPU_MIGRATIONS		= 4,</span></span>
+<span class="line"><span>	PERF_COUNT_SW_PAGE_FAULTS_MIN		= 5,</span></span>
+<span class="line"><span>	PERF_COUNT_SW_PAGE_FAULTS_MAJ		= 6,</span></span>
+<span class="line"><span>	PERF_COUNT_SW_ALIGNMENT_FAULTS		= 7,</span></span>
+<span class="line"><span>	PERF_COUNT_SW_EMULATION_FAULTS		= 8,</span></span>
+<span class="line"><span>	PERF_COUNT_SW_DUMMY			= 9,</span></span>
+<span class="line"><span>	PERF_COUNT_SW_BPF_OUTPUT		= 10,</span></span>
+<span class="line"><span>	PERF_COUNT_SW_CGROUP_SWITCHES		= 11,</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	PERF_COUNT_SW_MAX,			/* non-ABI */</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<h2 id="pid-cpu-参数">pid cpu 参数</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>pid == 0 and cpu == -1</span></span>
+<span class="line"><span>      This measures the calling process/thread on any CPU.</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>pid == 0 and cpu >= 0</span></span>
+<span class="line"><span>      This measures the calling process/thread only when running on the specified CPU.</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>pid > 0 and cpu == -1</span></span>
+<span class="line"><span>      This measures the specified process/thread on any CPU.</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>pid > 0 and cpu >= 0</span></span>
+<span class="line"><span>      This measures the specified process/thread only when running on the specified CPU.</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>pid == -1 and cpu >= 0</span></span>
+<span class="line"><span>      This  measures  all  processes/threads on the specified CPU.  This requires CAP_PERFMON (since Linux 5.8) or</span></span>
+<span class="line"><span>      CAP_SYS_ADMIN capability or a /proc/sys/kernel/perf_event_paranoid value of less than 1.</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>pid == -1 and cpu == -1</span></span>
+<span class="line"><span>      This setting is invalid and will return an error.</span></span></code></pre>
+<h2 id="perf-tool-分析">perf tool 分析</h2>
+<p>perf tool 提供了多种多样的功能，是使用 perf tool的关键</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static struct cmd_struct commands[] = {</span></span>
+<span class="line"><span>	{ "buildid-cache", cmd_buildid_cache, 0 },</span></span>
+<span class="line"><span>	{ "buildid-list", cmd_buildid_list, 0 },</span></span>
+<span class="line"><span>	{ "config",	cmd_config,	0 },</span></span>
+<span class="line"><span>	{ "c2c",	cmd_c2c,	0 },</span></span>
+<span class="line"><span>	{ "diff",	cmd_diff,	0 },</span></span>
+<span class="line"><span>	{ "evlist",	cmd_evlist,	0 },</span></span>
+<span class="line"><span>	{ "help",	cmd_help,	0 },</span></span>
+<span class="line"><span>	{ "kallsyms",	cmd_kallsyms,	0 },</span></span>
+<span class="line"><span>	{ "list",	cmd_list,	0 },</span></span>
+<span class="line"><span>	{ "record",	cmd_record,	0 },</span></span>
+<span class="line"><span>	{ "report",	cmd_report,	0 },</span></span>
+<span class="line"><span>	{ "bench",	cmd_bench,	0 },</span></span>
+<span class="line"><span>	{ "stat",	cmd_stat,	0 },</span></span>
+<span class="line"><span>	{ "timechart",	cmd_timechart,	0 },</span></span>
+<span class="line"><span>	{ "top",	cmd_top,	0 },</span></span>
+<span class="line"><span>	{ "annotate",	cmd_annotate,	0 },</span></span>
+<span class="line"><span>	{ "version",	cmd_version,	0 },</span></span>
+<span class="line"><span>	{ "script",	cmd_script,	0 },</span></span>
+<span class="line"><span>	{ "sched",	cmd_sched,	0 },</span></span>
+<span class="line"><span>#ifdef HAVE_LIBELF_SUPPORT</span></span>
+<span class="line"><span>	{ "probe",	cmd_probe,	0 },</span></span>
+<span class="line"><span>#endif</span></span>
+<span class="line"><span>	{ "kmem",	cmd_kmem,	0 },</span></span>
+<span class="line"><span>	{ "lock",	cmd_lock,	0 },</span></span>
+<span class="line"><span>	{ "kvm",	cmd_kvm,	0 },</span></span>
+<span class="line"><span>	{ "test",	cmd_test,	0 },</span></span>
+<span class="line"><span>#if defined(HAVE_LIBAUDIT_SUPPORT) || defined(HAVE_SYSCALL_TABLE_SUPPORT)</span></span>
+<span class="line"><span>	{ "trace",	cmd_trace,	0 },</span></span>
+<span class="line"><span>#endif</span></span>
+<span class="line"><span>	{ "inject",	cmd_inject,	0 },</span></span>
+<span class="line"><span>	{ "mem",	cmd_mem,	0 },</span></span>
+<span class="line"><span>	{ "data",	cmd_data,	0 },</span></span>
+<span class="line"><span>	{ "ftrace",	cmd_ftrace,	0 },</span></span>
+<span class="line"><span>	{ "daemon",	cmd_daemon,	0 },</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<p>参考<a href="https://www.cnblogs.com/muahao/p/8933384.html">perf-perf stat用户层代码分析</a></p>
+<p>参考<a href="https://github.com/torvalds/linux/blob/master/tools/perf/design.txt">design.txt</a></p>
+<ol>
+<li>kprobe 与 function tracer 挂的钩子有啥不一样？</li>
+<li>trigger  -snapshot  -stacktrace -其他事件</li>
+<li>perf ebpf kprobe_event 关系 函数</li>
+<li>kprobe 实现 1. 基于 ftrace 2. 基于 breakpoint</li>
+<li></li>
+</ol></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

@@ -1,0 +1,330 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>Android消息机制(三)：Input 系统如何“白嫖” Looper (inputfd) | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>Android消息机制(三)：Input 系统如何“白嫖” Looper (inputfd)</h1><div class="post-meta"><time datetime="2026-05-13T10:15:02.000Z">2026年5月13日</time><span> / android / framework基础</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">Input</span><span class="tag">socketpair</span><span class="tag">多路复用</span><span class="tag">源码分析</span></div></header><div class="article-body"><p>前两篇已经把 <code>Looper</code> 的两件基础能力讲清楚了：</p>
+<ol>
+<li>它能通过 <code>epoll_wait()</code> 把线程安全地睡下去。</li>
+<li>它能通过 <code>eventfd</code> 在需要时被立即叫醒。</li>
+</ol>
+<p>但 Android 主线程上跑的不只有 Java <code>Message</code>。<code>Input</code>、<code>Vsync</code>、Binder 回调、Native 自定义 fd 事件，本质上都在争抢同一个线程事件循环。这里最典型、也最容易被忽略的一条链路，就是 <code>InputChannel</code>。</p>
+<p>很多人看到触摸事件最终进入 <code>ViewRootImpl</code>、<code>DecorView</code>、<code>View</code>，就会下意识认为这还是一条普通 <code>Handler</code> 消息链。实际上不是。对主线程来说，输入事件最早不是以 <code>Message</code> 的形式到来的，而是先让一个 <strong>input fd 变为 readable</strong>，然后由 <code>Looper</code> 在 <code>epoll</code> 层感知到它，再触发后续输入分发。</p>
+<p>这就是标题里说的“白嫖”：</p>
+<ul>
+<li><code>Input</code> 自己不需要重新发明一套线程阻塞/唤醒机制。</li>
+<li>它只要把自己的 fd 挂到 <code>Looper</code> 里。</li>
+<li>剩下的等待、唤醒、回调分发，全部复用现成的 <code>Looper</code> 基建。</li>
+</ul>
+<p>本文默认基于 <code>aosp14</code> 视角说明这条链路。</p>
+<h2 id="1-先看结论">1. 先看结论</h2>
+<p>先把核心结论放前面：</p>
+<ol>
+<li><code>InputChannel</code> 的本质不是 Java 消息通道，而是一对 <code>socketpair</code> fd。</li>
+<li>应用主线程监听的是其中的接收端 fd，通常可以理解为 “inputfd”。</li>
+<li>这个 fd 会被注册进 Native <code>Looper</code> 的 <code>epoll</code> 集合，而不是注册进 Java <code>MessageQueue.mMessages</code>。</li>
+<li>当 InputDispatcher 把输入数据写进通道后，inputfd 变为 readable。</li>
+<li>主线程阻塞中的 <code>epoll_wait()</code> 立即返回，<code>Looper</code> 分发该 fd 对应的回调。</li>
+<li>Native 输入接收侧读出 <code>InputMessage</code> 后，再通过 JNI/Java 桥接进入 <code>InputEventReceiver</code> 与 <code>ViewRootImpl</code>。</li>
+</ol>
+<p>所以对主线程而言，输入事件的第一触发点不是：</p>
+<ul>
+<li>“消息队列里多了一条 Handler 消息”</li>
+</ul>
+<p>而是：</p>
+<ul>
+<li>“Looper 监听到一个 fd 可读事件”</li>
+</ul>
+<h2 id="2-整体链路图">2. 整体链路图</h2>
+<p>先看完整链路，再拆每一层职责：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">sequenceDiagram</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Driver as Input 驱动 / EventHub</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant IMS as InputReader / InputDispatcher</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Server as InputChannel 服务端 fd</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Client as InputChannel 客户端 fd(inputfd)</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant NLooper as 主线程 Native Looper</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant NRecv as NativeInputEventReceiver</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant JRecv as Java InputEventReceiver</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant VRI as ViewRootImpl</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    Driver->>IMS: 产生触摸/按键原始事件</span></span>
+<span class="line"><span style="color:#E1E4E8">    IMS->>IMS: 解析、命中窗口、生成 InputMessage</span></span>
+<span class="line"><span style="color:#E1E4E8">    IMS->>Server: write(InputMessage)</span></span>
+<span class="line"><span style="color:#E1E4E8">    Server-->>Client: socketpair 数据到达</span></span>
+<span class="line"><span style="color:#E1E4E8">    Client->>NLooper: fd readable</span></span>
+<span class="line"><span style="color:#E1E4E8">    NLooper->>NRecv: 回调 handleEvent/consumeEvents</span></span>
+<span class="line"><span style="color:#E1E4E8">    NRecv->>Client: read(InputMessage)</span></span>
+<span class="line"><span style="color:#E1E4E8">    NRecv->>JRecv: JNI 分发输入事件</span></span>
+<span class="line"><span style="color:#E1E4E8">    JRecv->>VRI: dispatchInputEvent</span></span>
+<span class="line"><span style="color:#E1E4E8">    VRI->>VRI: View 树输入分发与消费</span></span></code></pre>
+<p>这张图里最关键的是两点：</p>
+<ul>
+<li><code>InputDispatcher</code> 写的是一个 socket fd，不是往应用主线程投 Java <code>Message</code>。</li>
+<li>主线程之所以能“第一时间”感知输入，是因为它本来就在 <code>epoll_wait()</code> 里顺手监听这个 fd。</li>
+</ul>
+<h2 id="3-inputchannel-的本质是什么">3. <code>InputChannel</code> 的本质是什么</h2>
+<p><code>InputChannel</code> 是输入系统在进程间传递事件的基础通道。它的核心并不是一个复杂框架对象，而是一对 Unix 域 <code>socketpair</code>。</p>
+<p>可以把它理解成：</p>
+<ul>
+<li>服务端 fd：通常由 system_server 一侧持有，对应 InputDispatcher 往窗口发事件的出口。</li>
+<li>客户端 fd：通常由应用进程一侧持有，对应主线程接收输入的入口。</li>
+</ul>
+<p>它之所以用 <code>socketpair</code>，本质原因是输入系统传的不是“有/无事件”这种单 bit 信号，而是一整包结构化数据，例如：</p>
+<ul>
+<li>动作类型</li>
+<li>时间戳</li>
+<li>坐标</li>
+<li>pointer 信息</li>
+<li>序列号</li>
+<li>finish/ack 所需字段</li>
+</ul>
+<p>这决定了它需要的是 <strong>可双向传输结构化消息的本地 socket 通道</strong>，而不是只适合做通知计数器的 <code>eventfd</code>。</p>
+<p>可以抽象成下面这样：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart LR</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[InputDispatcher] --> B[server fd]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C[socketpair 内核缓冲区]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> D[client fd / inputfd]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E[应用主线程 NativeInputEventReceiver]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    E --> F[读取 InputMessage]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> G[桥接到 Java 输入分发]</span></span>
+<span class="line"><span style="color:#E1E4E8">    G --> H[处理完成后回写 finish 信号]</span></span>
+<span class="line"><span style="color:#E1E4E8">    H --> B</span></span></code></pre>
+<p>这也是 <code>InputChannel</code> 和普通 <code>Handler</code> 消息的根本区别：</p>
+<ul>
+<li><code>Handler</code> 消息存在于进程内 Java 内存队列。</li>
+<li><code>InputChannel</code> 消息存在于 socket 通道和内核缓冲区。</li>
+</ul>
+<h2 id="4-input-为什么不直接发-handler-消息">4. Input 为什么不直接发 Handler 消息</h2>
+<p>这个问题如果只从应用层看，很容易得出错误答案。真正原因至少有四层。</p>
+<h3 id="41-输入事件最初发生在系统进程不在应用进程内">4.1 输入事件最初发生在系统进程，不在应用进程内</h3>
+<p>触摸事件先经过底层驱动、<code>EventHub</code>、<code>InputReader</code>、<code>InputDispatcher</code>，然后才被路由到目标窗口。输入源头根本不在应用主线程所在进程内，因此它首先需要的是：</p>
+<ul>
+<li>进程间通信</li>
+<li>可携带结构体数据</li>
+<li>可关联 backpressure 与 finish/ack 语义</li>
+</ul>
+<p>单纯塞一条 Java <code>Message</code> 并不能解决这些问题。</p>
+<h3 id="42-主线程已经有一套成熟的-fd-事件循环">4.2 主线程已经有一套成熟的 fd 事件循环</h3>
+<p>主线程底层早就不是“只处理 Java Message”的模型，而是：</p>
+<ul>
+<li>Java <code>MessageQueue</code> 负责调度策略</li>
+<li>Native <code>Looper</code> 负责 <code>epoll</code> 等待和 fd 分发</li>
+</ul>
+<p>既然 <code>Looper</code> 已经能监听 fd，那么输入系统最合理的做法就是：</p>
+<ul>
+<li>直接把 <code>InputChannel</code> 客户端 fd 挂进去</li>
+</ul>
+<p>这比“系统进程 -> JNI -> Java 消息投递 -> 再回调输入处理”更直，也更低成本。</p>
+<h3 id="43-输入链路需要双向确认">4.3 输入链路需要双向确认</h3>
+<p>应用消费一个输入事件后，通常还要通过 finish 信号告诉 dispatcher：</p>
+<ul>
+<li>这次事件已经处理完</li>
+<li>是否被消费</li>
+<li>后续是否可以继续投递下一个事件</li>
+</ul>
+<p>这类“请求-应答”语义更适合走双向 socket，而不是单向消息投递。</p>
+<h3 id="44-输入系统需要与-looper-的阻塞状态天然耦合">4.4 输入系统需要与 Looper 的阻塞状态天然耦合</h3>
+<p>如果主线程当前没有 Java 消息，它通常会睡在 <code>epoll_wait()</code>。输入系统只要让 inputfd 变为 readable，就能把线程从阻塞态直接唤醒。这种设计天然满足两件事：</p>
+<ol>
+<li>没输入时主线程不会空转。</li>
+<li>一有输入，主线程会从内核等待点立即返回。</li>
+</ol>
+<h2 id="5-inputfd-是怎么注册进-looper-的">5. inputfd 是怎么注册进 Looper 的</h2>
+<p>这一步是理解“白嫖 Looper”的核心。</p>
+<p>应用窗口在创建输入接收器时，会建立 <code>InputChannel</code>，随后在 Native 输入接收端把客户端 fd 注册到当前线程的 <code>Looper</code>。概念上等价于：</p>
+<ol>
+<li>拿到主线程对应的 <code>Looper</code></li>
+<li>调用 <code>addFd(inputfd, ...)</code></li>
+<li>指定当 <code>EVENT_INPUT</code> 到来时的回调对象</li>
+</ol>
+<p>此后主线程每轮 <code>nativePollOnce()</code> 最终都会落到：</p>
+<ul>
+<li><code>Looper::pollOnce()</code></li>
+<li><code>Looper::pollInner()</code></li>
+<li><code>epoll_wait()</code></li>
+</ul>
+<p>而 inputfd 已经在这个 <code>epoll</code> 监听集合里了。</p>
+<p>可以把这一步画成下面这样：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[ViewRootImpl 创建输入接收器] --> B[创建 InputChannel 客户端 fd]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C[NativeInputEventReceiver 持有 inputfd]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> D[获取当前线程 Looper]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E[调用 Looper addFd 注册 inputfd]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> F[epoll_ctl ADD 到 epoll 集合]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> G[主线程后续 pollOnce 时统一监听]</span></span></code></pre>
+<p>这里非常关键的一点是：</p>
+<ul>
+<li><code>addFd()</code> 注册的是 <strong>文件描述符事件</strong></li>
+<li>不是 Java <code>MessageQueue.enqueueMessage()</code></li>
+</ul>
+<p>也就是说，<code>Input</code> 和 <code>Handler</code> 在主线程上虽然最终都汇入同一个“事件循环节拍”，但它们进入循环的入口完全不同。</p>
+<h2 id="6-输入来了以后主线程第一时间做了什么">6. 输入来了以后，主线程第一时间做了什么</h2>
+<p>当 <code>InputDispatcher</code> 往服务端 fd 写入一包 <code>InputMessage</code> 后，客户端 inputfd 会在内核里变成 readable。此时如果应用主线程正阻塞在 <code>epoll_wait()</code>，内核就会立即让它返回。</p>
+<p>后续动作可以分成三层：</p>
+<h3 id="61-epoll-层发现-inputfd-就绪">6.1 <code>epoll</code> 层：发现 inputfd 就绪</h3>
+<p>Native <code>Looper</code> 这一轮 <code>epoll_wait()</code> 返回，拿到“哪个 fd ready 了”的结果。若命中的是 inputfd，对应 request 会被塞进响应列表，等待回调分发。</p>
+<h3 id="62-native-输入接收层读出-inputmessage">6.2 Native 输入接收层：读出 <code>InputMessage</code></h3>
+<p><code>NativeInputEventReceiver</code> 的 fd 回调执行后，会从 inputfd 中把数据包读出来，并按协议解析成输入消息结构。</p>
+<h3 id="63-java-分发层桥接进-viewrootimpl">6.3 Java 分发层：桥接进 <code>ViewRootImpl</code></h3>
+<p>Native 层把数据桥接到 Java <code>InputEventReceiver</code> 后，主线程才开始进入大家熟悉的应用输入分发路径，例如：</p>
+<ul>
+<li><code>ViewRootImpl</code></li>
+<li><code>DecorView</code></li>
+<li><code>ViewGroup.dispatchTouchEvent</code></li>
+<li><code>View.onTouchEvent</code></li>
+</ul>
+<p>这意味着“屏幕刚被触摸时主线程最早感知到的那个瞬间”，发生在：</p>
+<ul>
+<li><code>epoll_wait()</code> 因 inputfd readable 而返回</li>
+</ul>
+<p>而不是发生在：</p>
+<ul>
+<li>某个 <code>Handler</code> 收到普通消息</li>
+</ul>
+<h2 id="7-关键时序图触摸事件如何驱动主线程返回">7. 关键时序图：触摸事件如何驱动主线程返回</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">sequenceDiagram</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant MQJ as MessageQueue.next</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant NLooper as Looper.cpp</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Kernel as epoll / socket</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Dispatcher as InputDispatcher</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant InputFd as inputfd</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Receiver as NativeInputEventReceiver</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Java as InputEventReceiver / ViewRootImpl</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    MQJ->>NLooper: nativePollOnce(timeout)</span></span>
+<span class="line"><span style="color:#E1E4E8">    NLooper->>Kernel: epoll_wait(epollFd, timeout)</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    Note over Dispatcher,InputFd: 另一侧写入 InputMessage</span></span>
+<span class="line"><span style="color:#E1E4E8">    Dispatcher->>InputFd: write(socketpair, InputMessage)</span></span>
+<span class="line"><span style="color:#E1E4E8">    Kernel-->>NLooper: inputfd readable</span></span>
+<span class="line"><span style="color:#E1E4E8">    NLooper->>Receiver: dispatch fd callback</span></span>
+<span class="line"><span style="color:#E1E4E8">    Receiver->>InputFd: read(InputMessage)</span></span>
+<span class="line"><span style="color:#E1E4E8">    Receiver->>Java: JNI 分发输入事件</span></span>
+<span class="line"><span style="color:#E1E4E8">    Java-->>MQJ: 继续主线程输入处理</span></span></code></pre>
+<p>这张图可以直接回答一个常见疑问：</p>
+<ul>
+<li>为什么主线程即使此刻没有任何 Java Message，也能立刻响应触摸？</li>
+</ul>
+<p>答案是：</p>
+<ul>
+<li>因为它并不是只在等 Java Message，而是在等 <code>epoll</code> 上的所有关键事件源，其中就包括 inputfd。</li>
+</ul>
+<h2 id="8-socketpair-和-eventfd-分工为什么不同">8. <code>socketpair</code> 和 <code>eventfd</code> 分工为什么不同</h2>
+<p>很多人学完上一篇后会继续问：既然 <code>Looper</code> 唤醒是 <code>eventfd</code>，那输入系统为什么不也用 <code>eventfd</code>？</p>
+<p>答案并不复杂，因为这两者职责完全不同。</p>
+<h3 id="81-eventfd-负责叫醒">8.1 <code>eventfd</code> 负责“叫醒”</h3>
+<p><code>eventfd</code> 适合表达的语义是：</p>
+<ul>
+<li>有事了</li>
+<li>快醒一下</li>
+<li>不需要携带复杂载荷</li>
+</ul>
+<p>它是一个计数器型通知器，最适合做：</p>
+<ul>
+<li>Looper 的 wake fd</li>
+<li>跨线程唤醒信号</li>
+</ul>
+<h3 id="82-socketpair-负责传数据">8.2 <code>socketpair</code> 负责“传数据”</h3>
+<p><code>socketpair</code> 适合表达的语义是：</p>
+<ul>
+<li>不只是通知有事</li>
+<li>还要把结构化消息包一起带过去</li>
+<li>还要支持另一侧回写完成状态</li>
+</ul>
+<p>输入系统需要的正是这种能力，所以它选的是 <code>socketpair</code>。</p>
+<h3 id="83-一张图看清职责边界">8.3 一张图看清职责边界</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart LR</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[eventfd] --> A1[用途: 唤醒 Looper]</span></span>
+<span class="line"><span style="color:#E1E4E8">    A --> A2[数据形态: 64位计数]</span></span>
+<span class="line"><span style="color:#E1E4E8">    A --> A3[典型场景: nativeWake]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    B[socketpair] --> B1[用途: 传输输入消息]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> B2[数据形态: InputMessage 结构体]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> B3[典型场景: InputChannel 双向通信]</span></span></code></pre>
+<p>一句话概括就是：</p>
+<ul>
+<li><code>eventfd</code> 是门铃。</li>
+<li><code>socketpair</code> 是快递通道。</li>
+</ul>
+<p>门铃只能告诉你“有人来了”，但输入系统真正要送进来的，是一整包事件数据。</p>
+<h2 id="9-ui-线程为什么能做到第一时间响应触摸">9. UI 线程为什么能做到“第一时间”响应触摸</h2>
+<p>这里的“第一时间”不是说主线程能绕开调度器，而是说它不需要额外等待一层转发机制。</p>
+<p>主线程对输入事件的响应快，主要依赖下面三点：</p>
+<ol>
+<li>主线程本来就在 <code>epoll_wait()</code> 里睡眠</li>
+<li>inputfd 已经预先注册进 <code>Looper</code></li>
+<li>InputDispatcher 一写入，内核立刻把 fd readable 事件反馈给 <code>epoll</code></li>
+</ol>
+<p>于是线程的唤醒路径非常短：</p>
+<ul>
+<li>内核事件就绪</li>
+<li><code>epoll_wait()</code> 返回</li>
+<li>Native callback 执行</li>
+<li>JNI 桥接</li>
+<li>Java 输入分发</li>
+</ul>
+<p>如果把输入改造成“先到某个中转线程，再投递一条 Handler 消息给主线程”，就会平白多出一次线程切换或一次额外排队，这显然不是 Input 系统想要的设计。</p>
+<h2 id="10-关键源码路径分别负责什么">10. 关键源码路径分别负责什么</h2>
+<p>如果你准备沿着 <code>aosp14</code> 自己跟代码，主线可以抓下面几处。</p>
+<h3 id="101-frameworksbasecorejavaandroidviewinputeventreceiverjava">10.1 <code>frameworks/base/core/java/android/view/InputEventReceiver.java</code></h3>
+<p>这里是 Java 输入接收器的入口，负责：</p>
+<ul>
+<li>持有 Native 接收端桥接对象</li>
+<li>接收 Native 分发上来的输入事件</li>
+<li>把事件继续交给上层窗口/视图体系</li>
+</ul>
+<h3 id="102-frameworksbasecorejniandroid_view_inputeventreceivercpp">10.2 <code>frameworks/base/core/jni/android_view_InputEventReceiver.cpp</code></h3>
+<p>这里是 Java 与 Native 输入接收层的桥梁，负责：</p>
+<ul>
+<li>创建 <code>NativeInputEventReceiver</code></li>
+<li>把 <code>InputChannel</code> 客户端 fd 注册进 <code>Looper</code></li>
+<li>在 fd 就绪时读取 <code>InputMessage</code></li>
+<li>再桥接回 Java <code>InputEventReceiver</code></li>
+</ul>
+<h3 id="103-frameworksnativelibsinputinputtransportcpp">10.3 <code>frameworks/native/libs/input/InputTransport.cpp</code></h3>
+<p>这里是 <code>InputChannel</code>、<code>InputPublisher</code>、<code>InputConsumer</code> 的核心实现，负责：</p>
+<ul>
+<li>建立 channel</li>
+<li>定义输入传输协议</li>
+<li>读写 <code>InputMessage</code></li>
+<li>处理 finish/ack 等回传动作</li>
+</ul>
+<h3 id="104-systemcorelibutilsloopercpp">10.4 <code>system/core/libutils/Looper.cpp</code></h3>
+<p>这里是 Native <code>Looper</code> 的核心，负责：</p>
+<ul>
+<li><code>addFd()</code> 注册 fd</li>
+<li><code>pollOnce()</code> / <code>pollInner()</code> 等待事件</li>
+<li><code>epoll_wait()</code> 返回后的 fd 分发</li>
+<li><code>wake()</code> / <code>awoken()</code> 管理唤醒 fd</li>
+</ul>
+<p>把这四处串起来，整条链路就比较完整了。</p>
+<h2 id="11-这一篇和前两篇怎么连起来">11. 这一篇和前两篇怎么连起来</h2>
+<p>如果把三篇文章放在一起看，逻辑其实很顺：</p>
+<ol>
+<li>第一篇解决的是：<code>Looper</code> 为什么能睡、又为什么能被唤醒。</li>
+<li>第二篇解决的是：Java <code>MessageQueue</code> 和 Native <code>Looper</code> 是怎么协同工作的。</li>
+<li>这一篇解决的是：<code>Input</code> 为什么不走普通 <code>Handler</code> 消息，而是把自己伪装成一个 fd 事件源接进 <code>Looper</code>。</li>
+</ol>
+<p>可以用最后这张图把三篇串起来：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[Java MessageQueue.next] --> B{Java 消息到期?}</span></span>
+<span class="line"><span style="color:#E1E4E8">    B -->|是| C[直接执行 Handler 消息]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B -->|否| D[nativePollOnce]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E[Native Looper epoll_wait]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    E --> F{返回原因}</span></span>
+<span class="line"><span style="color:#E1E4E8">    F -->|wake eventfd| G[重新检查 Java 队列]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F -->|inputfd readable| H[读取 InputMessage]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F -->|other fd ready| I[分发其他 Native 回调]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F -->|timeout| G</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    H --> J[JNI 桥接到 InputEventReceiver]</span></span>
+<span class="line"><span style="color:#E1E4E8">    J --> K[ViewRootImpl / View 输入分发]</span></span>
+<span class="line"><span style="color:#E1E4E8">    G --> A</span></span>
+<span class="line"><span style="color:#E1E4E8">    I --> A</span></span>
+<span class="line"><span style="color:#E1E4E8">    K --> A</span></span></code></pre>
+<h2 id="12-总结">12. 总结</h2>
+<p><code>Input</code> 系统并不是在主线程里“额外插了一套消息机制”，而是非常克制地复用了 <code>Looper</code> 现成的 fd 事件循环能力。</p>
+<p>所以最值得记住的不是某个类名，而是这句抽象：</p>
+<ul>
+<li>Java <code>Handler</code> 靠的是内存消息队列。</li>
+<li>Input 事件靠的是 <code>socketpair + epoll + fd callback</code>。</li>
+<li>它们最终共享同一个线程 Looper，只是进入 Looper 的入口不同。</li>
+</ul>
+<p>理解了这一点，再回头看 <code>InputChannel</code>、<code>InputEventReceiver</code>、<code>ViewRootImpl</code>，整条输入链就不会再被误解成“只是又发了一条 Handler 消息”。</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

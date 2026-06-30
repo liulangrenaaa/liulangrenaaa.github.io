@@ -1,0 +1,316 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>node zone 相关问题 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>node zone 相关问题</h1><div class="post-meta"><time datetime="2021-02-04T19:00:40.000Z">2021年2月4日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">node</span><span class="tag">zone</span></div></header><div class="article-body"><h2 id="numa概念">NUMA概念</h2>
+<p>在NUMA出现之前，CPU朝着高频率的方向发展遇到了天花板，转而向着多核心的方向发展。</p>
+<p>在一开始，内存控制器还在北桥中，所有CPU对内存的访问都要通过北桥来完成。此时所有CPU访问内存都是“一致的”，如下图所示：</p>
+<p>NUMA 全称 Non-Uniform Memory Access，译为“非一致性内存访问”。这种构架下，不同的内存器件和CPU核心从属不同的 Node，每个 Node 都有自己的集成内存控制器（IMC，Integrated Memory Controller）。</p>
+<p>在 Node 内部，架构类似SMP，使用 IMC Bus 进行不同核心间的通信；不同的 Node 间通过QPI（Quick Path Interconnect）进行通信，如下图所示：
+一般来说，一个内存插槽对应一个 Node。需要注意的一个特点是，QPI的延迟要高于IMC Bus，也就是说CPU访问内存有了远近（remote/local）之别，而且实验分析来看，这个差别非常明显。</p>
+<p>NUMA概念 是想对于<code>CPU</code>来说的，系统中主存不同<code>node</code>对于不同CPU来说访问速度不一样，就应该可以理解成为NUMA。</p>
+<h2 id="node">node</h2>
+<p><code>node</code> 就是 一个节点，不同节点对于一个CPU来讲访问延迟 是不一样的。
+在linux上用 <code>pg_data_t</code> 来表示，同时 <code>pg_data_t</code> 也包含了<code>struct lruvec</code> lru链表。
+同时 <code>kswapd</code>  <code>kcompactd</code> 线程也都是基于 <code>pg_data_t</code>的。</p>
+<h2 id="zone">zone</h2>
+<p><code>zone</code> 是基于 <code>node</code>的，一般分为如下</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Inspiron-5548@ubuntu: ~/workspace/linux-stable# cat /proc/zoneinfo | grep "Node 0"</span></span>
+<span class="line"><span>Node 0, zone      DMA</span></span>
+<span class="line"><span>Node 0, zone    DMA32</span></span>
+<span class="line"><span>Node 0, zone   Normal</span></span>
+<span class="line"><span>Node 0, zone  Movable</span></span>
+<span class="line"><span>Node 0, zone   Device</span></span></code></pre>
+<p>其中 <code>_watermark</code> <code>struct per_cpu_pageset</code>  <code>struct free_area</code> 都是基于 <code>zone</code>的。</p>
+<p>虽然 <code>kcompactd</code>是基于node的，但是 <code>compaction</code> 行为是基于zone的。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>struct zone {</span></span>
+<span class="line"><span>	/* zone watermarks, access with *_wmark_pages(zone) macros */</span></span>
+<span class="line"><span>	unsigned long _watermark[NR_WMARK];</span></span>
+<span class="line"><span>	unsigned long watermark_boost;</span></span>
+<span class="line"><span>	......</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>struct zoneref {</span></span>
+<span class="line"><span>	struct zone *zone;	/* Pointer to actual zone */</span></span>
+<span class="line"><span>	int zone_idx;		/* zone_idx(zoneref->zone) */</span></span>
+<span class="line"><span>};</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>struct zonelist {</span></span>
+<span class="line"><span>	struct zoneref _zonerefs[MAX_ZONES_PER_ZONELIST + 1];</span></span>
+<span class="line"><span>};</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>typedef struct pglist_data {</span></span>
+<span class="line"><span>	/*</span></span>
+<span class="line"><span>	 * node_zones contains just the zones for THIS node. Not all of the</span></span>
+<span class="line"><span>	 * zones may be populated, but it is the full list. It is referenced by</span></span>
+<span class="line"><span>	 * this node's node_zonelists as well as other node's node_zonelists.</span></span>
+<span class="line"><span>	 */</span></span>
+<span class="line"><span>	struct zone node_zones[MAX_NR_ZONES];</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	/*</span></span>
+<span class="line"><span>	 * node_zonelists contains references to all zones in all nodes.</span></span>
+<span class="line"><span>	 * Generally the first zones will be references to this node's</span></span>
+<span class="line"><span>	 * node_zones.</span></span>
+<span class="line"><span>	 */</span></span>
+<span class="line"><span>	struct zonelist node_zonelists[MAX_ZONELISTS];</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<h2 id="node是如何建立起来的">node是如何建立起来的？</h2>
+<p><code>arch/x86/mm/numa.c</code>中定义了 指针数组，可以系统<code>bring up</code>的时候初始化，也可以是 <code>memory_hotplug</code>时候初始化。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>struct pglist_data *node_data[MAX_NUMNODES] __read_mostly;</span></span></code></pre>
+<p>如何查找 不同的<code>node</code>节点？
+根据<code>nid</code>查找</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>#define NODE_DATA(nid)		(node_data[nid])</span></span></code></pre>
+<p>根据<code>zone</code>查找<code>node</code>节点</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>struct zone {</span></span>
+<span class="line"><span>	......</span></span>
+<span class="line"><span>#ifdef CONFIG_NUMA</span></span>
+<span class="line"><span>	int node;</span></span>
+<span class="line"><span>#endif</span></span>
+<span class="line"><span>	......</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>根据<code>page</code>查找<code>node</code>节点，在 <code>include/linux/mm.h</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>#define NODES_WIDTH		NODES_SHIFT</span></span>
+<span class="line"><span>#define NODES_MASK		((1UL &#x3C;&#x3C; NODES_WIDTH) - 1)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static inline void set_page_node(struct page *page, unsigned long node) {</span></span>
+<span class="line"><span>	page->flags &#x26;= ~(NODES_MASK &#x3C;&#x3C; NODES_PGSHIFT);</span></span>
+<span class="line"><span>	page->flags |= (node &#x26; NODES_MASK) &#x3C;&#x3C; NODES_PGSHIFT;</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static inline int page_to_nid(const struct page *page) {</span></span>
+<span class="line"><span>	struct page *p = (struct page *)page;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	return (PF_POISONED_CHECK(p)->flags >> NODES_PGSHIFT) &#x26; NODES_MASK;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<h2 id="zone是如何建立起来的">zone是如何建立起来的？</h2>
+<p><code>start_kernel</code>中</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>asmlinkage __visible void __init __no_sanitize_address start_kernel(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	build_all_zonelists(NULL);</span></span>
+<span class="line"><span>	......</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>在 <code>mm/memory_hotplug.c</code> 的 <code>hotadd_new_pgdat</code>函数中</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/* we are OK calling __meminit stuff here - we have CONFIG_MEMORY_HOTPLUG */</span></span>
+<span class="line"><span>static pg_data_t __ref *hotadd_new_pgdat(int nid)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	build_all_zonelists(pgdat);</span></span>
+<span class="line"><span>	......</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>在 <code>build_all_zonelists</code> 中 根据是否处于 <code>SYSTEM_BOOTING</code> 进行初始化，最终到<code>__build_all_zonelists</code>，如果是 <code>memory hot plug</code> 只需要进行当前<code>self</code> pgdata的初始化，如果是 <code>SYSTEM_BOOTING</code> 需要遍历所有在线的 node节点，都需要初始化。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static void build_zonelists(pg_data_t *pgdat)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	......</span></span>
+<span class="line"><span>	while ((node = find_next_best_node(local_node, &#x26;used_mask)) >= 0) {</span></span>
+<span class="line"><span>		if (node_distance(local_node, node) !=</span></span>
+<span class="line"><span>		    node_distance(local_node, prev_node))</span></span>
+<span class="line"><span>			node_load[node] = load;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>		node_order[nr_nodes++] = node;</span></span>
+<span class="line"><span>		prev_node = node;</span></span>
+<span class="line"><span>		load--;</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	build_zonelists_in_node_order(pgdat, node_order, nr_nodes);</span></span>
+<span class="line"><span>	build_thisnode_zonelists(pgdat);</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static void __build_all_zonelists(void *data)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	/*</span></span>
+<span class="line"><span>	 * This node is hotadded and no memory is yet present.   So just</span></span>
+<span class="line"><span>	 * building zonelists is fine - no need to touch other nodes.</span></span>
+<span class="line"><span>	 */</span></span>
+<span class="line"><span>	if (self &#x26;&#x26; !node_online(self->node_id)) { // hotplug</span></span>
+<span class="line"><span>		build_zonelists(self);</span></span>
+<span class="line"><span>	} else {</span></span>
+<span class="line"><span>		for_each_online_node(nid) { //system init</span></span>
+<span class="line"><span>			build_zonelists(NODE_DATA(nid));</span></span>
+<span class="line"><span>		}</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>	.......</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>void __ref build_all_zonelists(pg_data_t *pgdat)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	if (system_state == SYSTEM_BOOTING) {</span></span>
+<span class="line"><span>		build_all_zonelists_init();</span></span>
+<span class="line"><span>	} else {</span></span>
+<span class="line"><span>		__build_all_zonelists(pgdat);</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>这里又涉及到 <code>pgdat->node_zonelists[ZONELIST_FALLBACK]</code> 这个 <code>fallback</code> 机制的问题了。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>enum {</span></span>
+<span class="line"><span>	ZONELIST_FALLBACK,	/* zonelist with fallback */</span></span>
+<span class="line"><span>#ifdef CONFIG_NUMA</span></span>
+<span class="line"><span>	/*</span></span>
+<span class="line"><span>	 * The NUMA zonelists are doubled because we need zonelists that</span></span>
+<span class="line"><span>	 * restrict the allocations to a single node for __GFP_THISNODE.</span></span>
+<span class="line"><span>	 */</span></span>
+<span class="line"><span>	ZONELIST_NOFALLBACK,	/* zonelist without fallback (__GFP_THISNODE) */</span></span>
+<span class="line"><span>#endif</span></span>
+<span class="line"><span>	MAX_ZONELISTS</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<p>pgdat->node_zonelists[]包含了2个zonelist，一个是由本node的zones组成，另一个是由从本node分配不到内存时可选的备用zones组成，相当于是选择了一个退路，所以叫fallback。</p>
+<p>具体初始化是由 <code>build_zonelists_in_node_order</code> 与 <code>build_thisnode_zonelists</code>完成的</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static void zoneref_set_zone(struct zone *zone, struct zoneref *zoneref)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	zoneref->zone = zone;</span></span>
+<span class="line"><span>	zoneref->zone_idx = zone_idx(zone);</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>//可以看到赋值顺序是：</span></span>
+<span class="line"><span>// zonerefs[nr_zones++]</span></span>
+<span class="line"><span>// zone_type--;</span></span>
+<span class="line"><span>static int build_zonerefs_node(pg_data_t *pgdat, struct zoneref *zonerefs)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	struct zone *zone;</span></span>
+<span class="line"><span>	enum zone_type zone_type = MAX_NR_ZONES;</span></span>
+<span class="line"><span>	int nr_zones = 0;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	do {</span></span>
+<span class="line"><span>		zone_type--;</span></span>
+<span class="line"><span>		zone = pgdat->node_zones + zone_type;</span></span>
+<span class="line"><span>		if (managed_zone(zone)) {</span></span>
+<span class="line"><span>			zoneref_set_zone(zone, &#x26;zonerefs[nr_zones++]);</span></span>
+<span class="line"><span>			check_highest_zone(zone_type);</span></span>
+<span class="line"><span>		}</span></span>
+<span class="line"><span>	} while (zone_type);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	return nr_zones;</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>/*</span></span>
+<span class="line"><span> * Build zonelists ordered by node and zones within node.</span></span>
+<span class="line"><span> * This results in maximum locality--normal zone overflows into local</span></span>
+<span class="line"><span> * DMA zone, if any--but risks exhausting DMA zone.</span></span>
+<span class="line"><span> */</span></span>
+<span class="line"><span>static void build_zonelists_in_node_order(pg_data_t *pgdat, int *node_order,</span></span>
+<span class="line"><span>		unsigned nr_nodes)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	struct zoneref *zonerefs;</span></span>
+<span class="line"><span>	int i;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	zonerefs = pgdat->node_zonelists[ZONELIST_FALLBACK]._zonerefs;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	for (i = 0; i &#x3C; nr_nodes; i++) {</span></span>
+<span class="line"><span>		int nr_zones;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>		pg_data_t *node = NODE_DATA(node_order[i]);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>		nr_zones = build_zonerefs_node(node, zonerefs);</span></span>
+<span class="line"><span>		zonerefs += nr_zones;</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>	zonerefs->zone = NULL;</span></span>
+<span class="line"><span>	zonerefs->zone_idx = 0;</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>/*</span></span>
+<span class="line"><span> * Build gfp_thisnode zonelists</span></span>
+<span class="line"><span> */</span></span>
+<span class="line"><span>static void build_thisnode_zonelists(pg_data_t *pgdat)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	struct zoneref *zonerefs;</span></span>
+<span class="line"><span>	int nr_zones;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	zonerefs = pgdat->node_zonelists[ZONELIST_NOFALLBACK]._zonerefs;</span></span>
+<span class="line"><span>	nr_zones = build_zonerefs_node(pgdat, zonerefs);</span></span>
+<span class="line"><span>	zonerefs += nr_zones;</span></span>
+<span class="line"><span>	zonerefs->zone = NULL;</span></span>
+<span class="line"><span>	zonerefs->zone_idx = 0;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>如何查找 不同的<code>zone</code>区？</p>
+<p>根据<code>page</code>查找<code>zone</code>区，在 <code>include/linux/mm.h</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>#define ZONES_WIDTH		ZONES_SHIFT</span></span>
+<span class="line"><span>#define ZONES_MASK		((1UL &#x3C;&#x3C; ZONES_WIDTH) - 1)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static inline void set_page_zone(struct page *page, enum zone_type zone) {</span></span>
+<span class="line"><span>	page->flags &#x26;= ~(ZONES_MASK &#x3C;&#x3C; ZONES_PGSHIFT);</span></span>
+<span class="line"><span>	page->flags |= (zone &#x26; ZONES_MASK) &#x3C;&#x3C; ZONES_PGSHIFT;</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static inline int page_zone_id(struct page *page) {</span></span>
+<span class="line"><span>	return (page->flags >> ZONEID_PGSHIFT) &#x26; ZONEID_MASK;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<h2 id="zone相关参数-在-alloc_pages-中如何起作用的">zone相关参数 在 alloc_pages 中如何起作用的</h2>
+<p><code>alloc_pages</code> 最后调用到 <code>__alloc_pages_nodemask</code> 根据 <code>gfp</code> 和 mempolicy等生成了两个参数 <code>preferred_nid</code>  <code>nodemask</code>，需要探究一下这两个参数生成背后逻辑</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>struct page *</span></span>
+<span class="line"><span>__alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order, int preferred_nid,</span></span>
+<span class="line"><span>							nodemask_t *nodemask);</span></span>
+<span class="line"><span>struct page *alloc_pages_current(gfp_t gfp, unsigned order)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	struct mempolicy *pol = &#x26;default_policy;</span></span>
+<span class="line"><span>	struct page *page;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (!in_interrupt() &#x26;&#x26; !(gfp &#x26; __GFP_THISNODE))</span></span>
+<span class="line"><span>		pol = get_task_policy(current);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	/*</span></span>
+<span class="line"><span>	 * No reference counting needed for current->mempolicy</span></span>
+<span class="line"><span>	 * nor system default_policy</span></span>
+<span class="line"><span>	 */</span></span>
+<span class="line"><span>	if (pol->mode == MPOL_INTERLEAVE)</span></span>
+<span class="line"><span>		page = alloc_page_interleave(gfp, order, interleave_nodes(pol));</span></span>
+<span class="line"><span>	else</span></span>
+<span class="line"><span>		page = __alloc_pages_nodemask(gfp, order,</span></span>
+<span class="line"><span>				policy_node(gfp, pol, numa_node_id()),</span></span>
+<span class="line"><span>				policy_nodemask(gfp, pol));</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	return page;</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static inline struct page *</span></span>
+<span class="line"><span>alloc_pages(gfp_t gfp_mask, unsigned int order)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	return alloc_pages_current(gfp_mask, order);</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p><code>policy_node</code> 代码：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>DECLARE_PER_CPU(int, numa_node);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static inline int numa_node_id(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	return raw_cpu_read(numa_node);</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static inline void set_numa_node(int node)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	this_cpu_write(numa_node, node);</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>/* Return the node id preferred by the given mempolicy, or the given id */</span></span>
+<span class="line"><span>static int policy_node(gfp_t gfp, struct mempolicy *policy, int nd)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	if (policy->mode == MPOL_PREFERRED &#x26;&#x26; !(policy->flags &#x26; MPOL_F_LOCAL))</span></span>
+<span class="line"><span>		nd = policy->v.preferred_node;</span></span>
+<span class="line"><span>	else {</span></span>
+<span class="line"><span>		/*</span></span>
+<span class="line"><span>		 * __GFP_THISNODE shouldn't even be used with the bind policy</span></span>
+<span class="line"><span>		 * because we might easily break the expectation to stay on the</span></span>
+<span class="line"><span>		 * requested node and not break the policy.</span></span>
+<span class="line"><span>		 */</span></span>
+<span class="line"><span>		WARN_ON_ONCE(policy->mode == MPOL_BIND &#x26;&#x26; (gfp &#x26; __GFP_THISNODE));</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	return nd;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p><code>policy_nodemask</code> 代码：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/*</span></span>
+<span class="line"><span> * Return a nodemask representing a mempolicy for filtering nodes for</span></span>
+<span class="line"><span> * page allocation</span></span>
+<span class="line"><span> */</span></span>
+<span class="line"><span>nodemask_t *policy_nodemask(gfp_t gfp, struct mempolicy *policy)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	/* Lower zones don't get a nodemask applied for MPOL_BIND */</span></span>
+<span class="line"><span>	if (unlikely(policy->mode == MPOL_BIND) &#x26;&#x26;</span></span>
+<span class="line"><span>			apply_policy_zone(policy, gfp_zone(gfp)) &#x26;&#x26;</span></span>
+<span class="line"><span>			cpuset_nodemask_valid_mems_allowed(&#x26;policy->v.nodes))</span></span>
+<span class="line"><span>		return &#x26;policy->v.nodes;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	return NULL;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>跟踪发现  <code>policy_nodemask</code> 返回值基本都是 <code>NULL</code>，除非特殊需求，使用过<code>mbind</code>才会返回非<code>NULL</code>。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Inspiron-5548@ubuntu: ~/workspace/linux-stable# sudo bpftrace -e 'kretprobe:policy_nodemask {printf("[pid-%d:%s]: policy_nodemask retval %p\n", pid,comm, retval)}'</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Attaching 1 probe...</span></span>
+<span class="line"><span>[pid-2326:gnome-terminal-]: policy_nodemask retval (nil)</span></span>
+<span class="line"><span>[pid-1290:gnome-shell]: policy_nodemask retval (nil)</span></span>
+<span class="line"><span>[pid-2326:gnome-terminal-]: policy_nodemask retval (nil)</span></span>
+<span class="line"><span>[pid-22642:bpftrace]: policy_nodemask retval (nil)</span></span>
+<span class="line"><span>[pid-1290:gnome-shell]: policy_nodemask retval (nil)</span></span>
+<span class="line"><span>[pid-1290:gnome-shell]: policy_nodemask retval (nil)</span></span></code></pre></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

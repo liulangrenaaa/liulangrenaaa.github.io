@@ -1,0 +1,105 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>硬件同步单元 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>硬件同步单元</h1><div class="post-meta"><time datetime="2022-12-06T19:00:00.000Z">2022年12月6日</time><span> / arm64</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">硬件同步单元</span><span class="tag">hw-spinlock</span><span class="tag">hw-mailbox</span></div></header><div class="article-body"><h2 id="写在前面">写在前面</h2>
+<p>在大型soc中，手机芯片，无人机芯片这种系统上，往往都是异构架构。举例说，某手机芯片公司的
+X3 芯片4<em>A78 + 4</em>A55 + 2<em>M55 + 2</em>M0 + 2*DSP，在这个soc中 比如某两个core(M55 A78)同时想用 某个硬件资源，就需要做硬件上的同步。</p>
+<p>如果资源是某个core独享的，比如只有 A78 的core可以访问，就是只有一个软件系统内可以访问，那么可以只需要在内部使用 软件spinlock 来进行同步，不需要硬件同步单元。</p>
+<p>linux 中hw-spinlock 与 hw-mailbox 由于驱动框架比较复杂，先通过rt-thread的 适配这两个硬件单元的代码来一探究竟。</p>
+<p>代码位置：
+<a href="https://github.com/RT-Thread/rt-thread/blob/master/bsp/allwinner/libraries/sunxi-hal/hal/source/hwspinlock/hal_hwspinlock.c">hw-spinlock</a>
+<a href="https://github.com/RT-Thread/rt-thread/blob/master/bsp/allwinner/libraries/sunxi-hal/hal/source/msgbox/msgbox_amp/msgbox_amp.c">hw-mailbox</a></p>
+<p><code>sunxi</code> 是全志的一颗soc芯片代号，用于山寨机上。有个笑话是这样的，一个哥们在论坛上发帖：sunxi到底是何方神圣？为什么编译的软件版本都是带他名字。。</p>
+<h2 id="hw-spinlock">hw-spinlock</h2>
+<p><code>hw-spinlock</code>主要是解决AMP系统中多系统访问硬件的冲突问题。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>int hal_hwspinlock_check_taken(int num)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>    return !!(readl(SPINLOCK_STATUS_REG) &#x26; (1 &#x3C;&#x3C; num));</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>void hal_hwspinlock_get(int num)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>    unsigned long addr = SPINLOCK_LOCK_REG(num);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>    while (readl(addr) != 0);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>void hal_hwspinlock_put(int num)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>    unsigned long addr = SPINLOCK_LOCK_REG(num);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>    writel(0, addr);</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p><code>rt-thread</code> 平台上<code>sunxi</code> 实现的 hw-spinlock 驱动很简单，就三个接口
+check、get、put。</p>
+<p><code>sunxi</code> 平台的 hw-spinlock 实现较为简单，只需要写 01 就行了。还有的实现复杂的 hw-spinlock 中有32/64bit 模式，可以在持锁的时候记录其他的信息，比如 持锁ip的硬件编号or硬件基址等，方便后续debug。</p>
+<p>有的soc还分 <code>secure</code> 空间， <code>nosecure</code> 空间的 hw-spinlock.</p>
+<h2 id="hw-mailbox">hw-mailbox</h2>
+<p><code>hw-mailbox</code>主要是解决AMP系统中多系统通信问题，通常与<code>hw-spinlock</code> 配合使用。</p>
+<p>发送，mailbox 是分不同channel的，需要指定<code>channel</code>：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static void msgbox_channel_send_data(struct msg_endpoint *medp, u32 data)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>    void *msg_sts, *msg_reg;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>    msg_sts = (void *)MSGBOX_MSG_STA_REG(</span></span>
+<span class="line"><span>        medp->remote_amp, calculte_n(medp->remote_amp, medp->local_amp),</span></span>
+<span class="line"><span>        medp->write_ch);</span></span>
+<span class="line"><span>    msg_reg = (void *)MSGBOX_MSG_REG(</span></span>
+<span class="line"><span>        medp->remote_amp, calculte_n(medp->remote_amp, medp->local_amp),</span></span>
+<span class="line"><span>        medp->write_ch);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>    while (readl(msg_sts) == MSGBOX_MAX_QUEUE);</span></span>
+<span class="line"><span>    writel(data, msg_reg);</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>u32 hal_msgbox_channel_send(struct msg_endpoint *medp, uint8_t *bf,</span></span>
+<span class="line"><span>                uint32_t len)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>    u32 data, i;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>    for (i = 0; i &#x3C; len; i++) {</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        if (!(i % 4))</span></span>
+<span class="line"><span>            data = 0;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        data |= *bf++ &#x3C;&#x3C; ((i % 4) &#x3C;&#x3C; 3);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        if ((i % 4) == 3 || i == len - 1) {</span></span>
+<span class="line"><span>            msgbox_channel_send_data(medp, data);</span></span>
+<span class="line"><span>        }</span></span>
+<span class="line"><span>    }</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>    return 0;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>接收，<code>irq_msgbox_handler</code> 是注册的中断处理函数。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static void irq_msgbox_channel_handler(struct msg_endpoint *medp)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>    void *msg_sts, *msg_reg, *msg_irq_s;</span></span>
+<span class="line"><span>    u32 data;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>    msg_sts = (void *)MSGBOX_MSG_STA_REG(</span></span>
+<span class="line"><span>        medp->local_amp, calculte_n(medp->local_amp, medp->remote_amp),</span></span>
+<span class="line"><span>        medp->read_ch);</span></span>
+<span class="line"><span>    msg_reg = (void *)MSGBOX_MSG_REG(</span></span>
+<span class="line"><span>        medp->local_amp, calculte_n(medp->local_amp, medp->remote_amp),</span></span>
+<span class="line"><span>        medp->read_ch);</span></span>
+<span class="line"><span>    msg_irq_s = (void *)MSGBOX_RD_IRQ_STA_REG(</span></span>
+<span class="line"><span>        medp->local_amp, calculte_n(medp->local_amp, medp->remote_amp));</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>    while (readl(msg_sts)) {</span></span>
+<span class="line"><span>        data = readl(msg_reg);</span></span>
+<span class="line"><span>        if (medp->rec)</span></span>
+<span class="line"><span>            medp->rec(data, medp->private);</span></span>
+<span class="line"><span>    }</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>    writel(1 &#x3C;&#x3C; (medp->read_ch * 2), msg_irq_s);</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static int irq_msgbox_handler(int i, void *p)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>    struct msg_endpoint *t;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>    for (t = it_edp; t != NULL; t = t->next) {</span></span>
+<span class="line"><span>        irq_msgbox_channel_handler(t);</span></span>
+<span class="line"><span>    }</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>    return 0;</span></span>
+<span class="line"><span>}</span></span></code></pre></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

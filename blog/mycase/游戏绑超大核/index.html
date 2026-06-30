@@ -1,0 +1,25 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>单核cpu卡顿游戏绑超大核 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>单核cpu卡顿游戏绑超大核</h1><div class="post-meta"><time datetime="2023-01-03T19:00:00.000Z">2023年1月3日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">taskset</span><span class="tag">game</span></div></header><div class="article-body"><h2 id="问题">问题</h2>
+<p>一些游戏在android s版本的机器（1+3+4架构）上有很严重的丢帧问题，抓systrace后看，发现游戏相关线程全部在超大核心上，其他中核与小核上很空，没有游戏相关线程，可以确定是调度问题。</p>
+<p>以为是rtg的colocation功能，但是colocation不会使得所在的core发生严重的overload，到游戏进程的 <code>/proc/$pid</code> 目录下，<code>cat tasks/*/status | grep Cpus_allowed: </code>
+发现很多都是被绑核到 cpu7上的。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>root@HP-ProDesk-680-G4-MT:/proc/3457418# cat task/*/status | grep Cpus_allowed:</span></span>
+<span class="line"><span>Cpus_allowed:   70</span></span>
+<span class="line"><span>Cpus_allowed:   70</span></span>
+<span class="line"><span>Cpus_allowed:   70</span></span></code></pre>
+<h2 id="原因分析">原因分析</h2>
+<p>后面通过与游戏工程师沟通，将游戏相关线程绑定到超大核时unity的库的行为，在 unity库中有判断 cpu 是否为大核的逻辑，然后将游戏线程绑定到大核上，来减少 因为cpu capacity 过小而导致的丢帧等问题。</p>
+<p>但是这个判断 cpu为大核的这个逻辑很有问题。众所周知，soc中算力最大的cpu的 capacity被归一化到1024，然后中、小核心的算力也按照比例去归一化到一个数字，一般小核是180左右，中核时500左右。</p>
+<p>unity 中的 <code>ReadCPUCapacityFromSysFs</code>，会读取 /sys/device/system/cpu/cpux/capacity 的值，如果小于 85% * 1024 就会认为是小核心；大于 85% * 1024 就是大核心。
+由于性能原因，unity直接将绑定到识别到的大核心上。</p>
+<p>如果在<code>2+6</code> or <code>4+4</code> 的架构中，大核capacity是 1024，小核一般在200左右。这套<code>ReadCPUCapacityFromSysFs</code> 逻辑没有问题。</p>
+<p>但是在 <code>1+3+4</code> 的架构上超大核算力是 1024，中核算力是 526，小核算力是190，这套<code>ReadCPUCapacityFromSysFs</code> 逻辑会将中核 与 小核都识别为 小核，只有超大核被识别为大核，导致后面游戏相关线程只能绑定到 一个超大核上，就算超大核再强，也不能cover掉 所有游戏线程的算力，也是这种场景下游戏卡顿的主要原因。</p>
+<h2 id="解决">解决</h2>
+<p>由于unity 发版节奏不可控 与 游戏厂家更新unity的节奏也不可控，反馈给unity修改这段逻辑的同时也需要给游戏厂家反馈修改和系统修改</p>
+<ol>
+<li>
+<p>对于有能力修改 unity源码的厂家，当然是反馈给他们修改这段代码，改成非<code>cluster-0</code>的cpu都算大核。</p>
+</li>
+<li>
+<p>对于没有能力修改 unity的厂家，也提供了兜底方案，在游戏进入前台后直接将 cpu7 进行关核，当然比较暴力，但是相比于功耗爆炸的同时游戏性能不佳比，还是值得的。</p>
+</li>
+</ol></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

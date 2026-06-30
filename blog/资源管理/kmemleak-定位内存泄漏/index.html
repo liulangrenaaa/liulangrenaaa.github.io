@@ -1,0 +1,106 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>kmemleak 定位内存泄露 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>kmemleak 定位内存泄露</h1><div class="post-meta"><time datetime="2021-01-16T19:00:00.000Z">2021年1月16日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">内核内存泄漏</span><span class="tag">内存泄漏</span><span class="tag">kmemleak</span></div></header><div class="article-body"><h2 id="kmemleak-原理">kmemleak 原理</h2>
+<p>Basic Algorithm
+The memory allocations via kmalloc(), vmalloc(), kmem_cache_alloc() and friends are traced and the pointers, together with additional information like size and stack trace, are stored in a rbtree. The corresponding freeing function calls are tracked and the pointers removed from the kmemleak data structures.</p>
+<p>An allocated block of memory is considered orphan if no pointer to its start address or to any location inside the block can be found by scanning the memory (including saved registers). This means that there might be no way for the kernel to pass the address of the allocated block to a freeing function and therefore the block is considered a memory leak.</p>
+<p>The scanning algorithm steps:</p>
+<p>mark all objects as white (remaining white objects will later be considered orphan)
+scan the memory starting with the data section and stacks, checking the values against the addresses stored in the rbtree. If a pointer to a white object is found, the object is added to the gray list
+scan the gray objects for matching addresses (some white objects can become gray and added at the end of the gray list) until the gray set is finished
+the remaining white objects are considered orphan and reported via /sys/kernel/debug/kmemleak
+Some allocated memory blocks have pointers stored in the kernel’s internal data structures and they cannot be detected as orphans. To avoid this, kmemleak can also store the number of values pointing to an address inside the block address range that need to be found so that the block is not considered a leak. One example is __vmalloc().</p>
+<h2 id="kmemleak-使用">kmemleak 使用</h2>
+<p>kmemleak 功能一开始默认是不开启的，需要配置如下选项</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>if [ $debug_kmemleak == 1 ]</span></span>
+<span class="line"><span>then</span></span>
+<span class="line"><span>## kmemleak detect and panic start</span></span>
+<span class="line"><span>	echo "CONFIG_DEBUG_KMEMLEAK=y" >> /tmp/.config</span></span>
+<span class="line"><span>	echo "CONFIG_DEBUG_KMEMLEAK_MEM_POOL_SIZE=16000" >> /tmp/.config</span></span>
+<span class="line"><span>	echo "CONFIG_DEBUG_KMEMLEAK_AUTO_SCAN=y" >> /tmp/.config</span></span>
+<span class="line"><span>	echo "CONFIG_BOOTPARAM_HUNG_TASK_PANIC_VALUE=1" >> /tmp/.config</span></span>
+<span class="line"><span>## kmemleak detect and panic end</span></span>
+<span class="line"><span>fi</span></span></code></pre>
+<p>参考<a href="https://github.com/liulangrenaaa/test_modules/blob/main/resource_leak/kmemleak/kmemleak.c">test code</a></p>
+<p>一开始遇到了无法安装的问题，后来发现是因为模块名 一样导致的问题。。
+参考<a href="https://stackoverflow.com/questions/16360689/invalid-parameters-error-when-trying-to-insert-module-that-accesses-exported-s">bug</a></p>
+<p>触发开始扫描，这是个同步过程，内存比较大的话可能比较耗时</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/sys/kernel/debug# echo scan > /sys/kernel/debug/kmemleak</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/sys/kernel/debug#</span></span></code></pre>
+<p>查看扫描结果</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/sys/kernel/debug# cat kmemleak</span></span>
+<span class="line"><span>unreferenced object 0xffff8da0cac1c500 (size 32):</span></span>
+<span class="line"><span>  comm "insmod", pid 3529, jiffies 4294873584 (age 562.798s)</span></span>
+<span class="line"><span>  hex dump (first 32 bytes):</span></span>
+<span class="line"><span>    6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b  kkkkkkkkkkkkkkkk</span></span>
+<span class="line"><span>    6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b a5  kkkkkkkkkkkkkkk.</span></span>
+<span class="line"><span>  backtrace:</span></span>
+<span class="line"><span>    [&#x3C;00000000ae5c9724>] 0xffffffffc030702d</span></span>
+<span class="line"><span>    [&#x3C;00000000afc3b54e>] do_one_initcall+0x56/0x2b0</span></span>
+<span class="line"><span>    [&#x3C;000000000724192e>] do_init_module+0x56/0x200</span></span>
+<span class="line"><span>    [&#x3C;00000000996ecfff>] load_module+0x2348/0x26e0</span></span>
+<span class="line"><span>    [&#x3C;000000004fa63e1a>] __do_sys_finit_module+0xa0/0xe0</span></span>
+<span class="line"><span>    [&#x3C;00000000cddcb6e5>] do_syscall_64+0x33/0x40</span></span>
+<span class="line"><span>    [&#x3C;00000000a0266b85>] entry_SYSCALL_64_after_hwframe+0x44/0xa9</span></span>
+<span class="line"><span>unreferenced object 0xffff8da0d2371000 (size 1024):</span></span>
+<span class="line"><span>  comm "insmod", pid 3529, jiffies 4294873584 (age 562.798s)</span></span>
+<span class="line"><span>  hex dump (first 32 bytes):</span></span>
+<span class="line"><span>    6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b  kkkkkkkkkkkkkkkk</span></span>
+<span class="line"><span>    6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b  kkkkkkkkkkkkkkkk</span></span>
+<span class="line"><span>  backtrace:</span></span>
+<span class="line"><span>    [&#x3C;0000000079fd2c9c>] 0xffffffffc030709c</span></span>
+<span class="line"><span>    [&#x3C;00000000afc3b54e>] do_one_initcall+0x56/0x2b0</span></span>
+<span class="line"><span>    [&#x3C;000000000724192e>] do_init_module+0x56/0x200</span></span>
+<span class="line"><span>    [&#x3C;00000000996ecfff>] load_module+0x2348/0x26e0</span></span>
+<span class="line"><span>    [&#x3C;000000004fa63e1a>] __do_sys_finit_module+0xa0/0xe0</span></span>
+<span class="line"><span>    [&#x3C;00000000cddcb6e5>] do_syscall_64+0x33/0x40</span></span>
+<span class="line"><span>    [&#x3C;00000000a0266b85>] entry_SYSCALL_64_after_hwframe+0x44/0xa9</span></span>
+<span class="line"><span>unreferenced object 0xffff8da0ca534000 (size 4096):</span></span>
+<span class="line"><span>  comm "insmod", pid 3529, jiffies 4294873584 (age 562.862s)</span></span>
+<span class="line"><span>  hex dump (first 32 bytes):</span></span>
+<span class="line"><span>    6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b  kkkkkkkkkkkkkkkk</span></span>
+<span class="line"><span>    6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b  kkkkkkkkkkkkkkkk</span></span>
+<span class="line"><span>  backtrace:</span></span>
+<span class="line"><span>    [&#x3C;000000000526120c>] 0xffffffffc0307130</span></span>
+<span class="line"><span>    [&#x3C;00000000afc3b54e>] do_one_initcall+0x56/0x2b0</span></span>
+<span class="line"><span>    [&#x3C;000000000724192e>] do_init_module+0x56/0x200</span></span>
+<span class="line"><span>    [&#x3C;00000000996ecfff>] load_module+0x2348/0x26e0</span></span>
+<span class="line"><span>    [&#x3C;000000004fa63e1a>] __do_sys_finit_module+0xa0/0xe0</span></span>
+<span class="line"><span>    [&#x3C;00000000cddcb6e5>] do_syscall_64+0x33/0x40</span></span>
+<span class="line"><span>    [&#x3C;00000000a0266b85>] entry_SYSCALL_64_after_hwframe+0x44/0xa9</span></span>
+<span class="line"><span>unreferenced object 0xffffaa50801fb000 (size 4096):</span></span>
+<span class="line"><span>  comm "insmod", pid 3529, jiffies 4294873584 (age 562.862s)</span></span>
+<span class="line"><span>  hex dump (first 32 bytes):</span></span>
+<span class="line"><span>    27 94 40 81 50 aa ff ff 27 04 00 00 00 00 00 00  '.@.P...'.......</span></span>
+<span class="line"><span>    7c 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  |...............</span></span>
+<span class="line"><span>  backtrace:</span></span>
+<span class="line"><span>    [&#x3C;00000000854ee6a4>] __vmalloc_node_range+0x236/0x270</span></span>
+<span class="line"><span>    [&#x3C;00000000a355227b>] __vmalloc_node+0x3f/0x60</span></span>
+<span class="line"><span>    [&#x3C;0000000039b16a7e>] 0xffffffffc0307149</span></span>
+<span class="line"><span>    [&#x3C;00000000afc3b54e>] do_one_initcall+0x56/0x2b0</span></span>
+<span class="line"><span>    [&#x3C;000000000724192e>] do_init_module+0x56/0x200</span></span>
+<span class="line"><span>    [&#x3C;00000000996ecfff>] load_module+0x2348/0x26e0</span></span>
+<span class="line"><span>    [&#x3C;000000004fa63e1a>] __do_sys_finit_module+0xa0/0xe0</span></span>
+<span class="line"><span>    [&#x3C;00000000cddcb6e5>] do_syscall_64+0x33/0x40</span></span>
+<span class="line"><span>    [&#x3C;00000000a0266b85>] entry_SYSCALL_64_after_hwframe+0x44/0xa9</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/sys/kernel/debug#</span></span></code></pre>
+<p>可以比较清楚的看到 可能leak的 object点，且有详细调用栈，排查起来十分方便</p>
+<p>清除之前扫描结果</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/sys/kernel/debug# echo clear  > /sys/kernel/debug/kmemleak</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/sys/kernel/debug# cat kmemleak</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/sys/kernel/debug#</span></span></code></pre>
+<h2 id="kmemleak-代码">kmemleak 代码</h2>
+<p>后续填坑</p>
+<h2 id="kmemleak-overhead">kmemleak overhead</h2>
+<p>当然假设我们场景允许 使能kmemleak之后，重新编译 kernel，也要关心 kmemleak 所带来的
+overhead是否允许，如果你的场景本来就是一个高负载的已经80%多的CPU使用率了，然后开启
+kmemleak,是很可能出问题的。</p>
+<p>在 公司 一款三核心的 Cortex-A7 的产品中测试结果：
+disabled        enabled     Per Core增加%       换算成单核CPU%
+User:     3.54%          7.63%          4.09%            12.27%
+Sys:      10.68%         23.76%         13.08%           38.7%
+Idle:     84.6%          67.68%         17.02%           -50.76%</p>
+<p>在我自己 qemu 虚拟机中测试结果是：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>    disabled        enabled     Per Core增加%       换算成单核CPU%</span></span></code></pre>
+<p>User:     3.54%          7.63%                           12.27%
+Sys:      10.68%         23.76%                          38.7%
+Idle:     84.6%          67.68%                          -50.76%</p>
+<p>参考<a href="https://www.kernel.org/doc/html/latest/dev-tools/kmemleak.html">内核文档</a></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

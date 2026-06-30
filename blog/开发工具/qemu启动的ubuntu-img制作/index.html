@@ -1,0 +1,137 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>qemu启动的ubuntu img制作 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>qemu启动的ubuntu img制作</h1><div class="post-meta"><time datetime="2021-04-09T19:00:00.000Z">2021年4月9日</time><span> / qemu</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">qemu</span><span class="tag">ubuntu</span></div></header><div class="article-body"><h2 id="基础img是从哪里来">基础img是从哪里来？</h2>
+<p>直接 wget <a href="https://cloud-images.ubuntu.com/focal/20210407/">链接</a></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>wget https://cloud-images.ubuntu.com/focal/20210407/focal-server-cloudimg-arm64.img</span></span></code></pre>
+<p>参考<a href="https://spyff.github.io/linux/2018/07/20/qemu-vm/">博客</a></p>
+<h2 id="不替换kernel如何启动这个kernel-">不替换kernel，如何启动这个kernel ???</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>qemu-system-aarch64 \</span></span>
+<span class="line"><span>	-hda /home/ubuntu/myspace/qemu_build/aarch64/arm64_ubuntu.img \</span></span>
+<span class="line"><span>	-m 2048M \</span></span>
+<span class="line"><span>	-smp 4  \</span></span>
+<span class="line"><span>	-M virt \</span></span>
+<span class="line"><span>	-cpu cortex-a72 \</span></span>
+<span class="line"><span>	-net nic \</span></span>
+<span class="line"><span>	-net user,hostfwd=tcp::2222-:22 \</span></span>
+<span class="line"><span>	-nographic</span></span></code></pre>
+<h2 id="如何使用这个-img">如何使用这个 img</h2>
+<p>这个img是直接可以启动的</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>qemu-system-aarch64 \</span></span>
+<span class="line"><span>	-hda /home/ubuntu/myspace/qemu_build/aarch64/arm64_ubuntu.img \</span></span>
+<span class="line"><span>	-kernel /home/ubuntu/workspace/linux-stable/out/arch/arm64/boot/Image \</span></span>
+<span class="line"><span>	-append "console=ttyAMA0 root=/dev/vda1" \</span></span>
+<span class="line"><span>	-m 2048M \</span></span>
+<span class="line"><span>	-smp 4  \</span></span>
+<span class="line"><span>	-M virt \</span></span>
+<span class="line"><span>	-cpu cortex-a72 \</span></span>
+<span class="line"><span>	-net nic \</span></span>
+<span class="line"><span>	-net user,hostfwd=tcp::2222-:22 \</span></span>
+<span class="line"><span>	-nographic</span></span></code></pre>
+<p>但是由于是 <code>cloud img</code>，所以一开始无法使用账号密码登陆，也没法通过ssh登陆。
+但是可以通过 <code>mount</code> 整个 img，将主机的 ssh的 id_rsa.pub 添加到 <code>cloud img</code>的 <code>authorized_keys</code>中，然后就可以通过 <code>ssh</code> 登陆了。</p>
+<h2 id="how-to-mount-a-qcow2-disk-image--方法一">How to mount a qcow2 disk image- 方法一</h2>
+<p>This is a quick guide to mounting a qcow2 disk images on your host server. This is useful to reset passwords, edit files, or recover something without the virtual machine running.</p>
+<h3 id="step-1---enable-nbd-on-the-host">Step 1 - Enable NBD on the Host</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>modprobe nbd max_part=8</span></span></code></pre>
+<h3 id="step-2---connect-the-qcow2-as-network-block-device">Step 2 - Connect the QCOW2 as network block device</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>qemu-nbd --connect=/dev/nbd0 ./arm64_ubuntu.img</span></span></code></pre>
+<h3 id="step-3---find-the-virtual-machine-partitions">Step 3 - Find The Virtual Machine Partitions</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>fdisk /dev/nbd0 -l</span></span></code></pre>
+<h3 id="step-4---mount-the-partition-from-the-vm">Step 4 - Mount the partition from the VM</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>mount /dev/nbd0p1 /mnt/opt/</span></span></code></pre>
+<p>如果是同架构 arm64 系统则进行 chroot.
+不行就改 ssh 快速登陆
+chroot</p>
+<h3 id="step-5---after-you-done-unmount-and-disconnect">Step 5 - After you done, unmount and disconnect</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>umount /mnt/opt/</span></span>
+<span class="line"><span>qemu-nbd --disconnect /dev/nbd0</span></span>
+<span class="line"><span>rmmod nbd</span></span></code></pre>
+<h2 id="how-to-mount-a-qcow2-disk-image--方法二">How to mount a qcow2 disk image- 方法二</h2>
+<h3 id="安装-libguestfs-tools">安装 libguestfs-tools</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo apt-get install libguestfs-tools</span></span></code></pre>
+<h3 id="help-libguestfs-tools">help libguestfs-tools</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:~/workspace/share/simpleapp_hw_breakpoints $ guestmount --help</span></span>
+<span class="line"><span>guestmount: FUSE module for libguestfs</span></span>
+<span class="line"><span>guestmount lets you mount a virtual machine filesystem</span></span>
+<span class="line"><span>Copyright (C) 2009-2020 Red Hat Inc.</span></span>
+<span class="line"><span>Usage:</span></span>
+<span class="line"><span>  guestmount [--options] mountpoint</span></span>
+<span class="line"><span>Options:</span></span>
+<span class="line"><span>  -a|--add image       Add image</span></span>
+<span class="line"><span>  --blocksize[=512|4096]</span></span>
+<span class="line"><span>                       Set sector size of the disk for -a option</span></span>
+<span class="line"><span>  -c|--connect uri     Specify libvirt URI for -d option</span></span>
+<span class="line"><span>  --dir-cache-timeout  Set readdir cache timeout (default 5 sec)</span></span>
+<span class="line"><span>  -d|--domain guest    Add disks from libvirt guest</span></span>
+<span class="line"><span>  --echo-keys          Don't turn off echo for passphrases</span></span>
+<span class="line"><span>  --fd=FD              Write to pipe FD when mountpoint is ready</span></span>
+<span class="line"><span>  --format[=raw|..]    Force disk format for -a option</span></span>
+<span class="line"><span>  --fuse-help          Display extra FUSE options</span></span>
+<span class="line"><span>  -i|--inspector       Automatically mount filesystems</span></span>
+<span class="line"><span>  --help               Display help message and exit</span></span>
+<span class="line"><span>  --key selector       Specify a LUKS key</span></span></code></pre>
+<h3 id="挂载">挂载</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo guestmount  -a userdata-qemu.img.qcow2 -m /dev/sda qcow2_mount_point</span></span></code></pre>
+<h3 id="卸载">卸载</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo guestunmount qcow2_mount_point</span></span></code></pre>
+<h2 id="如何连接-到-img">如何连接 到 img</h2>
+<ol>
+<li>ssh
+添加key之后，可以直接使用 ssh连接</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ssh -v ubuntu@127.0.0.1 -p 2222</span></span></code></pre>
+<p>连接之后，可以添加账号密码，修改默认账号密码</p>
+<ol start="2">
+<li>账号密码</li>
+</ol>
+<h2 id="如何加大-img-size">如何加大 img size</h2>
+<p>在长时间运行 安装软件 编译软件之后， img的size会越来越大，这时候最好可以扩展 img的大小</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>qemu-img resize ubuntu.img +10G</span></span></code></pre>
+<h2 id="如何开启-numa-架构支持">如何开启 numa 架构支持</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo qemu-system-x86_64 -kernel /home/ubuntu/workspace/linux/out/arch/x86/boot/bzImage -hda /home/ubuntu/myspace/qemu_build/stable_ubuntu.img -append 'root=/dev/sda5 console=ttyS0 crashkernel=256M systemd.unified_cgroup_hierarchy=1' -smp cores=4,threads=1,sockets=2 -m 4G -object memory-backend-ram,id=mem0,size=2G -object memory-backend-ram,id=mem1,size=2G -numa node,memdev=mem0,cpus=0-3,nodeid=0 -numa node,memdev=mem1,cpus=4-7,nodeid=1 --enable-kvm -net nic -net user,hostfwd=tcp::2222-:22 --nographic -fsdev local,id=fs1,path=/home/ubuntu/workspace/share,security_model=none -device virtio-9p-pci,fsdev=fs1,mount_tag=host_share</span></span></code></pre>
+<p>参考<a href="https://gist.github.com/tpaskhalis/1e601200da499508f9a8502493091f52">ssh_ubuntu_cloud</a>
+参考<a href="https://powersj.io/posts/ubuntu-qemu-cli/">Launching Ubuntu Cloud Images with QEMU</a></p>
+<h2 id="2023-新增">2023 新增</h2>
+<p>由于想用 bpftrace，新的内核 需要匹配新的头文件，所以考虑想用archlinux来 做cloudimage.
+搜索archlinux cloudimage，找到这个 git repo: <code>https://github.com/archlinux/arch-boxes</code>
+其中有指向 <code>https://app.vagrantup.com/archlinux/boxes/archlinux</code> 的链接，包含了各家 cloud image的链接，选一个 wget 下载下来。</p>
+<p>然后去启动</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span> sudo qemu-system-x86_64 -enable-kvm -m 2048 -boot c -hda Arch-Linux-x86_64-cloudimg.qcow2 --nographic</span></span></code></pre>
+<p>这样的话是直接可以启动的，但是最后密码不对，没法登陆。</p>
+<p>有个新的工具可以直接设置 root用户的登陆密码</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo apt install libguestfs-tools</span></span>
+<span class="line"><span>sudo virt-customize -a bionic-server-cloudimg-amd64.img --root-password password:root</span></span></code></pre>
+<p>然后 root用户密码就是 root。
+(虽然是 archlinux，但是其他家的也都是一样的。arch、ubuntu、debain 都可以)</p>
+<p>参考<a href="https://askubuntu.com/questions/451673/default-username-password-for-ubuntu-cloud-image">修改密码</a></p>
+<h2 id="debain-cloud-image">debain cloud image</h2>
+<p><a href="https://cloud.debian.org/images/cloud/bookworm/daily/20230126-1272/">https://cloud.debian.org/images/cloud/bookworm/daily/20230126-1272/</a></p>
+<h2 id="qemu-指定-dts">qemu 指定 dts</h2>
+<p>在 aarch64 机器上，实际可以默认不配置 dts dtb 参数。
+但是 实际上是 qemu 用了默认的 dts dtb.</p>
+<h3 id="如何获取-qemu-使用的-默认-dts">如何获取 qemu 使用的 默认 dts？</h3>
+<ul>
+<li>将 dtb dump出来</li>
+<li>dtc 将 dtb 反编译出来</li>
+</ul>
+<p>STEP1:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>qemu-system-aarch64 -machine virt -machine dumpdtb=qemu.dtb</span></span></code></pre>
+<p>STEP2:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>dtc -I dtb qemu.dtb > qemu.dts</span></span>
+<span class="line"><span>or</span></span>
+<span class="line"><span>dtc -I dtb -O dts -o qemu.dts qemu.dtb</span></span></code></pre>
+<p>dtc 工具需要安装 <code>sudo apt install device-tree-compiler</code></p>
+<h3 id="如何修改自己的dts">如何修改自己的dts？</h3>
+<p>按照自己需求修改</p>
+<h3 id="如何编译-dts-到-dtb">如何编译 dts 到 dtb</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>dtc -I dts -O dtb -o qemu.dtb qemu.dts</span></span></code></pre>
+<h2 id="qemu-指定-gic-smmu-version">qemu 指定 gic smmu version</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>qemu-system-aarch64 -kernel \</span></span>
+<span class="line"><span>./Image -append 'rootwait root=/dev/vda console=ttyAMA0 rootfstype=ext4 loglevel=8 earlycon nokaslr'  \</span></span>
+<span class="line"><span>-drive file=rootfs.ext4,if=none,index=0,media=disk,format=raw,id=disk0 \</span></span>
+<span class="line"><span>-device virtio-blk-device,drive=disk0 \</span></span>
+<span class="line"><span>-netdev user,id=hostnet0,hostfwd=tcp::2222-:22 \</span></span>
+<span class="line"><span>-device virtio-net-device,netdev=hostnet0 -net nic \</span></span>
+<span class="line"><span>-m 4096M -smp 10 \</span></span>
+<span class="line"><span>-machine virt,gic-version=3,kernel_irqchip=on,iommu=smmuv3,default_bus_bypass_iommu=true \</span></span>
+<span class="line"><span>-cpu cortex-a72 \</span></span>
+<span class="line"><span>-dtb /remote/swg/users/hsu/workspace/z3_g13/vendor/tools/unittesttool/scripts/qemu/dtb/UT-virt.dtb -nographic \</span></span></code></pre>
+<p>参考<a href="https://www.qemu.org/docs/master/system/arm/virt.html?highlight=gic%20version">virt generic virtual platform (virt)</a></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

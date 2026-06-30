@@ -1,0 +1,31 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>per-cpu变量引起的思考 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>per-cpu变量引起的思考</h1><div class="post-meta"><time datetime="2020-09-05T19:00:00.000Z">2020年9月5日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">内核同步</span><span class="tag">per-cpu</span></div></header><div class="article-body"><h2 id="疑问">疑问</h2>
+<ol>
+<li>内核为什么要引入per-cpu变量？解决了什么问题？</li>
+<li>per-cpu变量如何实现的？</li>
+<li>是否可以用数组实现per-cpu变量？</li>
+<li>per-cpu变量访问有什么原则？</li>
+<li>如果一个per-cpu变量既可以在线程上下文中访问，又可以在中断上下文中访问，需要保护吗？</li>
+</ol>
+<p>接下来我们就带着以上的疑问继续往下看</p>
+<h2 id="内核为什么要引入per-cpu变量解决了什么问题">内核为什么要引入per-cpu变量？解决了什么问题？</h2>
+<p>per-cpu变量是Linux内核中的一种同步机制。 当系统中的所有CPU访问并共享变量V时，CPU0修改变量V的值。</p>
+<p>CPU1也会同时修改变量V，这将导致变量V的值不正确。如果使用了原子锁，CPU0只能等待修改。</p>
+<p>这种方式有两个缺点：</p>
+<p>（1）原子操作很耗时</p>
+<p>（2）现在，所有CPU都具有L1高速缓存，因此许多CPU同时访问变量将导致高速缓存一致性问题。 当CPU修改共享变量V时，其他CPU上的相应缓存行必须无效，这会导致性能损失。</p>
+<p>per-cpu变量提供了解决上述问题的有趣功能。 它将变量的副本分配给系统中的每个处理器。 在多处理器系统中，当处理器只能访问其所属变量的副本时，无需考虑与其他处理器的竞争，因此可以充分利用处理器的本地硬件缓存来提高性能。 。</p>
+<h2 id="per-cpu变量如何实现的">per-cpu变量如何实现的？</h2>
+<p>这里分 静态per-cpu变量 和 动态per-cpu变量
+首先看一下使用的 API</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>// 静态定义 include/linux/Percpu-def.h</span></span>
+<span class="line"><span>#define DECLARE_PER_CPU(type, name)                    \</span></span>
+<span class="line"><span>    DECLARE_PER_CPU_SECTION(type, name, "")</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>#define DEFINE_PER_CPU(type, name)                    \</span></span>
+<span class="line"><span>    DEFINE_PER_CPU_SECTION(type, name, "")</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>// 动态定义 include/linux/percpu.h</span></span>
+<span class="line"><span>#define alloc_percpu(type)	\</span></span>
+<span class="line"><span>	(typeof(type) __percpu *)__alloc_percpu(sizeof(type), __alignof__(type))</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>void free_percpu(void __percpu *__pdata);</span></span></code></pre></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

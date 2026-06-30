@@ -1,0 +1,366 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>ext2 数据结构 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>ext2 数据结构</h1><div class="post-meta"><time datetime="2021-07-12T19:00:40.000Z">2021年7月12日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">ext2</span><span class="tag">filesystem</span></div></header><div class="article-body"><h2 id="struct">struct</h2>
+<p>对于文件系统 struct，首先要区分好 他们在 磁盘上，还是在 memory中。</p>
+<h3 id="磁盘上-ext2-inode-相关结构">磁盘上 ext2 inode 相关结构</h3>
+<p><code>ext2_inode</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>struct ext2_inode {</span></span>
+<span class="line"><span>	__le16	i_mode;		/* File mode */</span></span>
+<span class="line"><span>	__le16	i_uid;		/* Low 16 bits of Owner Uid */</span></span>
+<span class="line"><span>	__le32	i_size;		/* Size in bytes */</span></span>
+<span class="line"><span>	__le32	i_atime;	/* Access time */</span></span>
+<span class="line"><span>	__le32	i_ctime;	/* Creation time */</span></span>
+<span class="line"><span>	__le32	i_mtime;	/* Modification time */</span></span>
+<span class="line"><span>	__le32	i_dtime;	/* Deletion Time */</span></span>
+<span class="line"><span>	__le16	i_gid;		/* Low 16 bits of Group Id */</span></span>
+<span class="line"><span>	__le16	i_links_count;	/* Links count */</span></span>
+<span class="line"><span>	__le32	i_blocks;	/* Blocks count */</span></span>
+<span class="line"><span>	__le32	i_flags;	/* File flags */</span></span>
+<span class="line"><span>	union {</span></span>
+<span class="line"><span>		struct {</span></span>
+<span class="line"><span>			__le32  l_i_reserved1;</span></span>
+<span class="line"><span>		} linux1;</span></span>
+<span class="line"><span>		struct {</span></span>
+<span class="line"><span>			__le32  h_i_translator;</span></span>
+<span class="line"><span>		} hurd1;</span></span>
+<span class="line"><span>		struct {</span></span>
+<span class="line"><span>			__le32  m_i_reserved1;</span></span>
+<span class="line"><span>		} masix1;</span></span>
+<span class="line"><span>	} osd1;				/* OS dependent 1 */</span></span>
+<span class="line"><span>	__le32	i_block[EXT2_N_BLOCKS];/* Pointers to blocks */</span></span>
+<span class="line"><span>	__le32	i_generation;	/* File version (for NFS) */</span></span>
+<span class="line"><span>	__le32	i_file_acl;	/* File ACL */</span></span>
+<span class="line"><span>	__le32	i_dir_acl;	/* Directory ACL */</span></span>
+<span class="line"><span>	__le32	i_faddr;	/* Fragment address */</span></span>
+<span class="line"><span>	union {</span></span>
+<span class="line"><span>		struct {</span></span>
+<span class="line"><span>			__u8	l_i_frag;	/* Fragment number */</span></span>
+<span class="line"><span>			__u8	l_i_fsize;	/* Fragment size */</span></span>
+<span class="line"><span>			__u16	i_pad1;</span></span>
+<span class="line"><span>			__le16	l_i_uid_high;	/* these 2 fields    */</span></span>
+<span class="line"><span>			__le16	l_i_gid_high;	/* were reserved2[0] */</span></span>
+<span class="line"><span>			__u32	l_i_reserved2;</span></span>
+<span class="line"><span>		} linux2;</span></span>
+<span class="line"><span>		struct {</span></span>
+<span class="line"><span>			__u8	h_i_frag;	/* Fragment number */</span></span>
+<span class="line"><span>			__u8	h_i_fsize;	/* Fragment size */</span></span>
+<span class="line"><span>			__le16	h_i_mode_high;</span></span>
+<span class="line"><span>			__le16	h_i_uid_high;</span></span>
+<span class="line"><span>			__le16	h_i_gid_high;</span></span>
+<span class="line"><span>			__le32	h_i_author;</span></span>
+<span class="line"><span>		} hurd2;</span></span>
+<span class="line"><span>		struct {</span></span>
+<span class="line"><span>			__u8	m_i_frag;	/* Fragment number */</span></span>
+<span class="line"><span>			__u8	m_i_fsize;	/* Fragment size */</span></span>
+<span class="line"><span>			__u16	m_pad1;</span></span>
+<span class="line"><span>			__u32	m_i_reserved2[2];</span></span>
+<span class="line"><span>		} masix2;</span></span>
+<span class="line"><span>	} osd2;				/* OS dependent 2 */</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<h3 id="磁盘上-ext2-super_block-相关结构">磁盘上 ext2 super_block 相关结构</h3>
+<p><code>ext2_super_block</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>struct ext2_super_block {</span></span>
+<span class="line"><span>	__le32	s_inodes_count;		/* Inodes count */</span></span>
+<span class="line"><span>	__le32	s_blocks_count;		/* Blocks count */</span></span>
+<span class="line"><span>	__le32	s_r_blocks_count;	/* Reserved blocks count */</span></span>
+<span class="line"><span>	__le32	s_free_blocks_count;	/* Free blocks count */</span></span>
+<span class="line"><span>	__le32	s_free_inodes_count;	/* Free inodes count */</span></span>
+<span class="line"><span>	__le32	s_first_data_block;	/* First Data Block */</span></span>
+<span class="line"><span>	__le32	s_log_block_size;	/* Block size */</span></span>
+<span class="line"><span>	__le32	s_log_frag_size;	/* Fragment size */</span></span>
+<span class="line"><span>	__le32	s_blocks_per_group;	/* # Blocks per group */</span></span>
+<span class="line"><span>	__le32	s_frags_per_group;	/* # Fragments per group */</span></span>
+<span class="line"><span>	__le32	s_inodes_per_group;	/* # Inodes per group */</span></span>
+<span class="line"><span>	__le32	s_mtime;		/* Mount time */</span></span>
+<span class="line"><span>	__le32	s_wtime;		/* Write time */</span></span>
+<span class="line"><span>	__le16	s_mnt_count;		/* Mount count */</span></span>
+<span class="line"><span>	__le16	s_max_mnt_count;	/* Maximal mount count */</span></span>
+<span class="line"><span>	__le16	s_magic;		/* Magic signature */</span></span>
+<span class="line"><span>	__le16	s_state;		/* File system state */</span></span>
+<span class="line"><span>	__le16	s_errors;		/* Behaviour when detecting errors */</span></span>
+<span class="line"><span>	__le16	s_minor_rev_level; 	/* minor revision level */</span></span>
+<span class="line"><span>	__le32	s_lastcheck;		/* time of last check */</span></span>
+<span class="line"><span>	__le32	s_checkinterval;	/* max. time between checks */</span></span>
+<span class="line"><span>	__le32	s_creator_os;		/* OS */</span></span>
+<span class="line"><span>	__le32	s_rev_level;		/* Revision level */</span></span>
+<span class="line"><span>	__le16	s_def_resuid;		/* Default uid for reserved blocks */</span></span>
+<span class="line"><span>	__le16	s_def_resgid;		/* Default gid for reserved blocks */</span></span>
+<span class="line"><span>	/*</span></span>
+<span class="line"><span>	 * These fields are for EXT2_DYNAMIC_REV superblocks only.</span></span>
+<span class="line"><span>	 *</span></span>
+<span class="line"><span>	 * Note: the difference between the compatible feature set and</span></span>
+<span class="line"><span>	 * the incompatible feature set is that if there is a bit set</span></span>
+<span class="line"><span>	 * in the incompatible feature set that the kernel doesn't</span></span>
+<span class="line"><span>	 * know about, it should refuse to mount the filesystem.</span></span>
+<span class="line"><span>	 *</span></span>
+<span class="line"><span>	 * e2fsck's requirements are more strict; if it doesn't know</span></span>
+<span class="line"><span>	 * about a feature in either the compatible or incompatible</span></span>
+<span class="line"><span>	 * feature set, it must abort and not try to meddle with</span></span>
+<span class="line"><span>	 * things it doesn't understand...</span></span>
+<span class="line"><span>	 */</span></span>
+<span class="line"><span>	__le32	s_first_ino; 		/* First non-reserved inode */</span></span>
+<span class="line"><span>	__le16   s_inode_size; 		/* size of inode structure */</span></span>
+<span class="line"><span>	__le16	s_block_group_nr; 	/* block group # of this superblock */</span></span>
+<span class="line"><span>	__le32	s_feature_compat; 	/* compatible feature set */</span></span>
+<span class="line"><span>	__le32	s_feature_incompat; 	/* incompatible feature set */</span></span>
+<span class="line"><span>	__le32	s_feature_ro_compat; 	/* readonly-compatible feature set */</span></span>
+<span class="line"><span>	__u8	s_uuid[16];		/* 128-bit uuid for volume */</span></span>
+<span class="line"><span>	char	s_volume_name[16]; 	/* volume name */</span></span>
+<span class="line"><span>	char	s_last_mounted[64]; 	/* directory where last mounted */</span></span>
+<span class="line"><span>	__le32	s_algorithm_usage_bitmap; /* For compression */</span></span>
+<span class="line"><span>	/*</span></span>
+<span class="line"><span>	 * Performance hints.  Directory preallocation should only</span></span>
+<span class="line"><span>	 * happen if the EXT2_COMPAT_PREALLOC flag is on.</span></span>
+<span class="line"><span>	 */</span></span>
+<span class="line"><span>	__u8	s_prealloc_blocks;	/* Nr of blocks to try to preallocate*/</span></span>
+<span class="line"><span>	__u8	s_prealloc_dir_blocks;	/* Nr to preallocate for dirs */</span></span>
+<span class="line"><span>	__u16	s_padding1;</span></span>
+<span class="line"><span>	/*</span></span>
+<span class="line"><span>	 * Journaling support valid if EXT3_FEATURE_COMPAT_HAS_JOURNAL set.</span></span>
+<span class="line"><span>	 */</span></span>
+<span class="line"><span>	__u8	s_journal_uuid[16];	/* uuid of journal superblock */</span></span>
+<span class="line"><span>	__u32	s_journal_inum;		/* inode number of journal file */</span></span>
+<span class="line"><span>	__u32	s_journal_dev;		/* device number of journal file */</span></span>
+<span class="line"><span>	__u32	s_last_orphan;		/* start of list of inodes to delete */</span></span>
+<span class="line"><span>	__u32	s_hash_seed[4];		/* HTREE hash seed */</span></span>
+<span class="line"><span>	__u8	s_def_hash_version;	/* Default hash version to use */</span></span>
+<span class="line"><span>	__u8	s_reserved_char_pad;</span></span>
+<span class="line"><span>	__u16	s_reserved_word_pad;</span></span>
+<span class="line"><span>	__le32	s_default_mount_opts;</span></span>
+<span class="line"><span> 	__le32	s_first_meta_bg; 	/* First metablock block group */</span></span>
+<span class="line"><span>	__u32	s_reserved[190];	/* Padding to the end of the block */</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<h3 id="磁盘上-ext2-dir_entry-相关结构">磁盘上 ext2 dir_entry 相关结构</h3>
+<p><code>ext2_dir_entry</code> <code>ext2_dir_entry_2</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>struct ext2_dir_entry {</span></span>
+<span class="line"><span>	__le32	inode;			/* Inode number */</span></span>
+<span class="line"><span>	__le16	rec_len;		/* Directory entry length */</span></span>
+<span class="line"><span>	__le16	name_len;		/* Name length */</span></span>
+<span class="line"><span>	char	name[];			/* File name, up to EXT2_NAME_LEN */</span></span>
+<span class="line"><span>};</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>/*</span></span>
+<span class="line"><span> * The new version of the directory entry.  Since EXT2 structures are</span></span>
+<span class="line"><span> * stored in intel byte order, and the name_len field could never be</span></span>
+<span class="line"><span> * bigger than 255 chars, it's safe to reclaim the extra byte for the</span></span>
+<span class="line"><span> * file_type field.</span></span>
+<span class="line"><span> */</span></span>
+<span class="line"><span>struct ext2_dir_entry_2 {</span></span>
+<span class="line"><span>	__le32	inode;			/* Inode number */</span></span>
+<span class="line"><span>	__le16	rec_len;		/* Directory entry length */</span></span>
+<span class="line"><span>	__u8	name_len;		/* Name length */</span></span>
+<span class="line"><span>	__u8	file_type;</span></span>
+<span class="line"><span>	char	name[];			/* File name, up to EXT2_NAME_LEN */</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<h3 id="memory中-ext2-inode-data-相关结构">memory中 ext2 inode data 相关结构</h3>
+<p><code>ext2_inode_info</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>struct ext2_inode_info {</span></span>
+<span class="line"><span>	__le32	i_data[15];</span></span>
+<span class="line"><span>	__u32	i_flags;</span></span>
+<span class="line"><span>	__u32	i_faddr;</span></span>
+<span class="line"><span>	__u8	i_frag_no;</span></span>
+<span class="line"><span>	__u8	i_frag_size;</span></span>
+<span class="line"><span>	__u16	i_state;</span></span>
+<span class="line"><span>	__u32	i_file_acl;</span></span>
+<span class="line"><span>	__u32	i_dir_acl;</span></span>
+<span class="line"><span>	__u32	i_dtime;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	/*</span></span>
+<span class="line"><span>	 * i_block_group is the number of the block group which contains</span></span>
+<span class="line"><span>	 * this file's inode.  Constant across the lifetime of the inode,</span></span>
+<span class="line"><span>	 * it is used for making block allocation decisions - we try to</span></span>
+<span class="line"><span>	 * place a file's data blocks near its inode block, and new inodes</span></span>
+<span class="line"><span>	 * near to their parent directory's inode.</span></span>
+<span class="line"><span>	 */</span></span>
+<span class="line"><span>	__u32	i_block_group;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	/* block reservation info */</span></span>
+<span class="line"><span>	struct ext2_block_alloc_info *i_block_alloc_info;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	__u32	i_dir_start_lookup;</span></span>
+<span class="line"><span>#ifdef CONFIG_EXT2_FS_XATTR</span></span>
+<span class="line"><span>	/*</span></span>
+<span class="line"><span>	 * Extended attributes can be read independently of the main file</span></span>
+<span class="line"><span>	 * data. Taking i_mutex even when reading would cause contention</span></span>
+<span class="line"><span>	 * between readers of EAs and writers of regular file data, so</span></span>
+<span class="line"><span>	 * instead we synchronize on xattr_sem when reading or changing</span></span>
+<span class="line"><span>	 * EAs.</span></span>
+<span class="line"><span>	 */</span></span>
+<span class="line"><span>	struct rw_semaphore xattr_sem;</span></span>
+<span class="line"><span>#endif</span></span>
+<span class="line"><span>	rwlock_t i_meta_lock;</span></span>
+<span class="line"><span>#ifdef CONFIG_FS_DAX</span></span>
+<span class="line"><span>	struct rw_semaphore dax_sem;</span></span>
+<span class="line"><span>#endif</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	/*</span></span>
+<span class="line"><span>	 * truncate_mutex is for serialising ext2_truncate() against</span></span>
+<span class="line"><span>	 * ext2_getblock().  It also protects the internals of the inode's</span></span>
+<span class="line"><span>	 * reservation data structures: ext2_reserve_window and</span></span>
+<span class="line"><span>	 * ext2_reserve_window_node.</span></span>
+<span class="line"><span>	 */</span></span>
+<span class="line"><span>	struct mutex truncate_mutex;</span></span>
+<span class="line"><span>	struct inode	vfs_inode;</span></span>
+<span class="line"><span>	struct list_head i_orphan;	/* unlinked but open inodes */</span></span>
+<span class="line"><span>#ifdef CONFIG_QUOTA</span></span>
+<span class="line"><span>	struct dquot *i_dquot[MAXQUOTAS];</span></span>
+<span class="line"><span>#endif</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<h2 id="struct-ops">struct ops</h2>
+<h3 id="super-block-相关">super block 相关</h3>
+<p>ext2的 <code>super_operations</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static const struct super_operations ext2_sops = {</span></span>
+<span class="line"><span>	.alloc_inode	= ext2_alloc_inode,</span></span>
+<span class="line"><span>	.free_inode	= ext2_free_in_core_inode,</span></span>
+<span class="line"><span>	.write_inode	= ext2_write_inode,</span></span>
+<span class="line"><span>	.evict_inode	= ext2_evict_inode,</span></span>
+<span class="line"><span>	.put_super	= ext2_put_super,</span></span>
+<span class="line"><span>	.sync_fs	= ext2_sync_fs,</span></span>
+<span class="line"><span>	.freeze_fs	= ext2_freeze,</span></span>
+<span class="line"><span>	.unfreeze_fs	= ext2_unfreeze,</span></span>
+<span class="line"><span>	.statfs		= ext2_statfs,</span></span>
+<span class="line"><span>	.remount_fs	= ext2_remount,</span></span>
+<span class="line"><span>	.show_options	= ext2_show_options,</span></span>
+<span class="line"><span>#ifdef CONFIG_QUOTA</span></span>
+<span class="line"><span>	.quota_read	= ext2_quota_read,</span></span>
+<span class="line"><span>	.quota_write	= ext2_quota_write,</span></span>
+<span class="line"><span>	.get_dquots	= ext2_get_dquots,</span></span>
+<span class="line"><span>#endif</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<h3 id="nfsd-相关">nfsd 相关</h3>
+<p>for nfsd to communicate with file systems</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static const struct export_operations ext2_export_ops = {</span></span>
+<span class="line"><span>	.fh_to_dentry = ext2_fh_to_dentry,</span></span>
+<span class="line"><span>	.fh_to_parent = ext2_fh_to_parent,</span></span>
+<span class="line"><span>	.get_parent = ext2_get_parent,</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<h3 id="quotactl_ops-相关">quotactl_ops 相关</h3>
+<p><code>Operations handling requests from userspace</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static const struct quotactl_ops ext2_quotactl_ops = {</span></span>
+<span class="line"><span>	.quota_on	= ext2_quota_on,</span></span>
+<span class="line"><span>	.quota_off	= ext2_quota_off,</span></span>
+<span class="line"><span>	.quota_sync	= dquot_quota_sync,</span></span>
+<span class="line"><span>	.get_state	= dquot_get_state,</span></span>
+<span class="line"><span>	.set_info	= dquot_set_dqinfo,</span></span>
+<span class="line"><span>	.get_dqblk	= dquot_get_dqblk,</span></span>
+<span class="line"><span>	.set_dqblk	= dquot_set_dqblk,</span></span>
+<span class="line"><span>	.get_nextdqblk	= dquot_get_next_dqblk,</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<h3 id="inode-属性相关">inode 属性相关</h3>
+<p><code>file</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>const struct inode_operations ext2_file_inode_operations = {</span></span>
+<span class="line"><span>	.listxattr	= ext2_listxattr,</span></span>
+<span class="line"><span>	.getattr	= ext2_getattr,</span></span>
+<span class="line"><span>	.setattr	= ext2_setattr,</span></span>
+<span class="line"><span>	.get_acl	= ext2_get_acl,</span></span>
+<span class="line"><span>	.set_acl	= ext2_set_acl,</span></span>
+<span class="line"><span>	.fiemap		= ext2_fiemap,</span></span>
+<span class="line"><span>	.fileattr_get	= ext2_fileattr_get,</span></span>
+<span class="line"><span>	.fileattr_set	= ext2_fileattr_set,</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<p><code>dir</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>const struct inode_operations ext2_dir_inode_operations = {</span></span>
+<span class="line"><span>	.create		= ext2_create,</span></span>
+<span class="line"><span>	.lookup		= ext2_lookup,</span></span>
+<span class="line"><span>	.link		= ext2_link,</span></span>
+<span class="line"><span>	.unlink		= ext2_unlink,</span></span>
+<span class="line"><span>	.symlink	= ext2_symlink,</span></span>
+<span class="line"><span>	.mkdir		= ext2_mkdir,</span></span>
+<span class="line"><span>	.rmdir		= ext2_rmdir,</span></span>
+<span class="line"><span>	.mknod		= ext2_mknod,</span></span>
+<span class="line"><span>	.rename		= ext2_rename,</span></span>
+<span class="line"><span>	.listxattr	= ext2_listxattr,</span></span>
+<span class="line"><span>	.getattr	= ext2_getattr,</span></span>
+<span class="line"><span>	.setattr	= ext2_setattr,</span></span>
+<span class="line"><span>	.get_acl	= ext2_get_acl,</span></span>
+<span class="line"><span>	.set_acl	= ext2_set_acl,</span></span>
+<span class="line"><span>	.tmpfile	= ext2_tmpfile,</span></span>
+<span class="line"><span>	.fileattr_get	= ext2_fileattr_get,</span></span>
+<span class="line"><span>	.fileattr_set	= ext2_fileattr_set,</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<p><code>special inode</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>const struct inode_operations ext2_special_inode_operations = {</span></span>
+<span class="line"><span>	.listxattr	= ext2_listxattr,</span></span>
+<span class="line"><span>	.getattr	= ext2_getattr,</span></span>
+<span class="line"><span>	.setattr	= ext2_setattr,</span></span>
+<span class="line"><span>	.get_acl	= ext2_get_acl,</span></span>
+<span class="line"><span>	.set_acl	= ext2_set_acl,</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<p><code>symlink</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>const struct inode_operations ext2_symlink_inode_operations = {</span></span>
+<span class="line"><span>	.get_link	= page_get_link,</span></span>
+<span class="line"><span>	.getattr	= ext2_getattr,</span></span>
+<span class="line"><span>	.setattr	= ext2_setattr,</span></span>
+<span class="line"><span>	.listxattr	= ext2_listxattr,</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<p><code>fast_symlink</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>const struct inode_operations ext2_fast_symlink_inode_operations = {</span></span>
+<span class="line"><span>	.get_link	= simple_get_link,</span></span>
+<span class="line"><span>	.getattr	= ext2_getattr,</span></span>
+<span class="line"><span>	.setattr	= ext2_setattr,</span></span>
+<span class="line"><span>	.listxattr	= ext2_listxattr,</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<h3 id="file-操作相关">file 操作相关</h3>
+<p><code>ext2_file_operations</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>const struct file_operations ext2_file_operations = {</span></span>
+<span class="line"><span>	.llseek		= generic_file_llseek,</span></span>
+<span class="line"><span>	.read_iter	= ext2_file_read_iter,</span></span>
+<span class="line"><span>	.write_iter	= ext2_file_write_iter,</span></span>
+<span class="line"><span>	.unlocked_ioctl = ext2_ioctl,</span></span>
+<span class="line"><span>#ifdef CONFIG_COMPAT</span></span>
+<span class="line"><span>	.compat_ioctl	= ext2_compat_ioctl,</span></span>
+<span class="line"><span>#endif</span></span>
+<span class="line"><span>	.mmap		= ext2_file_mmap,</span></span>
+<span class="line"><span>	.open		= dquot_file_open,</span></span>
+<span class="line"><span>	.release	= ext2_release_file,</span></span>
+<span class="line"><span>	.fsync		= ext2_fsync,</span></span>
+<span class="line"><span>	.get_unmapped_area = thp_get_unmapped_area,</span></span>
+<span class="line"><span>	.splice_read	= generic_file_splice_read,</span></span>
+<span class="line"><span>	.splice_write	= iter_file_splice_write,</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<p><code>ext2_dir_operations</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>const struct file_operations ext2_dir_operations = {</span></span>
+<span class="line"><span>	.llseek		= generic_file_llseek,</span></span>
+<span class="line"><span>	.read		= generic_read_dir,</span></span>
+<span class="line"><span>	.iterate_shared	= ext2_readdir,</span></span>
+<span class="line"><span>	.unlocked_ioctl = ext2_ioctl,</span></span>
+<span class="line"><span>#ifdef CONFIG_COMPAT</span></span>
+<span class="line"><span>	.compat_ioctl	= ext2_compat_ioctl,</span></span>
+<span class="line"><span>#endif</span></span>
+<span class="line"><span>	.fsync		= ext2_fsync,</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<h3 id="地址空间相关">地址空间相关</h3>
+<p><code>ext2_aops</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>const struct address_space_operations ext2_aops = {</span></span>
+<span class="line"><span>	.set_page_dirty		= __set_page_dirty_buffers,</span></span>
+<span class="line"><span>	.readpage		= ext2_readpage,</span></span>
+<span class="line"><span>	.readahead		= ext2_readahead,</span></span>
+<span class="line"><span>	.writepage		= ext2_writepage,</span></span>
+<span class="line"><span>	.write_begin		= ext2_write_begin,</span></span>
+<span class="line"><span>	.write_end		= ext2_write_end,</span></span>
+<span class="line"><span>	.bmap			= ext2_bmap,</span></span>
+<span class="line"><span>	.direct_IO		= ext2_direct_IO,</span></span>
+<span class="line"><span>	.writepages		= ext2_writepages,</span></span>
+<span class="line"><span>	.migratepage		= buffer_migrate_page,</span></span>
+<span class="line"><span>	.is_partially_uptodate	= block_is_partially_uptodate,</span></span>
+<span class="line"><span>	.error_remove_page	= generic_error_remove_page,</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<p><code>ext2_nobh_aops</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>const struct address_space_operations ext2_nobh_aops = {</span></span>
+<span class="line"><span>	.set_page_dirty		= __set_page_dirty_buffers,</span></span>
+<span class="line"><span>	.readpage		= ext2_readpage,</span></span>
+<span class="line"><span>	.readahead		= ext2_readahead,</span></span>
+<span class="line"><span>	.writepage		= ext2_nobh_writepage,</span></span>
+<span class="line"><span>	.write_begin		= ext2_nobh_write_begin,</span></span>
+<span class="line"><span>	.write_end		= nobh_write_end,</span></span>
+<span class="line"><span>	.bmap			= ext2_bmap,</span></span>
+<span class="line"><span>	.direct_IO		= ext2_direct_IO,</span></span>
+<span class="line"><span>	.writepages		= ext2_writepages,</span></span>
+<span class="line"><span>	.migratepage		= buffer_migrate_page,</span></span>
+<span class="line"><span>	.error_remove_page	= generic_error_remove_page,</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<p><code>ext2_dax_aops</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static const struct address_space_operations ext2_dax_aops = {</span></span>
+<span class="line"><span>	.writepages		= ext2_dax_writepages,</span></span>
+<span class="line"><span>	.direct_IO		= noop_direct_IO,</span></span>
+<span class="line"><span>	.set_page_dirty		= __set_page_dirty_no_writeback,</span></span>
+<span class="line"><span>	.invalidatepage		= noop_invalidatepage,</span></span>
+<span class="line"><span>};</span></span></code></pre></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

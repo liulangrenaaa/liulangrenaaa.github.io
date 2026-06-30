@@ -1,0 +1,142 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>ftrace与atrace | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>ftrace与atrace</h1><div class="post-meta"><time datetime="2025-08-10T10:00:00.000Z">2025年8月10日</time><span> / android / debug-trace工具链</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">android</span><span class="tag">ftrace</span><span class="tag">atrace</span><span class="tag">性能分析</span></div></header><div class="article-body"><h2 id="简介">简介</h2>
+<p>ftrace 和 atrace 是 Linux 和 Android 系统中用于内核级跟踪的重要工具。</p>
+<h2 id="ftrace">ftrace</h2>
+<h3 id="概念">概念</h3>
+<ul>
+<li>Linux 内核的跟踪框架</li>
+<li>用于跟踪内核函数、调度、中断等</li>
+<li>通过 /sys/kernel/debug/tracing 访问</li>
+</ul>
+<h3 id="常用跟踪器">常用跟踪器</h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>跟踪器</th><th>说明</th></tr></thead><tbody><tr><td>function</td><td>函数调用跟踪</td></tr><tr><td>function_graph</td><td>函数调用图</td></tr><tr><td>sched_switch</td><td>调度切换</td></tr><tr><td>irq</td><td>中断跟踪</td></tr></tbody></table>
+<h3 id="使用方法">使用方法</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#6A737D"># 启用跟踪</span></span>
+<span class="line"><span style="color:#79B8FF">echo</span><span style="color:#79B8FF"> 1</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> /sys/kernel/debug/tracing/tracing_on</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D"># 设置跟踪器</span></span>
+<span class="line"><span style="color:#79B8FF">echo</span><span style="color:#9ECBFF"> function</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> /sys/kernel/debug/tracing/current_tracer</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D"># 查看跟踪结果</span></span>
+<span class="line"><span style="color:#B392F0">cat</span><span style="color:#9ECBFF"> /sys/kernel/debug/tracing/trace</span></span></code></pre>
+<h2 id="atrace">atrace</h2>
+<h3 id="概念-1">概念</h3>
+<ul>
+<li>Android 的跟踪框架</li>
+<li>基于 ftrace 构建</li>
+<li>提供 Android 特定的跟踪类别</li>
+</ul>
+<h3 id="常用类别">常用类别</h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>类别</th><th>说明</th></tr></thead><tbody><tr><td>gfx</td><td>图形</td></tr><tr><td>input</td><td>输入</td></tr><tr><td>view</td><td>View 系统</td></tr><tr><td>wm</td><td>窗口管理</td></tr><tr><td>am</td><td>Activity 管理</td></tr><tr><td>sched</td><td>调度</td></tr><tr><td>freq</td><td>CPU 频率</td></tr></tbody></table>
+<h3 id="使用方法-1">使用方法</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#6A737D"># 抓取 trace</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> atrace</span><span style="color:#79B8FF"> -z</span><span style="color:#79B8FF"> -b</span><span style="color:#79B8FF"> 10000</span><span style="color:#9ECBFF"> gfx</span><span style="color:#9ECBFF"> input</span><span style="color:#9ECBFF"> view</span><span style="color:#9ECBFF"> wm</span><span style="color:#9ECBFF"> am</span><span style="color:#9ECBFF"> sched</span><span style="color:#9ECBFF"> freq</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> trace.txt</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D"># 使用 systrace</span></span>
+<span class="line"><span style="color:#B392F0">python</span><span style="color:#9ECBFF"> systrace.py</span><span style="color:#9ECBFF"> gfx</span><span style="color:#9ECBFF"> input</span><span style="color:#9ECBFF"> view</span><span style="color:#9ECBFF"> wm</span><span style="color:#9ECBFF"> am</span><span style="color:#9ECBFF"> sched</span><span style="color:#9ECBFF"> freq</span></span></code></pre>
+<h2 id="高级用法">高级用法</h2>
+<h3 id="自定义-trace-点">自定义 trace 点</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#6A737D">// C++ 代码中添加 trace</span></span>
+<span class="line"><span style="color:#B392F0">ATRACE_BEGIN</span><span style="color:#E1E4E8">(</span><span style="color:#9ECBFF">"my_function"</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#6A737D">// 你的代码</span></span>
+<span class="line"><span style="color:#B392F0">ATRACE_END</span><span style="color:#E1E4E8">();</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="java"><code><span class="line"><span style="color:#6A737D">// Java 代码中添加 trace</span></span>
+<span class="line"><span style="color:#E1E4E8">Trace.</span><span style="color:#B392F0">beginSection</span><span style="color:#E1E4E8">(</span><span style="color:#9ECBFF">"my_method"</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#6A737D">// 你的代码</span></span>
+<span class="line"><span style="color:#E1E4E8">Trace.</span><span style="color:#B392F0">endSection</span><span style="color:#E1E4E8">();</span></span></code></pre>
+<h3 id="内核事件跟踪">内核事件跟踪</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#6A737D"># 跟踪调度事件</span></span>
+<span class="line"><span style="color:#79B8FF">echo</span><span style="color:#79B8FF"> 1</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> /sys/kernel/debug/tracing/events/sched/sched_switch/enable</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D"># 跟踪中断事件</span></span>
+<span class="line"><span style="color:#79B8FF">echo</span><span style="color:#79B8FF"> 1</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> /sys/kernel/debug/tracing/events/irq/irq_handler_entry/enable</span></span></code></pre>
+<h2 id="分析工具">分析工具</h2>
+<h3 id="1-perfetto">1. Perfetto</h3>
+<ul>
+<li>Web UI 可视化</li>
+<li>支持多种数据源</li>
+<li>强大的分析功能</li>
+</ul>
+<h3 id="2-systrace">2. systrace</h3>
+<ul>
+<li>命令行工具</li>
+<li>生成 HTML 报告</li>
+<li>简单易用</li>
+</ul>
+<h3 id="3-trace-cmd">3. trace-cmd</h3>
+<ul>
+<li>内核 trace 工具</li>
+<li>支持远程抓取</li>
+<li>灵活的过滤功能</li>
+</ul>
+<h2 id="最佳实践">最佳实践</h2>
+<ol>
+<li>明确分析目标</li>
+<li>选择合适的跟踪类别</li>
+<li>控制 trace 大小</li>
+<li>使用合适的分析工具</li>
+<li>结合多个 trace 分析</li>
+</ol>
+<h2 id="总结">总结</h2>
+<p>ftrace 和 atrace 是系统级性能分析的重要工具，掌握其使用方法有助于深入分析系统性能问题。</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

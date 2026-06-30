@@ -1,0 +1,71 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>uevent | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>uevent</h1><div class="post-meta"><time datetime="2024-10-11T19:00:00.000Z">2024年10月11日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">drivers</span><span class="tag">uevent</span></div></header><div class="article-body"><h2 id="什么是uevent">什么是uevent</h2>
+<p>Uevent是Kobject的一部分，用于在Kobject状态发生改变时，例如增加、移除等，通知用户空间程序。
+用户空间程序收到这样的事件后，会做相应的处理。
+该机制通常是用来支持热拔插设备的，例如U盘插入后，USB相关的驱动软件会动态创建用于表示该U盘的device结构（相应的也包括其中的kobject），
+并告知用户空间程序，为该U盘动态的创建/dev/目录下的设备节点，更进一步，可以通知其它的应用程序，
+将该U盘设备mount到系统中，从而动态的支持该设备。</p>
+<h2 id="什么时机-uevent-触发">什么时机 uevent 触发</h2>
+<p>设备模型中任何设备有事件需要上报时，会触发Uevent提供的接口。
+Uevent模块准备好上报事件的格式后，可以通过两个途径把事件上报到用户空间：
+一种是通过kmod模块，直接调用用户空间的可执行文件；
+另一种是通过netlink通信机制，将事件从内核空间传递给用户空间。</p>
+<p>Uevent的代码</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>include/linux/kobject.h</span></span>
+<span class="line"><span>lib/kobject_uevent.c</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span> 1: /* include/linux/kobject.h, line 50 */</span></span>
+<span class="line"><span> 2: enum kobject_action {   </span></span>
+<span class="line"><span> 3:     KOBJ_ADD,</span></span>
+<span class="line"><span> 4:     KOBJ_REMOVE,    </span></span>
+<span class="line"><span> 5:     KOBJ_CHANGE, </span></span>
+<span class="line"><span> 6:     KOBJ_MOVE,</span></span>
+<span class="line"><span> 7:     KOBJ_ONLINE, </span></span>
+<span class="line"><span> 8:     KOBJ_OFFLINE,</span></span>
+<span class="line"><span> 9:     KOBJ_MAX </span></span>
+<span class="line"><span> 10: };</span></span></code></pre>
+<p>device_add() -> kobject_uevent(&#x26;dev->kobj, KOBJ_ADD);</p>
+<p>参考<a href="http://www.wowotech.net/device_model/421.html">统一设备模型：kobj、kset分析</a></p>
+<h2 id="什么程序会处理-uevent">什么程序会处理 uevent?</h2>
+<p>常见的有 udev, ueventd, mdev等</p>
+<ul>
+<li>udev 是 systemd 的一部分，广泛用于桌面和服务器Linux发行版中</li>
+<li>mdev 是 busybox 一部分，用于嵌入式小系统中</li>
+<li>ueventd 是 android系统中的， 类似与 udev</li>
+</ul>
+<p>ubuntu中</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>root@ubuntu-virtual-machine:~# ps -AT | grep udev</span></span>
+<span class="line"><span>    466     466 ?        00:00:01 systemd-udevd</span></span>
+<span class="line"><span>root@ubuntu-virtual-machine:~# </span></span></code></pre>
+<p>android 中</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>TECNO-CM8:/ # ps -AT | grep ueventd</span></span>
+<span class="line"><span>root           410   410     1   10903048   9888 poll_schedule_timeout 0 S ueventd</span></span>
+<span class="line"><span>TECNO-CM8:/ # </span></span></code></pre>
+<p>后续有空分析一下 mdev 执行时机</p>
+<h3 id="mdev执行时机">mdev执行时机</h3>
+<p>在 /etc/init.d/rcS中</p>
+<ol>
+<li>扫描文件</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>mdev -s”/sys/class和/sys/block</span></span></code></pre>
+<ol start="2">
+<li>指定热插拔事件产生的时候 需要执行的应用程序</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>echo /sbin/mdev > /proc/sys/kernel/hotplug</span></span></code></pre>
+<p>mdev 会扫描 <code>/sys/class</code> <code>/sys/block</code> 两个目录下的文件， 然后使用 <code>mknod</code> 在 /dev/目录下创建系统文件</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>TECNO-CM8:/sys/class/input/event0 # file /dev/input/event0</span></span>
+<span class="line"><span>/dev/input/event0: character special (13/64)</span></span>
+<span class="line"><span>TECNO-CM8:/sys/class/input/event0 # cat dev</span></span>
+<span class="line"><span>13:64</span></span>
+<span class="line"><span>TECNO-CM8:/sys/class/input/event0 # </span></span></code></pre>
+<h3 id="mdev-代码分析">mdev 代码分析</h3>
+<p>代码在 busybox 源码中
+主要是三个函数</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>mdev_main</span></span>
+<span class="line"><span>find_dev</span></span>
+<span class="line"><span>make_device</span></span></code></pre>
+<p>可以看到 mdev 主要是使用 mknod来创建 /dev/目录 节点的</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/* mknod in /dev based on a path like "/sys/block/hda/hda1" */</span></span>
+<span class="line"><span>static void make_device(char *path, int delete)</span></span>
+<span class="line"><span>{</span></span></code></pre>
+<p>参考 <a href="http://www.wowotech.net/device_model/uevent.html/comment-page-2#comments">wowo文章</a>
+参考 <a href="https://www.cnblogs.com/-glb/p/12585021.html">mdev详解</a>
+参考 <a href="https://blog.csdn.net/m0_46525308/article/details/115098504">Linux设备模型分析之（五）：uevent</a></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

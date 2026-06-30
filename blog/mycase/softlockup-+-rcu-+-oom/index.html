@@ -1,0 +1,52 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>softlockup + rcu + oom | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>softlockup + rcu + oom</h1><div class="post-meta"><time datetime="2021-02-25T19:00:40.000Z">2021年2月25日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">softlockup</span><span class="tag">rcu</span><span class="tag">oom</span><span class="tag">slab</span></div></header><div class="article-body"><h2 id="现象">现象</h2>
+<p>产生oom，业务A被干掉了</p>
+<h2 id="case">case</h2>
+<ol>
+<li>根据oom现场 dump的信息查看 各个进程都没有占用太多内存，排除<code>用户空间进程内存泄漏</code></li>
+<li>查看 <code>slab</code> 信息，发现确实有某些<code>slab</code> 变得很大，发现是图传驱动创建的一个slab。</li>
+<li>严重 怀疑是 <code>slab 内存泄漏</code>，最后导致的内存泄漏，排查相关<code>create alloc free</code> 代码之后，没什么收获。</li>
+<li>使用 bpftrace 跟踪 申请释放的kprobe点，跟踪几分钟，十几分钟，看 输出几乎是成对出现的，应该不存在 <code>slab内存泄漏</code></li>
+<li>查看驱动自己封装的接口，发现<code>释放slab</code> 是直接使用 call_rcu()的一个接口，怀疑可能是跟 call_rcu接口有关系。</li>
+<li>rcu 涉及到 宽限期的问题，怀疑可能是某个 cpu 发生了 softlockup 或者不调度，部署panic_on_oom 抓取现场。</li>
+<li>看到确实有 一个驱动线程 一直占用cpu,看这个线程的 backtrace发现是在一个驱动的重新初始化上 一直 while，且之前获取过 spin_lock()，这样就基本构成了发生 softlockup的必要条件，之所以没有看到softlockup的原因就是时间还没到。</li>
+<li>到这一步，大概基本80～90%怀疑是 驱动代码 + 外设导致的 softlockup，最后导致rcu的宽限期不能通过，导致slab不能延迟释放，最后导致的 oom。</li>
+<li>然后尝试手动触发一个 <code>softlockup</code>，来尝试复现这个问题，但是一直只能的到 softlockup的警告，并不能复现 oom的情况？</li>
+<li>最后发现slab积累 释放的速率 和 业务场景有很大关系，研发机器经常烧录，在烧录之后参数区丢失，导致图传模式一直是默认模式，slab申请释放速率较低，但是QA都是OTA升级，一般使用 高画质，slab 申请释放 会比默认模式快很多，这也是为什么我本地不能复现这个 oom bug的原因。</li>
+</ol>
+<p>大概流程是：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>+---------------------------------+</span></span>
+<span class="line"><span>|    驱动先spin_lock之后，while等待  |</span></span>
+<span class="line"><span>|    一个初始化信号，由于外设异常，导致 |</span></span>
+<span class="line"><span>|    一直在while中,无法退出          |</span></span>
+<span class="line"><span>+-----------+---------------------+</span></span>
+<span class="line"><span>            |</span></span>
+<span class="line"><span>            |</span></span>
+<span class="line"><span>            |</span></span>
+<span class="line"><span>            |</span></span>
+<span class="line"><span>            v</span></span>
+<span class="line"><span>+-----------+----------------------------+</span></span>
+<span class="line"><span>|                                         |</span></span>
+<span class="line"><span>|  具备产生 softlockup 的条件,              |</span></span>
+<span class="line"><span>|  但是时间还是比较短，所以还未发生            |</span></span>
+<span class="line"><span>|  softlockup                             |</span></span>
+<span class="line"><span>+----------+-----------------------------+</span></span>
+<span class="line"><span>           |</span></span>
+<span class="line"><span>           |</span></span>
+<span class="line"><span>           |</span></span>
+<span class="line"><span>+----------v-----------------------------+</span></span>
+<span class="line"><span>|                                        |</span></span>
+<span class="line"><span>|    系统中rcu的宽限期过不了，               |</span></span>
+<span class="line"><span>|    导致业务驱动使用频繁的slab积累          |</span></span>
+<span class="line"><span>|    太多看起来和slab内存泄漏一样            |</span></span>
+<span class="line"><span>|                                        |</span></span>
+<span class="line"><span>+---------+------------------------------+</span></span>
+<span class="line"><span>          |</span></span>
+<span class="line"><span>          |</span></span>
+<span class="line"><span>          |</span></span>
+<span class="line"><span>          |</span></span>
+<span class="line"><span>+---------v-------------------+</span></span>
+<span class="line"><span>|                             |</span></span>
+<span class="line"><span>|  系统内存不足，导致oom         |</span></span>
+<span class="line"><span>|                             |</span></span>
+<span class="line"><span>+-----------------------------+</span></span>
+<span class="line"><span></span></span></code></pre></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

@@ -1,0 +1,80 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>page_owner 定位 buddy 内存泄漏 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>page_owner 定位 buddy 内存泄漏</h1><div class="post-meta"><time datetime="2021-01-16T19:00:00.000Z">2021年1月16日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">内核内存泄漏</span><span class="tag">内存泄漏</span><span class="tag">page_owner</span></div></header><div class="article-body"><h2 id="page_owner-原理">page_owner 原理</h2>
+<p>主要是通过给 每个分配出去的page 记录调用栈</p>
+<h2 id="page_owner-使用">page_owner 使用</h2>
+<p>从mm/makefile 看，需要如下配置</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>if [ $debug_page_owner == 1 ]</span></span>
+<span class="line"><span>then</span></span>
+<span class="line"><span>## page_owner detect and panic start</span></span>
+<span class="line"><span>	echo "CONFIG_STACKDEPOT=y" >> /tmp/.config</span></span>
+<span class="line"><span>	echo "CONFIG_PAGE_EXTENSION=y" >> /tmp/.config</span></span>
+<span class="line"><span>	echo "CONFIG_PAGE_OWNER=y" >> /tmp/.config</span></span>
+<span class="line"><span>## page_owner detect and panic end</span></span>
+<span class="line"><span>fi</span></span></code></pre>
+<p>重新编译之后，启动qemu, 需要加上 <code>page_owner=on</code>:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo qemu-system-x86_64 \</span></span>
+<span class="line"><span>	-kernel /tmp/bzImage \</span></span>
+<span class="line"><span>	-hda /home/ubuntu/myspace/qemu_build/stable_ubuntu.img \</span></span>
+<span class="line"><span>	-append "root=/dev/sda5 console=ttyS0 crashkernel=256M page_owner=on" \</span></span>
+<span class="line"><span>	-smp 4 \</span></span>
+<span class="line"><span>	-m 2048 \</span></span>
+<span class="line"><span>	--enable-kvm \</span></span>
+<span class="line"><span>	-net nic \</span></span>
+<span class="line"><span>	-net user,hostfwd=tcp::2222-:22 \</span></span>
+<span class="line"><span>	--nographic \</span></span>
+<span class="line"><span>	-fsdev local,id=fs1,path=/home/ubuntu/workspace/share,security_model=none \</span></span>
+<span class="line"><span>	-device virtio-9p-pci,fsdev=fs1,mount_tag=host_share</span></span></code></pre>
+<p>查看 <code>/sys/kernel/debug/page_owner</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/sys/kernel/debug# cat page_owner | wc -l</span></span>
+<span class="line"><span>4363829</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/sys/kernel/debug#</span></span></code></pre>
+<p>记录的信息非常多，然后需要一些工具来帮助检查</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/sys/kernel/debug# cat page_owner > /home/rlk/page_owner.txt</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/sys/kernel/debug# cp /tmp/share/test_modules/resource_leak/page_alloc_leak/page_owner_sort /usr/bin/</span></span>
+<span class="line"><span>stable_kernel@kernel: ~# page_owner_sort ./page_owner.txt sorted_page_owner.txt</span></span>
+<span class="line"><span>loaded 398724</span></span>
+<span class="line"><span>sorting ....</span></span>
+<span class="line"><span>culling</span></span>
+<span class="line"><span>stable_kernel@kernel: ~# cat sorted_page_owner.txt| wc -l</span></span>
+<span class="line"><span>5470295</span></span>
+<span class="line"><span>stable_kernel@kernel: ~# cat page_owner.txt| wc -l</span></span>
+<span class="line"><span>5472954</span></span>
+<span class="line"><span>stable_kernel@kernel: ~#</span></span></code></pre>
+<p>看一下详细信息，<code>order</code> <code>mask</code>详细信息都有，对于debug 页面内存泄露用处很大。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>stable_kernel@kernel: ~# cat page_owner.txt | head -n 80</span></span>
+<span class="line"><span>Page allocated via order 2, mask 0xd20c1(GFP_DMA|__GFP_IO|__GFP_FS|__GFP_NOWARN|__GFP_NORETRY|__GFP_COMP|__GFP_NOMEMALLOC), pid 62, ts 121463164s</span></span>
+<span class="line"><span>PFN 1024 type Unmovable Block 2 type Unmovable Flags 0x10200(slab|head)</span></span>
+<span class="line"><span> prep_new_page+0xcf/0xf0</span></span>
+<span class="line"><span> get_page_from_freelist+0xd8a/0x1230</span></span>
+<span class="line"><span> __alloc_pages_nodemask+0x170/0x330</span></span>
+<span class="line"><span> allocate_slab+0x24f/0x2f0</span></span>
+<span class="line"><span> ___slab_alloc+0x480/0x6b0</span></span>
+<span class="line"><span> __slab_alloc+0x50/0x60</span></span>
+<span class="line"><span> kmem_cache_alloc_trace+0x1fb/0x230</span></span>
+<span class="line"><span> sr_probe+0x213/0x5e0</span></span>
+<span class="line"><span> really_probe+0xd6/0x2e0</span></span>
+<span class="line"><span> driver_probe_device+0x4a/0xa0</span></span>
+<span class="line"><span> bus_for_each_drv+0x7c/0xc0</span></span>
+<span class="line"><span> __device_attach+0xe8/0x150</span></span>
+<span class="line"><span> bus_probe_device+0x9a/0xb0</span></span>
+<span class="line"><span> device_add+0x39b/0x850</span></span>
+<span class="line"><span> scsi_sysfs_add_sdev+0x89/0x280</span></span>
+<span class="line"><span> scsi_probe_and_add_lun+0x81e/0xb90</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Page allocated via order 0, mask 0x0(), pid 1, ts 285099088 ns</span></span>
+<span class="line"><span>PFN 4096 type Unmovable Block 8 type Unmovable Flags 0x100000000000000()</span></span>
+<span class="line"><span> register_early_stack+0x23/0x60</span></span>
+<span class="line"><span> init_page_owner+0x27/0x290</span></span>
+<span class="line"><span> kernel_init_freeable+0x158/0x273</span></span>
+<span class="line"><span> kernel_init+0x5/0x101</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Page allocated via order 0, mask 0x0(), pid 1, ts 285099128 ns</span></span>
+<span class="line"><span>PFN 4097 type Unmovable Block 8 type Unmovable Flags 0x100000000000000()</span></span>
+<span class="line"><span> register_early_stack+0x23/0x60</span></span>
+<span class="line"><span> init_page_owner+0x27/0x290</span></span>
+<span class="line"><span> kernel_init_freeable+0x158/0x273</span></span>
+<span class="line"><span> kernel_init+0x5/0x101</span></span></code></pre>
+<h2 id="page_owner-代码">page_owner 代码</h2>
+<h2 id="总结">总结</h2>
+<p>这个工具 运行 overhead较大，在线上可能不能开启，只能在debug时开启。</p>
+<p>参考<a href="https://www.kernel.org/doc/html/latest/vm/page_owner.html">内核文档</a>
+参考<a href="https://lwn.net/Articles/121656/">LWN 文章</a></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

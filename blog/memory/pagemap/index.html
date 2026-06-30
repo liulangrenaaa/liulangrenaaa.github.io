@@ -1,0 +1,144 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>pagemap | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>pagemap</h1><div class="post-meta"><time datetime="2021-02-04T19:00:40.000Z">2021年2月4日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">pagemap</span></div></header><div class="article-body"><h2 id="简介">简介</h2>
+<p><code>pagemap</code> 是 an array mapping virtual pages to pfns，就是一组mapping，是虚拟地址到pfn的一个mapping 映射，是相对于一个进程地址空间来说的。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span> * /proc/pid/pagemap - an array mapping virtual pages to pfns</span></span>
+<span class="line"><span> *</span></span>
+<span class="line"><span> * For each page in the address space, this file contains one 64-bit entry</span></span>
+<span class="line"><span> * consisting of the following:</span></span>
+<span class="line"><span> *</span></span>
+<span class="line"><span> * Bits 0-54  page frame number (PFN) if present</span></span>
+<span class="line"><span> * Bits 0-4   swap type if swapped</span></span>
+<span class="line"><span> * Bits 5-54  swap offset if swapped</span></span>
+<span class="line"><span> * Bit  55    pte is soft-dirty (see Documentation/admin-guide/mm/soft-dirty.rst)</span></span>
+<span class="line"><span> * Bit  56    page exclusively mapped</span></span>
+<span class="line"><span> * Bits 57-60 zero</span></span>
+<span class="line"><span> * Bit  61    page is file-page or shared-anon</span></span>
+<span class="line"><span> * Bit  62    page swapped</span></span>
+<span class="line"><span> * Bit  63    page present</span></span>
+<span class="line"><span> *</span></span>
+<span class="line"><span> * If the page is not present but in swap, then the PFN contains an</span></span>
+<span class="line"><span> * encoding of the swap file number and the page's offset into the</span></span>
+<span class="line"><span> * swap. Unmapped pages return a null PFN. This allows determining</span></span>
+<span class="line"><span> * precisely which pages are mapped (or in swap) and comparing mapped</span></span>
+<span class="line"><span> * pages between processes.</span></span>
+<span class="line"><span> *</span></span>
+<span class="line"><span> * Efficient users of this interface will use /proc/pid/maps to</span></span>
+<span class="line"><span> * determine which areas of memory are actually mapped and llseek to</span></span>
+<span class="line"><span> * skip over unmapped regions.</span></span></code></pre>
+<p>这是 <code>fs/proc/task_mmu.c</code> 中 <code>pagemap_read</code>函数的注释。
+可以看到比较重要是</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span> * Bit  62    page swapped</span></span>
+<span class="line"><span> * Bit  63    page present</span></span></code></pre>
+<h2 id="code">code</h2>
+<p>在 kernel 代码中搜索 <code>/proc/self/pagemap</code> 字符，可以看到在 <code>tools/testing/selftests/vm/madv_populate.c</code>目录中有较多使用了 pagemap这个文件。</p>
+<p>在 <code>test_modules</code> 这个<a href="https://github.com/liulangrenaaa/test_modules/blob/main/memory/pagemap/main.c">仓库中</a> 可以看到相关使用 <code>/proc/self/pagemap</code> 的代码。</p>
+<p>代码通过 <code>mmap</code> <code>malloc</code> <code>calloc</code> 之后得到的地址来判断这个地址是否映射了物理页帧，还可以获得映射后的物理页帧号，运行之后结果是</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_root:/home/ubuntu/workspace/share/test_modules/memory/pagemap # ./main</span></span>
+<span class="line"><span>[test_mmap]: addr = 0x8d6d5000</span></span>
+<span class="line"><span>start = 0x8d6d5000, entry = 0x0080000000000000</span></span>
+<span class="line"><span>[test_mmap]: addr: 0x8d6d5000 is not populated</span></span>
+<span class="line"><span>start = 0x8d6d6000, entry = 0x0080000000000000</span></span>
+<span class="line"><span>[test_mmap]: addr: 0x8d6d6000 is not populated</span></span>
+<span class="line"><span>start = 0x8d6d7000, entry = 0x0080000000000000</span></span>
+<span class="line"><span>[test_mmap]: addr: 0x8d6d7000 is not populated</span></span>
+<span class="line"><span>start = 0x8d6d8000, entry = 0x0080000000000000</span></span>
+<span class="line"><span>[test_mmap]: addr: 0x8d6d8000 is not populated</span></span>
+<span class="line"><span>start = 0x8d6d9000, entry = 0x0080000000000000</span></span>
+<span class="line"><span>[test_mmap]: addr: 0x8d6d9000 is not populated</span></span>
+<span class="line"><span>start = 0x8d6da000, entry = 0x0080000000000000</span></span>
+<span class="line"><span>[test_mmap]: addr: 0x8d6da000 is not populated</span></span>
+<span class="line"><span>start = 0x8d6db000, entry = 0x0080000000000000</span></span>
+<span class="line"><span>[test_mmap]: addr: 0x8d6db000 is not populated</span></span>
+<span class="line"><span>start = 0x8d6dc000, entry = 0x0080000000000000</span></span>
+<span class="line"><span>[test_mmap]: addr: 0x8d6dc000 is not populated</span></span>
+<span class="line"><span>start = 0x8d6dd000, entry = 0x0080000000000000</span></span>
+<span class="line"><span>[test_mmap]: addr: 0x8d6dd000 is not populated</span></span>
+<span class="line"><span>start = 0x8d6de000, entry = 0x0080000000000000</span></span>
+<span class="line"><span>[test_mmap]: addr: 0x8d6de000 is not populated</span></span>
+<span class="line"><span>start = 0x8d6df000, entry = 0x0080000000000000</span></span>
+<span class="line"><span>[test_mmap]: addr: 0x8d6df000 is not populated</span></span>
+<span class="line"><span>start = 0x8d6e0000, entry = 0x0080000000000000</span></span>
+<span class="line"><span>[test_mmap]: addr: 0x8d6e0000 is not populated</span></span>
+<span class="line"><span>[test_mmap]: memset</span></span>
+<span class="line"><span>start = 0x8d6d5000, entry = 0x81800000002c53d6</span></span>
+<span class="line"><span>start = 0x8d6d6000, entry = 0x818000000026072d</span></span>
+<span class="line"><span>start = 0x8d6d7000, entry = 0x81800000002851f6</span></span>
+<span class="line"><span>start = 0x8d6d8000, entry = 0x81800000002e3a6d</span></span>
+<span class="line"><span>start = 0x8d6d9000, entry = 0x818000000036297a</span></span>
+<span class="line"><span>start = 0x8d6da000, entry = 0x81800000003ff422</span></span>
+<span class="line"><span>start = 0x8d6db000, entry = 0x81800000001f0a10</span></span>
+<span class="line"><span>start = 0x8d6dc000, entry = 0x81800000002e3b2c</span></span>
+<span class="line"><span>start = 0x8d6dd000, entry = 0x81800000003c8e7c</span></span>
+<span class="line"><span>start = 0x8d6de000, entry = 0x8180000000347f7f</span></span>
+<span class="line"><span>start = 0x8d6df000, entry = 0x8180000000293003</span></span>
+<span class="line"><span>start = 0x8d6e0000, entry = 0x81800000002a69ae</span></span>
+<span class="line"><span>[test_malloc]: addr = 0x863056b0</span></span>
+<span class="line"><span>start = 0x863056b0, entry = 0x81800000003f4906</span></span>
+<span class="line"><span>start = 0x863066b0, entry = 0x0080000000000000</span></span>
+<span class="line"><span>[test_malloc]: addr:0x863066b0 is not populated</span></span>
+<span class="line"><span>start = 0x863076b0, entry = 0x0080000000000000</span></span>
+<span class="line"><span>[test_malloc]: addr:0x863076b0 is not populated</span></span>
+<span class="line"><span>start = 0x863086b0, entry = 0x0080000000000000</span></span>
+<span class="line"><span>[test_malloc]: addr:0x863086b0 is not populated</span></span>
+<span class="line"><span>start = 0x863096b0, entry = 0x0080000000000000</span></span>
+<span class="line"><span>[test_malloc]: addr:0x863096b0 is not populated</span></span>
+<span class="line"><span>start = 0x8630a6b0, entry = 0x0080000000000000</span></span>
+<span class="line"><span>[test_malloc]: addr:0x8630a6b0 is not populated</span></span>
+<span class="line"><span>start = 0x8630b6b0, entry = 0x0080000000000000</span></span>
+<span class="line"><span>[test_malloc]: addr:0x8630b6b0 is not populated</span></span>
+<span class="line"><span>start = 0x8630c6b0, entry = 0x0080000000000000</span></span>
+<span class="line"><span>[test_malloc]: addr:0x8630c6b0 is not populated</span></span>
+<span class="line"><span>start = 0x8630d6b0, entry = 0x0080000000000000</span></span>
+<span class="line"><span>[test_malloc]: addr:0x8630d6b0 is not populated</span></span>
+<span class="line"><span>start = 0x8630e6b0, entry = 0x0080000000000000</span></span>
+<span class="line"><span>[test_malloc]: addr:0x8630e6b0 is not populated</span></span>
+<span class="line"><span>start = 0x8630f6b0, entry = 0x0080000000000000</span></span>
+<span class="line"><span>[test_malloc]: addr:0x8630f6b0 is not populated</span></span>
+<span class="line"><span>start = 0x863106b0, entry = 0x0080000000000000</span></span>
+<span class="line"><span>[test_malloc]: addr:0x863106b0 is not populated</span></span>
+<span class="line"><span>[test_malloc]: memset 1 / 3</span></span>
+<span class="line"><span>start = 0x863056b0, entry = 0x81800000003f4906</span></span>
+<span class="line"><span>start = 0x863066b0, entry = 0x81800000003ff7c3</span></span>
+<span class="line"><span>start = 0x863076b0, entry = 0x81800000003ff592</span></span>
+<span class="line"><span>start = 0x863086b0, entry = 0x8180000000325293</span></span>
+<span class="line"><span>start = 0x863096b0, entry = 0x8180000000215ef7</span></span>
+<span class="line"><span>start = 0x8630a6b0, entry = 0x0080000000000000</span></span>
+<span class="line"><span>[test_malloc]: addr:0x8630a6b0 is not populated</span></span>
+<span class="line"><span>start = 0x8630b6b0, entry = 0x0080000000000000</span></span>
+<span class="line"><span>[test_malloc]: addr:0x8630b6b0 is not populated</span></span>
+<span class="line"><span>start = 0x8630c6b0, entry = 0x0080000000000000</span></span>
+<span class="line"><span>[test_malloc]: addr:0x8630c6b0 is not populated</span></span>
+<span class="line"><span>start = 0x8630d6b0, entry = 0x0080000000000000</span></span>
+<span class="line"><span>[test_malloc]: addr:0x8630d6b0 is not populated</span></span>
+<span class="line"><span>start = 0x8630e6b0, entry = 0x0080000000000000</span></span>
+<span class="line"><span>[test_malloc]: addr:0x8630e6b0 is not populated</span></span>
+<span class="line"><span>start = 0x8630f6b0, entry = 0x0080000000000000</span></span>
+<span class="line"><span>[test_malloc]: addr:0x8630f6b0 is not populated</span></span>
+<span class="line"><span>start = 0x863106b0, entry = 0x0080000000000000</span></span>
+<span class="line"><span>[test_malloc]: addr:0x863106b0 is not populated</span></span>
+<span class="line"><span>[test_calloc]: addr = 0x863116c0</span></span>
+<span class="line"><span>start = 0x863116c0, entry = 0x818000000040bcb7</span></span>
+<span class="line"><span>start = 0x863126c0, entry = 0x8180000000293f9f</span></span>
+<span class="line"><span>start = 0x863136c0, entry = 0x8180000000316b40</span></span>
+<span class="line"><span>start = 0x863146c0, entry = 0x81800000002e30dd</span></span>
+<span class="line"><span>start = 0x863156c0, entry = 0x81800000002e2dcd</span></span>
+<span class="line"><span>start = 0x863166c0, entry = 0x818000000030dd5c</span></span>
+<span class="line"><span>start = 0x863176c0, entry = 0x81800000002352b5</span></span>
+<span class="line"><span>start = 0x863186c0, entry = 0x81800000001d4da4</span></span>
+<span class="line"><span>start = 0x863196c0, entry = 0x818000000033e5c1</span></span>
+<span class="line"><span>start = 0x8631a6c0, entry = 0x8180000000184f31</span></span>
+<span class="line"><span>start = 0x8631b6c0, entry = 0x818000000039d867</span></span>
+<span class="line"><span>start = 0x8631c6c0, entry = 0x81800000002e1a05</span></span>
+<span class="line"><span>[test_malloc]: memset</span></span>
+<span class="line"><span>start = 0x863116c0, entry = 0x818000000040bcb7</span></span>
+<span class="line"><span>start = 0x863126c0, entry = 0x8180000000293f9f</span></span>
+<span class="line"><span>start = 0x863136c0, entry = 0x8180000000316b40</span></span>
+<span class="line"><span>start = 0x863146c0, entry = 0x81800000002e30dd</span></span>
+<span class="line"><span>start = 0x863156c0, entry = 0x81800000002e2dcd</span></span>
+<span class="line"><span>start = 0x863166c0, entry = 0x818000000030dd5c</span></span>
+<span class="line"><span>start = 0x863176c0, entry = 0x81800000002352b5</span></span>
+<span class="line"><span>start = 0x863186c0, entry = 0x81800000001d4da4</span></span>
+<span class="line"><span>start = 0x863196c0, entry = 0x818000000033e5c1</span></span>
+<span class="line"><span>start = 0x8631a6c0, entry = 0x8180000000184f31</span></span>
+<span class="line"><span>start = 0x8631b6c0, entry = 0x818000000039d867</span></span>
+<span class="line"><span>start = 0x8631c6c0, entry = 0x81800000002e1a05</span></span>
+<span class="line"><span>ubuntu@zeku_root:/home/ubuntu/workspace/share/test_modules/memory/pagemap #</span></span></code></pre></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

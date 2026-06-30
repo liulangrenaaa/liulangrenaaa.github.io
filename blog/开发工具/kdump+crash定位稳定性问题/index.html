@@ -1,0 +1,199 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>kdump+crash定位稳定性问题 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>kdump+crash定位稳定性问题</h1><div class="post-meta"><time datetime="2021-01-20T19:00:00.000Z">2021年1月20日</time><span> / 开发工具</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">kdump</span><span class="tag">crash</span><span class="tag">makedumpfile</span></div></header><div class="article-body"><h2 id="kudmp-原理">kudmp 原理</h2>
+<p>kdump实际上有两个内核，一个是正常运行的内核，一个我们称为捕获内核/第二内核。</p>
+<ol>
+<li>首先需要通过crashkernel=xxx@xxxx来专门为kdump功能专门预留一部分内存，
+用来放置第二个内核和其他数据信息的，这一部分是给捕获内核使用的。</li>
+<li>可以通过kexec系统调用，将第二个内核和initrd，vmcore信息，启动参数等传递给第一个内核。</li>
+<li>当系统崩溃时，保存当前寄存器信息，检查是否加载了捕获内核，如果存在则跳转到捕获内核，
+捕获内核和正常内核一样启动，但是会提供/proc/vmcore接口能够导出内存镜像信息，
+可以使用dd工具，高级的makedumpfile提供压缩选项。</li>
+<li>系统重启，之后就可以使用crash/gdb分析dump文件了</li>
+</ol>
+<p>所以可以配置的就本就是 crashkernel的大小，makedumpfile 工具</p>
+<h2 id="kudmp-安装使用">kudmp 安装使用</h2>
+<p>首先是编译 kernel 配置</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>CONFIG_KEXEC=y</span></span>
+<span class="line"><span>CONFIG_SYSFS=y</span></span>
+<span class="line"><span>CONFIG_DEBUG_INFO=Y</span></span>
+<span class="line"><span>CONFIG_CRASH_DUMP=y</span></span>
+<span class="line"><span>CONFIG_PROC_VMCORE=y</span></span></code></pre>
+<p>安装</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo apt install kdump-tools</span></span>
+<span class="line"><span>sudo apt install crash</span></span></code></pre>
+<p>如何使用？可以直接主动触发一个崩溃来看看效果</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sudo su</span></span>
+<span class="line"><span>echo c   >  /proc/sysrq-trigger</span></span></code></pre>
+<p>然后就进入转存储过程，一般会转存储到 <code>/var/crash/$date</code> 目录下，
+此时应该包含 <code>dump.$date</code> 文件，但是还需要 <code>vmlinux</code> 文件才可以使用 <code>crash</code> 工具分析。
+<code>vmlinux</code> 是 编译生成的带符号表的可执行文件，只要将它copy到当前目录就可以一起分析了。</p>
+<p>一般系统这样就可以搞起来了。</p>
+<h2 id="kdump-遇到的问题">kdump 遇到的问题</h2>
+<p>但是我这边是一直跟踪 <code>mainline kernel</code>, 上述过程都不是很顺利。
+遇到的问题：</p>
+<ol>
+<li><code>makefiledump</code> 转存储不成功</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>[    4.030842] kdump-tools[301]: Starting kdump-tools:</span></span>
+<span class="line"><span>[    4.032464] kdump-tools[308]:  * running makedumpfile -c -d 31 /proc/vmcore /var/crash/202101192137/dump-incomplete</span></span>
+<span class="line"><span>[   24.045632] kdump-tools[380]: check_release: Can't get the kernel version.</span></span>
+<span class="line"><span>[   24.069205] kdump-tools[380]: The kernel version is not supported.</span></span>
+<span class="line"><span>[   24.071343] kdump-tools[380]: The makedumpfile operation may be incomplete.</span></span>
+<span class="line"><span>[   24.077177] kdump-tools[380]: makedumpfile Failed.</span></span>
+<span class="line"><span>[   24.079278] kdump-tools[308]:  * kdump-tools: makedumpfile failed, falling back to 'cp'</span></span></code></pre>
+<p>我们发现是 运行 <code>makedumpfile</code> 过程中，由于 无法 <code>get kernel version</code> 导致无法压缩转存储
+成功。
+找到 <code>makedumpfile</code> <a href="">源码</a></p>
+<p>添加log 复现。(重新编译 makedumpfile 花费了不少时间)</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>[    4.030842] kdump-tools[301]: Starting kdump-tools:</span></span>
+<span class="line"><span>[    4.032464] kdump-tools[308]:  * running makedumpfile -c -d 31 /proc/vmcore /var/crash/202101192137/dump-incomplete</span></span>
+<span class="line"><span>[    4.041333] kdump-tools[380]: create_dumpfile: create_dumpfile!</span></span>
+<span class="line"><span>[   24.045632] kdump-tools[380]: check_release: Can't get the kernel version.</span></span>
+<span class="line"><span>[   24.056179] kdump-tools[380]: The kernel version 0:0:0.</span></span>
+<span class="line"><span>[   24.063203] kdump-tools[380]: The kernel version:[0] old_version:[33947663] new_version:[85196807].</span></span>
+<span class="line"><span>[   24.069205] kdump-tools[380]: The kernel version is not supported.</span></span>
+<span class="line"><span>[   24.071343] kdump-tools[380]: The makedumpfile operation may be incomplete.</span></span>
+<span class="line"><span>[   24.077177] kdump-tools[380]: makedumpfile Failed.</span></span>
+<span class="line"><span>[   24.079278] kdump-tools[308]:  * kdump-tools: makedumpfile failed, falling back to 'cp'</span></span></code></pre>
+<p>是这段代码原因</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>#define OLDEST_VERSION		KERNEL_VERSION(2, 6, 15) /* linux-2.6.15 */</span></span>
+<span class="line"><span>#define LATEST_VERSION		KERNEL_VERSION(5, 9, 4) /* linux-5.9.4 */</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>int32_t get_kernel_version(char *release)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	version = KERNEL_VERSION(maj, min, rel);</span></span>
+<span class="line"><span>	if ((version &#x3C; OLDEST_VERSION) || (LATEST_VERSION &#x3C; version)) {</span></span>
+<span class="line"><span>		MSG("The kernel version is not supported.\n");</span></span>
+<span class="line"><span>		MSG("The makedumpfile operation may be incomplete.\n");</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>int check_release(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	info->kernel_version = get_kernel_version(info->system_utsname.release);</span></span>
+<span class="line"><span>	if (info->kernel_version == FALSE) {</span></span>
+<span class="line"><span>		ERRMSG("Can't get the kernel version.\n");</span></span>
+<span class="line"><span>		return FALSE;</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>第一步先将 <code>LATEST_VERSION</code> 宏定义改掉</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>#define LATEST_VERSION		KERNEL_VERSION(5, 20, 7) /* linux-5.20.7 */</span></span></code></pre>
+<p>还有一个是要看 为什么获得kernel version不对</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>[    3.917016] kdump-tools[301]: Starting kdump-tools:</span></span>
+<span class="line"><span>[    3.919053] kdump-tools[308]:  * running makedumpfile -c -d 31 /proc/vmcore /var/crash/202101192153/dump-incomplete</span></span>
+<span class="line"><span>[    3.930292] kdump-tools[392]: create_dumpfile: create_dumpfile!</span></span>
+<span class="line"><span>[    3.943676] kdump-tools[392]: check_release: info->system_utsname.release: 5.11.0-rc4+.</span></span>
+<span class="line"><span>[    3.955855] kdump-tools[392]: check_release: info->release: .rc4+.</span></span>
+<span class="line"><span>Copying data                                      : [100.0 %] \           eta:</span></span></code></pre>
+<p>看代码应该是这段的问题</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>check_release(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	unsigned long utsname;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	/*</span></span>
+<span class="line"><span>	 * Get the kernel version.</span></span>
+<span class="line"><span>	 */</span></span>
+<span class="line"><span>	if (SYMBOL(system_utsname) != NOT_FOUND_SYMBOL) {</span></span>
+<span class="line"><span>		utsname = SYMBOL(system_utsname);</span></span>
+<span class="line"><span>	} else if (SYMBOL(init_uts_ns) != NOT_FOUND_SYMBOL) {</span></span>
+<span class="line"><span>                utsname = SYMBOL(init_uts_ns) + sizeof(int); //??????</span></span>
+<span class="line"><span>	} else {</span></span>
+<span class="line"><span>		ERRMSG("Can't get the symbol of system_utsname.\n");</span></span>
+<span class="line"><span>		return FALSE;</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>去掉 <code> + sizeof(int)</code> 即可正常工作</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>[    3.917016] kdump-tools[3https://github.com/crash-utility/crash01]: Starting kdump-tools:</span></span>
+<span class="line"><span>[    3.919053] kdump-tools[308]:  * running makedumpfile -c -d 31 /proc/vmcore /var/crash/202101192153/dump-incomplete</span></span>
+<span class="line"><span>[    3.943676] kdump-tools[392]: check_release: info->system_utsname.release: 5.11.0-rc4+.</span></span>
+<span class="line"><span>[    3.955855] kdump-tools[392]: check_release: info->release: 5.11.0-rc4+.</span></span>
+<span class="line"><span>Copying data                                      : [100.0 %] \           eta: 0s</span></span></code></pre>
+<ol start="2">
+<li>crash 版本较低不合适
+拿到转存储的dump文件之后，就可以用crash 来分析了</li>
+</ol>
+<p><code>ubuntu 20.04</code> 自带的 crash版本是 <code>7.2.8</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>stable_kernel@kernel: /var/crash/202101192317# sudo crash dump.202101192317 vmlinux</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>crash 7.2.8</span></span>
+<span class="line"><span>Copyright (C) 2002-2020  Red Hat, Inc.</span></span>
+<span class="line"><span>Copyright (C) 2004, 2005, 2006, 2010  IBM Corporation</span></span>
+<span class="line"><span>Copyright (C) 1999-2006  Hewlett-Packard Co</span></span>
+<span class="line"><span>Copyright (C) 2005, 2006, 2011, 2012  Fujitsu Limited</span></span>
+<span class="line"><span>Copyright (C) 2006, 2007  VA Linux Systems Japan K.K.</span></span>
+<span class="line"><span>Copyright (C) 2005, 2011  NEC Corporation</span></span>
+<span class="line"><span>Copyright (C) 1999, 2002, 2007  Silicon Graphics, Inc.</span></span>
+<span class="line"><span>Copyright (C) 1999, 2000, 2001, 2002  Mission Critical Linux, Inc.</span></span>
+<span class="line"><span>This program is free software, covered by the GNU General Public License,</span></span>
+<span class="line"><span>and you are welcome to change it and/or distribute copies of it under</span></span>
+<span class="line"><span>certain conditions.  Enter "help copying" to see the conditions.</span></span>
+<span class="line"><span>This program has absolutely no warranty.  Enter "help warranty" for details.</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>GNU gdb (GDB) 7.6</span></span>
+<span class="line"><span>Copyright (C) 2013 Free Software Foundation, Inc.</span></span>
+<span class="line"><span>License GPLv3+: GNU GPL version 3 or later &#x3C;http://gnu.org/licenses/gpl.html></span></span>
+<span class="line"><span>This is free software: you are free to change and redistribute it.</span></span>
+<span class="line"><span>There is NO WARRANTY, to the extent permitted by law.  Type "show copying"</span></span>
+<span class="line"><span>and "show warranty" for details.</span></span>
+<span class="line"><span>This GDB was configured as "x86_64-unknown-linux-gnu"...</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>WARNING: kernel relocated [702MB]: patching 130299 gdb minimal_symbol values</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>please wait... (patching 130299 gdb minimal_symbol values) [1]    4172 segmentation fault  sudo crash dump.202101192317 vmlinux</span></span></code></pre>
+<p>发现一直是有 segmentfault..
+怎么也没法解决，才想到可能是 <code>crash</code> 根据版本较低导致的。</p>
+<p>找到 crash <a href="https://github.com/crash-utility/crash">源码</a></p>
+<p>找到 <code>7.2.8</code> 的release版本， 发现最新的版本是 <code>7.2.9</code>
+就下载了7.2.9版本编译安装，其中还需要下载 <code>gdb-7.6</code>,建议直接国内源下载</p>
+<p>但是还会出现如下错误</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>stable_kernel@kernel: /var/crash/202101192317# sudo crash dump.202101192317 vmlinux</span></span>
+<span class="line"><span>This GDB was configured as "x86_64-unknown-linux-gnu"...</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>WARNING: kernel relocated [702MB]: patching 130299 gdb minimal_symbol values</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>      KERNEL: vmlinux</span></span>
+<span class="line"><span>    DUMPFILE: dump.202101192317  [PARTIAL DUMP]</span></span>
+<span class="line"><span>        CPUS: 4</span></span>
+<span class="line"><span>        DATE: Tue Jan 19 23:17:07 CST 2021</span></span>
+<span class="line"><span>      UPTIME: 00:03:31</span></span>
+<span class="line"><span>LOAD AVERAGE: 0.06, 0.06, 0.01</span></span>
+<span class="line"><span>       TASKS: 476</span></span>
+<span class="line"><span>    NODENAME: rlk-Standard-PC-i440FX-PIIX-1996</span></span>
+<span class="line"><span>     RELEASE: 5.11.0-rc4+</span></span>
+<span class="line"><span>     VERSION: #27 SMP Tue Jan 19 13:36:03 CST 2021</span></span>
+<span class="line"><span>     MACHINE: x86_64  (3692 Mhz)</span></span>
+<span class="line"><span>      MEMORY: 2 GB</span></span>
+<span class="line"><span>       PANIC: "Kernel panic - not syncing: sysrq triggered crash"</span></span>
+<span class="line"><span>         PID: 3655</span></span>
+<span class="line"><span>crash: cannot determine length of symbol: log_end</span></span></code></pre>
+<p>最后看了看 crash github 的 issue,地一个 open 的问题就是这个…
+<a href="https://github.com/crash-utility/crash/issues/74">issuse-74</a></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>The crash-7.2.9 doesn't support the 5.10 kernel. It needs these two patches</span></span>
+<span class="line"><span>a5531b2 and 71e159c, so please use the latest master if possible.</span></span></code></pre>
+<p>果然用最新 master 分支编译安装就 轻松秒杀。。（crash 工具编译安装很省心，没有过多依赖）</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>stable_kernel@kernel: /var/crash/202101192317# sudo crash dump.202101192317 vmlinux</span></span>
+<span class="line"><span>This GDB was configured as "x86_64-unknown-linux-gnu"...</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>WARNING: kernel relocated [702MB]: patching 130299 gdb minimal_symbol values</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>      KERNEL: vmlinux</span></span>
+<span class="line"><span>    DUMPFILE: dump.202101192317  [PARTIAL DUMP]</span></span>
+<span class="line"><span>        CPUS: 4</span></span>
+<span class="line"><span>        DATE: Tue Jan 19 23:17:07 CST 2021</span></span>
+<span class="line"><span>      UPTIME: 00:03:31</span></span>
+<span class="line"><span>LOAD AVERAGE: 0.06, 0.06, 0.01</span></span>
+<span class="line"><span>       TASKS: 476</span></span>
+<span class="line"><span>    NODENAME: rlk-Standard-PC-i440FX-PIIX-1996</span></span>
+<span class="line"><span>     RELEASE: 5.11.0-rc4+</span></span>
+<span class="line"><span>     VERSION: #27 SMP Tue Jan 19 13:36:03 CST 2021</span></span>
+<span class="line"><span>     MACHINE: x86_64  (3692 Mhz)</span></span>
+<span class="line"><span>      MEMORY: 2 GB</span></span>
+<span class="line"><span>       PANIC: "Kernel panic - not syncing: sysrq triggered crash"</span></span>
+<span class="line"><span>         PID: 3655</span></span>
+<span class="line"><span>     COMMAND: "bash"</span></span>
+<span class="line"><span>        TASK: ffff9aa984598d80  [THREAD_INFO: ffff9aa984598d80]</span></span>
+<span class="line"><span>         CPU: 1</span></span>
+<span class="line"><span>       STATE: TASK_RUNNING (PANIC)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>crash> exit</span></span>
+<span class="line"><span></span></span></code></pre>
+<p>这里就不记录具体使用了，在后面具体案例再记录</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

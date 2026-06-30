@@ -1,0 +1,300 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>进程虚拟地址空间泄漏问题 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>进程虚拟地址空间泄漏问题</h1><div class="post-meta"><time datetime="2021-01-15T19:00:00.000Z">2021年1月15日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">资源泄漏</span><span class="tag">内存泄露</span><span class="tag">虚拟地址空间泄漏</span></div></header><div class="article-body"><h2 id="虚拟内存泄漏">虚拟内存泄漏</h2>
+<p>一般情况我们说 内存泄漏，都是指的是物理内存泄漏，毕竟物理内存是实实在在的，一个进程泄漏了，那么整个系统中的可用内存就会变少。</p>
+<p>但是linux的虚拟内存空间是各个进程之间相互隔离的，在arm64系统中 有 T,在 arm32系统中也有3G
+多。但是否意味着这种 虚拟内存我们就不需要关心呢？</p>
+<h2 id="尝试复现">尝试复现</h2>
+<p>代码：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>#include &#x3C;stdio.h></span></span>
+<span class="line"><span>#include &#x3C;stdlib.h></span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>void main(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>        int i = 0;</span></span>
+<span class="line"><span>        char *p = NULL;</span></span>
+<span class="line"><span>        for (i = 0; i &#x3C; 1024 * 1024 * 64; i++) {</span></span>
+<span class="line"><span>                p = malloc(1024 * 1024);</span></span>
+<span class="line"><span>                if (!p) {printf("malloc failed,p = %p, i = %d\n", p, i); break;}</span></span>
+<span class="line"><span>                else    {printf("malloc sucess.p = %p, i = %d\n", p, i);}</span></span>
+<span class="line"><span>                usleep(1000 * 10);</span></span>
+<span class="line"><span>        }</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        printf("malloc failed,just wait!!\n");</span></span>
+<span class="line"><span>        while(1) {</span></span>
+<span class="line"><span>                usleep(1000 * 10);</span></span>
+<span class="line"><span>        }</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>每次尝试需分配 1G的虚拟内存，但是不会去使用，也就是不会去申请物理内存</p>
+<h2 id="x86_64-平台">x86_64 平台</h2>
+<p>我一开始尝试在腾讯云 服务器上复现：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>tencent_clould@130ubuntu: ~/workspace/test_modules/resource_leak/process_virtual_address_memleak# ./a.out</span></span>
+<span class="line"><span>malloc sucess. p = 0x7f8e3f5c6010, i = 0</span></span>
+<span class="line"><span>malloc sucess. p = 0x7f8e3f4c5010, i = 1</span></span>
+<span class="line"><span>......</span></span>
+<span class="line"><span>malloc sucess. p = 0x56771e4ba6e0, i = 461827</span></span>
+<span class="line"><span>malloc sucess. p = 0x56771e5ba6f0, i = 461828</span></span>
+<span class="line"><span>[1]    2721866 killed     ./a.out</span></span></code></pre>
+<p>直到最后分配到 <code>461828 MB</code> 内存的时候，<code>a.out</code> 被OOM kill了。</p>
+<p>到底是为啥呢？？？毕竟我也没有去往 <code>malloc</code> 的虚拟地址中写数据，也不应该会分配物理页面。
+从 <code>top</code> 命令看</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>top - 15:47:46 up 3 days, 15:06,  2 users,  load average: 0.24, 0.16, 0.10</span></span>
+<span class="line"><span>Tasks: 157 total,   1 running, 156 sleeping,   0 stopped,   0 zombie</span></span>
+<span class="line"><span>%Cpu(s):  3.3 us,  3.6 sy,  0.0 ni, 92.7 id,  0.3 wa,  0.0 hi,  0.0 si,  0.0 st</span></span>
+<span class="line"><span>MiB Mem :   1987.9 total,     70.5 free,   1660.6 used,    256.8 buff/cache</span></span>
+<span class="line"><span>MiB Swap:   2048.0 total,   1499.9 free,    548.1 used.    162.0 avail Mem</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND</span></span>
+<span class="line"><span>2783846 ubuntu    20   0  173.4g 683692   1380 S   0.3  33.6   0:06.86 a.out</span></span>
+<span class="line"><span> 1378 jenkins   20   0 2510448 176168   2924 S   0.7   8.7   7:05.12 java</span></span>
+<span class="line"><span>2779920 ubuntu    20   0  925684 107776  15196 S   1.0   5.3   0:21.10 node</span></span>
+<span class="line"><span>2703822 ubuntu    20   0 1611828  41268  11624 S   0.3   2.0   0:24.40 node</span></span>
+<span class="line"><span>2773158 ubuntu    20   0  702408  39436  12496 S   0.7   1.9   0:15.87</span></span></code></pre>
+<p>已经分配了 <code>173G</code> 虚拟内存，但是同时可以发现 驻留在物理内存中的页面也达到了 <code>683692kb</code>.
+这到底是什么？</p>
+<p>通过对比 运行 <code>mytest</code> 前后的 <code>/proc/meminfo</code> 文件，发现差异主要在</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>系统正常</span></span>
+<span class="line"><span>Active(anon):     243372 kB</span></span>
+<span class="line"><span>Inactive(anon):   267836 kB</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>mytest运行之后</span></span>
+<span class="line"><span>Active(anon):     550888 kB</span></span>
+<span class="line"><span>Inactive(anon):   576840 kB</span></span></code></pre>
+<p>说明确实是 mytest 消耗了大量的内存 用作匿名页面
+接下来就需要查看具体是哪种页面消耗了物理内存了</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>tencent_clould@ubuntu: /proc/2798128# cat smaps | grep heap -A 40</span></span>
+<span class="line"><span>7fbca3ff9000-7fc69e600000 rw-p 00000000 00:00 0                          [heap]</span></span>
+<span class="line"><span>Size:           41850908 kB</span></span>
+<span class="line"><span>KernelPageSize:        4 kB</span></span>
+<span class="line"><span>MMUPageSize:           4 kB</span></span>
+<span class="line"><span>Rss:              162844 kB</span></span>
+<span class="line"><span>Pss:              162844 kB</span></span>
+<span class="line"><span>Shared_Clean:          0 kB</span></span>
+<span class="line"><span>Shared_Dirty:          0 kB</span></span>
+<span class="line"><span>Private_Clean:         0 kB</span></span>
+<span class="line"><span>Private_Dirty:    162844 kB</span></span>
+<span class="line"><span>Referenced:       162844 kB</span></span>
+<span class="line"><span>Anonymous:        162844 kB</span></span>
+<span class="line"><span>LazyFree:              0 kB</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>此时top 输出</span></span>
+<span class="line"><span>top - 16:05:47 up 3 days, 15:24,  4 users,  load average: 0.14, 0.09, 0.10</span></span>
+<span class="line"><span>Tasks: 157 total,   1 running, 156 sleeping,   0 stopped,   0 zombie</span></span>
+<span class="line"><span>%Cpu(s):  3.0 us,  2.7 sy,  0.0 ni, 94.0 id,  0.0 wa,  0.0 hi,  0.3 si,  0.0 st</span></span>
+<span class="line"><span>MiB Mem :   1987.9 total,    786.6 free,    917.0 used,    284.2 buff/cache</span></span>
+<span class="line"><span>MiB Swap:   2048.0 total,   1512.2 free,    535.8 used.    912.0 avail Mem</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND</span></span>
+<span class="line"><span>2798128 ubuntu    20   0   45.1g 185412   1408 S   0.7   9.1   0:01.66 a.out</span></span>
+<span class="line"><span>......</span></span>
+<span class="line"><span>等待3min</span></span>
+<span class="line"><span>......</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>tencent_clould@ubuntu: /proc/2798128# cat smaps | grep heap -A 40</span></span>
+<span class="line"><span>7fb68e600000-7fc69e600000 rw-p 00000000 00:00 0                          [heap]</span></span>
+<span class="line"><span>Size:           67371008 kB</span></span>
+<span class="line"><span>KernelPageSize:        4 kB</span></span>
+<span class="line"><span>MMUPageSize:           4 kB</span></span>
+<span class="line"><span>Rss:              262144 kB</span></span>
+<span class="line"><span>Pss:              262144 kB</span></span>
+<span class="line"><span>Shared_Clean:          0 kB</span></span>
+<span class="line"><span>Shared_Dirty:          0 kB</span></span>
+<span class="line"><span>Private_Clean:         0 kB</span></span>
+<span class="line"><span>Private_Dirty:    262144 kB</span></span>
+<span class="line"><span>Referenced:       262144 kB</span></span>
+<span class="line"><span>Anonymous:        262144 kB</span></span>
+<span class="line"><span>LazyFree:              0 kB</span></span>
+<span class="line"><span>AnonHugePages:         0 kB</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>此时top 输出</span></span>
+<span class="line"><span>top - 16:09:43 up 3 days, 15:27,  4 users,  load average: 0.24, 0.12, 0.10</span></span>
+<span class="line"><span>Tasks: 159 total,   1 running, 158 sleeping,   0 stopped,   0 zombie</span></span>
+<span class="line"><span>%Cpu(s):  2.7 us,  3.4 sy,  0.0 ni, 90.3 id,  3.7 wa,  0.0 hi,  0.0 si,  0.0 st</span></span>
+<span class="line"><span>MiB Mem :   1987.9 total,    585.4 free,   1072.9 used,    329.5 buff/cache</span></span>
+<span class="line"><span>MiB Swap:   2048.0 total,   1523.9 free,    524.1 used.    754.9 avail Mem</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND</span></span>
+<span class="line"><span>2798128 ubuntu    20   0   67.9g 278604   1408 S   0.3  13.7   0:02.55 a.out</span></span></code></pre>
+<p>可以看到虽然 没有往堆内存中写入数据，但是还是消耗了较多的物理内存？这是怎么回事？</p>
+<ol>
+<li>
+<p>猜想一， 可能是一直连续分配虚拟内存，导致 <code>vma</code> 使用很多？
+通过查看 /proc/slabinfo 和 /proc/pid/maps 看堆内存就一块，基本没有分块的，kernel中也有
+<code>vma_merge</code> 的操作，所以应该不是vma 占用的内存</p>
+</li>
+<li>
+<p>??？
+我还没有其他头绪，为什么会占用物理内存</p>
+</li>
+</ol>
+<h2 id="arm32-平台">arm32 平台</h2>
+<p>然后想了想，x86_64平台可能是虚拟内存太大，复现时间成本有点高
+就使用了公司的板子，重新编译了一遍，在一个 <code>arm32</code> 板子上运行</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>root@device_gls:/ # mytest</span></span>
+<span class="line"><span>malloc sucess. p = 0xb6b00000, i = 0</span></span>
+<span class="line"><span>malloc sucess. p = 0xb6a00000, i = 1</span></span>
+<span class="line"><span>malloc sucess. p = 0xb6900000, i = 2</span></span>
+<span class="line"><span>malloc sucess. p = 0xb6800000, i = 3</span></span>
+<span class="line"><span>malloc sucess. p = 0xb6700000, i = 4</span></span>
+<span class="line"><span>malloc sucess. p = 0xb6600000, i = 5</span></span>
+<span class="line"><span>malloc sucess. p = 0xb6500000, i = 6</span></span>
+<span class="line"><span>......</span></span>
+<span class="line"><span>malloc sucess. p = 0x10380000, i = 2663</span></span>
+<span class="line"><span>malloc sucess. p = 0x10280000, i = 2664</span></span>
+<span class="line"><span>malloc sucess. p = 0x10180000, i = 2665</span></span>
+<span class="line"><span>malloc sucess. p = 0x10080000, i = 2666</span></span>
+<span class="line"><span>......</span></span>
+<span class="line"><span>malloc sucess. p = 0xff80000, i = 2667</span></span>
+<span class="line"><span>malloc sucess. p = 0xfe80000, i = 2668</span></span>
+<span class="line"><span>malloc sucess. p = 0xfd80000, i = 2669</span></span>
+<span class="line"><span>malloc sucess. p = 0xfc80000, i = 2670</span></span>
+<span class="line"><span>......</span></span>
+<span class="line"><span>malloc sucess. p = 0x4180000, i = 2857</span></span>
+<span class="line"><span>malloc sucess. p = 0x4080000, i = 2858</span></span>
+<span class="line"><span>malloc sucess. p = 0x3f80000, i = 2859</span></span>
+<span class="line"><span>......</span></span>
+<span class="line"><span>malloc sucess. p = 0x1080000, i = 2906</span></span>
+<span class="line"><span>malloc sucess. p = 0xf80000, i = 2907</span></span>
+<span class="line"><span>malloc sucess. p = 0xe80000, i = 2908</span></span>
+<span class="line"><span>......</span></span>
+<span class="line"><span>malloc sucess. p = 0x80000, i = 2922</span></span>
+<span class="line"><span>malloc sucess. p = 0xb6f80000, i = 2923</span></span>
+<span class="line"><span>malloc sucess. p = 0xb7080000, i = 2924</span></span>
+<span class="line"><span>......</span></span>
+<span class="line"><span>malloc sucess. p = 0xbe880000, i = 3044</span></span>
+<span class="line"><span>malloc sucess. p = 0xbe980000, i = 3045</span></span>
+<span class="line"><span>malloc sucess. p = 0xbea80000, i = 3046</span></span>
+<span class="line"><span>malloc sucess. p = 0xbed80000, i = 3047</span></span>
+<span class="line"><span>malloc failed, p = 0x0, i = 3048</span></span>
+<span class="line"><span>malloc failed,just wait!!</span></span></code></pre>
+<p>可以看到，<code>arm32</code> 平台在分配了 <code>3038MB</code> 虚拟内存之后，在分配第3039块1MB的内存时，由于虚拟地
+址空间用完了，不能再继续分配虚拟内存？</p>
+<p>可以看到此时 <code>mytest</code> 进程的地址空间</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>root@device_gls:/proc/1293 # cat maps</span></span>
+<span class="line"><span>00080000-7f580000 rw-p 00000000 00:00 0          [anon:libc_malloc]</span></span>
+<span class="line"><span>7f5cd000-7f5d0000 r-xp 00000000 103:0f 1523      /system/bin/mytest</span></span>
+<span class="line"><span>7f5d0000-7f5d1000 r--p 00002000 103:0f 1523      /system/bin/mytest</span></span>
+<span class="line"><span>7f5d1000-7f5d2000 rw-p 00000000 00:00 0          [heap]</span></span>
+<span class="line"><span>7f600000-b6d00000 rw-p 00000000 00:00 0          [anon:libc_malloc]</span></span>
+<span class="line"><span>b6d64000-b6d68000 r-xp 00000000 103:0f 1428      /system/lib/libnetd_client.so</span></span>
+<span class="line"><span>b6d68000-b6d69000 r--p 00003000 103:0f 1428      /system/lib/libnetd_client.so</span></span>
+<span class="line"><span>b6d69000-b6d6a000 rw-p 00004000 103:0f 1428      /system/lib/libnetd_client.so</span></span>
+<span class="line"><span>b6d6a000-b6d8a000 r--s 00000000 00:0f 11859      /dev/__properties__</span></span>
+<span class="line"><span>b6d8a000-b6d8b000 rw-p 00000000 00:00 0          [anon:linker_alloc_vector]</span></span>
+<span class="line"><span>b6d8c000-b6d8d000 rw-p 00000000 00:00 0          [anon:linker_alloc_vector]</span></span>
+<span class="line"><span>b6d8d000-b6dac000 r-xp 00000000 103:0f 1421      /system/lib/libm.so</span></span>
+<span class="line"><span>b6dac000-b6dad000 ---p 00000000 00:00 0</span></span>
+<span class="line"><span>b6dad000-b6dae000 r--p 0001f000 103:0f 1421      /system/lib/libm.so</span></span>
+<span class="line"><span>b6dae000-b6daf000 rw-p 00020000 103:0f 1421      /system/lib/libm.so</span></span>
+<span class="line"><span>b6daf000-b6e23000 r-xp 00000000 103:0f 1355      /system/lib/libc.so</span></span>
+<span class="line"><span>b6e23000-b6e27000 r--p 00073000 103:0f 1355      /system/lib/libc.so</span></span>
+<span class="line"><span>b6e27000-b6e2a000 rw-p 00077000 103:0f 1355      /system/lib/libc.so</span></span>
+<span class="line"><span>b6e2a000-b6e34000 rw-p 00000000 00:00 0</span></span>
+<span class="line"><span>b6e34000-b6ebc000 r-xp 00000000 103:0f 1354      /system/lib/libc++.so</span></span>
+<span class="line"><span>b6ebc000-b6ebd000 ---p 00000000 00:00 0</span></span>
+<span class="line"><span>b6ebd000-b6ec1000 r--p 00088000 103:0f 1354      /system/lib/libc++.so</span></span>
+<span class="line"><span>b6ec1000-b6ec2000 rw-p 0008c000 103:0f 1354      /system/lib/libc++.so</span></span>
+<span class="line"><span>b6ec2000-b6ec3000 rw-p 00000000 00:00 0</span></span>
+<span class="line"><span>b6ec3000-b6ec4000 r--p 00000000 00:00 0</span></span>
+<span class="line"><span>b6ec4000-b6ec5000 r--p 00000000 00:00 0          [anon:linker_alloc]</span></span>
+<span class="line"><span>b6ec5000-b6ec6000 rw-p 00000000 00:00 0          [anon:linker_alloc]</span></span>
+<span class="line"><span>b6ec6000-b6ec7000 rw-p 00000000 00:00 0          [anon:linker_alloc_vector]</span></span>
+<span class="line"><span>b6ec7000-b6ec8000 rw-p 00000000 00:00 0          [anon:linker_alloc_32]</span></span>
+<span class="line"><span>b6ec8000-b6ec9000 r--p 00000000 00:00 0          [anon:linker_alloc]</span></span>
+<span class="line"><span>b6ec9000-b6ee9000 r--s 00000000 00:0f 11859      /dev/__properties__</span></span>
+<span class="line"><span>b6ee9000-b6eea000 r--p 00000000 00:00 0</span></span>
+<span class="line"><span>b6eea000-b6eeb000 ---p 00000000 00:00 0</span></span>
+<span class="line"><span>b6eeb000-b6eed000 rw-p 00000000 00:00 0          [anon:thread signal stack]</span></span>
+<span class="line"><span>b6eed000-b6f0a000 r-xp 00000000 103:0f 170       /system/bin/linker</span></span>
+<span class="line"><span>b6f0a000-b6f0b000 r--p 0001c000 103:0f 170       /system/bin/linker</span></span>
+<span class="line"><span>b6f0b000-b6f0d000 rw-p 0001d000 103:0f 170       /system/bin/linker</span></span>
+<span class="line"><span>b6f0d000-b6f0f000 rw-p 00000000 00:00 0</span></span>
+<span class="line"><span>b6f80000-beb80000 rw-p 00000000 00:00 0          [anon:libc_malloc]</span></span>
+<span class="line"><span>bed01000-bed22000 rw-p 00000000 00:00 0          [stack]</span></span>
+<span class="line"><span>bed80000-bee80000 rw-p 00000000 00:00 0          [anon:libc_malloc]</span></span>
+<span class="line"><span>bef66000-bef67000 r-xp 00000000 00:00 0          [sigpage]</span></span>
+<span class="line"><span>bef67000-bef68000 r--p 00000000 00:00 0          [vvar]</span></span>
+<span class="line"><span>bef68000-bef69000 r-xp 00000000 00:00 0          [vdso]</span></span>
+<span class="line"><span>ffff0000-ffff1000 r-xp 00000000 00:00 0          [vectors]</span></span>
+<span class="line"><span>root@device_gls:/proc/1293 #</span></span></code></pre>
+<p>我们看 <code>libc_malloc</code> 区域的 的大小</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>00080000-7f580000 rw-p 00000000 00:00 0          [anon:libc_malloc]  == 2037MB</span></span>
+<span class="line"><span>7f600000-b6d00000 rw-p 00000000 00:00 0          [anon:libc_malloc]  == 887MB</span></span>
+<span class="line"><span>b6f80000-beb80000 rw-p 00000000 00:00 0          [anon:libc_malloc]  == 124MB</span></span>
+<span class="line"><span>bed80000-bee80000 rw-p 00000000 00:00 0          [anon:libc_malloc]  == 1MB</span></span></code></pre>
+<p>总和是 <code>2037 + 887 + 124 + 1 = 3049MB</code></p>
+<p>这是项目中一个实际的bug，场景是 直播盒子 做长跑测试的时候，每到7天左右，直播业务就会因
+为malloc失败而导致失败，但是由于业务代码写的问题，没有检查 malloc返回值的原因，导致业
+务应用会crash, 现象是空指针错误。。很难联想到是因为进程虚拟地址空间全部泄漏导致的问题。
+业务的小伙伴差了一个多月都没有头绪。。</p>
+<p>在 <code>arm32</code> 设备上，
+User 14 + Nice 0 + Sys 49 + Idle 246 + IOW 1 + IRQ 0 + SIRQ 0 = 310</p>
+<p>PID PR CPU% S  #THR     VSS     RSS PCY UID      Name
+3592  0   0% S     1 3124044K   1688K  fg root     mytest</p>
+<p>RSS 也占用了一些，但是远没 X86设备上夸张</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Inspiron-5548@ubuntu: ~/workspace# cat /tmp/123 | grep Rss</span></span>
+<span class="line"><span>Rss:                   0 kB</span></span>
+<span class="line"><span>Rss:                  12 kB</span></span>
+<span class="line"><span>Rss:                   4 kB</span></span>
+<span class="line"><span>Rss:                   0 kB</span></span>
+<span class="line"><span>Rss:                 256 kB</span></span>
+<span class="line"><span>Rss:                  16 kB</span></span>
+<span class="line"><span>Rss:                   4 kB</span></span>
+<span class="line"><span>Rss:                   4 kB</span></span>
+<span class="line"><span>Rss:                  28 kB</span></span>
+<span class="line"><span>Rss:                   4 kB</span></span>
+<span class="line"><span>Rss:                   4 kB</span></span>
+<span class="line"><span>Rss:                  64 kB</span></span>
+<span class="line"><span>Rss:                   0 kB</span></span>
+<span class="line"><span>Rss:                   4 kB</span></span>
+<span class="line"><span>Rss:                   4 kB</span></span>
+<span class="line"><span>Rss:                 460 kB</span></span>
+<span class="line"><span>Rss:                  16 kB</span></span>
+<span class="line"><span>Rss:                  12 kB</span></span>
+<span class="line"><span>Rss:                  28 kB</span></span>
+<span class="line"><span>Rss:                 536 kB</span></span>
+<span class="line"><span>Rss:                   0 kB</span></span>
+<span class="line"><span>Rss:                  16 kB</span></span>
+<span class="line"><span>Rss:                   4 kB</span></span>
+<span class="line"><span>Rss:                   4 kB</span></span>
+<span class="line"><span>Rss:                   4 kB</span></span>
+<span class="line"><span>Rss:                   4 kB</span></span>
+<span class="line"><span>Rss:                   4 kB</span></span>
+<span class="line"><span>Rss:                   4 kB</span></span>
+<span class="line"><span>Rss:                   4 kB</span></span>
+<span class="line"><span>Rss:                   4 kB</span></span>
+<span class="line"><span>Rss:                  28 kB</span></span>
+<span class="line"><span>Rss:                   4 kB</span></span>
+<span class="line"><span>Rss:                   0 kB</span></span>
+<span class="line"><span>Rss:                   0 kB</span></span>
+<span class="line"><span>Rss:                 116 kB</span></span>
+<span class="line"><span>Rss:                   4 kB</span></span>
+<span class="line"><span>Rss:                   8 kB</span></span>
+<span class="line"><span>Rss:                   8 kB</span></span>
+<span class="line"><span>Rss:                   0 kB</span></span>
+<span class="line"><span>Rss:                   8 kB</span></span>
+<span class="line"><span>Rss:                   0 kB</span></span>
+<span class="line"><span>Rss:                   4 kB</span></span>
+<span class="line"><span>Rss:                   4 kB</span></span>
+<span class="line"><span>Rss:                   0 kB</span></span></code></pre>
+<p>其中 malloc 的 rss 只占用 <code>256Kb</code>,大部分是 libc, libc++ libm的代码段占用</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>7f680000-b6d80000 rw-p 00000000 00:00 0          [anon:libc_malloc]</span></span>
+<span class="line"><span>Name:           [anon:libc_malloc]</span></span>
+<span class="line"><span>Size:             908288 kB</span></span>
+<span class="line"><span>Rss:                 256 kB</span></span>
+<span class="line"><span>Pss:                 256 kB</span></span>
+<span class="line"><span>Shared_Clean:          0 kB</span></span>
+<span class="line"><span>Shared_Dirty:          0 kB</span></span>
+<span class="line"><span>Private_Clean:         0 kB</span></span>
+<span class="line"><span>Private_Dirty:       256 kB</span></span>
+<span class="line"><span>Referenced:          256 kB</span></span>
+<span class="line"><span>Anonymous:           256 kB</span></span></code></pre>
+<p>由此可见</p>
+<ol>
+<li>
+<p>进程虚拟地址空间泄漏还是有可能会存在的，尽管可能概率非常低，对系统危害也比物理内存泄漏小很
+多。但是一旦发生，他的危害对于业务本身也是致命的，必须重启业务或者系统来恢复。</p>
+</li>
+<li>
+<p>编程习惯养好，一定需要检查函数返回值。</p>
+</li>
+</ol></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

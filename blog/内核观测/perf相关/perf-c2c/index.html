@@ -1,0 +1,37 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>perf c2c | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>perf c2c</h1><div class="post-meta"><time datetime="2021-11-03T19:00:00.000Z">2021年11月3日</time><span> / kernel debug / cache false sharing</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">perf</span><span class="tag">perf c2c</span></div></header><div class="article-body"><h2 id="介绍">介绍</h2>
+<p><code>perf c2c</code> 是 perf 的一个子工具, <code>c2c</code> 代表着 <code>cache to cache</code>。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>The perf c2c tool provides means for Shared Data C2C/HITM analysis. It allows you to track down the cacheline contentions.</span></span></code></pre>
+<p>可以用来分析 cache 伪共享的问题</p>
+<h2 id="使用">使用</h2>
+<h3 id="查看系统-cache-line-size">查看系统 cache line size</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:~/workspace/share/test_modules $ cat /proc/cpuinfo | grep size</span></span>
+<span class="line"><span>cache size      : 12288 KB</span></span>
+<span class="line"><span>clflush size    : 64</span></span>
+<span class="line"><span>address sizes   : 39 bits physical, 48 bits virtual</span></span>
+<span class="line"><span>cache size      : 12288 KB</span></span>
+<span class="line"><span>clflush size    : 64</span></span>
+<span class="line"><span>address sizes   : 39 bits physical, 48 bits virtual</span></span>
+<span class="line"><span>......</span></span>
+<span class="line"><span>cache size      : 12288 KB</span></span>
+<span class="line"><span>clflush size    : 64</span></span>
+<span class="line"><span>address sizes   : 39 bits physical, 48 bits virtual</span></span>
+<span class="line"><span>cache size      : 12288 KB</span></span>
+<span class="line"><span>clflush size    : 64</span></span>
+<span class="line"><span>address sizes   : 39 bits physical, 48 bits virtual</span></span>
+<span class="line"><span>cache size      : 12288 KB</span></span>
+<span class="line"><span>clflush size    : 64</span></span>
+<span class="line"><span>address sizes   : 39 bits physical, 48 bits virtual</span></span>
+<span class="line"><span>ubuntu@zeku_server:~/workspace/share/test_modules $</span></span></code></pre>
+<p><code>clflush size</code> 就是系统中 cache line flush size的大小，其实就是 cache line size大小，单位是 byte。</p>
+<p>更直接的方式是 <code>/sys/devices/system/cpu/cpu1/cache</code> 目录下</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ubuntu@zeku_server:/sys/devices/system/cpu/cpu1/cache $ cat index0/coherency_line_size</span></span>
+<span class="line"><span>64</span></span>
+<span class="line"><span>ubuntu@zeku_server:/sys/devices/system/cpu/cpu1/cache $ cat index0/type</span></span>
+<span class="line"><span>Data</span></span>
+<span class="line"><span>ubuntu@zeku_server:/sys/devices/system/cpu/cpu1/cache $ cat index0/size</span></span>
+<span class="line"><span>32K</span></span>
+<span class="line"><span>ubuntu@zeku_server:/sys/devices/system/cpu/cpu1/cache $</span></span></code></pre>
+<h3 id=""></h3>
+<p>参考<a href="https://joemario.github.io/blog/2016/09/01/c2c-blog/">C2C - False Sharing Detection in Linux Perf</a>
+参考<a href="https://man7.org/linux/man-pages/man1/perf-c2c.1.html">man perf c2c</a>
+参考<a href="https://access.redhat.com/documentation/zh-cn/red_hat_enterprise_linux/8/html/monitoring_and_managing_system_status_and_performance/detecting-false-sharing_monitoring-and-managing-system-status-and-performance#the-purpose-of-perf-c2c_detecting-false-sharing">检测错误共享</a></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

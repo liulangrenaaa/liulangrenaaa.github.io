@@ -1,0 +1,1078 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>CPU调频、调度、cpuidle与低功耗状态 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>CPU调频、调度、cpuidle与低功耗状态</h1><div class="post-meta"><time datetime="2026-05-31T11:07:00.000Z">2026年5月31日</time><span> / android / power</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">android</span><span class="tag">power</span><span class="tag">cpufreq</span><span class="tag">cpuidle</span><span class="tag">scheduler</span></div></header><div class="article-body"><p>CPU 功耗最容易被“CPU 占用率”误导。占用率只是结果的一小部分，真正决定功耗的是一条链：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>线程为什么醒 -> 调度到哪个 CPU -> 跑了多久 -> 跑在什么频率 -> 是否被 boost -> 是否能降频 -> 空闲时能不能进深 cpuidle -> 是否被 thermal/省电影响</span></span></code></pre>
+<p>同样 5% CPU 占用，可能对应两种完全不同的功耗：</p>
+<ul>
+<li>每 10ms 醒一次，每次跑很短：平均占用低，但 cpuidle 被打碎，功耗高。</li>
+<li>连续跑一小段后长时间不醒：平均占用类似，但 CPU 可以进入深 idle，功耗低。</li>
+</ul>
+<p>所以 CPU 功耗分析不能只问“top 里谁占用高”，要问“谁让 CPU 不能安静下来”。</p>
+<h2 id="总览">总览</h2>
+<p>Android CPU 功耗涉及五层：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>层级</th><th>关键词</th><th>功耗意义</th></tr></thead><tbody><tr><td>Thread</td><td>runnable、wakeups、binder、timer、IRQ</td><td>谁在让 CPU 醒</td></tr><tr><td>Scheduler</td><td>CFS、RT、cpuset、uclamp、EAS/WALT</td><td>线程跑在哪个 cluster，负载如何估计</td></tr><tr><td>cpufreq</td><td>governor、cur/min/max freq、boost</td><td>跑的时候频率是多少</td></tr><tr><td>cpuidle</td><td>idle state、latency、residency、usage/time</td><td>不跑的时候能不能睡深</td></tr><tr><td>thermal/power HAL</td><td>boost、mode、cooling、battery saver</td><td>外部策略如何拉高或压低频率</td></tr></tbody></table>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[Thread wakeup]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B[Scheduler chooses CPU]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C[Load/util updated]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D[cpufreq governor selects frequency]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E[Task runs]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F{More runnable work}</span></span>
+<span class="line"><span style="color:#E1E4E8">    G[CPU stays active]</span></span>
+<span class="line"><span style="color:#E1E4E8">    H[CPU idle governor selects idle state]</span></span>
+<span class="line"><span style="color:#E1E4E8">    I[Shallow idle]</span></span>
+<span class="line"><span style="color:#E1E4E8">    J[Deep idle]</span></span>
+<span class="line"><span style="color:#E1E4E8">    K[Power HAL boost or thermal limit]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    A --> B</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> D</span></span>
+<span class="line"><span style="color:#E1E4E8">    K --> D</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> F</span></span>
+<span class="line"><span style="color:#E1E4E8">    F -->|yes| G</span></span>
+<span class="line"><span style="color:#E1E4E8">    F -->|no| H</span></span>
+<span class="line"><span style="color:#E1E4E8">    H --> I</span></span>
+<span class="line"><span style="color:#E1E4E8">    H --> J</span></span></code></pre>
+<p>CPU 功耗问题常见四类：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>类型</th><th>表现</th><th>方向</th></tr></thead><tbody><tr><td>持续忙</td><td>某线程长期 runnable，CPU 无法 idle</td><td>查线程、binder、锁、循环</td></tr><tr><td>频繁短唤醒</td><td>CPU 占用低但 idle residency 差</td><td>查 timer、alarm、IRQ、poll</td></tr><tr><td>频率异常高</td><td>负载不高但 freq 高</td><td>查 boost、governor、uclamp、min_freq</td></tr><tr><td>性能上不去</td><td>负载高但 freq 被压</td><td>查 thermal、battery saver、cooling、policy max</td></tr></tbody></table>
+<h2 id="源码入口">源码入口</h2>
+<p>CPU 调频和 cpuidle 的核心在 Linux kernel，这篇主要用 AOSP Framework/Native 解释 Android 如何发出性能/功耗 hint，再用 sysfs/Perfetto 观察 kernel 行为。</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>模块</th><th>源码</th></tr></thead><tbody><tr><td>PMS userActivity interaction boost</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/PowerManagerService.java:2207:1">PowerManagerService.java line 2207</a></td></tr><tr><td>PMS setPowerBoostInternal</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/PowerManagerService.java:4635:1">PowerManagerService.java line 4635</a></td></tr><tr><td>PMS setPowerModeInternal</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/PowerManagerService.java:4640:1">PowerManagerService.java line 4640</a></td></tr><tr><td>PowerManagerService JNI setPowerBoost</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/jni/com_android_server_power_PowerManagerService.cpp:87:1">com_android_server_power_PowerManagerService.cpp line 87</a></td></tr><tr><td>PowerManagerService JNI setPowerMode</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/jni/com_android_server_power_PowerManagerService.cpp:92:1">com_android_server_power_PowerManagerService.cpp line 92</a></td></tr><tr><td>HintManagerService</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/hint/HintManagerService.java:60:1">HintManagerService.java line 60</a></td></tr><tr><td>createHintSession</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/hint/HintManagerService.java:378:1">HintManagerService.java line 378</a></td></tr><tr><td>updateTargetWorkDuration</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/hint/HintManagerService.java:522:1">HintManagerService.java line 522</a></td></tr><tr><td>reportActualWorkDuration</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/hint/HintManagerService.java:535:1">HintManagerService.java line 535</a></td></tr><tr><td>HintManager JNI session APIs</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/jni/com_android_server_hint_HintManagerService.cpp:89:1">com_android_server_hint_HintManagerService.cpp line 89</a></td></tr><tr><td>SurfaceFlinger starts power hint session</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/native/services/surfaceflinger/SurfaceFlinger.cpp:777:1">SurfaceFlinger.cpp line 777</a></td></tr><tr><td>SurfaceFlinger frame power hint</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/native/services/surfaceflinger/SurfaceFlinger.cpp:2576:1">SurfaceFlinger.cpp line 2576</a></td></tr><tr><td>SurfaceFlinger uclamp on display power</td><td><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/native/services/surfaceflinger/SurfaceFlinger.cpp:6106:1">SurfaceFlinger.cpp line 6106</a></td></tr></tbody></table>
+<h2 id="cpu功耗公式感">CPU功耗公式感</h2>
+<p>CPU 动态功耗可以粗略理解为：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>P_dynamic ~= C * V^2 * f * activity</span></span></code></pre>
+<p>这不是让我们在 Android 调试里算电容，而是提醒三件事：</p>
+<ul>
+<li>频率 <code>f</code> 高，功耗通常高。</li>
+<li>电压 <code>V</code> 往往随频率档位上升，功耗不是线性增长。</li>
+<li>activity 低但唤醒频繁，会破坏 idle，平台平均功耗仍然高。</li>
+</ul>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart LR</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[Higher util]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B[Higher freq]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C[Higher voltage]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D[Higher dynamic power]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E[Less idle time]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F[Higher average current]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    A --> B</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> D</span></span>
+<span class="line"><span style="color:#E1E4E8">    A --> E</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> F</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> F</span></span></code></pre>
+<p>因此分析 CPU 功耗时要同时给出：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>线程运行证据 + CPU频率证据 + idle residency证据 + boost/thermal证据</span></span></code></pre>
+<p>单独贴一张 <code>top</code> 或一张 <code>scaling_cur_freq</code> 都不够。</p>
+<h2 id="cpufreq基础">cpufreq基础</h2>
+<p>查看 CPU policy：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for p in /sys/devices/system/cpu/cpufreq/policy*; do echo "== $p =="; cat $p/related_cpus; cat $p/scaling_governor; cat $p/scaling_cur_freq; cat $p/scaling_min_freq; cat $p/scaling_max_freq; done'</span></span></code></pre>
+<p>常见文件：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>文件</th><th>含义</th></tr></thead><tbody><tr><td><code>related_cpus</code></td><td>这个 policy 管哪些 CPU，通常对应一个 cluster</td></tr><tr><td><code>scaling_governor</code></td><td>当前 governor，例如 schedutil、interactive</td></tr><tr><td><code>scaling_cur_freq</code></td><td>当前频率</td></tr><tr><td><code>scaling_min_freq</code></td><td>policy 最小频率</td></tr><tr><td><code>scaling_max_freq</code></td><td>policy 最大频率</td></tr><tr><td><code>cpuinfo_min_freq</code></td><td>硬件最小频率</td></tr><tr><td><code>cpuinfo_max_freq</code></td><td>硬件最大频率</td></tr><tr><td><code>scaling_available_frequencies</code></td><td>可选频点</td></tr><tr><td><code>time_in_state</code></td><td>各频点累计时间</td></tr></tbody></table>
+<p>看频率分布：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for p in /sys/devices/system/cpu/cpufreq/policy*; do echo "== $p =="; cat $p/stats/time_in_state 2>/dev/null; done'</span></span></code></pre>
+<p>如果没有 <code>stats/time_in_state</code>，可以用 Perfetto 的 <code>power/cpu_frequency</code>。</p>
+<p>当前外接 QCOM msm8998 设备曾观察到：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>policy0 governor=interactive min=300000 max=1900800</span></span>
+<span class="line"><span>policy4 governor=interactive min=300000 max=2361600</span></span></code></pre>
+<p>这说明它不是现代 Pixel 常见的 <code>schedutil</code> 路线，而是老一些的 QCOM interactive governor 体系。分析时要注意：</p>
+<ul>
+<li>interactive 参数会影响升频/降频。</li>
+<li>vendor boost/perflock 可能临时改 min freq。</li>
+<li>thermal cooling 可能压 max freq。</li>
+<li>大小核 policy 分开，线程迁移会改变性能和功耗。</li>
+</ul>
+<h2 id="schedutil和interactive">schedutil和interactive</h2>
+<p>不同 governor 的分析口径不同。</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>governor</th><th>思路</th><th>排查重点</th></tr></thead><tbody><tr><td><code>schedutil</code></td><td>根据 scheduler util 选频</td><td>util、uclamp、EAS、RT、iowait boost</td></tr><tr><td><code>interactive</code></td><td>根据负载采样和参数快速升降频</td><td>target_loads、timer_rate、hispeed_freq、boost</td></tr><tr><td><code>performance</code></td><td>长期高频</td><td>是否调试残留或 vendor 策略</td></tr><tr><td><code>powersave</code></td><td>长期低频</td><td>性能问题、卡顿</td></tr><tr><td><code>userspace</code></td><td>用户态指定频率</td><td>vendor daemon 或测试脚本</td></tr></tbody></table>
+<p>interactive 常见参数路径：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'find /sys/devices/system/cpu/cpufreq -path "*interactive*" -type f 2>/dev/null'</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'find /sys -path "*interactive*" -type f 2>/dev/null | head -80'</span></span></code></pre>
+<p>现代 <code>schedutil</code> 常见观察：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for p in /sys/devices/system/cpu/cpufreq/policy*; do echo $p; ls $p; done'</span></span></code></pre>
+<p>注意：不能把某个 governor 的结论套到所有设备。msm8998、sm8250、Tensor、MTK 平台会差很多。</p>
+<h2 id="调度与大小核">调度与大小核</h2>
+<p>CPU 功耗不只看频率，还要看线程跑在哪个 cluster。big core 在同频下也可能比 little core 更耗电，但能更快完成任务；little core 更省，但长时间跑满也会拖慢任务和增加总能耗。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[Runnable task]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B[Scheduler]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C{Task util and priority}</span></span>
+<span class="line"><span style="color:#E1E4E8">    D[Little cluster]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E[Big cluster]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F[Lower instantaneous power]</span></span>
+<span class="line"><span style="color:#E1E4E8">    G[Higher performance and power]</span></span>
+<span class="line"><span style="color:#E1E4E8">    H[Task finish]</span></span>
+<span class="line"><span style="color:#E1E4E8">    I[CPU idle]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    A --> B</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C</span></span>
+<span class="line"><span style="color:#E1E4E8">    C -->|small util| D</span></span>
+<span class="line"><span style="color:#E1E4E8">    C -->|high util or boosted| E</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> F</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> G</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> H</span></span>
+<span class="line"><span style="color:#E1E4E8">    G --> H</span></span>
+<span class="line"><span style="color:#E1E4E8">    H --> I</span></span></code></pre>
+<p>关键观察点：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>现象</th><th>含义</th></tr></thead><tbody><tr><td>小线程频繁跑 big core</td><td>可能被 boost/uclamp/cpuset 影响</td></tr><tr><td>大任务被压在 little core</td><td>可能性能差、任务时间长</td></tr><tr><td>RT 线程频繁唤醒</td><td>可能打断 idle，影响交互和功耗</td></tr><tr><td>binder 线程池频繁醒</td><td>可能系统服务或 App IPC 抖动</td></tr><tr><td>kworker/irq 频繁跑</td><td>可能 driver、网络、display、storage 活动</td></tr></tbody></table>
+<p>命令：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> top</span><span style="color:#79B8FF"> -H</span><span style="color:#79B8FF"> -o</span><span style="color:#9ECBFF"> PID,TID,USER,PR,NI,%CPU,CPU,CMD</span><span style="color:#79B8FF"> -m</span><span style="color:#79B8FF"> 30</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> ps</span><span style="color:#79B8FF"> -AT</span><span style="color:#79B8FF"> -o</span><span style="color:#9ECBFF"> PID,TID,PRI,NI,CPU,PCY,STAT,NAME</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> head</span><span style="color:#79B8FF"> -80</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /proc/schedstat</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> head</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /proc/interrupts</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> head</span><span style="color:#79B8FF"> -80</span></span></code></pre>
+<p><code>top</code> 只能看瞬间，Perfetto 才能看线程迁移和唤醒原因。</p>
+<h2 id="cpuset和uclamp">cpuset和uclamp</h2>
+<p>Android 会用 cpuset 和 uclamp 影响线程可跑 CPU 和频率倾向。</p>
+<p>常见 cpuset：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'find /dev/cpuset -maxdepth 3 -type f -name cpus -o -name tasks 2>/dev/null | head -80'</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for f in /dev/cpuset/*/cpus; do echo "$f=$(cat $f)"; done'</span></span></code></pre>
+<p>常见 uclamp：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'find /dev/stune /sys/fs/cgroup -maxdepth 4 -type f 2>/dev/null | grep -Ei "uclamp|schedtune|boost" | head -100'</span></span></code></pre>
+<p>概念：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>机制</th><th>作用</th></tr></thead><tbody><tr><td>cpuset</td><td>限制任务可以跑在哪些 CPU</td></tr><tr><td>uclamp.min</td><td>给任务最低 util 夹紧，倾向更高频或更强 CPU</td></tr><tr><td>uclamp.max</td><td>限制最高 util，倾向省电</td></tr><tr><td>schedtune boost</td><td>老 Android/QCOM 常见 boost 机制</td></tr></tbody></table>
+<p>SurfaceFlinger 在显示打开时也可能设置 uclamp 相关属性。AOSP 里 <code>SurfaceFlinger.setPowerModeInternal()</code> 在 active display power on 时有设置 uclamp/SCHED_FIFO 的逻辑，power off 时再恢复。这说明 display 交互链路不是“普通线程”，系统会给它特殊调度待遇。</p>
+<h2 id="power-hal-mode和boost">Power HAL mode和boost</h2>
+<p>Framework 通过 Power HAL 发 mode/boost，vendor 再映射到内核节点、perf lock、uclamp、cpufreq min/max、scheduler boost 等。</p>
+<p>PMS 中用户活动会触发 interaction boost：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>userActivity</span></span>
+<span class="line"><span>    if eventTime > mLastInteractivePowerHintTime:</span></span>
+<span class="line"><span>        setPowerBoostInternal(Boost.INTERACTION, 0)</span></span></code></pre>
+<p>JNI 侧：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>setPowerBoost(boost, durationMs)</span></span>
+<span class="line"><span>    gPowerHalController.setBoost(boost, durationMs)</span></span>
+<span class="line"><span>    SurfaceComposerClient::notifyPowerBoost(boost)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>setPowerMode(mode, enabled)</span></span>
+<span class="line"><span>    gPowerHalController.setMode(mode, enabled)</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">sequenceDiagram</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Input as Input event</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant PMS as PowerManagerService</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant JNI as PMS JNI</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant PHAL as Power HAL</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Vendor as Vendor perf</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Kernel as cpufreq/uclamp/scheduler</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant SF as SurfaceFlinger</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    Input->>PMS: userActivity</span></span>
+<span class="line"><span style="color:#E1E4E8">    PMS->>JNI: nativeSetPowerBoost INTERACTION</span></span>
+<span class="line"><span style="color:#E1E4E8">    JNI->>PHAL: setBoost</span></span>
+<span class="line"><span style="color:#E1E4E8">    JNI->>SF: notifyPowerBoost</span></span>
+<span class="line"><span style="color:#E1E4E8">    PHAL->>Vendor: apply boost</span></span>
+<span class="line"><span style="color:#E1E4E8">    Vendor->>Kernel: min freq/uclamp/perf lock</span></span></code></pre>
+<p>常见 mode/boost：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>名称</th><th>场景</th><th>功耗风险</th></tr></thead><tbody><tr><td><code>INTERACTIVE</code> mode</td><td>亮屏交互态</td><td>亮屏保持更积极策略</td></tr><tr><td><code>LAUNCH</code> mode</td><td>App 启动</td><td>短时提高频率，启动后应释放</td></tr><tr><td><code>INTERACTION</code> boost</td><td>触摸/滑动</td><td>高频短 boost，过多会耗电</td></tr><tr><td><code>LOW_POWER</code> mode</td><td>省电模式</td><td>降频/限性能</td></tr><tr><td><code>DEVICE_IDLE</code> mode</td><td>Doze/idle</td><td>更省电策略</td></tr><tr><td><code>DISPLAY_INACTIVE</code> mode</td><td>显示非活跃</td><td>可降低显示/调度倾向</td></tr></tbody></table>
+<p>问题经常出在：</p>
+<ul>
+<li>boost 触发过于频繁。</li>
+<li>boost duration 太长。</li>
+<li>vendor perf lock 没释放。</li>
+<li>省电/thermal 和 boost 冲突。</li>
+<li>App 用 PerformanceHintSession 不合理。</li>
+</ul>
+<h2 id="adpf和hintsession">ADPF和HintSession</h2>
+<p>Android Dynamic Performance Framework 通过 <code>HintManagerService</code> / <code>PerformanceHintManager</code> 提供 hint session。应用或系统服务可以把一组线程交给 Power HAL，周期性报告目标工作时长和实际工作时长，让系统动态调性能。</p>
+<p>Java 服务入口：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>createHintSession(token, tids, durationNanos)</span></span>
+<span class="line"><span>updateTargetWorkDuration(targetDurationNanos)</span></span>
+<span class="line"><span>reportActualWorkDuration(actualDurationNanos, timeStampNanos)</span></span>
+<span class="line"><span>sendHint(hint)</span></span>
+<span class="line"><span>setThreads(tids)</span></span></code></pre>
+<p>JNI 侧对应：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>IPowerHintSession.updateTargetWorkDuration</span></span>
+<span class="line"><span>IPowerHintSession.reportActualWorkDuration</span></span>
+<span class="line"><span>IPowerHintSession.sendHint</span></span>
+<span class="line"><span>IPowerHintSession.setThreads</span></span></code></pre>
+<p>SurfaceFlinger 也会创建 power hint session。启动后如果 <code>use_adpf_cpu_hint</code> 打开，会把 SF 主线程和 RenderEngine 线程加入 session；每帧 commit/composite 时，根据 expected present、frame delay、目标工作时长更新 hint。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[App or SurfaceFlinger]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B[Create HintSession with TIDs]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C[Set target work duration]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D[Report actual work duration]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E[Power HAL]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F[Vendor scheduler policy]</span></span>
+<span class="line"><span style="color:#E1E4E8">    G[CPU freq/uclamp]</span></span>
+<span class="line"><span style="color:#E1E4E8">    H[Frame completes]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    A --> B</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> E</span></span>
+<span class="line"><span style="color:#E1E4E8">    A --> D</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> F</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> G</span></span>
+<span class="line"><span style="color:#E1E4E8">    G --> H</span></span></code></pre>
+<p>排查时要注意：如果某个线程被 hint session 管理，它的频率行为可能不是简单 governor 负载决定的，而是被 ADPF 动态调整。</p>
+<h2 id="cpuidle基础">cpuidle基础</h2>
+<p>cpufreq 关注“跑的时候多快”，cpuidle 关注“不跑的时候睡多深”。</p>
+<p>查看 cpuidle：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for c in /sys/devices/system/cpu/cpu[0-9]*; do [ -d "$c/cpuidle" ] || continue; echo "== $c =="; for s in "$c"/cpuidle/state*; do echo "$(basename $s) $(cat $s/name 2>/dev/null) usage=$(cat $s/usage 2>/dev/null) time=$(cat $s/time 2>/dev/null) latency=$(cat $s/latency 2>/dev/null) residency=$(cat $s/residency 2>/dev/null)"; done; done'</span></span></code></pre>
+<p>字段：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>字段</th><th>含义</th></tr></thead><tbody><tr><td><code>name</code></td><td>idle state 名字</td></tr><tr><td><code>usage</code></td><td>进入该 state 次数</td></tr><tr><td><code>time</code></td><td>该 state 累计时间，通常微秒</td></tr><tr><td><code>latency</code></td><td>进入/退出延迟成本</td></tr><tr><td><code>residency</code></td><td>进入该 state 值得的最小停留时间</td></tr><tr><td><code>disable</code></td><td>是否禁用</td></tr><tr><td><code>rejected</code></td><td>选择后被拒绝次数，部分内核有</td></tr></tbody></table>
+<p>浅 idle 延迟低、省电少；深 idle 延迟高、省电多。频繁短唤醒会让 idle governor 不敢选深 state。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart LR</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[CPU idle]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B{Predicted idle duration}</span></span>
+<span class="line"><span style="color:#E1E4E8">    C[Shallow idle]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D[Deep idle]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E[Low exit latency but less saving]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F[High exit latency but more saving]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    A --> B</span></span>
+<span class="line"><span style="color:#E1E4E8">    B -->|short| C</span></span>
+<span class="line"><span style="color:#E1E4E8">    B -->|long| D</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> E</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> F</span></span></code></pre>
+<h2 id="cpuidle-delta分析">cpuidle delta分析</h2>
+<p>不能只看一次绝对值，要看窗口差值：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for c in /sys/devices/system/cpu/cpu0 /sys/devices/system/cpu/cpu4; do for s in $c/cpuidle/state*; do echo "$c $(basename $s) $(cat $s/name) $(cat $s/usage) $(cat $s/time)"; done; done'</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> idle_before.txt</span></span>
+<span class="line"><span style="color:#B392F0">sleep</span><span style="color:#79B8FF"> 300</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for c in /sys/devices/system/cpu/cpu0 /sys/devices/system/cpu/cpu4; do for s in $c/cpuidle/state*; do echo "$c $(basename $s) $(cat $s/name) $(cat $s/usage) $(cat $s/time)"; done; done'</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> idle_after.txt</span></span></code></pre>
+<p>更实用的判断：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>现象</th><th>解释</th></tr></thead><tbody><tr><td>deep state <code>time</code> 增长多</td><td>CPU 有长时间安静窗口</td></tr><tr><td>shallow state <code>usage</code> 很多但 time 少</td><td>频繁短睡短醒</td></tr><tr><td>deep state usage/time 几乎不变</td><td>有线程/IRQ/timer 持续打断</td></tr><tr><td>某些 state disabled</td><td>vendor/thermal/debug 配置禁用</td></tr><tr><td>rejected 增长多</td><td>idle 预测或外部事件导致状态选择失败</td></tr></tbody></table>
+<p>亮屏和灭屏都能看 cpuidle，但结论不同：</p>
+<ul>
+<li>灭屏待机：希望尽可能进入深 idle 或 suspend。</li>
+<li>亮屏静置：因为 VSYNC/display 还在，未必能像灭屏那样深，但不应被无关线程打碎。</li>
+<li>滑动/游戏：重点不是深 idle，而是任务是否按需完成、频率是否合理。</li>
+</ul>
+<h2 id="频繁唤醒">频繁唤醒</h2>
+<p>低 CPU 占用但耗电高，常常是频繁唤醒。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">sequenceDiagram</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Timer as Timer or IRQ</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant CPU as CPU</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Thread as Thread</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Idle as cpuidle</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    Idle->>CPU: enter shallow idle</span></span>
+<span class="line"><span style="color:#E1E4E8">    Timer->>CPU: wakeup after 10ms</span></span>
+<span class="line"><span style="color:#E1E4E8">    CPU->>Thread: run 1ms</span></span>
+<span class="line"><span style="color:#E1E4E8">    Thread-->>CPU: sleep</span></span>
+<span class="line"><span style="color:#E1E4E8">    CPU->>Idle: predict short idle again</span></span>
+<span class="line"><span style="color:#E1E4E8">    Idle->>CPU: enter shallow idle</span></span></code></pre>
+<p>常见来源：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>来源</th><th>证据</th></tr></thead><tbody><tr><td>Java Handler/Timer 轮询</td><td>App/UI/SystemServer 周期 wake</td></tr><tr><td>native poll</td><td>线程短周期 epoll_wait timeout</td></tr><tr><td>alarm</td><td><code>dumpsys alarm</code> + alarmtimer</td></tr><tr><td>binder 抖动</td><td>binder_driver trace + system_server/app</td></tr><tr><td>IRQ</td><td><code>/proc/interrupts</code> delta</td></tr><tr><td>网络</td><td>wlan/modem IRQ、netd、lowi、DataModule</td></tr><tr><td>display vsync</td><td>亮屏帧循环，SF/App 周期工作</td></tr><tr><td>sensor</td><td>sensorservice、wake-up sensor</td></tr></tbody></table>
+<p>命令：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /proc/interrupts</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> irq_before.txt</span></span>
+<span class="line"><span style="color:#B392F0">sleep</span><span style="color:#79B8FF"> 60</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /proc/interrupts</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> irq_after.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> alarm</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> alarm.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> jobscheduler</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> jobs.txt</span></span></code></pre>
+<p>Perfetto 更直接：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> perfetto</span><span style="color:#79B8FF"> -o</span><span style="color:#9ECBFF"> /data/misc/perfetto-traces/cpu_wakeup.trace</span><span style="color:#79B8FF"> -t</span><span style="color:#9ECBFF"> 60s</span><span style="color:#9ECBFF"> sched</span><span style="color:#9ECBFF"> freq</span><span style="color:#9ECBFF"> idle</span><span style="color:#9ECBFF"> power</span><span style="color:#9ECBFF"> irq</span><span style="color:#9ECBFF"> binder_driver</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> pull</span><span style="color:#9ECBFF"> /data/misc/perfetto-traces/cpu_wakeup.trace</span><span style="color:#9ECBFF"> .</span></span></code></pre>
+<h2 id="perfetto看cpu">Perfetto看CPU</h2>
+<p>推荐抓：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> perfetto</span><span style="color:#79B8FF"> \</span></span>
+<span class="line"><span style="color:#79B8FF">    -o</span><span style="color:#9ECBFF"> /data/misc/perfetto-traces/cpu_power.trace</span><span style="color:#79B8FF"> \</span></span>
+<span class="line"><span style="color:#79B8FF">    -t</span><span style="color:#9ECBFF"> 60s</span><span style="color:#79B8FF"> \</span></span>
+<span class="line"><span style="color:#9ECBFF">    sched</span><span style="color:#9ECBFF"> freq</span><span style="color:#9ECBFF"> idle</span><span style="color:#9ECBFF"> power</span><span style="color:#9ECBFF"> am</span><span style="color:#9ECBFF"> wm</span><span style="color:#9ECBFF"> gfx</span><span style="color:#9ECBFF"> view</span><span style="color:#9ECBFF"> binder_driver</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> pull</span><span style="color:#9ECBFF"> /data/misc/perfetto-traces/cpu_power.trace</span><span style="color:#9ECBFF"> .</span></span></code></pre>
+<p>如果用 config，关注 ftrace：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>sched/sched_switch</span></span>
+<span class="line"><span>sched/sched_wakeup</span></span>
+<span class="line"><span>sched/sched_waking</span></span>
+<span class="line"><span>power/cpu_frequency</span></span>
+<span class="line"><span>power/cpu_idle</span></span>
+<span class="line"><span>power/suspend_resume</span></span>
+<span class="line"><span>irq/irq_handler_entry</span></span>
+<span class="line"><span>irq/irq_handler_exit</span></span>
+<span class="line"><span>timer/timer_expire_entry</span></span>
+<span class="line"><span>workqueue/workqueue_execute_start</span></span>
+<span class="line"><span>binder/binder_transaction</span></span></code></pre>
+<p>Perfetto 上的读法：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>轨道</th><th>看什么</th></tr></thead><tbody><tr><td>CPU slices</td><td>哪些线程占据 CPU</td></tr><tr><td>sched_wakeup</td><td>谁唤醒了谁</td></tr><tr><td>cpu_frequency</td><td>频率是否跟负载同步</td></tr><tr><td>cpu_idle</td><td>是否进入深 idle，是否被频繁打断</td></tr><tr><td>IRQ</td><td>是否某个 IRQ 周期性触发</td></tr><tr><td>binder</td><td>IPC 是否引发系统服务抖动</td></tr><tr><td>FrameTimeline/SF</td><td>是否显示帧导致 CPU 周期工作</td></tr></tbody></table>
+<p>分析句式：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>线程 A 每 16.6ms 被 VSYNC 唤醒 -> RenderThread 每帧运行 -> policy4 频率维持高位 -> cpu4/cpu5 深 idle time 增长很少 -> 亮屏静置电流升高。</span></span></code></pre>
+<p>或者：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>灭屏后 CPU 总占用低，但 timer 每 1s 唤醒 system_server 和目标进程 -> cpuidle state0 usage 增长高，深 state time 低 -> 平均待机电流高。</span></span></code></pre>
+<h2 id="thermal和cooling">Thermal和cooling</h2>
+<p>CPU 频率上不去，不一定是 scheduler 差，可能是 thermal 限制。</p>
+<p>看 thermal：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> thermalservice</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for z in /sys/class/thermal/thermal_zone*; do echo "== $z =="; cat $z/type; cat $z/temp; done'</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for c in /sys/class/thermal/cooling_device*; do echo "== $c =="; cat $c/type; cat $c/cur_state; cat $c/max_state; done'</span></span></code></pre>
+<p>看 cpufreq max 是否被压：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for p in /sys/devices/system/cpu/cpufreq/policy*; do echo "== $p =="; cat $p/cpuinfo_max_freq; cat $p/scaling_max_freq; cat $p/scaling_cur_freq; done'</span></span></code></pre>
+<p>判断：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>现象</th><th>可能原因</th></tr></thead><tbody><tr><td><code>scaling_max_freq &#x3C; cpuinfo_max_freq</code></td><td>thermal、省电、vendor 限频</td></tr><tr><td>cooling device <code>cur_state</code> 增长</td><td>thermal 正在干预</td></tr><tr><td>温度上升后频率下降</td><td>热限频</td></tr><tr><td>性能下降但电流下降</td><td>thermal 牺牲性能换温控</td></tr><tr><td>性能下降但电流不降</td><td>可能非 CPU 主因，或外设仍高功耗</td></tr></tbody></table>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[CPU/GPU/Display power high]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B[Temperature rises]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C[Thermal HAL or kernel thermal]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D[Cooling device state changes]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E[cpufreq max reduced]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F[Performance drops]</span></span>
+<span class="line"><span style="color:#E1E4E8">    G[Power drops or shifts]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    A --> B</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> D</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> F</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> G</span></span></code></pre>
+<h2 id="qcom-msm8998实战观测">QCOM msm8998实战观测</h2>
+<p>当前 QCOM msm8998 类设备可以围绕这些节点看：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for p in /sys/devices/system/cpu/cpufreq/policy*; do echo "== $p =="; cat $p/related_cpus; cat $p/scaling_governor; cat $p/scaling_cur_freq; cat $p/scaling_min_freq; cat $p/scaling_max_freq; done'</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'find /sys/class/kgsl /sys/class/devfreq /sys/class/thermal -maxdepth 3 -type f 2>/dev/null | head -200'</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'cat /proc/interrupts | head -100'</span></span></code></pre>
+<p>msm8998 常见特点：</p>
+<ul>
+<li>big.LITTLE policy 分开。</li>
+<li>老内核可能用 interactive governor。</li>
+<li>QCOM vendor perf/thermal 节点较多。</li>
+<li>GPU 可能通过 KGSL 节点观察。</li>
+<li>thermal zones 可能包含 <code>battery</code>、<code>msm_therm</code>、<code>tsens</code>、PMIC 温度等。</li>
+</ul>
+<p>case 设计：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Case</th><th>目标</th></tr></thead><tbody><tr><td>亮屏静置桌面</td><td>看 display/vsync 下 CPU idle 基线</td></tr><tr><td>目标 App 静置</td><td>看是否有 App 线程持续醒</td></tr><tr><td>滑动列表</td><td>看 interaction boost、big core 迁移、频率响应</td></tr><tr><td>App 启动</td><td>看 LAUNCH boost 和频率峰值</td></tr><tr><td>灭屏待机</td><td>看 timer/IRQ 是否打碎 cpuidle</td></tr><tr><td>热机后重复滑动</td><td>看 thermal cooling 是否压频</td></tr></tbody></table>
+<h2 id="案例一cpu占用低但待机电流高">案例一：CPU占用低但待机电流高</h2>
+<p>现象：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>top 中没有明显高 CPU 线程。</span></span>
+<span class="line"><span>灭屏后电流仍高。</span></span>
+<span class="line"><span>cpuidle deep state time 增长少，shallow state usage 增长多。</span></span>
+<span class="line"><span>Perfetto 显示某线程每 1s 被 timer 唤醒。</span></span></code></pre>
+<p>分析：</p>
+<p>这不是“CPU 忙”，而是“CPU 睡不好”。每次唤醒很短，平均 CPU 占用不高，但 idle governor 无法选择深 state。</p>
+<p>报告写法：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>测试窗口内目标线程 CPU runtime 不高，但 wakeup 周期稳定为 1s。</span></span>
+<span class="line"><span>cpu idle 统计显示浅 idle usage 快速增长，深 idle time 增长不足。</span></span>
+<span class="line"><span>因此该问题属于频繁短唤醒破坏 cpuidle，而不是持续高 CPU 占用。</span></span>
+<span class="line"><span>建议取消轮询或增大周期，并与 JobScheduler/Alarm 合并。</span></span></code></pre>
+<h2 id="案例二亮屏静置cpu频率降不下来">案例二：亮屏静置CPU频率降不下来</h2>
+<p>现象：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>亮屏静置页面，App 看起来没有动画。</span></span>
+<span class="line"><span>policy4 cur_freq 长期高位。</span></span>
+<span class="line"><span>Perfetto 显示 RenderThread/SF 周期性运行。</span></span></code></pre>
+<p>分析：</p>
+<p>亮屏下 VSYNC 本身会周期性存在，但静态页面不应该每帧让 App 生产新 buffer。如果 App/RenderThread 每帧工作，cpufreq 会跟着维持高位。</p>
+<p>排查：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> gfxinfo</span><span style="color:#F97583"> &#x3C;</span><span style="color:#9ECBFF">packag</span><span style="color:#E1E4E8">e</span><span style="color:#F97583">></span><span style="color:#9ECBFF"> framestats</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> SurfaceFlinger</span><span style="color:#79B8FF"> --latency</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> perfetto</span><span style="color:#79B8FF"> -o</span><span style="color:#9ECBFF"> /data/misc/perfetto-traces/display_cpu.trace</span><span style="color:#79B8FF"> -t</span><span style="color:#9ECBFF"> 60s</span><span style="color:#9ECBFF"> sched</span><span style="color:#9ECBFF"> freq</span><span style="color:#9ECBFF"> idle</span><span style="color:#9ECBFF"> gfx</span><span style="color:#9ECBFF"> view</span><span style="color:#9ECBFF"> power</span></span></code></pre>
+<p>报告写法：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>CPU 频率高与显示帧链路相关。</span></span>
+<span class="line"><span>Perfetto 中目标 App RenderThread 每 16.6ms 运行，SurfaceFlinger 每帧 composite。</span></span>
+<span class="line"><span>关闭页面动画后，policy4 频率下降，cpuidle time 增加。</span></span>
+<span class="line"><span>建议修复静置状态下持续 invalidate/动画。</span></span></code></pre>
+<h2 id="案例三滑动后boost不释放">案例三：滑动后boost不释放</h2>
+<p>现象：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>滑动停止后，CPU min freq 或 uclamp 仍保持高位。</span></span>
+<span class="line"><span>policy cur_freq 长时间不降。</span></span>
+<span class="line"><span>Power HAL / vendor perf 相关日志显示 interaction boost 频繁触发。</span></span></code></pre>
+<p>分析：</p>
+<p>正常 interaction boost 应该短促，帮助触摸/滑动响应。如果持续不释放，会让亮屏静置电流升高。</p>
+<p>检查：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> power</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -i</span><span style="color:#9ECBFF"> "LastInteractivePowerHint"</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for p in /sys/devices/system/cpu/cpufreq/policy*; do echo $p; cat $p/scaling_min_freq; cat $p/scaling_cur_freq; done'</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'find /dev/stune /sys/fs/cgroup -maxdepth 4 -type f 2>/dev/null | grep -Ei "uclamp|boost|schedtune" | head'</span></span></code></pre>
+<p>报告写法：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>滑动结束后任务负载已下降，但 CPU policy min/cur freq 仍维持高位。</span></span>
+<span class="line"><span>结合 PMS interaction boost 触发和 vendor boost 节点变化，怀疑 boost duration 或释放路径异常。</span></span>
+<span class="line"><span>需要继续确认 Power HAL setBoost(INTERACTION) 对应 vendor perf lock 是否按期释放。</span></span></code></pre>
+<h2 id="案例四app启动慢但cpu频率上不去">案例四：App启动慢但CPU频率上不去</h2>
+<p>现象：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>App 启动耗时长。</span></span>
+<span class="line"><span>Perfetto 显示主线程/RenderThread 忙。</span></span>
+<span class="line"><span>CPU freq 未达到预期高频。</span></span>
+<span class="line"><span>thermal cooling cur_state 非 0，scaling_max_freq 低于 cpuinfo_max_freq。</span></span></code></pre>
+<p>分析：</p>
+<p>这不是简单“调度没给性能”，可能是 thermal 或 battery saver 限制。PMS 中 LAUNCH mode 在省电策略下也可能被禁用。</p>
+<p>源码点：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>setPowerModeInternal(Mode.LAUNCH, true)</span></span>
+<span class="line"><span>    if battery saver disables launch boost:</span></span>
+<span class="line"><span>        return false</span></span></code></pre>
+<p>报告写法：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>启动慢发生在热机状态。</span></span>
+<span class="line"><span>policy scaling_max_freq 已被 thermal cooling 限低，LAUNCH boost 无法把频率拉到硬件上限。</span></span>
+<span class="line"><span>因此主因是 thermal 限频，不是 App 单纯 CPU 代码变慢。</span></span>
+<span class="line"><span>需要分别给冷机/热机启动数据。</span></span></code></pre>
+<h2 id="案例五kworker或irq导致cpu睡不深">案例五：kworker或IRQ导致CPU睡不深</h2>
+<p>现象：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>top 中 kworker 或 irq 相关线程周期活跃。</span></span>
+<span class="line"><span>/proc/interrupts 中某 IRQ delta 很高。</span></span>
+<span class="line"><span>cpuidle 深 state time 差。</span></span></code></pre>
+<p>常见来源：</p>
+<ul>
+<li>Wi-Fi/BT/modem 中断。</li>
+<li>touch/display/vsync 中断。</li>
+<li>storage I/O。</li>
+<li>sensor hub。</li>
+<li>PMIC/charger。</li>
+<li>driver workqueue 轮询。</li>
+</ul>
+<p>排查：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /proc/interrupts</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> irq_before.txt</span></span>
+<span class="line"><span style="color:#B392F0">sleep</span><span style="color:#79B8FF"> 60</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /proc/interrupts</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> irq_after.txt</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> ps</span><span style="color:#79B8FF"> -AT</span><span style="color:#79B8FF"> -o</span><span style="color:#9ECBFF"> PID,TID,PRI,CPU,STAT,NAME</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -Ei</span><span style="color:#9ECBFF"> "kworker|irq"</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dmesg</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -Ei</span><span style="color:#9ECBFF"> "irq|wakeup|workqueue"</span></span></code></pre>
+<p>报告写法：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>用户态 CPU 占用不高，但 kernel IRQ/workqueue 周期活跃。</span></span>
+<span class="line"><span>IRQ xxx 在 60s 内增长 xx 次，Perfetto 中对应 kworker 每次唤醒后运行。</span></span>
+<span class="line"><span>该问题应转向对应 driver/外设，而不是继续追 App CPU。</span></span></code></pre>
+<h2 id="案例六省电模式导致性能下降">案例六：省电模式导致性能下降</h2>
+<p>现象：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>省电模式开启后，CPU max freq 或 uclamp max 被限制。</span></span>
+<span class="line"><span>App 卡顿但温度不高。</span></span></code></pre>
+<p>排查：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> settings</span><span style="color:#9ECBFF"> get</span><span style="color:#9ECBFF"> global</span><span style="color:#9ECBFF"> low_power</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> power</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -i</span><span style="color:#9ECBFF"> "Battery Saver"</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for p in /sys/devices/system/cpu/cpufreq/policy*; do echo $p; cat $p/scaling_max_freq; cat $p/scaling_cur_freq; done'</span></span></code></pre>
+<p>报告写法：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>卡顿只在省电模式复现，thermal cooling 未触发。</span></span>
+<span class="line"><span>CPU policy max freq 在省电模式下降，Perfetto 显示线程 runnable 时间变长。</span></span>
+<span class="line"><span>该现象符合省电策略牺牲性能，不应归为 thermal 或 scheduler bug。</span></span></code></pre>
+<h2 id="案例七线程跑错cluster">案例七：线程跑错cluster</h2>
+<p>现象：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>小任务频繁跑 big core，亮屏静置电流偏高。</span></span>
+<span class="line"><span>或重任务长期在 little core，完成时间变长。</span></span></code></pre>
+<p>分析：</p>
+<p>要结合 cpuset、uclamp、线程优先级、前后台状态看。前台交互线程跑 big core 不一定错；后台轮询线程频繁上 big core 就可疑。</p>
+<p>Perfetto 看：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>线程在哪些 CPU 上运行</span></span>
+<span class="line"><span>是否有迁移</span></span>
+<span class="line"><span>迁移前后频率</span></span>
+<span class="line"><span>是否伴随 boost/uclamp</span></span></code></pre>
+<p>报告写法：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>目标后台线程每次唤醒后被调度到 big cluster，单次 runtime 很短但唤醒频繁。</span></span>
+<span class="line"><span>这导致 big cluster 频率和 idle residency 变差。</span></span>
+<span class="line"><span>建议降低线程优先级、移除不必要 boost，或减少唤醒频率。</span></span></code></pre>
+<h2 id="完整采集脚本">完整采集脚本</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#6A737D">#!/system/bin/sh</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">OUT</span><span style="color:#F97583">=</span><span style="color:#9ECBFF">/data/local/tmp/cpu_power_</span><span style="color:#E1E4E8">$(</span><span style="color:#B392F0">date</span><span style="color:#9ECBFF"> +%Y%m%d_%H%M%S</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">DURATION</span><span style="color:#F97583">=</span><span style="color:#FFAB70">${1</span><span style="color:#F97583">:-</span><span style="color:#FFAB70">300}</span></span>
+<span class="line"><span style="color:#B392F0">mkdir</span><span style="color:#79B8FF"> -p</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">"</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">date</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/meta.txt"</span></span>
+<span class="line"><span style="color:#B392F0">getprop</span><span style="color:#9ECBFF"> ro.product.device</span><span style="color:#F97583"> >></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/meta.txt"</span></span>
+<span class="line"><span style="color:#B392F0">getprop</span><span style="color:#9ECBFF"> ro.board.platform</span><span style="color:#F97583"> >></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/meta.txt"</span></span>
+<span class="line"><span style="color:#B392F0">getprop</span><span style="color:#9ECBFF"> ro.hardware</span><span style="color:#F97583"> >></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/meta.txt"</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> power</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/power_before.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> thermalservice</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/thermal_before.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> battery</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/battery_before.txt"</span></span>
+<span class="line"><span style="color:#B392F0">top</span><span style="color:#79B8FF"> -H</span><span style="color:#79B8FF"> -b</span><span style="color:#79B8FF"> -n</span><span style="color:#79B8FF"> 1</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/top_before.txt"</span></span>
+<span class="line"><span style="color:#B392F0">cat</span><span style="color:#9ECBFF"> /proc/interrupts</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/interrupts_before.txt"</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">for</span><span style="color:#E1E4E8"> p </span><span style="color:#F97583">in</span><span style="color:#9ECBFF"> /sys/devices/system/cpu/cpufreq/policy*</span><span style="color:#E1E4E8">; </span><span style="color:#F97583">do</span></span>
+<span class="line"><span style="color:#E1E4E8">    name</span><span style="color:#F97583">=</span><span style="color:#E1E4E8">$(</span><span style="color:#B392F0">basename</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$p</span><span style="color:#9ECBFF">"</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#B392F0">    mkdir</span><span style="color:#79B8FF"> -p</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/</span><span style="color:#E1E4E8">$name</span><span style="color:#9ECBFF">"</span></span>
+<span class="line"><span style="color:#B392F0">    cat</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$p</span><span style="color:#9ECBFF">/related_cpus"</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/</span><span style="color:#E1E4E8">$name</span><span style="color:#9ECBFF">/related_cpus_before.txt"</span><span style="color:#F97583"> 2></span><span style="color:#9ECBFF">/dev/null</span></span>
+<span class="line"><span style="color:#B392F0">    cat</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$p</span><span style="color:#9ECBFF">/scaling_governor"</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/</span><span style="color:#E1E4E8">$name</span><span style="color:#9ECBFF">/governor_before.txt"</span><span style="color:#F97583"> 2></span><span style="color:#9ECBFF">/dev/null</span></span>
+<span class="line"><span style="color:#B392F0">    cat</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$p</span><span style="color:#9ECBFF">/scaling_cur_freq"</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/</span><span style="color:#E1E4E8">$name</span><span style="color:#9ECBFF">/cur_before.txt"</span><span style="color:#F97583"> 2></span><span style="color:#9ECBFF">/dev/null</span></span>
+<span class="line"><span style="color:#B392F0">    cat</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$p</span><span style="color:#9ECBFF">/scaling_min_freq"</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/</span><span style="color:#E1E4E8">$name</span><span style="color:#9ECBFF">/min_before.txt"</span><span style="color:#F97583"> 2></span><span style="color:#9ECBFF">/dev/null</span></span>
+<span class="line"><span style="color:#B392F0">    cat</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$p</span><span style="color:#9ECBFF">/scaling_max_freq"</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/</span><span style="color:#E1E4E8">$name</span><span style="color:#9ECBFF">/max_before.txt"</span><span style="color:#F97583"> 2></span><span style="color:#9ECBFF">/dev/null</span></span>
+<span class="line"><span style="color:#B392F0">    cat</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$p</span><span style="color:#9ECBFF">/stats/time_in_state"</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/</span><span style="color:#E1E4E8">$name</span><span style="color:#9ECBFF">/time_in_state_before.txt"</span><span style="color:#F97583"> 2></span><span style="color:#9ECBFF">/dev/null</span></span>
+<span class="line"><span style="color:#F97583">done</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">for</span><span style="color:#E1E4E8"> c </span><span style="color:#F97583">in</span><span style="color:#9ECBFF"> /sys/devices/system/cpu/cpu[0-9</span><span style="color:#E1E4E8">]</span><span style="color:#F97583">*</span><span style="color:#E1E4E8">; </span><span style="color:#F97583">do</span></span>
+<span class="line"><span style="color:#E1E4E8">    [ </span><span style="color:#F97583">-d</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$c</span><span style="color:#9ECBFF">/cpuidle"</span><span style="color:#E1E4E8"> ] </span><span style="color:#F97583">||</span><span style="color:#F97583"> continue</span></span>
+<span class="line"><span style="color:#E1E4E8">    cpu</span><span style="color:#F97583">=</span><span style="color:#E1E4E8">$(</span><span style="color:#B392F0">basename</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$c</span><span style="color:#9ECBFF">"</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#B392F0">    mkdir</span><span style="color:#79B8FF"> -p</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/</span><span style="color:#E1E4E8">$cpu</span><span style="color:#9ECBFF">"</span></span>
+<span class="line"><span style="color:#F97583">    for</span><span style="color:#E1E4E8"> s </span><span style="color:#F97583">in</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$c</span><span style="color:#9ECBFF">"/cpuidle/state*</span><span style="color:#E1E4E8">; </span><span style="color:#F97583">do</span></span>
+<span class="line"><span style="color:#E1E4E8">        st</span><span style="color:#F97583">=</span><span style="color:#E1E4E8">$(</span><span style="color:#B392F0">basename</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$s</span><span style="color:#9ECBFF">"</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#79B8FF">        echo</span><span style="color:#9ECBFF"> "$(</span><span style="color:#B392F0">cat</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$s</span><span style="color:#9ECBFF">/name" </span><span style="color:#F97583">2></span><span style="color:#9ECBFF">/dev/null) $(</span><span style="color:#B392F0">cat</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$s</span><span style="color:#9ECBFF">/usage" </span><span style="color:#F97583">2></span><span style="color:#9ECBFF">/dev/null) $(</span><span style="color:#B392F0">cat</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$s</span><span style="color:#9ECBFF">/time" </span><span style="color:#F97583">2></span><span style="color:#9ECBFF">/dev/null)"</span><span style="color:#F97583"> >></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/</span><span style="color:#E1E4E8">$cpu</span><span style="color:#9ECBFF">/cpuidle_before.txt"</span></span>
+<span class="line"><span style="color:#F97583">    done</span></span>
+<span class="line"><span style="color:#F97583">done</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">sleep</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$DURATION</span><span style="color:#9ECBFF">"</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> power</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/power_after.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> thermalservice</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/thermal_after.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> battery</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/battery_after.txt"</span></span>
+<span class="line"><span style="color:#B392F0">top</span><span style="color:#79B8FF"> -H</span><span style="color:#79B8FF"> -b</span><span style="color:#79B8FF"> -n</span><span style="color:#79B8FF"> 1</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/top_after.txt"</span></span>
+<span class="line"><span style="color:#B392F0">cat</span><span style="color:#9ECBFF"> /proc/interrupts</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/interrupts_after.txt"</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">for</span><span style="color:#E1E4E8"> p </span><span style="color:#F97583">in</span><span style="color:#9ECBFF"> /sys/devices/system/cpu/cpufreq/policy*</span><span style="color:#E1E4E8">; </span><span style="color:#F97583">do</span></span>
+<span class="line"><span style="color:#E1E4E8">    name</span><span style="color:#F97583">=</span><span style="color:#E1E4E8">$(</span><span style="color:#B392F0">basename</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$p</span><span style="color:#9ECBFF">"</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#B392F0">    cat</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$p</span><span style="color:#9ECBFF">/scaling_cur_freq"</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/</span><span style="color:#E1E4E8">$name</span><span style="color:#9ECBFF">/cur_after.txt"</span><span style="color:#F97583"> 2></span><span style="color:#9ECBFF">/dev/null</span></span>
+<span class="line"><span style="color:#B392F0">    cat</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$p</span><span style="color:#9ECBFF">/scaling_min_freq"</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/</span><span style="color:#E1E4E8">$name</span><span style="color:#9ECBFF">/min_after.txt"</span><span style="color:#F97583"> 2></span><span style="color:#9ECBFF">/dev/null</span></span>
+<span class="line"><span style="color:#B392F0">    cat</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$p</span><span style="color:#9ECBFF">/scaling_max_freq"</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/</span><span style="color:#E1E4E8">$name</span><span style="color:#9ECBFF">/max_after.txt"</span><span style="color:#F97583"> 2></span><span style="color:#9ECBFF">/dev/null</span></span>
+<span class="line"><span style="color:#B392F0">    cat</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$p</span><span style="color:#9ECBFF">/stats/time_in_state"</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/</span><span style="color:#E1E4E8">$name</span><span style="color:#9ECBFF">/time_in_state_after.txt"</span><span style="color:#F97583"> 2></span><span style="color:#9ECBFF">/dev/null</span></span>
+<span class="line"><span style="color:#F97583">done</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">for</span><span style="color:#E1E4E8"> c </span><span style="color:#F97583">in</span><span style="color:#9ECBFF"> /sys/devices/system/cpu/cpu[0-9</span><span style="color:#E1E4E8">]</span><span style="color:#F97583">*</span><span style="color:#E1E4E8">; </span><span style="color:#F97583">do</span></span>
+<span class="line"><span style="color:#E1E4E8">    [ </span><span style="color:#F97583">-d</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$c</span><span style="color:#9ECBFF">/cpuidle"</span><span style="color:#E1E4E8"> ] </span><span style="color:#F97583">||</span><span style="color:#F97583"> continue</span></span>
+<span class="line"><span style="color:#E1E4E8">    cpu</span><span style="color:#F97583">=</span><span style="color:#E1E4E8">$(</span><span style="color:#B392F0">basename</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$c</span><span style="color:#9ECBFF">"</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#F97583">    for</span><span style="color:#E1E4E8"> s </span><span style="color:#F97583">in</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$c</span><span style="color:#9ECBFF">"/cpuidle/state*</span><span style="color:#E1E4E8">; </span><span style="color:#F97583">do</span></span>
+<span class="line"><span style="color:#79B8FF">        echo</span><span style="color:#9ECBFF"> "$(</span><span style="color:#B392F0">cat</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$s</span><span style="color:#9ECBFF">/name" </span><span style="color:#F97583">2></span><span style="color:#9ECBFF">/dev/null) $(</span><span style="color:#B392F0">cat</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$s</span><span style="color:#9ECBFF">/usage" </span><span style="color:#F97583">2></span><span style="color:#9ECBFF">/dev/null) $(</span><span style="color:#B392F0">cat</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$s</span><span style="color:#9ECBFF">/time" </span><span style="color:#F97583">2></span><span style="color:#9ECBFF">/dev/null)"</span><span style="color:#F97583"> >></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/</span><span style="color:#E1E4E8">$cpu</span><span style="color:#9ECBFF">/cpuidle_after.txt"</span></span>
+<span class="line"><span style="color:#F97583">    done</span></span>
+<span class="line"><span style="color:#F97583">done</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">tar</span><span style="color:#79B8FF"> -czf</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">.tar.gz"</span><span style="color:#79B8FF"> -C</span><span style="color:#9ECBFF"> "$(</span><span style="color:#B392F0">dirname</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">")"</span><span style="color:#9ECBFF"> "$(</span><span style="color:#B392F0">basename</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">")"</span></span>
+<span class="line"><span style="color:#79B8FF">echo</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">.tar.gz"</span></span></code></pre>
+<h2 id="复盘报告写法">复盘报告写法</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>1. 场景</span></span>
+<span class="line"><span>   设备：</span></span>
+<span class="line"><span>   平台：</span></span>
+<span class="line"><span>   Android版本：</span></span>
+<span class="line"><span>   亮屏/灭屏：</span></span>
+<span class="line"><span>   是否插USB：</span></span>
+<span class="line"><span>   温度起止：</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>2. 线程证据</span></span>
+<span class="line"><span>   Top runnable线程：</span></span>
+<span class="line"><span>   周期唤醒线程：</span></span>
+<span class="line"><span>   binder/IRQ/timer来源：</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>3. 调度证据</span></span>
+<span class="line"><span>   线程运行CPU：</span></span>
+<span class="line"><span>   是否迁移到big/little：</span></span>
+<span class="line"><span>   cpuset/uclamp/优先级：</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>4. cpufreq证据</span></span>
+<span class="line"><span>   policy：</span></span>
+<span class="line"><span>   governor：</span></span>
+<span class="line"><span>   cur/min/max：</span></span>
+<span class="line"><span>   time_in_state delta：</span></span>
+<span class="line"><span>   是否boost：</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>5. cpuidle证据</span></span>
+<span class="line"><span>   shallow/deep state usage delta：</span></span>
+<span class="line"><span>   shallow/deep state time delta：</span></span>
+<span class="line"><span>   是否频繁短唤醒：</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>6. thermal/power证据</span></span>
+<span class="line"><span>   cooling device：</span></span>
+<span class="line"><span>   thermal status：</span></span>
+<span class="line"><span>   battery saver：</span></span>
+<span class="line"><span>   Power HAL mode/boost：</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>7. 结论</span></span>
+<span class="line"><span>   持续忙？</span></span>
+<span class="line"><span>   频繁短唤醒？</span></span>
+<span class="line"><span>   boost不释放？</span></span>
+<span class="line"><span>   thermal限频？</span></span>
+<span class="line"><span>   省电策略？</span></span>
+<span class="line"><span>   driver/IRQ？</span></span></code></pre>
+<h2 id="我会这样说明">我会这样说明</h2>
+<p>如果被问到“CPU 功耗怎么分析”，我会这样回答：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>我不会只看 CPU 占用率，而是看线程运行、调度、频率和 idle 的闭环。</span></span>
+<span class="line"><span>首先用 Perfetto 找哪个线程在什么时候被谁唤醒，运行在哪个 CPU 上。</span></span>
+<span class="line"><span>然后看 cpufreq 的 policy、governor、cur/min/max 和 time_in_state，确认跑的时候频率是否合理。</span></span>
+<span class="line"><span>再看 cpuidle 的 usage/time delta，判断空闲窗口是否能进入深 idle。</span></span>
+<span class="line"><span>最后结合 Power HAL boost、uclamp/cpuset、省电模式和 thermal cooling，判断频率高或频率低到底是策略导致还是负载导致。</span></span></code></pre>
+<p>如果问“低 CPU 占用为什么还耗电”，我会这样回答：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>因为平均占用低不代表 CPU 睡得好。</span></span>
+<span class="line"><span>如果线程或 IRQ 每几十毫秒唤醒一次，每次只跑很短，top 看到的 CPU 占用可能不高，但 cpuidle governor 会预测空闲时间很短，只能进浅 idle。</span></span>
+<span class="line"><span>深 idle residency 上不去，平台平均电流就会高。</span></span>
+<span class="line"><span>所以要看 wakeup 频率和 cpuidle state delta，而不是只看 CPU 百分比。</span></span></code></pre>
+<h2 id="复盘">复盘</h2>
+<p>CPU 功耗分析要建立因果链：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>线程/IRQ/timer 唤醒 -> scheduler 放到某个 CPU -> governor 选频 -> Power HAL/boost/uclamp 修正 -> 任务运行 -> idle governor 选择 idle state -> thermal/省电策略反馈</span></span></code></pre>
+<p>排查优先级：</p>
+<ul>
+<li>先用 Perfetto 找线程和唤醒来源。</li>
+<li>再看 cpufreq policy 和频率分布。</li>
+<li>再看 cpuidle delta，判断是否睡得深。</li>
+<li>再看 boost/uclamp/cpuset，判断是否被人为拉高。</li>
+<li>最后看 thermal/cooling/battery saver，判断是否被压频。</li>
+</ul>
+<p>我的判断口径：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>CPU 功耗不是“占用率”一个数字，而是运行时间、运行位置、运行频率和睡眠质量共同决定的。</span></span></code></pre></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

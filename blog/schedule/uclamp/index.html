@@ -1,0 +1,228 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>uclamp | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>uclamp</h1><div class="post-meta"><time datetime="2021-05-01T19:00:00.000Z">2021年5月1日</time><span> / linux kernel / linux schedule</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">linux kernel</span></div></header><div class="article-body"><h2 id="what">WHAT?</h2>
+<p>uclamp(utilzation clamp) 是说 任务 cpu使用率夹钳，主要是 userspace 对 scheduler的一些hint。</p>
+<ol>
+<li>比如某个 task 对用户体验有直接的影响，此 task至少需要 20%cpu，那么计算 cpu使用率，select_rq的时候，必须考虑此task的 minimum “requested”，然后选择 <code>rq</code> 和 <code>freq</code>。</li>
+<li>比如某个低优先级的 task 对用户体验没有影响，此 task最多需要 60%cpu（60% &#x3C; 1024），那么计算 cpu使用率，select_rq的时候，必须考虑此task的 maximum “requested”，然后选择 <code>rq</code> 和<code>freq</code>。</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>sched/cpufreq, sched/uclamp: Add clamps for FAIR and RT tasks</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>    Each time a frequency update is required via schedutil, a frequency is</span></span>
+<span class="line"><span>    selected to (possibly) satisfy the utilization reported by each</span></span>
+<span class="line"><span>    scheduling class and irqs. However, when utilization clamping is in use,</span></span>
+<span class="line"><span>    the frequency selection should consider userspace utilization clamping</span></span>
+<span class="line"><span>    hints.  This will allow, for example, to:</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>     - boost tasks which are directly affecting the user experience</span></span>
+<span class="line"><span>       by running them at least at a minimum "requested" frequency</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>     - cap low priority tasks not directly affecting the user experience</span></span>
+<span class="line"><span>       by running them only up to a maximum "allowed" frequency</span></span></code></pre>
+<p>在uapi 的头文件<code>include/uapi/linux/sched/types.h</code>中</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>  @sched_util_min	represents the minimum utilization</span></span>
+<span class="line"><span>  @sched_util_max	represents the maximum utilization</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span> Utilization is a value in the range [0..SCHED_CAPACITY_SCALE]. It</span></span>
+<span class="line"><span> represents the percentage of CPU time used by a task when running at the</span></span>
+<span class="line"><span> maximum frequency on the highest capacity CPU of the system. For example, a</span></span>
+<span class="line"><span> 20% utilization task is a task running for 2ms every 10ms at maximum</span></span>
+<span class="line"><span> frequency.</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span> A task with a min utilization value bigger than 0 is more likely scheduled</span></span>
+<span class="line"><span> on a CPU with a capacity big enough to fit the specified value.</span></span>
+<span class="line"><span> A task with a max utilization value smaller than 1024 is more likely</span></span>
+<span class="line"><span> scheduled on a CPU with no more capacity than the specified value.</span></span></code></pre>
+<p>uclamp 的min..max 指的都是最大 freq下 的cpu使用率， 20%使用率 说的是在最大频率下，task 每10ms需要运行2ms。</p>
+<h2 id="data-structure">data structure</h2>
+<p>uclamp 分为<code>per sched_entity</code> 和 <code>per rq</code> 两种，分别使用 <code>struct uclamp_se</code>  <code>struct uclamp_rq</code>来描述。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>struct uclamp_se {</span></span>
+<span class="line"><span>	unsigned int value		: bits_per(SCHED_CAPACITY_SCALE);</span></span>
+<span class="line"><span>	unsigned int bucket_id		: bits_per(UCLAMP_BUCKETS);</span></span>
+<span class="line"><span>	unsigned int active		: 1;</span></span>
+<span class="line"><span>	unsigned int user_defined	: 1;</span></span>
+<span class="line"><span>};</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>struct uclamp_rq {</span></span>
+<span class="line"><span>	unsigned int value;</span></span>
+<span class="line"><span>	struct uclamp_bucket bucket[UCLAMP_BUCKETS];</span></span>
+<span class="line"><span>};</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>struct rq {</span></span>
+<span class="line"><span>	/* runqueue lock: */</span></span>
+<span class="line"><span>	raw_spinlock_t		lock;</span></span>
+<span class="line"><span>#ifdef CONFIG_UCLAMP_TASK</span></span>
+<span class="line"><span>	/* Utilization clamp values based on CPU's RUNNABLE tasks */</span></span>
+<span class="line"><span>	struct uclamp_rq	uclamp[UCLAMP_CNT] ____cacheline_aligned;</span></span>
+<span class="line"><span>	unsigned int		uclamp_flags;</span></span>
+<span class="line"><span>#define UCLAMP_FLAG_IDLE 0x01</span></span>
+<span class="line"><span>#endif</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p><code>per sched entity</code> 又分为两种，一种是 <code>per task</code>，一种是 <code>per task group</code>。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>struct task_struct {</span></span>
+<span class="line"><span>        ......</span></span>
+<span class="line"><span>#ifdef CONFIG_UCLAMP_TASK</span></span>
+<span class="line"><span>	/* Clamp values requested for a scheduling entity */</span></span>
+<span class="line"><span>	struct uclamp_se		uclamp_req[UCLAMP_CNT];</span></span>
+<span class="line"><span>	/* Effective clamp values used for a scheduling entity */</span></span>
+<span class="line"><span>	struct uclamp_se		uclamp[UCLAMP_CNT];</span></span>
+<span class="line"><span>#endif</span></span>
+<span class="line"><span>        ......</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>struct task_group {</span></span>
+<span class="line"><span>	struct cgroup_subsys_state css;</span></span>
+<span class="line"><span>#ifdef CONFIG_UCLAMP_TASK_GROUP</span></span>
+<span class="line"><span>	/* The two decimal precision [%] value requested from user-space */</span></span>
+<span class="line"><span>	unsigned int		uclamp_pct[UCLAMP_CNT];</span></span>
+<span class="line"><span>	/* Clamp values requested for a task group */</span></span>
+<span class="line"><span>	struct uclamp_se	uclamp_req[UCLAMP_CNT];</span></span>
+<span class="line"><span>	/* Effective clamp values used for a task group */</span></span>
+<span class="line"><span>	struct uclamp_se	uclamp[UCLAMP_CNT];</span></span>
+<span class="line"><span>#endif</span></span>
+<span class="line"><span>};</span></span></code></pre>
+<h2 id="api">api</h2>
+<h3 id="init">init</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static void __init init_uclamp(void)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	struct uclamp_se uc_max = {};</span></span>
+<span class="line"><span>	enum uclamp_id clamp_id;</span></span>
+<span class="line"><span>	int cpu;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	mutex_init(&#x26;uclamp_mutex);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	for_each_possible_cpu(cpu)</span></span>
+<span class="line"><span>		init_uclamp_rq(cpu_rq(cpu));</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	for_each_clamp_id(clamp_id) {</span></span>
+<span class="line"><span>		uclamp_se_set(&#x26;init_task.uclamp_req[clamp_id],</span></span>
+<span class="line"><span>			      uclamp_none(clamp_id), false);</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	/* System defaults allow max clamp values for both indexes */</span></span>
+<span class="line"><span>	uclamp_se_set(&#x26;uc_max, uclamp_none(UCLAMP_MAX), false);</span></span>
+<span class="line"><span>	for_each_clamp_id(clamp_id) {</span></span>
+<span class="line"><span>		uclamp_default[clamp_id] = uc_max;</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<h3 id="kernel-api">kernel api</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static inline void uclamp_rq_inc(struct rq *rq, struct task_struct *p) { }</span></span>
+<span class="line"><span>static inline void uclamp_rq_dec(struct rq *rq, struct task_struct *p) { }</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static inline void enqueue_task(struct rq *rq, struct task_struct *p, int flags)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	if (!(flags &#x26; ENQUEUE_NOCLOCK))</span></span>
+<span class="line"><span>		update_rq_clock(rq);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (!(flags &#x26; ENQUEUE_RESTORE)) {</span></span>
+<span class="line"><span>		sched_info_queued(rq, p);</span></span>
+<span class="line"><span>		psi_enqueue(p, flags &#x26; ENQUEUE_WAKEUP);</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	uclamp_rq_inc(rq, p);</span></span>
+<span class="line"><span>	p->sched_class->enqueue_task(rq, p, flags);</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>static inline void dequeue_task(struct rq *rq, struct task_struct *p, int flags)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	if (!(flags &#x26; DEQUEUE_NOCLOCK))</span></span>
+<span class="line"><span>		update_rq_clock(rq);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	if (!(flags &#x26; DEQUEUE_SAVE)) {</span></span>
+<span class="line"><span>		sched_info_dequeued(rq, p);</span></span>
+<span class="line"><span>		psi_dequeue(p, flags &#x26; DEQUEUE_SLEEP);</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	uclamp_rq_dec(rq, p);</span></span>
+<span class="line"><span>	p->sched_class->dequeue_task(rq, p, flags);</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>在 <code>enqueue_task</code> <code>dequeue_task</code> 中会 根据 此task是否 开启 uclamp来更改 <code>rq</code>的统计的<code>uclamp_rq</code> 数据。</p>
+<p><img src="/images/image.jpg" alt=""></p>
+<h3 id="user-api">user api</h3>
+<p>uclamp 在 <code>userspace</code> 提供了三类接口</p>
+<ul>
+<li>全局uclamp接口 <code>/proc/sys/kernel/sched_util_clamp_min</code> <code>/proc/sys/kernel/sched_util_clamp_max</code></li>
+<li>cgroup based API <code>cpu.uclamp.max</code> <code>cpu.uclamp.min</code></li>
+<li>per-task API</li>
+</ul>
+<p>一般全局uclamp接口都是设置为 min-1024 max-1024。
+cgroup 接口一般只会限制最大使用率
+per-task的情况较为复杂，以pixel6为例：</p>
+<p>在pixel6搭载的Android 12中，google去除了<code>schedtue</code> <code>sched boost</code>等机制，pixel6 且采用了双X1架构的芯片，没有使用walt算法。为了尽量提升用户流畅性体验，所以对uclamp较为依赖。</p>
+<p>kernel space对外提供的接口是 <code>sched_setattr</code>, android 框架层对他做了封装<a href="https://cs.android.com/android/platform/superproject/+/master:hardware/google/pixel/power-libperfmgr/aidl/PowerHintSession.cpp;bpv=1;bpt=1;l=181?q=sched_setattr">setUclamp</a></p>
+<p>在 <code>pixel6</code> 中使用 uclamp的场景大概分为以下几类:</p>
+<ul>
+<li>应用启动</li>
+<li>滑动boost</li>
+<li>top-app</li>
+</ul>
+<p>首先是应用启动，应用启动往往需要创建多个线程，读取很多资源。所以在应用冷启动时刻，除了将所有cpu的频率固定在最高频之外，还将应用的 <code>UI_thread</code> <code>Render_thread</code> <code>hwui_task0</code> <code>hwui_task1</code> uclamp直接设置为 512，这样会使得这几个重载线程在启动时刻就跑在超大核心上，减少应用冷启动时间。</p>
+<p>滑动场景，由于滑动场景有较多复杂的动画，<code>UI_thread</code> <code>Render_thread</code> <code>hwui_task0</code> <code>hwui_task1</code>的负载较重，如果不及时上超大核，有丢帧的风险，所以滑动场景也是将这几个task的uclamp_min 设置为 512，来保证可以上超大核。</p>
+<h3 id="根据场景设置">根据场景设置</h3>
+<p>在 pixel6 中，从代码中看 有 <a href="https://cs.android.com/android/platform/superproject/+/master:device/google/gs101/powerhint.json;l=120?q=ta_uclamp_min">powerhint.json</a> 这个文件。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>    {</span></span>
+<span class="line"><span>      "Name": "TAUClampBoost",</span></span>
+<span class="line"><span>      "Path": "/sys/kernel/vendor_sched/ta_uclamp_min",</span></span>
+<span class="line"><span>      "Values": [</span></span>
+<span class="line"><span>        "553",</span></span>
+<span class="line"><span>        "1",</span></span>
+<span class="line"><span>        "246",</span></span>
+<span class="line"><span>        "185",</span></span>
+<span class="line"><span>        "123",</span></span>
+<span class="line"><span>        "62"</span></span>
+<span class="line"><span>      ],</span></span>
+<span class="line"><span>      "DefaultIndex": 1,</span></span>
+<span class="line"><span>      "ResetOnInit": true</span></span>
+<span class="line"><span>    },</span></span></code></pre>
+<p>这个文件将 <code>ta_uclamp_min</code> 重命名为 <code>TAUClampBoost</code>，然后根据 不同场景来设置不同 的val。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>    {</span></span>
+<span class="line"><span>      "PowerHint": "LAUNCH",</span></span>
+<span class="line"><span>      "Node": "TAUClampBoost",</span></span>
+<span class="line"><span>      "Duration": 5000,</span></span>
+<span class="line"><span>      "Value": "553"</span></span>
+<span class="line"><span>    },</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>    {</span></span>
+<span class="line"><span>      "PowerHint": "REFRESH_120FPS",</span></span>
+<span class="line"><span>      "Node": "TAUClampBoost",</span></span>
+<span class="line"><span>      "Duration": 0,</span></span>
+<span class="line"><span>      "Value": "185"</span></span>
+<span class="line"><span>    },</span></span>
+<span class="line"><span>    {</span></span>
+<span class="line"><span>      "PowerHint": "REFRESH_90FPS",</span></span>
+<span class="line"><span>      "Node": "TAUClampBoost",</span></span>
+<span class="line"><span>      "Duration": 0,</span></span>
+<span class="line"><span>      "Value": "123"</span></span>
+<span class="line"><span>    },</span></span>
+<span class="line"><span>    {</span></span>
+<span class="line"><span>      "PowerHint": "REFRESH_60FPS",</span></span>
+<span class="line"><span>      "Node": "TAUClampBoost",</span></span>
+<span class="line"><span>      "Duration": 0,</span></span>
+<span class="line"><span>      "Value": "62"</span></span>
+<span class="line"><span>    },</span></span>
+<span class="line"><span>    {</span></span>
+<span class="line"><span>      "PowerHint": "ADPF_DISABLE_TA_BOOST",</span></span>
+<span class="line"><span>      "Node": "TAUClampBoost",</span></span>
+<span class="line"><span>      "Duration": 0,</span></span>
+<span class="line"><span>      "Value": "1"</span></span>
+<span class="line"><span>    },</span></span>
+<span class="line"><span>    {</span></span>
+<span class="line"><span>      "PowerHint": "DISABLE_TA_BOOST",</span></span>
+<span class="line"><span>      "Node": "TAUClampBoost",</span></span>
+<span class="line"><span>      "Duration": 0,</span></span>
+<span class="line"><span>      "Value": "1"</span></span>
+<span class="line"><span>    },</span></span></code></pre>
+<p>boost 场景与 ta_uclamp_min 关系</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>boost 场景	boost val</span></span>
+<span class="line"><span>LAUCH		553</span></span>
+<span class="line"><span>120 FPS		185</span></span>
+<span class="line"><span>90 FPS		123</span></span>
+<span class="line"><span>60FPS		62</span></span></code></pre>
+<p>cpu0-7 capacity</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>cpu	capacity</span></span>
+<span class="line"><span>cpu0-3	124</span></span>
+<span class="line"><span>cpu4-5	427</span></span>
+<span class="line"><span>cpu6-7	1024</span></span></code></pre>
+<p>游戏场景，由于游戏等前台应用对响应时间较为敏感，pixel6 上android的框架层直接将 <code>ta_uclamp_min</code> 设置为 185或者更多，这样游戏进程主线程或者其他前台进程主线程就无法跑在小核心上，至少是大核起步</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>raven:/sys/kernel/vendor_sched # cat ta_uclamp_min</span></span>
+<span class="line"><span>185</span></span>
+<span class="line"><span>raven:/sys/kernel/vendor_sched #</span></span></code></pre></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

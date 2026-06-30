@@ -1,0 +1,120 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>file attr | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>file attr</h1><div class="post-meta"><time datetime="2021-07-12T19:00:40.000Z">2021年7月12日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">file attr</span><span class="tag">filesystem</span></div></header><div class="article-body"><h2 id="file-attributes-概念">file attributes 概念</h2>
+<p>除了控制用户和组读取，写和执行权限的文件模式位之外，几个文件系统支持文件属性，
+可以进一步自定义允许的文件操作。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Apart from the file mode bits that control user and group read, write and execute permissions, several file systems support file attributes that enable further customization of allowable file operations. This section describes some of these attributes and how to work with them.</span></span></code></pre>
+<p><code>cp</code> <code>rsync</code> 等操作不会保留 <code>file attributes</code>。
+只有部分 filesystem 支持这样的属性，常见的 <code>ext2</code> <code>ext3</code> <code>ext4</code> 都是支持的。</p>
+<h2 id="file-attributes-flag">file attributes FLAG</h2>
+<p><code>include/uapi/linux/fs.h</code> 中</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/*</span></span>
+<span class="line"><span> * Inode flags (FS_IOC_GETFLAGS / FS_IOC_SETFLAGS)</span></span>
+<span class="line"><span> *</span></span>
+<span class="line"><span> * Note: for historical reasons, these flags were originally used and</span></span>
+<span class="line"><span> * defined for use by ext2/ext3, and then other file systems started</span></span>
+<span class="line"><span> * using these flags so they wouldn't need to write their own version</span></span>
+<span class="line"><span> * of chattr/lsattr (which was shipped as part of e2fsprogs).  You</span></span>
+<span class="line"><span> * should think twice before trying to use these flags in new</span></span>
+<span class="line"><span> * contexts, or trying to assign these flags, since they are used both</span></span>
+<span class="line"><span> * as the UAPI and the on-disk encoding for ext2/3/4.  Also, we are</span></span>
+<span class="line"><span> * almost out of 32-bit flags.  :-)</span></span>
+<span class="line"><span> *</span></span>
+<span class="line"><span> * We have recently hoisted FS_IOC_FSGETXATTR / FS_IOC_FSSETXATTR from</span></span>
+<span class="line"><span> * XFS to the generic FS level interface.  This uses a structure that</span></span>
+<span class="line"><span> * has padding and hence has more room to grow, so it may be more</span></span>
+<span class="line"><span> * appropriate for many new use cases.</span></span>
+<span class="line"><span> *</span></span>
+<span class="line"><span> * Please do not change these flags or interfaces before checking with</span></span>
+<span class="line"><span> * linux-fsdevel@vger.kernel.org and linux-api@vger.kernel.org.</span></span>
+<span class="line"><span> */</span></span>
+<span class="line"><span>#define	FS_SECRM_FL			0x00000001 /* Secure deletion */</span></span>
+<span class="line"><span>#define	FS_UNRM_FL			0x00000002 /* Undelete */</span></span>
+<span class="line"><span>#define	FS_COMPR_FL			0x00000004 /* Compress file */</span></span>
+<span class="line"><span>#define FS_SYNC_FL			0x00000008 /* Synchronous updates */</span></span>
+<span class="line"><span>#define FS_IMMUTABLE_FL			0x00000010 /* Immutable file */</span></span>
+<span class="line"><span>#define FS_APPEND_FL			0x00000020 /* writes to file may only append */</span></span>
+<span class="line"><span>#define FS_NODUMP_FL			0x00000040 /* do not dump file */</span></span>
+<span class="line"><span>#define FS_NOATIME_FL			0x00000080 /* do not update atime */</span></span></code></pre>
+<p>这些 FLAG get set 都是通过 ioctl(FS_IOC_FSGETXATTR / FS_IOC_FSSETXATTR) 命令来实现的。</p>
+<p>可以通过<code>chattr</code>的 如下命令修改</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>a  -- append only</span></span>
+<span class="line"><span>A  -- no atime updates</span></span>
+<span class="line"><span>c  -- compressed</span></span>
+<span class="line"><span>C  -- no copy on write</span></span>
+<span class="line"><span>d  -- no dump</span></span>
+<span class="line"><span>D  -- no synchronous directory updates</span></span>
+<span class="line"><span>e  -- extent format</span></span>
+<span class="line"><span>i  -- immutable</span></span>
+<span class="line"><span>j  -- data journalling</span></span>
+<span class="line"><span>P  -- project hierarchy</span></span>
+<span class="line"><span>s  -- secure deletion</span></span>
+<span class="line"><span>S  -- synchronous updates</span></span>
+<span class="line"><span>t  -- no tail-merging</span></span>
+<span class="line"><span>T  -- top of directory hierarchy</span></span>
+<span class="line"><span>u  -- undeletable</span></span></code></pre>
+<h2 id="demo">demo</h2>
+<p><code>i</code> 属性就是 <code>immutable</code>，意思是不可变的。</p>
+<h3 id="immutable-不可变属性">immutable 不可变属性</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>stable_kernel@kernel: ~/workspace/fs/ext2_dir/123# touch 1</span></span>
+<span class="line"><span>stable_kernel@kernel: ~/workspace/fs/ext2_dir/123# touch 2</span></span>
+<span class="line"><span>stable_kernel@kernel: ~/workspace/fs/ext2_dir/123# lsattr</span></span>
+<span class="line"><span>-------------------- ./1</span></span>
+<span class="line"><span>-------------------- ./2</span></span>
+<span class="line"><span>stable_kernel@kernel: ~/workspace/fs/ext2_dir/123# chattr +i 1</span></span>
+<span class="line"><span>chattr: Operation not permitted while setting flags on 1</span></span>
+<span class="line"><span>stable_kernel@1kernel: ~/workspace/fs/ext2_dir/123# sudo chattr +i 1</span></span>
+<span class="line"><span>stable_kernel@kernel: ~/workspace/fs/ext2_dir/123# lsattr</span></span>
+<span class="line"><span>----i--------------- ./1</span></span>
+<span class="line"><span>-------------------- ./2</span></span>
+<span class="line"><span>stable_kernel@kernel: ~/workspace/fs/ext2_dir/123# rm 1</span></span>
+<span class="line"><span>rm: cannot remove '1': Operation not permitted</span></span>
+<span class="line"><span>stable_kernel@1kernel: ~/workspace/fs/ext2_dir/123# rm 2</span></span>
+<span class="line"><span>stable_kernel@kernel: ~/workspace/fs/ext2_dir/123# ls</span></span>
+<span class="line"><span>1</span></span>
+<span class="line"><span>stable_kernel@kernel: ~/workspace/fs/ext2_dir/123# sudo rm 1</span></span>
+<span class="line"><span>rm: cannot remove '1': Operation not permitted</span></span>
+<span class="line"><span>stable_kernel@1kernel: ~/workspace/fs/ext2_dir/123# chattr -i 1</span></span>
+<span class="line"><span>chattr: Operation not permitted while setting flags on 1</span></span>
+<span class="line"><span>stable_kernel@1kernel: ~/workspace/fs/ext2_dir/123# sudo chattr -i 1</span></span>
+<span class="line"><span>stable_kernel@kernel: ~/workspace/fs/ext2_dir/123# rm 1</span></span>
+<span class="line"><span>stable_kernel@kernel: ~/workspace/fs/ext2_dir/123# ls</span></span>
+<span class="line"><span>stable_kernel@kernel: ~/workspace/fs/ext2_dir/123#</span></span></code></pre>
+<h3 id="file-attributes-cp-时保留吗">file attributes cp 时保留吗？</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>stable_kernel@kernel: ~/workspace/fs/ext2_dir/123# touch 1</span></span>
+<span class="line"><span>stable_kernel@kernel: ~/workspace/fs/ext2_dir/123# lsattr</span></span>
+<span class="line"><span>-------------------- ./1</span></span>
+<span class="line"><span>stable_kernel@kernel: ~/workspace/fs/ext2_dir/123# sudo chattr +i 1</span></span>
+<span class="line"><span>stable_kernel@kernel: ~/workspace/fs/ext2_dir/123# lsattr</span></span>
+<span class="line"><span>----i--------------- ./1</span></span>
+<span class="line"><span>stable_kernel@kernel: ~/workspace/fs/ext2_dir/123# cp 1 2</span></span>
+<span class="line"><span>stable_kernel@kernel: ~/workspace/fs/ext2_dir/123# lsattr</span></span>
+<span class="line"><span>----i--------------- ./1</span></span>
+<span class="line"><span>-------------------- ./2</span></span>
+<span class="line"><span>stable_kernel@kernel: ~/workspace/fs/ext2_dir/123# mv 1 11</span></span>
+<span class="line"><span>mv: cannot move '1' to '11': Operation not permitted</span></span>
+<span class="line"><span>stable_kernel@1kernel: ~/workspace/fs/ext2_dir/123# sudo mv 1 11</span></span>
+<span class="line"><span>mv: cannot move '1' to '11': Operation not permitted</span></span>
+<span class="line"><span>stable_kernel@1kernel: ~/workspace/fs/ext2_dir/123#</span></span></code></pre>
+<p>可以看到在 执行 <code>cp</code> 命令时， file attributes 是不保留的。</p>
+<h2 id="trace">trace</h2>
+<p><code>chattr</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>stable_kernel@kernel: ~/workspace/fs/ext2_dir/123# sudo strace chattr +i 1</span></span>
+<span class="line"><span>execve("/usr/bin/chattr", ["chattr", "+i", "1"], 0x7fffa9701fd0 /* 22 vars */) = 0</span></span>
+<span class="line"><span>......</span></span>
+<span class="line"><span>openat(AT_FDCWD, "1", O_RDONLY|O_NONBLOCK) = 3</span></span>
+<span class="line"><span>ioctl(3, FS_IOC_GETFLAGS, 0x7ffe9578ee3c) = 0</span></span>
+<span class="line"><span>close(3)                                = 0</span></span>
+<span class="line"><span>lstat("1", {st_mode=S_IFREG|0664, st_size=0, ...}) = 0</span></span>
+<span class="line"><span>openat(AT_FDCWD, "1", O_RDONLY|O_NONBLOCK) = 3</span></span>
+<span class="line"><span>ioctl(3, FS_IOC_SETFLAGS, 0x7ffe9578ee3c) = 0</span></span>
+<span class="line"><span>close(3)                                = 0</span></span>
+<span class="line"><span>......</span></span></code></pre>
+<p><code>lsattr</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>stable_kernel@kernel: ~/workspace/fs/ext2_dir/123# strace lsattr</span></span>
+<span class="line"><span>execve("/usr/bin/lsattr", ["lsattr"], 0x7ffca62b1850 /* 37 vars */) = 0</span></span>
+<span class="line"><span>openat(AT_FDCWD, "./2", O_RDONLY|O_NONBLOCK) = 4</span></span>
+<span class="line"><span>ioctl(4, FS_IOC_GETFLAGS, 0x7ffc5889dbac) = 0</span></span>
+<span class="line"><span>close(4)                                = 0</span></span>
+<span class="line"><span>write(1, "-------------------- ./2\n", 25-------------------- ./2</span></span>
+<span class="line"><span>) = 25</span></span>
+<span class="line"><span>getdents64(3, /* 0 entries */, 32768)   = 0</span></span>
+<span class="line"><span>close(3)                                = 0</span></span></code></pre></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

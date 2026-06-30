@@ -1,0 +1,77 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>App冷启动流程 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>App冷启动流程</h1><div class="post-meta"><time datetime="2023-12-01T10:00:00.000Z">2023年12月1日</time><span> / android / app启动与生命周期</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">android</span><span class="tag">启动流程</span><span class="tag">冷启动</span><span class="tag">性能优化</span></div></header><div class="article-body"><h2 id="简介">简介</h2>
+<p>冷启动是指应用进程不存在，需要从零开始创建进程并启动 Activity 的过程。这是最耗时的启动方式。</p>
+<h2 id="冷启动流程">冷启动流程</h2>
+<h3 id="阶段一进程创建">阶段一：进程创建</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Launcher.startActivity()</span></span>
+<span class="line"><span>    → ATMS.startActivity()</span></span>
+<span class="line"><span>    → Zygote.fork()</span></span>
+<span class="line"><span>    → ActivityThread.main()</span></span></code></pre>
+<h3 id="阶段二application-初始化">阶段二：Application 初始化</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ActivityThread.handleBindApplication()</span></span>
+<span class="line"><span>    → Application.onCreate()</span></span></code></pre>
+<h3 id="阶段三activity-创建">阶段三：Activity 创建</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ActivityThread.handleLaunchActivity()</span></span>
+<span class="line"><span>    → Activity.onCreate()</span></span>
+<span class="line"><span>    → Activity.onStart()</span></span>
+<span class="line"><span>    → Activity.onResume()</span></span></code></pre>
+<h3 id="阶段四首帧绘制">阶段四：首帧绘制</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ViewRootImpl.performTraversals()</span></span>
+<span class="line"><span>    → measure → layout → draw</span></span>
+<span class="line"><span>    → SurfaceFlinger 合成显示</span></span></code></pre>
+<h2 id="关键时间节点">关键时间节点</h2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>节点</th><th>说明</th></tr></thead><tbody><tr><td>fork()</td><td>进程创建完成</td></tr><tr><td>bindApplication</td><td>Application 开始初始化</td></tr><tr><td>onCreate</td><td>Activity 开始创建</td></tr><tr><td>onResume</td><td>Activity 可见</td></tr><tr><td>首帧绘制</td><td>用户看到界面</td></tr></tbody></table>
+<h2 id="性能优化方向">性能优化方向</h2>
+<ol>
+<li>
+<p><strong>减少 Application 初始化时间</strong></p>
+<ul>
+<li>延迟初始化</li>
+<li>异步初始化</li>
+</ul>
+</li>
+<li>
+<p><strong>优化 Activity 创建</strong></p>
+<ul>
+<li>减少布局复杂度</li>
+<li>预加载资源</li>
+</ul>
+</li>
+<li>
+<p><strong>优化首帧绘制</strong></p>
+<ul>
+<li>减少过度绘制</li>
+<li>优化 measure/layout</li>
+</ul>
+</li>
+</ol>
+<h2 id="总结">总结</h2>
+<p>冷启动涉及进程创建、Application 初始化、Activity 创建和首帧绘制四个阶段，每个阶段都有优化空间。</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

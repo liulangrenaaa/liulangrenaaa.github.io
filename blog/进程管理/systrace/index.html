@@ -1,0 +1,150 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>linux lockup问题 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>linux lockup问题</h1><div class="post-meta"><time datetime="2020-09-12T19:00:00.000Z">2020年9月12日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">进程调度</span><span class="tag">systrace</span></div></header><div class="article-body"><h2 id="介绍">介绍</h2>
+<p>systrace是Android4.1版本之后推出的，对系统Performance分析的工具。
+systrace的功能包括跟踪系统的I/O操作、内核工作队列、CPU负载以及Android各个子系统的运行状况等。
+主要分为三个部分：</p>
+<ul>
+<li>内核部分: 利用了Linux Kernel中的ftrace功能。如果要使用systrace的话，必须开启kernel中和ftrace相关的config</li>
+<li>数据采集部分:Android定义了一个Trace类。应用程序可利用该类把统计信息输出给ftrace。同时，Android还有一个atrace程序，它可以从ftrace中读取统计信息然后交给数据分析工具来处理。</li>
+<li>数据分析工具:Android提供一个<code>systrace.py</code>（python脚本文件，位于<code>Android SDK目录/sdk/platform-tools/systrace</code>中。</li>
+</ul>
+<p>systrace 参数</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>options</th><th>描述</th></tr></thead><tbody><tr><td>-o &#x3C; FILE ></td><td>输出的目标文件</td></tr><tr><td>-t N, –time=N</td><td>执行时间，默认5s</td></tr><tr><td>-b N, –buf-size=N</td><td>buffer大小（单位kB),用于限制trace总大小，默认无上限</td></tr><tr><td>-k &#x3C; KFUNCS >，–ktrace=&#x3C; KFUNCS ></td><td>追踪kernel函数，用逗号分隔</td></tr><tr><td>-a &#x3C; APP_NAME >,–app=&#x3C; APP_NAME ></td><td>追踪应用包名，用逗号分隔</td></tr><tr><td>–from-file=&#x3C; FROM_FILE ></td><td>从文件中创建互动的systrace</td></tr><tr><td>-l, –list-categories</td><td>列举可用的tags</td></tr></tbody></table>
+<p>-l 的tags,可以标识想抓哪些 systrace</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>λ python systrace.py -l</span></span>
+<span class="line"><span>         gfx - Graphics</span></span>
+<span class="line"><span>       input - Input</span></span>
+<span class="line"><span>        view - View System</span></span>
+<span class="line"><span>     webview - WebView</span></span>
+<span class="line"><span>          wm - Window Manager</span></span>
+<span class="line"><span>          am - Activity Manager</span></span>
+<span class="line"><span>          sm - Sync Manager</span></span>
+<span class="line"><span>       audio - Audio</span></span>
+<span class="line"><span>       video - Video</span></span>
+<span class="line"><span>      camera - Camera</span></span>
+<span class="line"><span>         hal - Hardware Modules</span></span>
+<span class="line"><span>         res - Resource Loading</span></span>
+<span class="line"><span>      dalvik - Dalvik VM</span></span>
+<span class="line"><span>          rs - RenderScript</span></span>
+<span class="line"><span>      bionic - Bionic C Library</span></span>
+<span class="line"><span>       power - Power Management</span></span>
+<span class="line"><span>          pm - Package Manager</span></span>
+<span class="line"><span>          ss - System Server</span></span>
+<span class="line"><span>    database - Database</span></span>
+<span class="line"><span>     network - Network</span></span>
+<span class="line"><span>         adb - ADB</span></span>
+<span class="line"><span>    vibrator - Vibrator</span></span>
+<span class="line"><span>        aidl - AIDL calls</span></span>
+<span class="line"><span>       nnapi - NNAPI</span></span>
+<span class="line"><span>         rro - Runtime Resource Overlay</span></span>
+<span class="line"><span>         pdx - PDX services</span></span>
+<span class="line"><span>       sched - CPU Scheduling</span></span>
+<span class="line"><span>        freq - CPU Frequency</span></span>
+<span class="line"><span>        idle - CPU Idle</span></span>
+<span class="line"><span>        disk - Disk I/O</span></span>
+<span class="line"><span>        sync - Synchronization</span></span>
+<span class="line"><span>  memreclaim - Kernel Memory Reclaim</span></span>
+<span class="line"><span>  binder_driver - Binder Kernel driver</span></span>
+<span class="line"><span>  binder_lock - Binder global lock trace</span></span>
+<span class="line"><span>      memory - Memory</span></span>
+<span class="line"><span>         gfx - Graphics (HAL)</span></span>
+<span class="line"><span>         ion - ION allocation (HAL)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>NOTE: more categories may be available with adb root</span></span></code></pre>
+<p><code>sched</code>: CPU调度的信息，非常重要；你能看到CPU在每个时间段在运行什么线程；线程调度情况，比如锁信息。
+<code>gfx</code>：Graphic系统的相关信息，包括SerfaceFlinger，VSYNC消息，Texture，RenderThread等；分析卡顿非常依赖这个。
+<code>view</code>: View绘制系统的相关信息，比如onMeasure，onLayout等；对分析卡顿比较有帮助。
+<code>am</code>：ActivityManager调用的相关信息；用来分析Activity的启动过程比较有效。
+<code>dalvik</code>: 虚拟机相关信息，比如GC停顿等。
+<code>binder_driver</code>: Binder驱动的相关信息，如果你怀疑是Binder IPC的问题，不妨打开这个。
+<code>core_services</code>: SystemServer中系统核心Service的相关信息，分析特定问题用。</p>
+<h2 id="步骤">步骤</h2>
+<p>常用的命令行抓取systrace
+<code>python D:\Users\50001309\AppData\Local\Android\Sdk\platform-tools\systrace\systrace.py  -o D:\systrace\outfile\trace.html   sched gfx view am core_services  freq -t 10 -b 40960</code></p>
+<p>抓取 systrace 之后，在 <code>chrome://tracing/</code> 或者 <code>https://ui.perfetto.dev/#!/</code> 地址上解析</p>
+<h2 id="快捷键">快捷键</h2>
+<ul>
+<li>
+<p>W: 放大 Systrace , 放大可以更好地看清局部细节</p>
+</li>
+<li>
+<p>S: 缩小 Systrace, 缩小以查看整体</p>
+</li>
+<li>
+<p>A: 左移</p>
+</li>
+<li>
+<p>D: 右移</p>
+</li>
+<li>
+<p>M: 高亮选中当前鼠标点击的段(这个比较常用,可以快速标识出这个方法的左右边界和执行时间,方便上下查看)</p>
+</li>
+<li>
+<p>数字键1: 切换到 Selection 模式 , 这个模式下鼠标可以点击某一个段查看其详细信息, 一般打开 Systrace 默认就是这个模式 , 也是最常用的一个模式 , 配合M 和ASDW 可以做基本的操作</p>
+</li>
+<li>
+<p>数字键2: 切换到 Pan 模式 , 这个模式下长按鼠标可以左右拖动, 有时候会用到</p>
+</li>
+<li>
+<p>数字键3: 切换到 Zoom 模式 , 这个模式下长按鼠标可以放大和缩小, 有时候会用到</p>
+</li>
+<li>
+<p>数字键4: 切换到 Timing 模式 , 这个模式下主要是用来衡量时间的,比如选择一个起点, 选择一个终点, 查看起点和终点这中间的操作所花费的时间.</p>
+</li>
+</ul>
+<h2 id="查看当前前台进程的pid">查看当前前台进程的pid</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>raven:/ $ logcat -b events |grep on_resume</span></span>
+<span class="line"><span>01-21 17:10:45.959  2236  2236 I wm_on_resume_called: [105694312,com.android.settings.FallbackHome,RESUME_ACTIVITY]</span></span>
+<span class="line"><span>01-21 17:10:47.972  2318  2318 I wm_on_resume_called: [50407132,com.android.launcher3.uioverrides.QuickstepLauncher,RESUME_ACTIVITY]</span></span>
+<span class="line"><span>01-21 17:10:48.309  2318  2318 I wm_on_resume_called: [50407132,com.android.launcher3.uioverrides.QuickstepLauncher,RESUME_ACTIVITY]</span></span>
+<span class="line"><span>01-21 17:10:52.867  3699  3699 I wm_on_resume_called: [43073904,com.ss.android.ugc.aweme.splash.SplashActivity,RESUME_ACTIVITY]</span></span>
+<span class="line"><span>01-21 17:15:19.001  2318  2318 I wm_on_resume_called: [50407132,com.android.launcher3.uioverrides.QuickstepLauncher,RESUME_ACTIVITY]</span></span>
+<span class="line"><span>01-21 17:16:10.807  3699  3699 I wm_on_resume_called: [43073904,com.ss.android.ugc.aweme.splash.SplashActivity,RESUME_ACTIVITY]</span></span></code></pre>
+<h2 id="平台迁移">平台迁移</h2>
+<p>systrace 只是Google给安卓设备的开发的，那么是否可以使用到server上或者确认书linux设备上呢？实际上是可以的，只不过没有安卓的相关事件，只有kernel原生的一些事件</p>
+<p>当然需要做一些工作，</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>https://github.com/liulangrenaaa/systrace</span></span></code></pre>
+<p>可以直接使用 <code>python systrace.py -t 10 -v -e "sched,irq"</code>
+输出 trace.html</p>
+<p>参考<a href="https://source.android.com/devices/tech/debug/systrace?hl=zh-cn">google官方systrace介绍</a>
+参考<a href="https://androidperformance.com/2019/12/01/BlogMap/">Gracker的android performance</a>
+参考<a href="https://ljd1996.github.io/">苍耳叔叔的博客</a>
+参考<a href="https://wizzie.top/Blog/">sunwengang blog</a>
+参考<a href="https://wizzie.top/Blog/2020/02/22/2020/200222_android_systrace_study/">Android Systrace如何抓取分析问题</a>
+参考<a href="https://doc.myoas.com/pages/viewpage.action?pageId=257699103">confluence</a></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

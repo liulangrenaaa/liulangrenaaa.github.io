@@ -1,0 +1,170 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>搭建f2fs测试环境 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>搭建f2fs测试环境</h1><div class="post-meta"><time datetime="2021-02-04T19:00:40.000Z">2021年2月4日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">node</span><span class="tag">zone</span></div></header><div class="article-body"><p>发现 f2fs 相关代码有一些优化点，想着提个patch该一下，但是手中没有使用f2fs的设备，不好验证，
+然后我就想使用 mkfs.f2fs初始化一个文件，然后通过<code>mount</code>的方式去挂载，最后在文件系统上做一些
+测试读写等</p>
+<h2 id="环境搭建">环境搭建</h2>
+<ol>
+<li>安装f2fs 工具
+<a href="https://git.kernel.org/pub/scm/linux/kernel/git/jaegeuk/f2fs-tools.git">源码地址</a>
+我是编译安装的，也可以尝试从命令行安装</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Inspiron-5548@ubuntu: ~/workspace# sudo apt install f2fs-tools</span></span></code></pre>
+<ol start="2">
+<li>生成块文件，然后格式化块文件</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>stable_kernel@kernel: ~/workspace/f2fs# dd if=/dev/zero of=./test_f2fs bs=1M count=4096</span></span>
+<span class="line"><span>4096+0 records in</span></span>
+<span class="line"><span>4096+0 records out</span></span>
+<span class="line"><span>4294967296 bytes (4.3 GB, 4.0 GiB) copied, 6.36491 s, 675 MB/s</span></span>
+<span class="line"><span>stable_kernel@kernel: ~/workspace/f2fs# mkfs.f2fs test_f2fs</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	F2FS-tools: mkfs.f2fs Ver: 1.9.0 (2017-09-21)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Info: Disable heap-based policy</span></span>
+<span class="line"><span>Info: Debug level = 0</span></span>
+<span class="line"><span>Info: Label =</span></span>
+<span class="line"><span>Info: Trim is enabled</span></span>
+<span class="line"><span>Info: Segments per section = 1</span></span>
+<span class="line"><span>Info: Sections per zone = 1</span></span>
+<span class="line"><span>Info: sector size = 512</span></span>
+<span class="line"><span>Info: total sectors = 8388608 (4096 MB)</span></span>
+<span class="line"><span>Info: zone aligned segment0 blkaddr: 512</span></span>
+<span class="line"><span>Info: format version with</span></span>
+<span class="line"><span>  "Linux version 5.11.0-rc6+ (root@server) (gcc (Ubuntu 9.3.0-17ubuntu1~20.04) 9.3.0, GNU ld (GNU Binutils for Ubuntu) 2.34) #50 SMP Wed Feb 3 11:04:13 CST 2021"</span></span>
+<span class="line"><span>Info: [test_f2fs] Discarding device</span></span>
+<span class="line"><span>Info: Overprovision ratio = 3.150%</span></span>
+<span class="line"><span>Info: Overprovision segments = 132 (GC reserved = 71)</span></span>
+<span class="line"><span>Info: format successful</span></span>
+<span class="line"><span>stable_kernel@kernel: ~/workspace/f2fs# mkdir test_dir</span></span></code></pre>
+<ol start="3">
+<li>使用 <code>-t f2fs</code> 选项挂载这个 f2fs disk
+在没有使能f2fs的内核上，尝试安装，会出现如下报错</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>stable_kernel@1kernel: ~/workspace/f2fs# sudo mount -t f2fs ./test_file ./test_dir</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>mount: /home/rlk/workspace/f2fs/test_dir: unknown filesystem type 'f2fs'.</span></span></code></pre>
+<p>需要使能如下选项重新编译 kernel</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>if [ $debug_fsf2 == 1 ]</span></span>
+<span class="line"><span>then</span></span>
+<span class="line"><span>## debug_fsf2 enable start</span></span>
+<span class="line"><span>	echo "CONFIG_F2FS_FS=y" >> /tmp/.config</span></span>
+<span class="line"><span>	echo "CONFIG_F2FS_STAT_FS=y" >> /tmp/.config</span></span>
+<span class="line"><span>	echo "CONFIG_F2FS_FS_XATTR=y" >> /tmp/.config</span></span>
+<span class="line"><span>	echo "CONFIG_F2FS_FS_POSIX_ACL=y" >> /tmp/.config</span></span>
+<span class="line"><span>	echo "CONFIG_CRYPTO_CRC32=y" >> /tmp/.config</span></span>
+<span class="line"><span>## debug_fsf2 enable end</span></span>
+<span class="line"><span>fi</span></span></code></pre>
+<p>重新挂载</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>stable_kernel@kernel: ~/workspace/f2fs# df -a</span></span>
+<span class="line"><span>Filesystem     1K-blocks      Used Available Use% Mounted on</span></span>
+<span class="line"><span>/dev/root       32377648  19964388  10745524  66% /</span></span>
+<span class="line"><span>......</span></span>
+<span class="line"><span>/dev/sda1         523248         4    523244   1% /boot/efi</span></span>
+<span class="line"><span>tmpfs             174684        24    174660   1% /run/user/1000</span></span>
+<span class="line"><span>binfmt_misc            0         0         0    - /proc/sys/fs/binfmt_misc</span></span>
+<span class="line"><span>stable_kernel@kernel: ~/workspace/f2fs# sudo mount -t f2fs ./test_f2fs ./test_dir</span></span>
+<span class="line"><span>stable_kernel@kernel: ~/workspace/f2fs# df -a</span></span>
+<span class="line"><span>Filesystem     1K-blocks      Used Available Use% Mounted on</span></span>
+<span class="line"><span>/dev/root       32377648  19964388  10745524  66% /</span></span>
+<span class="line"><span>......</span></span>
+<span class="line"><span>/dev/sda1         523248         4    523244   1% /boot/efi</span></span>
+<span class="line"><span>tmpfs             174684        24    174660   1% /run/user/1000</span></span>
+<span class="line"><span>binfmt_misc            0         0         0    - /proc/sys/fs/binfmt_misc</span></span>
+<span class="line"><span>/dev/loop0       4192256    307208   3885048   8% /home/rlk/workspace/f2fs/test_dir</span></span>
+<span class="line"><span>stable_kernel@kernel: ~/workspace/f2fs#</span></span></code></pre>
+<ol start="4">
+<li>读写 <code>test_dir</code> 相关目录</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span></span></span></code></pre>
+<ol start="5">
+<li>跟踪相关 <code>probe</code>，触发 slab回收，观察</li>
+</ol>
+<p>跟踪 <code>kprobe</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>stable_kernel@130kernel: ~/workspace/f2fs# sudo bpftrace -e 'kretprobe:f2fs_shrink_scan {printf("[pid-%d:%s]: f2fs_shrink_scan retval %d\n",</span></span>
+<span class="line"><span> pid,comm, retval)}'</span></span>
+<span class="line"><span>Attaching 1 probe...</span></span>
+<span class="line"><span>[pid-3577:bash]: f2fs_shrink_scan retval 128</span></span>
+<span class="line"><span>[pid-3577:bash]: f2fs_shrink_scan retval 128</span></span>
+<span class="line"><span>[pid-3577:bash]: f2fs_shrink_scan retval 128</span></span></code></pre>
+<p>触发 <code>slab</code> 回收</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/proc/sys/vm# sudo echo 3 > drop_caches</span></span>
+<span class="line"><span>root@rlk-Standard-PC-i440FX-PIIX-1996:/proc/sys/vm#</span></span></code></pre>
+<ol start="6">
+<li>
+<p>发patch
+最后发现是我自己天真了。。。</p>
+</li>
+<li>
+<p>收获</p>
+</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span></span></span>
+<span class="line"><span>unsigned long f2fs_shrink_scan(struct shrinker *shrink,</span></span>
+<span class="line"><span>				struct shrink_control *sc)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	unsigned long nr = sc->nr_to_scan;</span></span>
+<span class="line"><span>	struct f2fs_sb_info *sbi;</span></span>
+<span class="line"><span>	struct list_head *p;</span></span>
+<span class="line"><span>	unsigned int run_no;</span></span>
+<span class="line"><span>	unsigned long freed = 0;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	spin_lock(&#x26;f2fs_list_lock);</span></span>
+<span class="line"><span>	do {</span></span>
+<span class="line"><span>		run_no = ++shrinker_run_no;</span></span>
+<span class="line"><span>	} while (run_no == 0);</span></span>
+<span class="line"><span>	p = f2fs_list.next;</span></span>
+<span class="line"><span>	while (p != &#x26;f2fs_list) {</span></span>
+<span class="line"><span>		sbi = list_entry(p, struct f2fs_sb_info, s_list);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>		if (sbi->shrinker_run_no == run_no)</span></span>
+<span class="line"><span>			break;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>		/* stop f2fs_put_super */</span></span>
+<span class="line"><span>		if (!mutex_trylock(&#x26;sbi->umount_mutex)) {</span></span>
+<span class="line"><span>			p = p->next;</span></span>
+<span class="line"><span>			continue;</span></span>
+<span class="line"><span>		}</span></span>
+<span class="line"><span>		spin_unlock(&#x26;f2fs_list_lock);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>		sbi->shrinker_run_no = run_no;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>		/* shrink extent cache entries */</span></span>
+<span class="line"><span>		freed += f2fs_shrink_extent_tree(sbi, nr >> 1);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>		/* shrink clean nat cache entries */</span></span>
+<span class="line"><span>		if (freed &#x3C; nr)</span></span>
+<span class="line"><span>			freed += f2fs_try_to_free_nats(sbi, nr - freed);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>		/* shrink free nids cache entries */</span></span>
+<span class="line"><span>		if (freed &#x3C; nr)</span></span>
+<span class="line"><span>			freed += f2fs_try_to_free_nids(sbi, nr - freed);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>		spin_lock(&#x26;f2fs_list_lock);</span></span>
+<span class="line"><span>		p = p->next;</span></span>
+<span class="line"><span>		list_move_tail(&#x26;sbi->s_list, &#x26;f2fs_list);</span></span>
+<span class="line"><span>		mutex_unlock(&#x26;sbi->umount_mutex);</span></span>
+<span class="line"><span>		if (freed >= nr)</span></span>
+<span class="line"><span>			break;</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>	spin_unlock(&#x26;f2fs_list_lock);</span></span>
+<span class="line"><span>	return freed;</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>在 <code>f2fs_shrink_scan</code> 中，为什么需要<code>list_move_tail()</code>？
+看 <code>fs/ubifs/shrinker.c</code> 中有注释：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>		/*</span></span>
+<span class="line"><span>		 * Move this one to the end of the list to provide some</span></span>
+<span class="line"><span>		 * fairness.</span></span>
+<span class="line"><span>		 */</span></span></code></pre>
+<p>主要是让 回收过程更加公平，如果当前slab有1000个 object可以回收，只需要 回收80个object，如果不将已经回收的 <code>sbi</code> move到tail，就会导致每次都是 head的那几个<code>sbi</code> 一直被回收，但是靠近 tail的 <code>sbi</code> 虽然有很多 <code>slab object</code>，但是一直未被回收过。</p>
+<p>参考<a href="https://www.funtoo.org/F2FS_Install_Guide">文档</a></p>
+<p>操作</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span></span></span>
+<span class="line"><span>dd if=/dev/zero of=./test_f2fs2 bs=1M count=128</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>sudo mount -t f2fs ./test_f2fs ./test_dir</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>sudo bpftrace -e 'kretprobe:f2fs_shrink_scan {printf("[pid-%d:%s]: f2fs_shrink_scan retval %d\n", pid,comm, retval)}'</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>cd /proc/sys/vm &#x26;&#x26; sudo su root</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>sudo echo 3 > drop_caches</span></span></code></pre></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

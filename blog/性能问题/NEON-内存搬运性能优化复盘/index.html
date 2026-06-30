@@ -1,0 +1,356 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>从共享 Buffer 到 NPU 输入：一次 ARM64 NEON 拷贝优化 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>从共享 Buffer 到 NPU 输入：一次 ARM64 NEON 拷贝优化</h1><div class="post-meta"><time datetime="2026-06-09T16:30:00.000Z">2026年6月9日</time><span> / linux内核</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">NEON</span><span class="tag">memcpy</span><span class="tag">ARM64</span><span class="tag">性能优化</span></div></header><div class="article-body"><h2 id="背景">背景</h2>
+<p>这篇文章记录一次 ARM64 平台上算法接入阶段的内存拷贝优化。</p>
+<p>问题最开始不是从 NEON 开始的，而是从一次端到端耗时异常开始的：Camera 到显示、预览、编码这些链路本身基本都在走 Android 的共享 Buffer 体系，真正明显的 CPU copy 主要出现在算法接入、送入 NPU 之前。</p>
+<p>这里需要先把前提说清楚：AOSP / Android 图像链路里，并不是每经过一个模块就 <code>memcpy</code> 一次。Camera、GPU、Codec、Display 之间大量依赖 <code>GraphicBuffer</code>、<code>AHardwareBuffer</code>、dma-buf、buffer handle 这类共享 Buffer 机制。如果文章写成“Camera 到 NPU 前一路 copy 很多次”，很容易被 challenge。</p>
+<p>实际更常见的问题是：<strong>Android 体系内共享 Buffer 没问题，但是一旦接入第三方算法或者跨平台 AI SDK，共享 Buffer 在算法 API 边界处破功。</strong></p>
+<p>用 <code>perf top</code> 看热点时，<code>memcpy</code> 或业务侧的逐行 copy 函数占比靠前。这个时候不能马上下结论说“Android 图像链路有很多 copy”，也不能直接认定“换成 NEON 就能解决”。<code>perf top</code> 只能说明 CPU 时间花在拷贝上，还没有回答这次拷贝为什么存在。</p>
+<p>所以这篇文章的重点不是单独介绍 NEON intrinsic，而是围绕 NPU 输入前这一次 copy 展开：先解释它为什么会出现，再分析它为什么经常是逐行去 padding，最后再看 NEON 在这个位置能优化多少。</p>
+<p>这次优化要回答三个问题：</p>
+<ol>
+<li>为什么共享 Buffer 不能直接传给算法；</li>
+<li>为什么 NPU 前这一次 copy 很难完全消掉；</li>
+<li>如果必须 copy，应该优化单次整帧搬运，还是优化逐行去 padding 的 copy。</li>
+</ol>
+<h2 id="业务链路">业务链路</h2>
+<p>Android 内部比较理想的链路是共享 Buffer 传递：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart LR</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[Camera / ISP] --> B[GraphicBuffer / AHardwareBuffer]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C[GPU / Display / Codec]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> D[Native Framework]</span></span></code></pre>
+<p>算法接入之后，链路通常会变成：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart LR</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[Camera / ISP 输出共享 Buffer] --> B[mmap 成 CPU 可见地址]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C[逐行读取有效像素]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C -->|memcpy / NEON copy| D[Cached 连续输入 Buffer]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E[第三方算法 / NPU Runtime]</span></span></code></pre>
+<p>也就是说，关键 copy 通常只有一次：<strong>从硬件输出的共享 Buffer，整理成算法或 NPU Runtime 能接受的连续输入 Buffer。</strong></p>
+<p>以 1920 x 1080 的 NV12 输入为例：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>Y  plane = 1920 x 1080</span></span>
+<span class="line"><span>UV plane = 1920 x 1080 / 2</span></span>
+<span class="line"><span>总大小约为 3MB</span></span></code></pre>
+<p>30FPS 下，这一次 copy 的有效数据量就是：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>3MB x 30 = 90MB/s</span></span></code></pre>
+<p>如果只是 90MB/s，看起来并不夸张。但实际耗时不只由有效数据量决定，还和源 Buffer 的内存属性、stride、padding、cache 命中、CPU 读路径有关。</p>
+<p>所以这里的核心问题不是“NEON 能不能写”，而是：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>为什么这一次 copy 不能消掉？</span></span>
+<span class="line"><span>源 Buffer 是 cached、uncached，还是 write-combine？</span></span>
+<span class="line"><span>copy 是整块连续搬运，还是逐行剔除 padding？</span></span>
+<span class="line"><span>优化点是在 memcpy 本身，还是在 stride / cache 属性处理上？</span></span></code></pre>
+<h2 id="为什么共享-buffer-到算法侧会破功">为什么共享 Buffer 到算法侧会破功</h2>
+<h3 id="1-第三方算法-api-不认-android-buffer-体系">1. 第三方算法 API 不认 Android Buffer 体系</h3>
+<p>很多第三方算法 SDK 或公司内部通用 AI SDK，为了同时支持 Android、iOS、Linux、Windows，接口会设计得非常朴素：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#6A737D">// 跨平台算法接口通常只接收普通 CPU 指针和图像参数。</span></span>
+<span class="line"><span style="color:#F97583">int</span><span style="color:#B392F0"> process_frame</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">uint8_t*</span><span style="color:#FFAB70"> y_data</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#F97583">                  uint8_t*</span><span style="color:#FFAB70"> uv_data</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#F97583">                  int</span><span style="color:#FFAB70"> width</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#F97583">                  int</span><span style="color:#FFAB70"> height</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#F97583">                  int</span><span style="color:#FFAB70"> stride</span><span style="color:#E1E4E8">);</span></span></code></pre>
+<p>这类 API 不会直接接收 Android 特有的 <code>AHardwareBuffer</code>、<code>GraphicBuffer</code>、<code>buffer_handle_t</code>，也不会理解 dma-buf fence、usage flag、cache maintenance 这些平台细节。</p>
+<p>工程上为了把 Camera 输出送给算法，只能先把底层共享 Buffer <code>mmap</code> 成 CPU 可见地址，再把裸指针传给算法。问题就出在这一步之后。</p>
+<h3 id="2-共享-buffer-的-cpu-访问属性不一定适合算法读取">2. 共享 Buffer 的 CPU 访问属性不一定适合算法读取</h3>
+<p>Camera / ISP 输出 Buffer 首先是给硬件写的。为了硬件访问效率和一致性，这类 Buffer 映射给 CPU 时可能不是普通 cached 内存，常见情况包括 uncached 或 write-combine。</p>
+<p>如果算法直接拿这个指针做大量像素读取，例如滤波、插值、resize、normalize，CPU 可能无法有效利用 L1 / L2 cache。表现就是：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>硬件写共享 Buffer</span></span>
+<span class="line"><span>  -> CPU mmap 得到地址</span></span>
+<span class="line"><span>  -> 算法直接频繁读 uncached / WC 内存</span></span>
+<span class="line"><span>  -> L1 / L2 利用不上</span></span>
+<span class="line"><span>  -> 单像素访问成本非常高</span></span></code></pre>
+<p>这时一次 <code>memcpy</code> 反而变成工程上更稳定的方案：先把共享 Buffer 中的有效图像数据搬到一块普通 malloc 分配的 cached 内存，再交给算法处理。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>Uncached / WC 共享 Buffer</span></span>
+<span class="line"><span>  -> memcpy</span></span>
+<span class="line"><span>  -> Cached heap Buffer</span></span>
+<span class="line"><span>  -> 算法 / NPU Runtime</span></span></code></pre>
+<p>这不是因为开发者不知道共享 Buffer，而是因为算法 API 和 CPU cache 访问模式决定了这次 copy 很难完全避免。</p>
+<h3 id="3-stride-和-padding-需要在输入前剔除">3. stride 和 padding 需要在输入前剔除</h3>
+<p>硬件输出图像通常有 stride。比如图像宽度是 1080，但底层 stride 可能按 64B 或 128B 对齐到 1152。</p>
+<p>很多算法模型或 NPU 输入 Tensor 只接受紧凑排列的数据，不接受每行尾部 padding。于是这次 copy 往往不是一个简单的大块 <code>memcpy</code>，而是逐行搬运有效区域：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#6A737D">// 逐行剔除硬件 stride padding，并整理成连续输入 Buffer。</span></span>
+<span class="line"><span style="color:#F97583">void</span><span style="color:#B392F0"> copy_plane_without_padding</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">uint8_t*</span><span style="color:#FFAB70"> dst</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#F97583">                                const</span><span style="color:#F97583"> uint8_t*</span><span style="color:#FFAB70"> src</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#F97583">                                int</span><span style="color:#FFAB70"> width</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#F97583">                                int</span><span style="color:#FFAB70"> height</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#F97583">                                int</span><span style="color:#FFAB70"> stride</span><span style="color:#E1E4E8">) {</span></span>
+<span class="line"><span style="color:#F97583">    for</span><span style="color:#E1E4E8"> (</span><span style="color:#F97583">int</span><span style="color:#E1E4E8"> i </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">; i </span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8"> height; i</span><span style="color:#F97583">++</span><span style="color:#E1E4E8">) {</span></span>
+<span class="line"><span style="color:#B392F0">        memcpy</span><span style="color:#E1E4E8">(dst, src, width);</span></span>
+<span class="line"><span style="color:#E1E4E8">        src </span><span style="color:#F97583">+=</span><span style="color:#E1E4E8"> stride;</span></span>
+<span class="line"><span style="color:#E1E4E8">        dst </span><span style="color:#F97583">+=</span><span style="color:#E1E4E8"> width;</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>这就是 NEON 优化容易介入的地方：热点不是 AOSP 中到处 copy，而是算法输入前这个“逐行去 padding + 搬到 cached buffer”的步骤。</p>
+<h2 id="第一阶段先把这一次-copy-的形态打清楚">第一阶段：先把这一次 copy 的形态打清楚</h2>
+<p><code>perf top</code> 只能说明热点在 copy 上，但不能说明 copy 是整块连续 copy，还是逐行 copy。<br>
+所以第一步不是改 <code>memcpy</code>，而是把 NPU 前输入整理的几个参数打清楚。</p>
+<p>统计维度至少包括：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>format</span></span>
+<span class="line"><span>width</span></span>
+<span class="line"><span>height</span></span>
+<span class="line"><span>stride</span></span>
+<span class="line"><span>plane_count</span></span>
+<span class="line"><span>src_memory_type</span></span>
+<span class="line"><span>copy_bytes</span></span>
+<span class="line"><span>copy_elapsed_us</span></span></code></pre>
+<p>重点看三个问题：</p>
+<ol>
+<li><code>width == stride</code> 是否成立；</li>
+<li>源 Buffer 的 CPU 映射属性是否适合频繁读取；</li>
+<li>copy 后是否直接进入算法或 NPU Runtime。</li>
+</ol>
+<p>更接近真实问题的表应该是：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>copy 点</th><th>来源</th><th>目标</th><th>形态</th><th>是否可消除</th></tr></thead><tbody><tr><td>input_copy_y</td><td>mmap 后的 Y plane</td><td>cached input Y</td><td>逐行去 padding</td><td>通常不可完全消除</td></tr><tr><td>input_copy_uv</td><td>mmap 后的 UV plane</td><td>cached input UV</td><td>逐行去 padding</td><td>通常不可完全消除</td></tr></tbody></table>
+<p>这张表比“链路中有很多 memcpy”更准确。它明确说明：Android 内部尽量共享 Buffer，真正的 copy 集中在算法输入边界。</p>
+<h2 id="第二阶段确认是不是业务自己的慢-copy">第二阶段：确认是不是业务自己的慢 copy</h2>
+<p>有些项目里会存在这种代码：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#6A737D">// 逐字节复制内存，用作性能对比基线。</span></span>
+<span class="line"><span style="color:#F97583">void*</span><span style="color:#B392F0"> byte_copy</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">void*</span><span style="color:#FFAB70"> dst</span><span style="color:#E1E4E8">, </span><span style="color:#F97583">const</span><span style="color:#F97583"> void*</span><span style="color:#FFAB70"> src</span><span style="color:#E1E4E8">, </span><span style="color:#F97583">size_t</span><span style="color:#FFAB70"> size</span><span style="color:#E1E4E8">) {</span></span>
+<span class="line"><span style="color:#F97583">    uint8_t*</span><span style="color:#E1E4E8"> d </span><span style="color:#F97583">=</span><span style="color:#F97583"> static_cast&#x3C;uint8_t*></span><span style="color:#E1E4E8">(dst);</span></span>
+<span class="line"><span style="color:#F97583">    const</span><span style="color:#F97583"> uint8_t*</span><span style="color:#E1E4E8"> s </span><span style="color:#F97583">=</span><span style="color:#F97583"> static_cast&#x3C;const</span><span style="color:#F97583"> uint8_t*></span><span style="color:#E1E4E8">(src);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    while</span><span style="color:#E1E4E8"> (size </span><span style="color:#F97583">></span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">) {</span></span>
+<span class="line"><span style="color:#F97583">        *</span><span style="color:#E1E4E8">d</span><span style="color:#F97583">++</span><span style="color:#F97583"> =</span><span style="color:#F97583"> *</span><span style="color:#E1E4E8">s</span><span style="color:#F97583">++</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">        size</span><span style="color:#F97583">--</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    return</span><span style="color:#E1E4E8"> dst;</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>如果热点落在这种逐字节循环上，优化空间会非常明显。<br>
+但如果热点已经落在 <code>__memcpy_aarch64</code>，说明系统 libc 已经介入了，不能再拿“逐字节循环 vs NEON”来证明优化有效。</p>
+<p>正确的对比应该至少包括：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>byte loop</span></span>
+<span class="line"><span>compiler optimized C loop</span></span>
+<span class="line"><span>custom NEON</span></span>
+<span class="line"><span>system libc memcpy</span></span></code></pre>
+<p>这一步很重要。AArch64 上的 libc <code>memcpy</code> 通常已经按不同 size 做了分支优化，例如短 copy、中等 copy、长 copy 走不同路径。自定义 NEON 版本如果只比逐字节循环快，没有太大说服力。</p>
+<h2 id="第三阶段做一个可控的-neon-行拷贝版本">第三阶段：做一个可控的 NEON 行拷贝版本</h2>
+<p>这里的 NEON 版本不是为了替换系统 libc，而是为了回答一个问题：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>在逐行去 padding 的场景下，SIMD 对每行有效数据搬运到底有没有帮助？</span></span></code></pre>
+<h3 id="neon-row-copy">NEON row copy</h3>
+<p>主循环每次处理 64B。每轮用 4 次 128-bit load 和 4 次 128-bit store，并对后续源地址做预取。这个函数只负责复制一行中的有效像素，不处理 stride 跳转。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#F97583">#include</span><span style="color:#9ECBFF"> &#x3C;arm_neon.h></span></span>
+<span class="line"><span style="color:#F97583">#include</span><span style="color:#9ECBFF"> &#x3C;stddef.h></span></span>
+<span class="line"><span style="color:#F97583">#include</span><span style="color:#9ECBFF"> &#x3C;stdint.h></span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">// 使用 NEON 按 64B 粒度复制一行有效像素，只适用于不重叠的 memcpy 场景。</span></span>
+<span class="line"><span style="color:#F97583">void</span><span style="color:#B392F0"> neon_copy_row_64b</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">uint8_t*</span><span style="color:#FFAB70"> dst</span><span style="color:#E1E4E8">, </span><span style="color:#F97583">const</span><span style="color:#F97583"> uint8_t*</span><span style="color:#FFAB70"> src</span><span style="color:#E1E4E8">, </span><span style="color:#F97583">size_t</span><span style="color:#FFAB70"> width</span><span style="color:#E1E4E8">) {</span></span>
+<span class="line"><span style="color:#F97583">    uint8_t*</span><span style="color:#E1E4E8"> d </span><span style="color:#F97583">=</span><span style="color:#F97583"> static_cast&#x3C;uint8_t*></span><span style="color:#E1E4E8">(dst);</span></span>
+<span class="line"><span style="color:#F97583">    const</span><span style="color:#F97583"> uint8_t*</span><span style="color:#E1E4E8"> s </span><span style="color:#F97583">=</span><span style="color:#F97583"> static_cast&#x3C;const</span><span style="color:#F97583"> uint8_t*></span><span style="color:#E1E4E8">(src);</span></span>
+<span class="line"><span style="color:#F97583">    size_t</span><span style="color:#E1E4E8"> size </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> width;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    while</span><span style="color:#E1E4E8"> (size </span><span style="color:#F97583">>=</span><span style="color:#79B8FF"> 64</span><span style="color:#E1E4E8">) {</span></span>
+<span class="line"><span style="color:#B392F0">        __builtin_prefetch</span><span style="color:#E1E4E8">(s </span><span style="color:#F97583">+</span><span style="color:#79B8FF"> 128</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#79B8FF">        uint8x16_t</span><span style="color:#E1E4E8"> v0 </span><span style="color:#F97583">=</span><span style="color:#B392F0"> vld1q_u8</span><span style="color:#E1E4E8">(s);</span></span>
+<span class="line"><span style="color:#79B8FF">        uint8x16_t</span><span style="color:#E1E4E8"> v1 </span><span style="color:#F97583">=</span><span style="color:#B392F0"> vld1q_u8</span><span style="color:#E1E4E8">(s </span><span style="color:#F97583">+</span><span style="color:#79B8FF"> 16</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#79B8FF">        uint8x16_t</span><span style="color:#E1E4E8"> v2 </span><span style="color:#F97583">=</span><span style="color:#B392F0"> vld1q_u8</span><span style="color:#E1E4E8">(s </span><span style="color:#F97583">+</span><span style="color:#79B8FF"> 32</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#79B8FF">        uint8x16_t</span><span style="color:#E1E4E8"> v3 </span><span style="color:#F97583">=</span><span style="color:#B392F0"> vld1q_u8</span><span style="color:#E1E4E8">(s </span><span style="color:#F97583">+</span><span style="color:#79B8FF"> 48</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">        vst1q_u8</span><span style="color:#E1E4E8">(d, v0);</span></span>
+<span class="line"><span style="color:#B392F0">        vst1q_u8</span><span style="color:#E1E4E8">(d </span><span style="color:#F97583">+</span><span style="color:#79B8FF"> 16</span><span style="color:#E1E4E8">, v1);</span></span>
+<span class="line"><span style="color:#B392F0">        vst1q_u8</span><span style="color:#E1E4E8">(d </span><span style="color:#F97583">+</span><span style="color:#79B8FF"> 32</span><span style="color:#E1E4E8">, v2);</span></span>
+<span class="line"><span style="color:#B392F0">        vst1q_u8</span><span style="color:#E1E4E8">(d </span><span style="color:#F97583">+</span><span style="color:#79B8FF"> 48</span><span style="color:#E1E4E8">, v3);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">        s </span><span style="color:#F97583">+=</span><span style="color:#79B8FF"> 64</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">        d </span><span style="color:#F97583">+=</span><span style="color:#79B8FF"> 64</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">        size </span><span style="color:#F97583">-=</span><span style="color:#79B8FF"> 64</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    while</span><span style="color:#E1E4E8"> (size </span><span style="color:#F97583">>=</span><span style="color:#79B8FF"> 16</span><span style="color:#E1E4E8">) {</span></span>
+<span class="line"><span style="color:#79B8FF">        uint8x16_t</span><span style="color:#E1E4E8"> v </span><span style="color:#F97583">=</span><span style="color:#B392F0"> vld1q_u8</span><span style="color:#E1E4E8">(s);</span></span>
+<span class="line"><span style="color:#B392F0">        vst1q_u8</span><span style="color:#E1E4E8">(d, v);</span></span>
+<span class="line"><span style="color:#E1E4E8">        s </span><span style="color:#F97583">+=</span><span style="color:#79B8FF"> 16</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">        d </span><span style="color:#F97583">+=</span><span style="color:#79B8FF"> 16</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">        size </span><span style="color:#F97583">-=</span><span style="color:#79B8FF"> 16</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    while</span><span style="color:#E1E4E8"> (size </span><span style="color:#F97583">></span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">) {</span></span>
+<span class="line"><span style="color:#F97583">        *</span><span style="color:#E1E4E8">d</span><span style="color:#F97583">++</span><span style="color:#F97583"> =</span><span style="color:#F97583"> *</span><span style="color:#E1E4E8">s</span><span style="color:#F97583">++</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">        size</span><span style="color:#F97583">--</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>这个实现有几个边界：</p>
+<ol>
+<li>不处理内存重叠，不能替代 <code>memmove</code>；</li>
+<li>没有针对极小 size 做特殊分支；</li>
+<li>预取距离不是固定答案，<code>s + 64</code>、<code>s + 128</code>、<code>s + 256</code> 都需要实测；</li>
+<li>非对齐 load/store 在 ARMv8-A 上一般可用，但不代表所有地址组合性能一样。</li>
+</ol>
+<p>实际项目里，如果每行有效宽度只有几十字节，直接进入这段 NEON 主路径未必划算。小 width 需要单独处理，否则函数分支和尾部逻辑就会吃掉 SIMD 收益。</p>
+<h3 id="去-padding-的平面拷贝">去 padding 的平面拷贝</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#6A737D">// 将带 stride 的图像平面逐行拷贝成连续紧凑布局。</span></span>
+<span class="line"><span style="color:#F97583">void</span><span style="color:#B392F0"> neon_copy_plane_without_padding</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">uint8_t*</span><span style="color:#FFAB70"> dst</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#F97583">                                     const</span><span style="color:#F97583"> uint8_t*</span><span style="color:#FFAB70"> src</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#F97583">                                     int</span><span style="color:#FFAB70"> width</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#F97583">                                     int</span><span style="color:#FFAB70"> height</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#F97583">                                     int</span><span style="color:#FFAB70"> stride</span><span style="color:#E1E4E8">) {</span></span>
+<span class="line"><span style="color:#F97583">    for</span><span style="color:#E1E4E8"> (</span><span style="color:#F97583">int</span><span style="color:#E1E4E8"> y </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">; y </span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8"> height; y</span><span style="color:#F97583">++</span><span style="color:#E1E4E8">) {</span></span>
+<span class="line"><span style="color:#B392F0">        neon_copy_row_64b</span><span style="color:#E1E4E8">(dst, src, </span><span style="color:#F97583">static_cast&#x3C;size_t></span><span style="color:#E1E4E8">(width));</span></span>
+<span class="line"><span style="color:#E1E4E8">        src </span><span style="color:#F97583">+=</span><span style="color:#E1E4E8"> stride;</span></span>
+<span class="line"><span style="color:#E1E4E8">        dst </span><span style="color:#F97583">+=</span><span style="color:#E1E4E8"> width;</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>这里的优化对象非常明确：不是整条图像链路到处 copy，而是输入 NPU 前把 <code>stride</code> 布局转换成紧凑布局的那一次逐行搬运。</p>
+<h2 id="第四阶段benchmark-怎么设计">第四阶段：benchmark 怎么设计</h2>
+<p>这类 benchmark 最容易犯的错误是只测一个 size。<br>
+比如只测 1MB，可能会把 cache 和 DDR 的影响混在一起；只测 64B，又无法说明大图处理的真实表现。</p>
+<p>建议至少扫这些 size：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>16B</span></span>
+<span class="line"><span>32B</span></span>
+<span class="line"><span>64B</span></span>
+<span class="line"><span>128B</span></span>
+<span class="line"><span>256B</span></span>
+<span class="line"><span>1KB</span></span>
+<span class="line"><span>4KB</span></span>
+<span class="line"><span>16KB</span></span>
+<span class="line"><span>64KB</span></span>
+<span class="line"><span>256KB</span></span>
+<span class="line"><span>1MB</span></span>
+<span class="line"><span>4MB</span></span>
+<span class="line"><span>16MB</span></span>
+<span class="line"><span>64MB</span></span></code></pre>
+<p>测试时固定 CPU，减少调度噪声：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">taskset</span><span style="color:#79B8FF"> -c</span><span style="color:#79B8FF"> 2</span><span style="color:#9ECBFF"> ./mem_bench</span><span style="color:#79B8FF"> --op</span><span style="color:#9ECBFF"> rowcopy</span><span style="color:#79B8FF"> --impl</span><span style="color:#9ECBFF"> neon64</span><span style="color:#79B8FF"> --width</span><span style="color:#79B8FF"> 1920</span><span style="color:#79B8FF"> --height</span><span style="color:#79B8FF"> 1080</span><span style="color:#79B8FF"> --stride</span><span style="color:#79B8FF"> 2048</span><span style="color:#79B8FF"> --loops</span><span style="color:#79B8FF"> 1000</span></span></code></pre>
+<p>配合 <code>perf stat</code> 看事件：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">taskset</span><span style="color:#79B8FF"> -c</span><span style="color:#79B8FF"> 2</span><span style="color:#9ECBFF"> perf</span><span style="color:#9ECBFF"> stat</span><span style="color:#79B8FF"> -r</span><span style="color:#79B8FF"> 5</span><span style="color:#79B8FF"> \</span></span>
+<span class="line"><span style="color:#79B8FF">  -e</span><span style="color:#9ECBFF"> cycles</span><span style="color:#79B8FF"> \</span></span>
+<span class="line"><span style="color:#79B8FF">  -e</span><span style="color:#9ECBFF"> instructions</span><span style="color:#79B8FF"> \</span></span>
+<span class="line"><span style="color:#79B8FF">  -e</span><span style="color:#9ECBFF"> cache-references</span><span style="color:#79B8FF"> \</span></span>
+<span class="line"><span style="color:#79B8FF">  -e</span><span style="color:#9ECBFF"> cache-misses</span><span style="color:#79B8FF"> \</span></span>
+<span class="line"><span style="color:#79B8FF">  -e</span><span style="color:#9ECBFF"> branches</span><span style="color:#79B8FF"> \</span></span>
+<span class="line"><span style="color:#79B8FF">  -e</span><span style="color:#9ECBFF"> branch-misses</span><span style="color:#79B8FF"> \</span></span>
+<span class="line"><span style="color:#79B8FF">  --</span><span style="color:#9ECBFF"> ./mem_bench</span><span style="color:#79B8FF"> --op</span><span style="color:#9ECBFF"> rowcopy</span><span style="color:#79B8FF"> --impl</span><span style="color:#9ECBFF"> neon64</span><span style="color:#79B8FF"> --width</span><span style="color:#79B8FF"> 1920</span><span style="color:#79B8FF"> --height</span><span style="color:#79B8FF"> 1080</span><span style="color:#79B8FF"> --stride</span><span style="color:#79B8FF"> 2048</span><span style="color:#79B8FF"> --loops</span><span style="color:#79B8FF"> 1000</span></span></code></pre>
+<p>看数据时不要只看耗时，至少要算：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>cycles_per_byte       = cycles / total_bytes</span></span>
+<span class="line"><span>instructions_per_byte = instructions / total_bytes</span></span></code></pre>
+<p>判断方式如下：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>现象</th><th>可能原因</th></tr></thead><tbody><tr><td><code>instructions_per_byte</code> 降低，<code>cycles_per_byte</code> 也降低</td><td>SIMD 有效，瓶颈还在指令侧</td></tr><tr><td><code>instructions_per_byte</code> 降低，<code>cycles_per_byte</code> 下降不明显</td><td>可能开始受 cache / store buffer / DDR 影响</td></tr><tr><td>小 size 收益明显，大 size 收益变小</td><td>大概率进入内存层级瓶颈</td></tr><tr><td>NEON 和 libc 差距很小</td><td>libc 已经足够好，继续自研 copy 意义不大</td></tr><tr><td><code>cache-misses</code> 随 size 增大明显变化</td><td>需要结合 cache 层级和平台 PMU 继续分析</td></tr></tbody></table>
+<p><code>cache-misses</code> 不能直接等价成 L1 miss。不同 ARM SoC 的 PMU 事件定义并不完全一样，通用事件背后映射到什么层级，需要结合 <code>perf list</code> 和平台手册确认。</p>
+<h2 id="第五阶段看汇编确认有没有真的向量化">第五阶段：看汇编确认有没有真的向量化</h2>
+<p>只写了 NEON intrinsic，不代表最终二进制一定符合预期。需要反汇编确认。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">aarch64-linux-android-objdump</span><span style="color:#79B8FF"> -d</span><span style="color:#79B8FF"> -C</span><span style="color:#9ECBFF"> libxxx.so</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> less</span></span></code></pre>
+<p>重点看函数里是否出现类似指令：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="asm"><code><span class="line"><span style="color:#E1E4E8">ldr     q0, [x1]</span></span>
+<span class="line"><span style="color:#E1E4E8">ldr     q1, [x1, #</span><span style="color:#79B8FF">16</span><span style="color:#E1E4E8">]</span></span>
+<span class="line"><span style="color:#F97583">str</span><span style="color:#E1E4E8">     q0, [x0]</span></span>
+<span class="line"><span style="color:#F97583">str</span><span style="color:#E1E4E8">     q1, [x0, #</span><span style="color:#79B8FF">16</span><span style="color:#E1E4E8">]</span></span></code></pre>
+<p>如果是编译器自动向量化的 C 循环，也可以用下面的方式看优化报告：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">clang++</span><span style="color:#79B8FF"> -O3</span><span style="color:#79B8FF"> -Rpass=loop-vectorize</span><span style="color:#79B8FF"> -Rpass-missed=loop-vectorize</span><span style="color:#9ECBFF"> xxx.cpp</span></span></code></pre>
+<p>这一步主要是防止两类误判：</p>
+<ol>
+<li>以为自己测的是 NEON，实际编译条件没打开；</li>
+<li>以为普通 C 循环很慢，实际编译器已经自动向量化。</li>
+</ol>
+<h2 id="第六阶段回到算法接入边界">第六阶段：回到算法接入边界</h2>
+<p>单点 NEON benchmark 通过后，不能马上认为端到端一定会改善。因为真实链路里还有源 Buffer 内存属性、cache 污染、其他硬件模块抢 DDR、线程调度、buffer 生命周期等问题。</p>
+<p>最终优化要围绕这一次输入整理做收敛。</p>
+<h3 id="1-先确认这次-copy-是否真的必须存在">1. 先确认这次 copy 是否真的必须存在</h3>
+<p>如果算法或 NPU Runtime 能直接消费 <code>AHardwareBuffer</code> / dma-buf，并且能正确处理 stride、format、cache 同步，那么这次 copy 可以尝试消掉。</p>
+<p>但很多第三方算法接口只接收 <code>uint8_t*</code>，并且默认输入是普通 cached 内存和紧凑布局。这种情况下，直接把 mmap 后的共享 Buffer 指针传进去，可能会因为 uncached 读取和 stride padding 导致更差的性能或错误结果。</p>
+<p>所以更现实的判断是：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>能直接接收共享 Buffer：优先零拷贝。</span></span>
+<span class="line"><span>只能接收 CPU 指针 + 紧凑输入：保留一次输入整理 copy。</span></span></code></pre>
+<h3 id="2-把-copy-和格式整理合并">2. 把 copy 和格式整理合并</h3>
+<p>如果算法输入需要 NV12 紧凑布局，就在逐行 copy 时顺便剔除 padding。<br>
+如果算法输入需要 RGB / BGR / normalized tensor，可以考虑在拷贝过程中融合格式转换，避免先生成一份中间图再二次处理。</p>
+<p>这个方向比单纯优化 <code>memcpy</code> 更有价值，因为它把“搬运”和“整理输入格式”合并到一次遍历里。</p>
+<h3 id="3-按-plane-分开优化">3. 按 plane 分开优化</h3>
+<p>NV12 至少有 Y 和 UV 两个 plane。Y plane 数据量更大，UV plane 行数通常是 Y 的一半，二者的 stride、对齐和访问模式可能不同。不要只测整帧平均耗时，最好分别看：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>Y plane copy cost</span></span>
+<span class="line"><span>UV plane copy cost</span></span>
+<span class="line"><span>total input pack cost</span></span></code></pre>
+<p>这样才能判断热点到底在亮度平面，还是在 UV 交织数据处理上。</p>
+<h3 id="4-大块-copy-看带宽和源内存属性">4. 大块 copy 看带宽和源内存属性</h3>
+<p>逐行 copy 的总量虽然接近一帧大小，但源地址如果是 uncached / WC 映射，CPU 读取成本和普通 cached 内存差异会非常大。<br>
+这时要看的是 DDR PMU、LLC miss、总线带宽，以及 ISP / GPU / NPU 是否在同一时间段大量访问内存。</p>
+<p>端侧 SoC 上经常出现这种情况：CPU 侧 copy 函数已经不差，但系统里其他模块也在抢 DDR，最后表现为端到端尾延迟变差。</p>
+<h2 id="正确性验证">正确性验证</h2>
+<p>内存函数优化必须先保证正确性。至少要覆盖：</p>
+<ol>
+<li>不同 size，包括 0、1、15、16、17、63、64、65；</li>
+<li>不同 src / dst 对齐组合；</li>
+<li>大小跨 cache line、page boundary 的场景；</li>
+<li>随机数据校验；</li>
+<li><code>memcpy</code> 和 <code>memmove</code> 语义区分。</li>
+</ol>
+<p>其中第 5 点很容易被忽略。自定义 <code>neon_copy_row_64b</code> 不能处理重叠内存，如果业务调用点实际有 overlap 风险，就不能替换。</p>
+<p>可以用这种方式做基础校验：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#6A737D">// 校验自定义行拷贝与 libc memcpy 在非重叠场景下的结果一致性。</span></span>
+<span class="line"><span style="color:#F97583">bool</span><span style="color:#B392F0"> verify_copy_result</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">const</span><span style="color:#F97583"> uint8_t*</span><span style="color:#FFAB70"> a</span><span style="color:#E1E4E8">, </span><span style="color:#F97583">const</span><span style="color:#F97583"> uint8_t*</span><span style="color:#FFAB70"> b</span><span style="color:#E1E4E8">, </span><span style="color:#F97583">size_t</span><span style="color:#FFAB70"> size</span><span style="color:#E1E4E8">) {</span></span>
+<span class="line"><span style="color:#F97583">    for</span><span style="color:#E1E4E8"> (</span><span style="color:#F97583">size_t</span><span style="color:#E1E4E8"> i </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">; i </span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8"> size; i</span><span style="color:#F97583">++</span><span style="color:#E1E4E8">) {</span></span>
+<span class="line"><span style="color:#F97583">        if</span><span style="color:#E1E4E8"> (a[i] </span><span style="color:#F97583">!=</span><span style="color:#E1E4E8"> b[i]) {</span></span>
+<span class="line"><span style="color:#F97583">            return</span><span style="color:#79B8FF"> false</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">        }</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#F97583">    return</span><span style="color:#79B8FF"> true</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<h2 id="总结">总结</h2>
+<p>这次优化最后形成的判断是：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>Android 内部图像链路：优先依赖共享 Buffer，不要假设每个模块都 memcpy。</span></span>
+<span class="line"><span>算法接入边界：第三方 API 往往只认 CPU 指针，容易出现一次被迫 copy。</span></span>
+<span class="line"><span>源 Buffer 属性：uncached / WC 直接给算法读，可能比先 copy 到 cached 内存更慢。</span></span>
+<span class="line"><span>stride / padding：NPU 输入通常需要紧凑布局，逐行去 padding 是 NEON 优化重点。</span></span>
+<span class="line"><span>NEON 优化目标：优化 NPU 前这一次输入整理，而不是虚构链路里有很多 copy。</span></span></code></pre>
+<p>NEON 在这个 case 里的价值，不是证明 Android 链路里有大量 copy，而是把算法输入边界这一次不可避免的拷贝做快，并且解释清楚为什么它存在：跨平台算法 API、不适合 CPU 随机读的共享 Buffer 映射属性，以及 stride / padding 到紧凑 Tensor 的转换。</p>
+<p>一个比较完整的排查路径应该是：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>perf top 找热点</span></span>
+<span class="line"><span>  -> perf record 找调用来源</span></span>
+<span class="line"><span>  -> 确认热点集中在 NPU 前输入整理</span></span>
+<span class="line"><span>  -> 打印 width / height / stride / format / memory type</span></span>
+<span class="line"><span>  -> benchmark 扫不同 width 和 stride</span></span>
+<span class="line"><span>  -> perf stat 看 cycles / byte 和 instructions / byte</span></span>
+<span class="line"><span>  -> NEON 与 libc 对比</span></span>
+<span class="line"><span>  -> 回到算法 API 判断能否支持共享 Buffer 或融合格式转换</span></span></code></pre>
+<p>只会把逐字节循环改成 <code>vld1q_u8()</code> / <code>vst1q_u8()</code>，只能说明了解 NEON intrinsic。能解释清楚为什么 Android 共享 Buffer 到算法边界会破功，为什么只剩 NPU 前这一次 copy，以及这一次 copy 该怎么验证和优化，才更像真正做过这个问题。</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

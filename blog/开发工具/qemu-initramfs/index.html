@@ -1,0 +1,96 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>qemu initramfs | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>qemu initramfs</h1><div class="post-meta"><time datetime="2022-03-28T19:00:00.000Z">2022年3月28日</time><span> / 开发工具</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">开发工具</span><span class="tag">qemu</span><span class="tag">initramfs</span></div></header><div class="article-body"><h2 id="rootfs-启动报错">rootfs 启动报错</h2>
+<p>在 pixel6 pro 设备中，无法使用 BiscuitOS.img
+使用 /dev/vdax /dev/sdax /dev/sdbx 都是无法成功启动</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>qemu-system-aarch64 \</span></span>
+<span class="line"><span>        -M virt \</span></span>
+<span class="line"><span>        -m 512M \</span></span>
+<span class="line"><span>        -cpu cortex-a72 \</span></span>
+<span class="line"><span>        -smp 8 \</span></span>
+<span class="line"><span>        -kernel $KERNEL_DIR \</span></span>
+<span class="line"><span>        -device virtio-blk-device,drive=hd0 \</span></span>
+<span class="line"><span>        -drive if=none,file=/remote/homes/hsu/myspace/BiscuitOS.img,format=raw,id=hd0 \</span></span>
+<span class="line"><span>        -nographic \</span></span>
+<span class="line"><span>        -append "earlycon root=$ROOTFS rw rootfstype=ext4 console=ttyAMA0 init=/linuxrc loglevel=8"</span></span></code></pre>
+<p>后报错</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>[ 2.348066][ T1] List of all partitions:</span></span>
+<span class="line"><span>[ 2.348832][ T1] 0100 8192 ram0</span></span>
+<span class="line"><span>[ 2.348870][ T1] (driver?)</span></span>
+<span class="line"><span>[    2.349989][    T1] 0101            8192 ram1</span></span>
+<span class="line"><span>[    2.350003][    T1]  (driver?)</span></span>
+<span class="line"><span>[    2.350775][    T1] 0102            8192 ram2</span></span>
+<span class="line"><span>......</span></span>
+<span class="line"><span>[    2.361197][    T1] No filesystem could mount root, tried:</span></span>
+<span class="line"><span>[    2.361230][    T1]  ext4</span></span>
+<span class="line"><span>[    2.361979][    T1]</span></span>
+<span class="line"><span>[    2.362761][    T1] Kernel panic - not syncing: VFS: Unable to mount root fs on unknown-block(1,0)</span></span>
+<span class="line"><span>[    2.363560][    T1] CPU: 2 PID: 1 Comm: swapper/0 Not tainted 5.10.43-gb71001ab18ec-dirty #22</span></span>
+<span class="line"><span>[    2.363956][    T1] Hardware name: linux,dummy-virt (DT)</span></span>
+<span class="line"><span>[    2.364437][    T1] Call trace:</span></span>
+<span class="line"><span>[    2.364709][    T1]  dump_backtrace+0x0/0x1d8</span></span>
+<span class="line"><span>[    2.364939][    T1]  show_stack+0x18/0x28</span></span>
+<span class="line"><span>[    2.365177][    T1]  dump_stack_lvl+0xd4/0xfc</span></span>
+<span class="line"><span>[    2.365362][    T1]  dump_stack+0x18/0x58</span></span>
+<span class="line"><span>......</span></span>
+<span class="line"><span>[    2.367447][    T1] SMP: stopping secondary CPUs</span></span>
+<span class="line"><span>[    2.373951][    T1] Kernel Offset: disabled</span></span>
+<span class="line"><span>[    2.374360][    T1] CPU features: 0x000,10240022,61006000</span></span></code></pre>
+<h2 id="initramfs-启动">initramfs 启动</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>qemu-system-aarch64 \</span></span>
+<span class="line"><span>    -kernel /u/hsu/workspace/pixel6pro/private/gs-google/out/arch/arm64/boot/Image \</span></span>
+<span class="line"><span>    -initrd /u/hsu/workspace/aarch64_initramfs.cpio.gz \</span></span>
+<span class="line"><span>    -append "console=ttyAMA0 rdinit=/linuxrc" \</span></span>
+<span class="line"><span>    -M virt \</span></span>
+<span class="line"><span>    -cpu cortex-a72 \</span></span>
+<span class="line"><span>    -nographic \</span></span>
+<span class="line"><span>    -smp 8 \</span></span>
+<span class="line"><span>    -m 2048M</span></span></code></pre>
+<p>后启动成功</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>[    3.953909][    T1] Freeing unused kernel memory: 2944K</span></span>
+<span class="line"><span>[    3.961262][    T1] Run /linuxrc as init process</span></span>
+<span class="line"><span>/etc/init.d/rcS: line 25: can't create /proc/sys/kernel/hotplug: nonexistent directory</span></span>
+<span class="line"><span> ____  _                _ _    ___  ____</span></span>
+<span class="line"><span>| __ )(_)___  ___ _   _(_) |_ / _ \/ ___|</span></span>
+<span class="line"><span>|  _ \| / __|/ __| | | | | __| | | \___ \</span></span>
+<span class="line"><span>| |_) | \__ \ (__| |_| | | |_| |_| |___) |</span></span>
+<span class="line"><span>|____/|_|___/\___|\__,_|_|\__|\___/|____/</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Welcome to BiscuitOS</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Please press Enter to activate this console.</span></span>
+<span class="line"><span>~ #</span></span></code></pre>
+<p>对于kernel的要求:
+需要打开如下配置</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>CONFIG_BLK_DEV_RAM=y</span></span>
+<span class="line"><span>CONFIG_BLK_DEV_RAM_COUNT=16</span></span>
+<span class="line"><span>CONFIG_BLK_DEV_RAM_SIZE=65536</span></span>
+<span class="line"><span>CONFIG_BLK_DEV_INITRD=y</span></span></code></pre>
+<h2 id="aarch64_initramfscpiogz-文件如何制作">aarch64_initramfs.cpio.gz 文件如何制作</h2>
+<ol>
+<li>打开如上配置之后，编译 kernel， 在 out 目录下看到 ./usr/目录
+将其中 gen_initramfs.sh 与 ./usr 目录复制到 BiscuitOS.img 目录下</li>
+<li>mount BiscuitOS.img 到 tmp 目录</li>
+<li>生成 aarch64_initramfs.cpio.gz 文件</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>cp $dir/out/usr/gen_initramfs.sh .</span></span>
+<span class="line"><span>cp $dir/out/usr . -rf</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>sudo mount -t ext4 aarch64_BiscuitOS.img ./tmp/ -o loop</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>sudo ./gen_initramfs.sh  -o aarch64_initramfs.cpio.gz ./tmp/</span></span></code></pre>
+<h2 id="cpiogz格式小系统-压缩与解压缩">cpio.gz格式小系统 压缩与解压缩</h2>
+<ol>
+<li>
+<p>解压缩
+gunzip rootfs.cpio.gz        ---> 得到rootfs.cpio文件</p>
+</li>
+<li>
+<p>进一步解压缩
+cpio -idmv &#x3C; rootfs.cpio        --->得到解压后的文件和文件夹</p>
+</li>
+</ol>
+<p>当添加自己想要的文件后，需要再次对文件和文件夹打包，用如下命令：
+3. 压缩
+find ./* | cpio -H newc -o > rootfs.cpio         ---> 得到rootfs.cpio文件
+4. 进一步压缩
+gzip rootfs.cpio        ---> 得到rootfs.cpio.gz文件</p>
+<p>参考<a href="https://blog.csdn.net/FJDJFKDJFKDJFKD/article/details/100021609">Linux aarch64 编译 &#x26; qemu 搭建实验平台</a></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

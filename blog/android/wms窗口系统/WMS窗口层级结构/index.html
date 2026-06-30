@@ -1,0 +1,73 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>WMS窗口层级结构 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>WMS窗口层级结构</h1><div class="post-meta"><time datetime="2024-03-01T10:00:00.000Z">2024年3月1日</time><span> / android / wms窗口系统</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">android</span><span class="tag">WMS</span><span class="tag">窗口层级</span></div></header><div class="article-body"><h2 id="简介">简介</h2>
+<p>WMS 通过层级（Layer）来管理窗口的显示顺序，不同类型的窗口位于不同的层级。</p>
+<h2 id="窗口层级">窗口层级</h2>
+<h3 id="主要层级">主要层级</h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>层级范围</th><th>窗口类型</th><th>示例</th></tr></thead><tbody><tr><td>1-99</td><td>应用窗口</td><td>Activity</td></tr><tr><td>1000-1999</td><td>子窗口</td><td>PopupWindow、Dialog</td></tr><tr><td>2000-2999</td><td>系统窗口</td><td>StatusBar、NavigationBar</td></tr><tr><td>3000+</td><td>特殊窗口</td><td>输入法、壁纸</td></tr></tbody></table>
+<h3 id="层级定义">层级定义</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="java"><code><span class="line"><span style="color:#6A737D">// 应用窗口</span></span>
+<span class="line"><span style="color:#E1E4E8">FIRST_APPLICATION_WINDOW </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> 1</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">LAST_APPLICATION_WINDOW </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> 99</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">// 子窗口</span></span>
+<span class="line"><span style="color:#E1E4E8">FIRST_SUB_WINDOW </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> 1000</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">LAST_SUB_WINDOW </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> 1999</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">// 系统窗口</span></span>
+<span class="line"><span style="color:#E1E4E8">FIRST_SYSTEM_WINDOW </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> 2000</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">LAST_SYSTEM_WINDOW </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> 2999</span><span style="color:#E1E4E8">;</span></span></code></pre>
+<h2 id="windowtoken-与-windowstate">WindowToken 与 WindowState</h2>
+<h3 id="windowtoken">WindowToken</h3>
+<ul>
+<li>窗口令牌，代表一组相关窗口</li>
+<li>用于权限验证和窗口分组</li>
+</ul>
+<h3 id="windowstate">WindowState</h3>
+<ul>
+<li>窗口状态，代表一个具体的窗口</li>
+<li>包含窗口的位置、大小、层级等信息</li>
+</ul>
+<h2 id="层级调整">层级调整</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>WMS.addWindow()</span></span>
+<span class="line"><span>    → assignLayer()</span></span>
+<span class="line"><span>    → 调整窗口层级</span></span>
+<span class="line"><span>    → SurfaceFlinger 合成</span></span></code></pre>
+<h2 id="特殊窗口类型">特殊窗口类型</h2>
+<ol>
+<li><strong>TYPE_STATUS_BAR</strong>：状态栏</li>
+<li><strong>TYPE_NAVIGATION_BAR</strong>：导航栏</li>
+<li><strong>TYPE_INPUT_METHOD</strong>：输入法</li>
+<li><strong>TYPE_WALLPAPER</strong>：壁纸</li>
+<li><strong>TYPE_SYSTEM_ALERT</strong>：系统弹窗</li>
+</ol>
+<h2 id="总结">总结</h2>
+<p>WMS 通过层级结构管理窗口显示顺序，不同类型的窗口位于不同层级，确保界面显示的正确性。</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

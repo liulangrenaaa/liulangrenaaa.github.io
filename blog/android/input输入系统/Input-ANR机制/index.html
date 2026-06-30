@@ -1,0 +1,76 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>Input-ANR机制 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>Input-ANR机制</h1><div class="post-meta"><time datetime="2024-09-01T10:00:00.000Z">2024年9月1日</time><span> / android / input输入系统</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">android</span><span class="tag">input</span><span class="tag">ANR</span><span class="tag">稳定性</span></div></header><div class="article-body"><h2 id="简介">简介</h2>
+<p>Input ANR 是指应用在规定时间内未能处理完输入事件，系统会弹出 ANR 对话框或杀掉进程。</p>
+<h2 id="anr-类型">ANR 类型</h2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>类型</th><th>超时时间</th><th>说明</th></tr></thead><tbody><tr><td>Key Dispatch Timeout</td><td>5s</td><td>按键事件超时</td></tr><tr><td>Motion Dispatch Timeout</td><td>5s</td><td>触摸事件超时</td></tr></tbody></table>
+<h2 id="anr-检测流程">ANR 检测流程</h2>
+<h3 id="1-事件发送">1. 事件发送</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>InputDispatcher.dispatchEvent()</span></span>
+<span class="line"><span>    → 事件发送到 InputChannel</span></span>
+<span class="line"><span>    → 事件进入 WaitQueue</span></span>
+<span class="line"><span>    → 启动超时计时</span></span></code></pre>
+<h3 id="2-超时检测">2. 超时检测</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>InputDispatcher.dispatchOnce()</span></span>
+<span class="line"><span>    → 检查 WaitQueue</span></span>
+<span class="line"><span>    → 发现超时事件</span></span>
+<span class="line"><span>    → 触发 onAnr()</span></span></code></pre>
+<h3 id="3-anr-处理">3. ANR 处理</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>InputManagerService.notifyAnr()</span></span>
+<span class="line"><span>    → AMS.inputDispatchingTimedOut()</span></span>
+<span class="line"><span>    → 弹出 ANR 对话框</span></span></code></pre>
+<h2 id="anr-原因分析">ANR 原因分析</h2>
+<h3 id="1-主线程阻塞">1. 主线程阻塞</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>主线程执行耗时操作</span></span>
+<span class="line"><span>    → 无法处理输入事件</span></span>
+<span class="line"><span>    → WaitQueue 超时</span></span>
+<span class="line"><span>    → ANR</span></span></code></pre>
+<h3 id="2-inputchannel-阻塞">2. InputChannel 阻塞</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>InputChannel 满</span></span>
+<span class="line"><span>    → 事件无法发送</span></span>
+<span class="line"><span>    → OutboundQueue 堆积</span></span>
+<span class="line"><span>    → ANR</span></span></code></pre>
+<h3 id="3-binder-阻塞">3. Binder 阻塞</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>主线程 Binder 调用</span></span>
+<span class="line"><span>    → 等待远端响应</span></span>
+<span class="line"><span>    → 无法处理事件</span></span>
+<span class="line"><span>    → ANR</span></span></code></pre>
+<h2 id="调试方法">调试方法</h2>
+<h3 id="1-查看-traces">1. 查看 traces</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> pull</span><span style="color:#9ECBFF"> /data/anr/traces.txt</span></span></code></pre>
+<h3 id="2-查看-input-状态">2. 查看 Input 状态</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> input</span></span></code></pre>
+<h3 id="3-查看-cpu-使用">3. 查看 CPU 使用</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> top</span><span style="color:#79B8FF"> -m</span><span style="color:#79B8FF"> 10</span></span></code></pre>
+<h2 id="anr-日志分析">ANR 日志分析</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Input dispatching timed out (xxx)</span></span>
+<span class="line"><span>    → 窗口名称</span></span>
+<span class="line"><span>    → 超时时间</span></span>
+<span class="line"><span>    → 事件类型</span></span></code></pre>
+<h2 id="预防措施">预防措施</h2>
+<ol>
+<li><strong>避免主线程耗时操作</strong></li>
+<li><strong>及时处理输入事件</strong></li>
+<li><strong>优化布局复杂度</strong></li>
+<li><strong>减少 Binder 调用</strong></li>
+</ol>
+<h2 id="总结">总结</h2>
+<p>Input ANR 是应用响应性的重要指标，理解 ANR 机制有助于快速定位和解决性能问题。</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

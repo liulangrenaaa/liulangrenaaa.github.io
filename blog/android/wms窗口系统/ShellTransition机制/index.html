@@ -1,0 +1,73 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>ShellTransition机制 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>ShellTransition机制</h1><div class="post-meta"><time datetime="2024-04-01T10:00:00.000Z">2024年4月1日</time><span> / android / wms窗口系统</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">android</span><span class="tag">WMS</span><span class="tag">ShellTransition</span><span class="tag">动画</span><span class="tag">Android12</span></div></header><div class="article-body"><h2 id="简介">简介</h2>
+<p>ShellTransition 是 Android 12 引入的新过渡动画框架，取代传统的 AppTransition，提供更灵活、更强大的动画能力。</p>
+<h2 id="核心概念">核心概念</h2>
+<h3 id="transition">Transition</h3>
+<ul>
+<li>代表一次窗口状态变化</li>
+<li>包含参与变化的窗口集合</li>
+</ul>
+<h3 id="transitioninfo">TransitionInfo</h3>
+<ul>
+<li>过渡信息，包含窗口变化的详细信息</li>
+<li>用于动画计算</li>
+</ul>
+<h3 id="transitionhandler">TransitionHandler</h3>
+<ul>
+<li>动画处理器</li>
+<li>负责计算和执行动画</li>
+</ul>
+<h2 id="与-apptransition-的区别">与 AppTransition 的区别</h2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>特性</th><th>AppTransition</th><th>ShellTransition</th></tr></thead><tbody><tr><td>架构</td><td>WMS 内部</td><td>Shell 进程</td></tr><tr><td>灵活性</td><td>有限</td><td>高度可扩展</td></tr><tr><td>自定义能力</td><td>弱</td><td>强</td></tr><tr><td>跨进程动画</td><td>不支持</td><td>支持</td></tr></tbody></table>
+<h2 id="执行流程">执行流程</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>WMS.requestTransition()</span></span>
+<span class="line"><span>    → TransitionController.collectTransitionInfo()</span></span>
+<span class="line"><span>    → Shell 进程处理</span></span>
+<span class="line"><span>    → TransitionHandler.playAnimation()</span></span>
+<span class="line"><span>    → 动画完成回调</span></span></code></pre>
+<h2 id="自定义-transitionhandler">自定义 TransitionHandler</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="java"><code><span class="line"><span style="color:#F97583">public</span><span style="color:#F97583"> class</span><span style="color:#B392F0"> CustomTransitionHandler</span><span style="color:#F97583"> extends</span><span style="color:#B392F0"> TransitionHandler</span><span style="color:#E1E4E8"> {</span></span>
+<span class="line"><span style="color:#E1E4E8">    @</span><span style="color:#F97583">Override</span></span>
+<span class="line"><span style="color:#F97583">    public</span><span style="color:#F97583"> boolean</span><span style="color:#B392F0"> startAnimation</span><span style="color:#E1E4E8">(TransitionInfo </span><span style="color:#FFAB70">info</span><span style="color:#E1E4E8">, ...) {</span></span>
+<span class="line"><span style="color:#6A737D">        // 自定义动画逻辑</span></span>
+<span class="line"><span style="color:#F97583">        return</span><span style="color:#79B8FF"> true</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<h2 id="优势">优势</h2>
+<ol>
+<li><strong>模块化</strong>：动画逻辑独立于 WMS</li>
+<li><strong>可扩展</strong>：支持自定义动画处理器</li>
+<li><strong>跨进程</strong>：支持 Shell 进程动画</li>
+<li><strong>性能</strong>：更好的动画性能</li>
+</ol>
+<h2 id="总结">总结</h2>
+<p>ShellTransition 是 Android 动画系统的重大升级，提供了更现代、更灵活的动画框架。</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

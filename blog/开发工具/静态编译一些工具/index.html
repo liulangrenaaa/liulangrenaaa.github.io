@@ -1,0 +1,29 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>静态编译一些工具 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>静态编译一些工具</h1><div class="post-meta"><time datetime="2022-10-22T19:00:00.000Z">2022年10月22日</time><span> / 开发工具</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">开发工具</span><span class="tag">static tools</span></div></header><div class="article-body"><h2 id="sysstat">sysstat</h2>
+<p>包含工具</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>iostat - 提供CPU统计，存储I/O统计（磁盘设备，分区及网络文件系统）</span></span>
+<span class="line"><span>mpstat - 提供单个或组合CPU相关统计</span></span>
+<span class="line"><span>pidstat - 提供Linux进程级别统计：I/O、CPU、内存等</span></span>
+<span class="line"><span>sar - 收集、报告、保存系统活动信息：CPU、内存、磁盘、中断、网络接口、TTY、内核表等</span></span>
+<span class="line"><span>sadc - 系统活动数据收集器，作为sar后端使用</span></span>
+<span class="line"><span>sa1 - 收集系统活动日常数据，并二进制格式存储，它作为sadc的工具的前端，可以通过cron来调用</span></span>
+<span class="line"><span>sa2 - 生成系统每日活动报告，同样可作为sadc的工具的前端，可以通过cron来调用</span></span>
+<span class="line"><span>sadf - 可以以CSV、XML格式等显示sar收集的性能数据，这样非常方便的将系统数据导入到数据库中，或导入到Excel中来生成图表</span></span>
+<span class="line"><span>nfsiostat-sysstat: 提供NFS I/O统计</span></span>
+<span class="line"><span>cifsiostat: 提供CIFS统计</span></span></code></pre>
+<h3 id="下载">下载</h3>
+<p>sysstat 主页：<code>http://pagesperso-orange.fr/sebastien.godard/download.html</code>
+使用wget 下载一个 压缩包 <code>wget http://pagesperso-orange.fr/sebastien.godard/sysstat-12.6.0.tar.gz</code></p>
+<h3 id="配置编译">配置编译</h3>
+<p>配置</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>CC=aarch64-linux-gnu-gcc ./configure --host=arm64 CFLAGS=-static</span></span></code></pre>
+<p>make 之后通过 file 查看 可执行文件是否是 statically linked</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>tencent_clould@ubuntu: ~/workspace/tmp/sysstat-12.6.0# file pidstat</span></span>
+<span class="line"><span>pidstat: ELF 64-bit LSB executable, ARM aarch64, version 1 (SYSV), statically linked, BuildID[sha1]=171e6905f5637c6815480fba8140bb22c1dd0a2c, for GNU/Linux 3.7.0, stripped</span></span>
+<span class="line"><span>tencent_clould@ubuntu: ~/workspace/tmp/sysstat-12.6.0# file iostat</span></span>
+<span class="line"><span>iostat: ELF 64-bit LSB executable, ARM aarch64, version 1 (SYSV), statically linked, BuildID[sha1]=2741a8178cef236e03ee0abe88d8b8f8a28cf354, for GNU/Linux 3.7.0, stripped</span></span>
+<span class="line"><span>tencent_clould@ubuntu: ~/workspace/tmp/sysstat-12.6.0#</span></span></code></pre>
+<h2 id="stress">stress</h2>
+<p>开源地址</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>https://github.com/ColinIanKing/stress-ng</span></span></code></pre>
+<p>编译命令</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>make ARCH=arm64 CC=/usr/bin/aarch64-linux-gnu-gcc -j12 STATIC=1</span></span></code></pre></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

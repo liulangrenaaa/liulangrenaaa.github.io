@@ -1,0 +1,72 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>Crash分析方法 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>Crash分析方法</h1><div class="post-meta"><time datetime="2025-05-15T10:00:00.000Z">2025年5月15日</time><span> / android / anr-crash稳定性</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">android</span><span class="tag">Crash</span><span class="tag">稳定性</span></div></header><div class="article-body"><h2 id="简介">简介</h2>
+<p>应用崩溃（Crash）是常见的稳定性问题，本文介绍 Crash 的分析方法。</p>
+<h2 id="crash-类型">Crash 类型</h2>
+<h3 id="1-java-crash">1. Java Crash</h3>
+<ul>
+<li>未捕获的异常</li>
+<li>空指针、数组越界等</li>
+</ul>
+<h3 id="2-native-crash">2. Native Crash</h3>
+<ul>
+<li>段错误、空指针</li>
+<li>信号 SIGSEGV、SIGABRT 等</li>
+</ul>
+<h3 id="3-anr">3. ANR</h3>
+<ul>
+<li>应用无响应</li>
+<li>主线程阻塞</li>
+</ul>
+<h2 id="日志分析">日志分析</h2>
+<h3 id="java-crash">Java Crash</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>FATAL EXCEPTION: main</span></span>
+<span class="line"><span>    Process: com.example.app, PID: 12345</span></span>
+<span class="line"><span>    java.lang.NullPointerException: Attempt to invoke...</span></span>
+<span class="line"><span>        at com.example.app.MainActivity.onClick(MainActivity.java:100)</span></span></code></pre>
+<h3 id="native-crash">Native Crash</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>pid: 12345, tid: 12345, name: main  >>> com.example.app &#x3C;&#x3C;&#x3C;</span></span>
+<span class="line"><span>signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x0</span></span>
+<span class="line"><span>    #00 pc 0000000000001234  /system/lib64/libc.so (strlen+16)</span></span></code></pre>
+<h2 id="分析步骤">分析步骤</h2>
+<h3 id="1-定位崩溃位置">1. 定位崩溃位置</h3>
+<ul>
+<li>查看堆栈信息</li>
+<li>定位到具体代码行</li>
+</ul>
+<h3 id="2-分析崩溃原因">2. 分析崩溃原因</h3>
+<ul>
+<li>空指针：检查对象初始化</li>
+<li>数组越界：检查数组边界</li>
+<li>类型转换：检查类型兼容性</li>
+</ul>
+<h3 id="3-复现和验证">3. 复现和验证</h3>
+<ul>
+<li>尝试复现问题</li>
+<li>验证修复方案</li>
+</ul>
+<h2 id="调试命令">调试命令</h2>
+<h3 id="查看崩溃日志">查看崩溃日志</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> logcat</span><span style="color:#79B8FF"> -b</span><span style="color:#9ECBFF"> crash</span></span></code></pre>
+<h3 id="查看-tombstone">查看 tombstone</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> ls</span><span style="color:#9ECBFF"> /data/tombstones/</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> pull</span><span style="color:#9ECBFF"> /data/tombstones/tombstone_00</span></span></code></pre>
+<h3 id="查看进程状态">查看进程状态</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> ps</span><span style="color:#79B8FF"> -A</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#F97583"> &#x3C;</span><span style="color:#9ECBFF">packag</span><span style="color:#E1E4E8">e</span><span style="color:#F97583">></span></span></code></pre>
+<h2 id="常见场景">常见场景</h2>
+<h3 id="1-空指针异常">1. 空指针异常</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="java"><code><span class="line"><span style="color:#E1E4E8">String str </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> null</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">str.</span><span style="color:#B392F0">length</span><span style="color:#E1E4E8">(); </span><span style="color:#6A737D">// NullPointerException</span></span></code></pre>
+<h3 id="2-数组越界">2. 数组越界</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="java"><code><span class="line"><span style="color:#F97583">int</span><span style="color:#E1E4E8">[] arr </span><span style="color:#F97583">=</span><span style="color:#F97583"> new</span><span style="color:#F97583"> int</span><span style="color:#E1E4E8">[</span><span style="color:#79B8FF">5</span><span style="color:#E1E4E8">];</span></span>
+<span class="line"><span style="color:#E1E4E8">arr[</span><span style="color:#79B8FF">10</span><span style="color:#E1E4E8">] </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> 1</span><span style="color:#E1E4E8">; </span><span style="color:#6A737D">// ArrayIndexOutOfBoundsException</span></span></code></pre>
+<h3 id="3-类型转换异常">3. 类型转换异常</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="java"><code><span class="line"><span style="color:#E1E4E8">Object obj </span><span style="color:#F97583">=</span><span style="color:#9ECBFF"> "string"</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">Integer num </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> (Integer) obj; </span><span style="color:#6A737D">// ClassCastException</span></span></code></pre>
+<h2 id="预防措施">预防措施</h2>
+<ol>
+<li>使用空安全操作符（Kotlin）</li>
+<li>进行边界检查</li>
+<li>使用 try-catch 处理异常</li>
+<li>进行充分的测试</li>
+</ol>
+<h2 id="总结">总结</h2>
+<p>Crash 分析关键是查看堆栈信息和定位崩溃原因，通过代码审查和测试预防崩溃发生。</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

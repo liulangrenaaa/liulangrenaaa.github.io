@@ -1,0 +1,1031 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>真实功耗问题案例集与项目复盘 | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>真实功耗问题案例集与项目复盘</h1><div class="post-meta"><time datetime="2026-05-31T11:12:00.000Z">2026年5月31日</time><span> / android / power</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">android</span><span class="tag">power</span><span class="tag">case</span><span class="tag">interview</span></div></header><div class="article-body"><p>前面 00 到 11 篇把 Android 功耗与热管理的主线基本过了一遍：PowerManagerService、WakeLock、Doze、显示、电池统计、Health HAL、Thermal、CPU 调频、JobScheduler、QCOM 实战等。</p>
+<p>真正做项目复盘时，问题通常不会停在“某个类有哪些方法”。更常见的是这些更落地的追问：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>你有没有分析过真实功耗问题？</span></span>
+<span class="line"><span>你怎么判断一个功耗问题是应用、Framework、Kernel、Modem还是硬件？</span></span>
+<span class="line"><span>你怎么证明修复真的有效？</span></span>
+<span class="line"><span>USB连接会影响待机，那你怎么抓日志？</span></span>
+<span class="line"><span>thermalservice不可用时你怎么分析温控？</span></span>
+<span class="line"><span>为什么BatteryStats显示某个UID耗电高，但电流仪没有明显变化？</span></span></code></pre>
+<p>所以这篇不继续铺概念，主要整理我自己处理功耗问题时的 case 记录方式。后面每个案例都尽量按“条件、证据、根因、修复、验证”来写。</p>
+<p>一个能站得住的功耗 case，必须包含四件事：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>条件干净：</span></span>
+<span class="line"><span>    版本、环境温度、亮度、网络、SIM、USB、充电状态、测试时长都要说明。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>证据闭环：</span></span>
+<span class="line"><span>    不能只说“怀疑是wakelock”，要有BatteryStats、Perfetto、wakeup_sources、电流或温度曲线互相印证。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>根因可落地：</span></span>
+<span class="line"><span>    要能落到应用行为、Framework策略、HAL状态、Kernel节点、vendor服务、硬件条件之一。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>收益可复测：</span></span>
+<span class="line"><span>    修复前后必须同条件对比，最好有电流、掉电、温升、唤醒次数、持锁时长等量化指标。</span></span></code></pre>
+<p>只写概念很容易失焦。把一个混乱的问题拆成条件、证据、根因、修复和验证，后面无论写周报、做项目总结，还是现场解释，都更稳。</p>
+<h2 id="一功耗案例的统一分析框架">一、功耗案例的统一分析框架</h2>
+<p>功耗问题一上来把所有日志都抓一遍，最后很容易在日志里迷路。我现在更习惯先给场景归类，再决定抓哪些证据。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[发现功耗异常] --> B[确认测试条件]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C{异常场景}</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> D[灭屏待机]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> E[亮屏静置]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> F[充电发热]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> G[弱网或定位]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> H[游戏或重负载]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> I[WakeLock Alarm Doze Suspend]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> J[亮度 刷新 合成 CPU GPU]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> K[Health HAL Thermal current_now]</span></span>
+<span class="line"><span style="color:#E1E4E8">    G --> L[Modem WiFi GNSS wakelock]</span></span>
+<span class="line"><span style="color:#E1E4E8">    H --> M[CPU GPU thermal scheduler]</span></span>
+<span class="line"><span style="color:#E1E4E8">    I --> N[形成证据链]</span></span>
+<span class="line"><span style="color:#E1E4E8">    J --> N</span></span>
+<span class="line"><span style="color:#E1E4E8">    K --> N</span></span>
+<span class="line"><span style="color:#E1E4E8">    L --> N</span></span>
+<span class="line"><span style="color:#E1E4E8">    M --> N</span></span>
+<span class="line"><span style="color:#E1E4E8">    N --> O[定位责任层]</span></span>
+<span class="line"><span style="color:#E1E4E8">    O --> P[修改策略或代码]</span></span>
+<span class="line"><span style="color:#E1E4E8">    P --> Q[同条件复测]</span></span></code></pre>
+<p>我通常把功耗问题拆成下面几类。</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>类型</th><th>典型现象</th><th>关键证据</th><th>常见责任层</th></tr></thead><tbody><tr><td>灭屏待机高耗电</td><td>一晚上掉电多、电流下不去</td><td>BatteryStats、wakeup_sources、Perfetto、Doze状态</td><td>App、Framework、Kernel、Modem</td></tr><tr><td>亮屏静置高耗电</td><td>只是停在桌面或页面，电流仍高</td><td>SurfaceFlinger、RenderThread、CPU/GPU频率、刷新率</td><td>App、Display、SF、GPU</td></tr><tr><td>充电发热慢充</td><td>充电电流下降、温度升高</td><td>dumpsys battery、current_now、thermal_zone、cooling_device</td><td>Battery、Thermal、PMIC、充电策略</td></tr><tr><td>弱网高耗电</td><td>低信号或移动数据下掉电明显</td><td>radio日志、modem服务、netmgrd、wakeup_sources</td><td>Modem、RIL、网络策略</td></tr><tr><td>定位高耗电</td><td>灭屏后仍有GNSS或Wi-Fi扫描</td><td>location dumpsys、wakelock、wakeup_sources</td><td>App、Location、GNSS HAL</td></tr><tr><td>Alarm周期唤醒</td><td>每隔固定时间唤醒</td><td>dumpsys alarm、BatteryStats wakeup alarm、alarmtimer</td><td>App、AlarmManager</td></tr><tr><td>Job频繁执行</td><td>后台任务不收敛</td><td>dumpsys jobscheduler、BatteryStats、Perfetto</td><td>App、JobScheduler</td></tr><tr><td>温控触发限频</td><td>CPU频率降、亮度降、充电降流</td><td>thermalservice、thermal_zone、cooling_device</td><td>Thermal HAL、Kernel thermal</td></tr><tr><td>归因不准</td><td>system_server或android耗电异常</td><td>BatteryStats、WorkSource、调用链</td><td>Framework、App归因</td></tr></tbody></table>
+<h2 id="二我记录-case-的固定结构">二、我记录 case 的固定结构</h2>
+<p>我不会把 case 写成“看了一下 dumpsys，发现有 wakelock”。这种写法证据不够，复盘时至少要把条件、证据和验证写完整。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>标题：</span></span>
+<span class="line"><span>    灭屏待机电流偏高，定位到第三方应用周期性wakeup alarm和partial wakelock叠加。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>背景：</span></span>
+<span class="line"><span>    版本、设备、芯片平台、测试场景、测试时长、环境温度、网络状态。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>现象：</span></span>
+<span class="line"><span>    电流、掉电、温度、唤醒次数、CPU频率、充电电流等指标异常。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>条件确认：</span></span>
+<span class="line"><span>    是否插USB、是否充电、是否stay awake、是否固定亮度、是否开启飞行模式、是否满电。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>第一层证据：</span></span>
+<span class="line"><span>    BatteryStats或dumpsys确认长周期归因，例如UID耗电、wakelock时间、alarm次数。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>第二层证据：</span></span>
+<span class="line"><span>    Perfetto确认时间线，例如灭屏后仍周期唤醒、线程运行、Suspend失败。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>第三层证据：</span></span>
+<span class="line"><span>    Kernel节点确认底层事实，例如wakeup_sources、thermal_zone、cooling_device、cpuidle。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>根因：</span></span>
+<span class="line"><span>    具体到包名、服务、Framework策略、HAL状态、Kernel驱动或平台配置。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>修复：</span></span>
+<span class="line"><span>    合并任务、改用inexact alarm、释放wakelock、调整thermal阈值、修正WorkSource、优化刷新。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>验证：</span></span>
+<span class="line"><span>    同条件复测，给出修复前后对比数据。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>风险：</span></span>
+<span class="line"><span>    对功能、实时性、稳定性、充电速度、温控安全的影响。</span></span></code></pre>
+<p>我写 case 时不堆工具名，重点看证据能不能一层一层收敛。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart LR</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[现象] --> B[用户可感指标]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C[系统服务证据]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> D[Perfetto时间线]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E[Kernel节点]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> F[代码或配置根因]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> G[修复前后对比]</span></span></code></pre>
+<h2 id="三源码理解应该怎么嵌入-case">三、源码理解应该怎么嵌入 case</h2>
+<p>源码部分我尽量不写成背 API，而是解释为什么这些证据能支撑判断。</p>
+<p>比如分析待机高耗电时，可以这样连起来：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>PowerManagerService根据当前wakefulness、WakeLock和显示状态决定是否持有SuspendBlocker。</span></span>
+<span class="line"><span>如果存在partial wakelock，即使屏幕灭了，也可能让AP无法稳定进入suspend。</span></span>
+<span class="line"><span>所以我会把dumpsys power里的WakeLock、BatteryStats里的UID持锁时间、</span></span>
+<span class="line"><span>kernel wakeup_sources里的PowerManagerService.WakeLocks增长放在一起看。</span></span></code></pre>
+<p>对应 AOSP 源码入口可以看：</p>
+<ul>
+<li><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/PowerManagerService.java:3961:1">PowerManagerService.updateSuspendBlockerLocked line 3961</a></li>
+<li><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/PowerManagerService.java:4031:1">PowerManagerService.needSuspendBlockerLocked line 4031</a></li>
+<li><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/apex/jobscheduler/service/java/com/android/server/DeviceIdleController.java:3876:1">DeviceIdleController.stepIdleStateLocked line 3876</a></li>
+<li><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/apex/jobscheduler/service/java/com/android/server/alarm/AlarmManagerService.java:4324:1">AlarmManagerService.triggerAlarmsLocked line 4324</a></li>
+<li><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/apex/jobscheduler/service/java/com/android/server/job/JobSchedulerService.java:4041:1">JobSchedulerService.isReadyToBeExecutedLocked line 4041</a></li>
+<li><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/BatteryService.java:590:1">BatteryService.processValuesLocked line 590</a></li>
+<li><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/power/ThermalManagerService.java:233:1">ThermalManagerService.onTemperatureMapChangedLocked line 233</a></li>
+<li><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/am/BatteryStatsService.java:892:1">BatteryStatsService.getBatteryUsageStats line 892</a></li>
+<li><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/base/services/core/java/com/android/server/display/DisplayPowerController.java:1336:1">DisplayPowerController.updatePowerStateInternal line 1336</a></li>
+<li><a href="vscode://file//home/suhui/workspace/aosp/los21/frameworks/native/services/surfaceflinger/SurfaceFlinger.cpp:2517:1">SurfaceFlinger.commit line 2517</a></li>
+</ul>
+<p>这些源码入口的作用，是把日志现象和 Framework 行为对上。</p>
+<h2 id="四case-1usb-连接导致灭屏待机测试失真">四、Case 1：USB 连接导致灭屏待机测试失真</h2>
+<p>这是功耗测试里最容易踩的坑。用户想测自然待机，但设备通过 USB 连着电脑抓 adb。这样做不是完全不能调试，而是要明确：插 USB 会改变测试条件。</p>
+<h3 id="现象">现象</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>目标：</span></span>
+<span class="line"><span>    分析灭屏待机功耗。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>实际条件：</span></span>
+<span class="line"><span>    手机通过USB连接电脑，adb在线。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>异常：</span></span>
+<span class="line"><span>    dumpsys power里显示供电状态改变；</span></span>
+<span class="line"><span>    dumpsys battery里显示USB powered；</span></span>
+<span class="line"><span>    部分设备还会因为开发者选项Stay awake导致灭屏策略变化。</span></span></code></pre>
+<p>常见命令：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> battery</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> power</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> sed</span><span style="color:#79B8FF"> -n</span><span style="color:#9ECBFF"> '1,160p'</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> settings</span><span style="color:#9ECBFF"> get</span><span style="color:#9ECBFF"> global</span><span style="color:#9ECBFF"> stay_on_while_plugged_in</span></span></code></pre>
+<p>你可能看到：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>AC powered: false</span></span>
+<span class="line"><span>USB powered: true</span></span>
+<span class="line"><span>Wireless powered: false</span></span>
+<span class="line"><span>status: 2</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>mIsPowered=true</span></span>
+<span class="line"><span>mPlugType=2</span></span>
+<span class="line"><span>mStayOn=true</span></span></code></pre>
+<h3 id="分析链路">分析链路</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[插USB抓日志] --> B[BatteryService检测plug type]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C[PowerManagerService感知isPowered]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> D{是否开启Stay awake}</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E[屏幕或电源策略改变]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> F[充电状态改变]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> G[待机条件不干净]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> G</span></span></code></pre>
+<p>这时不能直接说“设备待机功耗高”。因为你测到的是“USB 连接条件下的功耗”，不是自然灭屏待机。</p>
+<h3 id="正确做法">正确做法</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>方案一：</span></span>
+<span class="line"><span>    USB只用于测试前准备，开始测试前拔线。</span></span>
+<span class="line"><span>    测试结束后再插线抓取历史日志，例如bugreport、BatteryStats、kernel节点快照。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>方案二：</span></span>
+<span class="line"><span>    使用无线ADB，但要说明Wi-Fi连接本身也会引入网络功耗。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>方案三：</span></span>
+<span class="line"><span>    用本地脚本在设备上采样/sys节点，测试结束后再pull日志。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>方案四：</span></span>
+<span class="line"><span>    使用电流仪或电源分析仪记录真实电流，adb只作为辅助证据。</span></span></code></pre>
+<p>一个本地采样脚本可以这样写：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'cat > /data/local/tmp/power_idle_collect.sh &#x3C;&#x3C; "EOF"</span></span>
+<span class="line"><span style="color:#9ECBFF">#!/system/bin/sh</span></span>
+<span class="line"><span style="color:#9ECBFF">OUT=/data/local/tmp/power_idle_$(date +%Y%m%d_%H%M%S)</span></span>
+<span class="line"><span style="color:#9ECBFF">mkdir -p "$OUT"</span></span>
+<span class="line"><span style="color:#9ECBFF">echo "start: $(date)" > "$OUT/meta.txt"</span></span>
+<span class="line"><span style="color:#9ECBFF">while true; do</span></span>
+<span class="line"><span style="color:#9ECBFF">  TS=$(date +%s)</span></span>
+<span class="line"><span style="color:#9ECBFF">  {</span></span>
+<span class="line"><span style="color:#9ECBFF">    echo "===== $TS ====="</span></span>
+<span class="line"><span style="color:#9ECBFF">    cat /sys/kernel/debug/wakeup_sources 2>/dev/null</span></span>
+<span class="line"><span style="color:#9ECBFF">    cat /sys/class/power_supply/battery/capacity 2>/dev/null</span></span>
+<span class="line"><span style="color:#9ECBFF">    cat /sys/class/power_supply/battery/current_now 2>/dev/null</span></span>
+<span class="line"><span style="color:#9ECBFF">    cat /sys/class/power_supply/battery/temp 2>/dev/null</span></span>
+<span class="line"><span style="color:#9ECBFF">  } >> "$OUT/sample.txt"</span></span>
+<span class="line"><span style="color:#9ECBFF">  sleep 60</span></span>
+<span class="line"><span style="color:#9ECBFF">done</span></span>
+<span class="line"><span style="color:#9ECBFF">EOF</span></span>
+<span class="line"><span style="color:#9ECBFF">chmod 755 /data/local/tmp/power_idle_collect.sh'</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> nohup</span><span style="color:#9ECBFF"> /data/local/tmp/power_idle_collect.sh</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF">/dev/null</span><span style="color:#F97583"> 2>&#x26;1</span><span style="color:#E1E4E8"> &#x26;</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> input</span><span style="color:#9ECBFF"> keyevent</span><span style="color:#79B8FF"> 26</span></span></code></pre>
+<p>然后拔 USB，等待测试完成后再插线：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> pull</span><span style="color:#9ECBFF"> /data/local/tmp/power_idle_20260531_120000</span><span style="color:#9ECBFF"> ./</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> bugreport</span><span style="color:#9ECBFF"> bugreport_after_idle.zip</span></span></code></pre>
+<h3 id="我会这样说明">我会这样说明</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>我会先确认功耗测试条件是否干净。比如灭屏待机测试中，如果USB还连着电脑，</span></span>
+<span class="line"><span>BatteryService会感知到plug type，PowerManagerService也会看到isPowered状态。</span></span>
+<span class="line"><span>如果开发者选项里打开了Stay awake，屏幕和休眠策略还会进一步变化。</span></span>
+<span class="line"><span>所以我不会直接拿插线状态下的数据判断自然待机功耗，而是用本地脚本或电流仪采样，</span></span>
+<span class="line"><span>测试后再拉日志，或者明确说明这是USB连接场景下的功耗。</span></span></code></pre>
+<h2 id="五case-2长时间-partial-wakelock-阻止-suspend">五、Case 2：长时间 partial wakelock 阻止 suspend</h2>
+<p>灭屏高耗电最经典的根因之一，就是应用或系统服务持有 partial wakelock，导致 AP 不能稳定进入 suspend。</p>
+<h3 id="现象-1">现象</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>场景：</span></span>
+<span class="line"><span>    灭屏待机8小时。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>现象：</span></span>
+<span class="line"><span>    掉电超过预期；</span></span>
+<span class="line"><span>    电流基线偏高；</span></span>
+<span class="line"><span>    wakeup_sources里PowerManagerService.WakeLocks增长明显；</span></span>
+<span class="line"><span>    BatteryStats里某个UID wakelock时间接近测试时长。</span></span></code></pre>
+<h3 id="证据命令">证据命令</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> power</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --charged</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/kernel/debug/wakeup_sources</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cmd</span><span style="color:#9ECBFF"> deviceidle</span><span style="color:#9ECBFF"> get</span><span style="color:#9ECBFF"> deep</span></span></code></pre>
+<p>重点看：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>dumpsys power:</span></span>
+<span class="line"><span>    PARTIAL_WAKE_LOCK 'xxx' ACQ=-...</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>batterystats:</span></span>
+<span class="line"><span>    Wake lock xxx: 2h 31m 10s partial</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>wakeup_sources:</span></span>
+<span class="line"><span>    PowerManagerService.WakeLocks active_count total_time prevent_suspend_time</span></span></code></pre>
+<h3 id="代码理解">代码理解</h3>
+<p>在 Framework 层，PowerManagerService 会根据当前 WakeLock、显示状态、wakefulness 等信息更新 SuspendBlocker。partial wakelock 的关键点是：它不一定点亮屏幕，但可以保持 CPU 运行。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">sequenceDiagram</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant App as App或系统服务</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant PMS as PowerManagerService</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant BS as BatteryStats</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Kernel as Kernel suspend</span></span>
+<span class="line"><span style="color:#E1E4E8">    App->>PMS: acquireWakeLock(PARTIAL_WAKE_LOCK)</span></span>
+<span class="line"><span style="color:#E1E4E8">    PMS->>BS: noteStartWakelock</span></span>
+<span class="line"><span style="color:#E1E4E8">    PMS->>PMS: updateSuspendBlockerLocked</span></span>
+<span class="line"><span style="color:#E1E4E8">    PMS->>Kernel: acquire suspend blocker</span></span>
+<span class="line"><span style="color:#E1E4E8">    Kernel-->>Kernel: suspend被阻止或变少</span></span>
+<span class="line"><span style="color:#E1E4E8">    App->>PMS: releaseWakeLock</span></span>
+<span class="line"><span style="color:#E1E4E8">    PMS->>Kernel: release suspend blocker</span></span></code></pre>
+<h3 id="错误结论">错误结论</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>错误：</span></span>
+<span class="line"><span>    CPU占用不高，所以不是功耗问题。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>问题：</span></span>
+<span class="line"><span>    待机功耗不只看CPU平均占用。长时间持锁会减少suspend时间，</span></span>
+<span class="line"><span>    即使每次运行负载不高，也会让设备无法进入更深低功耗状态。</span></span></code></pre>
+<h3 id="修复方向">修复方向</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>应用侧：</span></span>
+<span class="line"><span>    缩短持锁范围，确保异常路径释放wakelock；</span></span>
+<span class="line"><span>    能不用wakelock就不用；</span></span>
+<span class="line"><span>    使用WorkManager/JobScheduler承接可延后任务。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Framework侧：</span></span>
+<span class="line"><span>    检查系统服务是否在异常状态下未释放锁；</span></span>
+<span class="line"><span>    增加超时保护和日志。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>验证：</span></span>
+<span class="line"><span>    partial wakelock总时长下降；</span></span>
+<span class="line"><span>    wakeup_sources中对应项增长下降；</span></span>
+<span class="line"><span>    电流基线或掉电改善。</span></span></code></pre>
+<h3 id="我会这样说明-1">我会这样说明</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>我遇到灭屏功耗问题时，会先看设备是否真的进入了待机条件，</span></span>
+<span class="line"><span>然后把BatteryStats的partial wakelock、dumpsys power里的锁、</span></span>
+<span class="line"><span>Perfetto时间线和kernel wakeup_sources放在一起看。</span></span>
+<span class="line"><span>如果一个锁的持有时间接近测试时长，并且PowerManagerService.WakeLocks的prevent_suspend_time持续增加，</span></span>
+<span class="line"><span>基本就可以判断它在破坏suspend。</span></span></code></pre>
+<h2 id="六case-3周期-wakeup-alarm-导致待机被反复打断">六、Case 3：周期 wakeup alarm 导致待机被反复打断</h2>
+<p>第二类常见问题是周期 alarm。它和长 wakelock 不一样：wakelock 是“长时间不睡”，alarm 是“睡一会儿就被叫醒”。</p>
+<h3 id="现象-2">现象</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>灭屏后每隔几分钟唤醒一次；</span></span>
+<span class="line"><span>电流曲线呈周期性尖峰；</span></span>
+<span class="line"><span>BatteryStats中wakeup alarm次数异常；</span></span>
+<span class="line"><span>wakeup_sources里alarmtimer增长明显。</span></span></code></pre>
+<h3 id="证据命令-1">证据命令</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> alarm</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --charged</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/kernel/debug/wakeup_sources</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cmd</span><span style="color:#9ECBFF"> deviceidle</span><span style="color:#9ECBFF"> step</span><span style="color:#9ECBFF"> deep</span></span></code></pre>
+<p>关注：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>dumpsys alarm:</span></span>
+<span class="line"><span>    wakeup=true</span></span>
+<span class="line"><span>    type=RTC_WAKEUP / ELAPSED_REALTIME_WAKEUP</span></span>
+<span class="line"><span>    package=xxx</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>BatteryStats:</span></span>
+<span class="line"><span>    Wakeup alarms: xxx</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>wakeup_sources:</span></span>
+<span class="line"><span>    alarmtimer</span></span></code></pre>
+<h3 id="流程">流程</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[App设置wakeup alarm] --> B[AlarmManagerService入队]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C{是否进入idle}</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> D[被延后或批处理]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> E[允许唤醒]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> F[Kernel alarmtimer唤醒AP]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> G[Broadcast或Service运行]</span></span>
+<span class="line"><span style="color:#E1E4E8">    G --> H[可能继续申请wakelock]</span></span></code></pre>
+<h3 id="源码理解">源码理解</h3>
+<p>AlarmManagerService 会管理 alarm 的触发与投递。功耗分析里重点不是背完整实现，而是知道 wakeup alarm 可以从 Kernel alarmtimer 把系统唤醒，再把广播或回调投递给应用。</p>
+<p>当你在 <code>dumpsys alarm</code> 里看到某个包大量 wakeup alarm，同时 <code>wakeup_sources</code> 中 <code>alarmtimer</code> 增长，就可以把它作为强证据。</p>
+<h3 id="修复方向-1">修复方向</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>低实时性任务：</span></span>
+<span class="line"><span>    使用inexact alarm；</span></span>
+<span class="line"><span>    使用JobScheduler或WorkManager；</span></span>
+<span class="line"><span>    合并周期任务；</span></span>
+<span class="line"><span>    增加退避策略。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>高实时性任务：</span></span>
+<span class="line"><span>    说明业务必要性；</span></span>
+<span class="line"><span>    控制频率；</span></span>
+<span class="line"><span>    避免唤醒后继续持有长wakelock。</span></span></code></pre>
+<h3 id="我会这样说明-2">我会这样说明</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>周期alarm问题我会看三个点：dumpsys alarm定位谁设置了wakeup alarm，</span></span>
+<span class="line"><span>BatteryStats看wakeup alarm次数，kernel wakeup_sources看alarmtimer是否同步增长。</span></span>
+<span class="line"><span>如果电流曲线也呈周期尖峰，这个证据链就比较完整。</span></span></code></pre>
+<h2 id="七case-4doze-进不去或频繁退出">七、Case 4：Doze 进不去或频繁退出</h2>
+<p>Doze 不是“灭屏就一定进入”。设备需要满足一组条件，例如静止、未充电、屏幕关闭、没有特定活动等。如果测试条件不满足，Doze 进不去不是 bug。</p>
+<h3 id="现象-3">现象</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>灭屏很久后仍然没有进入IDLE；</span></span>
+<span class="line"><span>cmd deviceidle get deep显示状态停在INACTIVE或IDLE_PENDING；</span></span>
+<span class="line"><span>后台网络和任务仍然比较活跃。</span></span></code></pre>
+<h3 id="命令">命令</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> deviceidle</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cmd</span><span style="color:#9ECBFF"> deviceidle</span><span style="color:#9ECBFF"> get</span><span style="color:#9ECBFF"> deep</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cmd</span><span style="color:#9ECBFF"> deviceidle</span><span style="color:#9ECBFF"> step</span><span style="color:#9ECBFF"> deep</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> jobscheduler</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> alarm</span></span></code></pre>
+<h3 id="判断逻辑">判断逻辑</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[Doze未进入] --> B{是否充电或USB供电}</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C[是: 条件不成立]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> D[否]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E{屏幕是否关闭}</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> F[否: 条件不成立]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> G[是]</span></span>
+<span class="line"><span style="color:#E1E4E8">    G --> H{是否运动或传感器触发}</span></span>
+<span class="line"><span style="color:#E1E4E8">    H --> I[是: 等待静止]</span></span>
+<span class="line"><span style="color:#E1E4E8">    H --> J[否]</span></span>
+<span class="line"><span style="color:#E1E4E8">    J --> K[检查白名单 Alarm Job 网络]</span></span></code></pre>
+<h3 id="常见误判">常见误判</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>误判一：</span></span>
+<span class="line"><span>    灭屏5分钟没进Doze，所以Doze坏了。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>纠正：</span></span>
+<span class="line"><span>    Doze有状态机和延迟，不是灭屏立即进入。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>误判二：</span></span>
+<span class="line"><span>    插USB用cmd deviceidle强制step，所以可以代表真实Doze。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>纠正：</span></span>
+<span class="line"><span>    强制step适合验证策略，不等同于自然测试条件。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>误判三：</span></span>
+<span class="line"><span>    App在白名单里仍可运行，所以系统Doze无效。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>纠正：</span></span>
+<span class="line"><span>    白名单、本地通知、FCM高优先级、厂商策略都会影响结果，需要单独说明。</span></span></code></pre>
+<h3 id="我会这样说明-3">我会这样说明</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>Doze问题我不会只看是否灭屏，而是看DeviceIdleController状态机。</span></span>
+<span class="line"><span>我会先确认未充电、屏幕关闭、设备静止，然后用dumpsys deviceidle看deep idle状态，</span></span>
+<span class="line"><span>再结合alarm和jobscheduler判断是否有任务在维护窗口外频繁运行。</span></span></code></pre>
+<h2 id="八case-5定位或-wi-fi-扫描导致灭屏唤醒">八、Case 5：定位或 Wi-Fi 扫描导致灭屏唤醒</h2>
+<p>定位类问题常见于地图、运动、天气、系统服务或厂商组件。它不一定表现为一个很长的 wakelock，有时是 GNSS、Wi-Fi scan、sensor、network location 组合导致的间歇唤醒。</p>
+<h3 id="现象-4">现象</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>灭屏后仍有定位请求；</span></span>
+<span class="line"><span>Wi-Fi扫描次数多；</span></span>
+<span class="line"><span>GNSS或location相关服务活跃；</span></span>
+<span class="line"><span>wakeup_sources中存在qcom_rx_wakelock、wlan、IPA、location相关增长。</span></span></code></pre>
+<h3 id="命令-1">命令</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> location</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> wifi</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --charged</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/kernel/debug/wakeup_sources</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> ps</span><span style="color:#79B8FF"> -A</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -Ei</span><span style="color:#9ECBFF"> 'loc|gnss|gps|wifi|wpa|lowi'</span></span></code></pre>
+<h3 id="分析链路-1">分析链路</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart LR</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[App请求定位] --> B[LocationManagerService]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C[GNSS HAL或Network Location]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> D[WiFi Scan GNSS Modem]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E[Kernel wakeup_sources增长]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> F[灭屏电流升高]</span></span></code></pre>
+<h3 id="判断重点">判断重点</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>第一：</span></span>
+<span class="line"><span>    是否有前台服务、运动记录、导航、天气刷新这类业务合理性。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>第二：</span></span>
+<span class="line"><span>    是否灭屏后仍保持高频定位，没有根据前后台状态降频。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>第三：</span></span>
+<span class="line"><span>    是否使用高精度定位但实际只需要粗定位。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>第四：</span></span>
+<span class="line"><span>    Wi-Fi扫描是否被App或系统策略频繁触发。</span></span></code></pre>
+<h3 id="修复方向-2">修复方向</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>降低定位精度：</span></span>
+<span class="line"><span>    高精度切换为粗定位或网络定位。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>降低频率：</span></span>
+<span class="line"><span>    根据前后台、灭屏、低电量、Doze状态动态调整。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>合并请求：</span></span>
+<span class="line"><span>    多业务共享定位结果，不重复启动扫描。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>清理异常路径：</span></span>
+<span class="line"><span>    页面退出、服务停止、任务取消时释放定位监听。</span></span></code></pre>
+<h3 id="我会这样说明-4">我会这样说明</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>定位功耗我会先区分业务合理性和异常行为。</span></span>
+<span class="line"><span>如果是导航，灭屏持续定位可能合理；如果是普通天气或推荐业务，</span></span>
+<span class="line"><span>灭屏后仍高频定位就不合理。证据上我会结合dumpsys location、BatteryStats、</span></span>
+<span class="line"><span>Perfetto和wakeup_sources，确认请求方、频率和底层唤醒是否一致。</span></span></code></pre>
+<h2 id="九case-6弱网或移动数据导致-modem-侧功耗高">九、Case 6：弱网或移动数据导致 Modem 侧功耗高</h2>
+<p>弱网问题经常被误判成 App 或 Framework 问题。实际上，信号差、频繁重选、数据重传、IMS保活、网络切换都会让 Modem 侧功耗上升。</p>
+<h3 id="现象-5">现象</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>同样灭屏待机，Wi-Fi下掉电正常，移动数据弱网下掉电明显；</span></span>
+<span class="line"><span>radio日志活跃；</span></span>
+<span class="line"><span>netmgrd、qcrild、DataModule等进程有唤醒；</span></span>
+<span class="line"><span>wakeup_sources中IPA、modem、rmnet、qcom_rx_wakelock相关项增长。</span></span></code></pre>
+<h3 id="命令-2">命令</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> telephony.registry</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> connectivity</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> netstats</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> logcat</span><span style="color:#79B8FF"> -b</span><span style="color:#9ECBFF"> radio</span><span style="color:#79B8FF"> -d</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> tail</span><span style="color:#79B8FF"> -n</span><span style="color:#79B8FF"> 300</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/kernel/debug/wakeup_sources</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> ps</span><span style="color:#79B8FF"> -A</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -Ei</span><span style="color:#9ECBFF"> 'ril|qcril|netmgr|data|ims|modem'</span></span></code></pre>
+<h3 id="判断链路">判断链路</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[弱网环境] --> B[信号差或频繁切网]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C[Modem重传与重选增加]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> D[Radio和vendor服务活跃]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E[Kernel wakeup_sources增长]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> F[灭屏电流升高]</span></span></code></pre>
+<h3 id="错误结论-1">错误结论</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>错误：</span></span>
+<span class="line"><span>    BatteryStats里看到某App有网络流量，所以一定是App问题。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>纠正：</span></span>
+<span class="line"><span>    App触发网络是一个因素，但弱网下每一次网络请求的底层代价会变大。</span></span>
+<span class="line"><span>    需要对比Wi-Fi、强信号移动数据、弱信号移动数据三个条件。</span></span></code></pre>
+<h3 id="验证方式">验证方式</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>对照组一：</span></span>
+<span class="line"><span>    飞行模式待机。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>对照组二：</span></span>
+<span class="line"><span>    Wi-Fi待机。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>对照组三：</span></span>
+<span class="line"><span>    移动数据强信号待机。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>对照组四：</span></span>
+<span class="line"><span>    移动数据弱信号待机。</span></span></code></pre>
+<p>如果只有弱网移动数据异常，就不要把结论简单写成“某 App 耗电”，而要说明网络条件对 Modem 侧功耗的影响。</p>
+<h3 id="我会这样说明-5">我会这样说明</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>移动网络功耗我会做条件对照。因为同样的App请求，在强信号和弱信号下功耗完全不同。</span></span>
+<span class="line"><span>我会把telephony状态、radio log、connectivity、wakeup_sources和电流曲线放在一起看，</span></span>
+<span class="line"><span>确认是应用请求太频繁，还是弱网导致Modem侧代价放大。</span></span></code></pre>
+<h2 id="十case-7亮屏静置仍然高耗电">十、Case 7：亮屏静置仍然高耗电</h2>
+<p>亮屏功耗和灭屏待机不同。亮屏时显示、触控、SurfaceFlinger、RenderThread、GPU、CPU、刷新率、亮度都会参与。不能拿待机思路直接套。</p>
+<h3 id="现象-6">现象</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>固定亮度和网络后，停在某个页面不操作，电流仍明显偏高；</span></span>
+<span class="line"><span>Perfetto里RenderThread或SurfaceFlinger持续活跃；</span></span>
+<span class="line"><span>CPU/GPU频率下不去；</span></span>
+<span class="line"><span>帧率或刷新率维持高档位。</span></span></code></pre>
+<h3 id="命令-3">命令</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> SurfaceFlinger</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> gfxinfo</span><span style="color:#F97583"> &#x3C;</span><span style="color:#9ECBFF">packag</span><span style="color:#E1E4E8">e</span><span style="color:#F97583">></span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> display</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> power</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> thermalservice</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/class/thermal/thermal_zone</span><span style="color:#79B8FF">*</span><span style="color:#9ECBFF">/temp</span><span style="color:#F97583"> 2></span><span style="color:#9ECBFF">/dev/null</span></span></code></pre>
+<p>抓 Perfetto：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> perfetto</span><span style="color:#79B8FF"> -o</span><span style="color:#9ECBFF"> /data/misc/perfetto-traces/screen_idle.pftrace</span><span style="color:#79B8FF"> -t</span><span style="color:#9ECBFF"> 60s</span><span style="color:#79B8FF"> \</span></span>
+<span class="line"><span style="color:#9ECBFF">  sched</span><span style="color:#9ECBFF"> freq</span><span style="color:#9ECBFF"> idle</span><span style="color:#9ECBFF"> am</span><span style="color:#9ECBFF"> wm</span><span style="color:#9ECBFF"> gfx</span><span style="color:#9ECBFF"> view</span><span style="color:#9ECBFF"> binder_driver</span><span style="color:#9ECBFF"> hal</span><span style="color:#9ECBFF"> power</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> pull</span><span style="color:#9ECBFF"> /data/misc/perfetto-traces/screen_idle.pftrace</span><span style="color:#9ECBFF"> .</span></span></code></pre>
+<h3 id="分析链路-2">分析链路</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[亮屏静置电流高] --> B{亮度是否固定}</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C[否: 先固定亮度]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> D[是]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E{刷新率是否固定}</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> F[否: 对比60Hz和高刷]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> G[是]</span></span>
+<span class="line"><span style="color:#E1E4E8">    G --> H[看SurfaceFlinger和RenderThread]</span></span>
+<span class="line"><span style="color:#E1E4E8">    H --> I{是否持续绘制}</span></span>
+<span class="line"><span style="color:#E1E4E8">    I --> J[是: App动画或无效invalidate]</span></span>
+<span class="line"><span style="color:#E1E4E8">    I --> K[否: 看CPU GPU频率和温控]</span></span></code></pre>
+<h3 id="常见根因">常见根因</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>App层：</span></span>
+<span class="line"><span>    不可见动画仍在跑；</span></span>
+<span class="line"><span>    定时器持续invalidate；</span></span>
+<span class="line"><span>    视频、地图、WebView页面没有暂停；</span></span>
+<span class="line"><span>    Compose或View状态变化导致重复重绘。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Framework/显示：</span></span>
+<span class="line"><span>    刷新率策略没有降档；</span></span>
+<span class="line"><span>    DisplayPowerController亮度策略异常；</span></span>
+<span class="line"><span>    SurfaceFlinger持续合成；</span></span>
+<span class="line"><span>    HWC没有走低功耗路径。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>平台层：</span></span>
+<span class="line"><span>    GPU频率保持高档；</span></span>
+<span class="line"><span>    thermal状态导致策略变化；</span></span>
+<span class="line"><span>    vendor display服务异常。</span></span></code></pre>
+<h3 id="我会这样说明-6">我会这样说明</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>亮屏静置高耗电我不会先看wakelock，而是先固定变量：亮度、刷新率、网络和温度。</span></span>
+<span class="line"><span>然后用Perfetto看RenderThread、SurfaceFlinger、CPU/GPU频率是否持续活跃。</span></span>
+<span class="line"><span>如果页面静止但仍持续绘制，就从App动画、invalidate、视频/WebView/地图这些方向收敛。</span></span></code></pre>
+<h2 id="十一case-8高亮hdr-或-hbm-导致发热和降亮度">十一、Case 8：高亮、HDR 或 HBM 导致发热和降亮度</h2>
+<p>有些用户反馈是“手机发热、亮度突然变暗”。这不一定是显示 bug，可能是热管理在保护设备。</p>
+<h3 id="现象-7">现象</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>户外高亮或HDR视频场景下温度快速上升；</span></span>
+<span class="line"><span>亮度自动下降；</span></span>
+<span class="line"><span>thermal_zone温度升高；</span></span>
+<span class="line"><span>cooling_device状态变化；</span></span>
+<span class="line"><span>dumpsys display中亮度策略发生变化。</span></span></code></pre>
+<h3 id="命令-4">命令</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> display</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> power</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> thermalservice</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for z in /sys/class/thermal/thermal_zone*; do echo $z; cat $z/type; cat $z/temp; done'</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for c in /sys/class/thermal/cooling_device*; do echo $c; cat $c/type; cat $c/cur_state; done'</span></span></code></pre>
+<h3 id="分析链路-3">分析链路</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart LR</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[高亮或HDR] --> B[显示功耗升高]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C[面板与PMIC温度上升]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> D[Thermal策略触发]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E[限制亮度或刷新率]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> F[用户感知亮度下降]</span></span></code></pre>
+<h3 id="判断重点-1">判断重点</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>要先确认是不是热保护：</span></span>
+<span class="line"><span>    如果温度达到阈值，同时cooling_device状态变化，亮度下降可能是预期策略。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>再判断策略是否合理：</span></span>
+<span class="line"><span>    是否过早触发；</span></span>
+<span class="line"><span>    是否恢复太慢；</span></span>
+<span class="line"><span>    是否温度采样错误；</span></span>
+<span class="line"><span>    是否某个thermal_zone映射错；</span></span>
+<span class="line"><span>    是否用户场景需要更平滑的降亮度曲线。</span></span></code></pre>
+<h3 id="我会这样说明-7">我会这样说明</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>亮度下降不一定是DisplayPowerController单点问题。</span></span>
+<span class="line"><span>我会把display状态、thermalservice、thermal_zone和cooling_device串起来看。</span></span>
+<span class="line"><span>如果温度上升后cooling device触发，再出现亮度下降，就更像热策略生效。</span></span>
+<span class="line"><span>后续才会评估阈值、恢复曲线和用户体验是否合理。</span></span></code></pre>
+<h2 id="十二case-9cpu-平均占用不高但待机功耗仍然偏高">十二、Case 9：CPU 平均占用不高，但待机功耗仍然偏高</h2>
+<p>这是很考验功耗理解的一类问题。很多人只看 top，发现 CPU 占用不高，就说不是 CPU 问题。但待机功耗更怕“频繁短唤醒”。</p>
+<h3 id="现象-8">现象</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>top里没有明显高CPU进程；</span></span>
+<span class="line"><span>但电流曲线有密集小尖峰；</span></span>
+<span class="line"><span>Perfetto显示系统频繁从idle中醒来；</span></span>
+<span class="line"><span>cpuidle深睡时间占比低；</span></span>
+<span class="line"><span>wakeup_sources多个小项增长。</span></span></code></pre>
+<h3 id="命令-5">命令</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> top</span><span style="color:#79B8FF"> -b</span><span style="color:#79B8FF"> -n</span><span style="color:#79B8FF"> 1</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/kernel/debug/wakeup_sources</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for c in /sys/devices/system/cpu/cpu*/cpuidle/state*/time; do echo $c; cat $c; done'</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_cur_freq 2>/dev/null'</span></span></code></pre>
+<h3 id="分析链路-4">分析链路</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[平均CPU不高] --> B{是否频繁唤醒}</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C[看Perfetto sched idle]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> D[看wakeup_sources]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> E[深idle被打断]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> F[待机电流升高]</span></span></code></pre>
+<h3 id="关键理解">关键理解</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>CPU占用率：</span></span>
+<span class="line"><span>    描述一段时间内CPU忙的比例。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>低功耗状态：</span></span>
+<span class="line"><span>    关注CPU和SoC能不能进入更深idle或suspend。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>问题点：</span></span>
+<span class="line"><span>    很多短任务平均占用不高，但会频繁唤醒系统，</span></span>
+<span class="line"><span>    让设备一直停留在较浅低功耗状态。</span></span></code></pre>
+<h3 id="我会这样说明-8">我会这样说明</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>我不会只用top判断待机功耗。因为待机场景里，频繁短唤醒可能比持续高CPU更隐蔽。</span></span>
+<span class="line"><span>我会看Perfetto里的sched/idle轨迹、cpuidle驻留时间和wakeup_sources增长，</span></span>
+<span class="line"><span>判断系统是睡不深，还是睡着后被频繁叫醒。</span></span></code></pre>
+<h2 id="十三case-10thermalservice-显示-hal-readyfalse但设备仍然在限频">十三、Case 10：thermalservice 显示 HAL Ready=false，但设备仍然在限频</h2>
+<p>这类问题在真实项目里很常见。Framework 的 thermalservice 不可用，不代表 Kernel 没有 thermal，也不代表设备不会限频。</p>
+<h3 id="现象-9">现象</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>adb shell dumpsys thermalservice:</span></span>
+<span class="line"><span>    HAL Ready: false</span></span>
+<span class="line"><span>    Cached temperatures为空</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>同时：</span></span>
+<span class="line"><span>    CPU频率被限制；</span></span>
+<span class="line"><span>    thermal_zone温度变化；</span></span>
+<span class="line"><span>    cooling_device cur_state变化。</span></span></code></pre>
+<h3 id="命令-6">命令</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> thermalservice</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for z in /sys/class/thermal/thermal_zone*; do echo $z; cat $z/type; cat $z/temp; done'</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for c in /sys/class/thermal/cooling_device*; do echo $c; cat $c/type; cat $c/cur_state; done'</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_cur_freq 2>/dev/null'</span></span></code></pre>
+<h3 id="分析链路-5">分析链路</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[thermalservice HAL Ready false] --> B[Framework热信息缺失]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C{Kernel thermal是否存在}</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> D[thermal_zone有温度]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> E[cooling_device状态变化]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> F[Kernel仍可执行温控]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> F</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> G[CPU GPU 充电或亮度被限制]</span></span></code></pre>
+<h3 id="正确结论">正确结论</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>Framework thermal链路不可用：</span></span>
+<span class="line"><span>    App和Framework可能拿不到完整热状态；</span></span>
+<span class="line"><span>    dumpsys thermalservice不能代表全部热管理事实。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Kernel thermal仍然可用：</span></span>
+<span class="line"><span>    thermal_zone和cooling_device可能继续工作；</span></span>
+<span class="line"><span>    CPU/GPU/充电/display限制仍可能发生。</span></span></code></pre>
+<h3 id="我会这样说明-9">我会这样说明</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>如果thermalservice显示HAL Ready=false，我不会直接说设备没有温控。</span></span>
+<span class="line"><span>我会继续看/sys/class/thermal下的thermal_zone和cooling_device。</span></span>
+<span class="line"><span>如果温度上升时cooling_device状态变化，同时CPU频率或充电电流下降，</span></span>
+<span class="line"><span>说明Kernel或vendor热策略仍在生效，只是Framework thermal HAL链路不可用。</span></span></code></pre>
+<h2 id="十四case-11充电发热触发限流用户感知为充电慢">十四、Case 11：充电发热触发限流，用户感知为“充电慢”</h2>
+<p>充电慢不一定是充电器、线材或电池坏了。充电是功耗和热管理交汇最明显的场景。</p>
+<h3 id="现象-10">现象</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>刚插入时充电电流较高；</span></span>
+<span class="line"><span>使用一段时间后电池温度上升；</span></span>
+<span class="line"><span>current_now绝对值下降；</span></span>
+<span class="line"><span>充电速度变慢；</span></span>
+<span class="line"><span>thermal_zone和cooling_device状态变化。</span></span></code></pre>
+<h3 id="命令-7">命令</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> battery</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> thermalservice</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/class/power_supply/battery/current_now</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/class/power_supply/battery/voltage_now</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/class/power_supply/battery/temp</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for z in /sys/class/thermal/thermal_zone*; do echo $z; cat $z/type; cat $z/temp; done'</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> 'for c in /sys/class/thermal/cooling_device*; do echo $c; cat $c/type; cat $c/cur_state; done'</span></span></code></pre>
+<h3 id="分析链路-6">分析链路</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">sequenceDiagram</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Charger as 充电器</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant PMIC as PMIC和电池</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Health as Health HAL</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant Thermal as Thermal策略</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant User as 用户感知</span></span>
+<span class="line"><span style="color:#E1E4E8">    Charger->>PMIC: 输入电流</span></span>
+<span class="line"><span style="color:#E1E4E8">    PMIC->>Health: 上报电池电压电流温度</span></span>
+<span class="line"><span style="color:#E1E4E8">    PMIC->>Thermal: 温度达到阈值</span></span>
+<span class="line"><span style="color:#E1E4E8">    Thermal->>PMIC: 降低充电电流</span></span>
+<span class="line"><span style="color:#E1E4E8">    Health->>User: 充电速度变慢</span></span></code></pre>
+<h3 id="判断重点-2">判断重点</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>先排除条件：</span></span>
+<span class="line"><span>    充电器规格；</span></span>
+<span class="line"><span>    线材；</span></span>
+<span class="line"><span>    电池电量区间；</span></span>
+<span class="line"><span>    环境温度；</span></span>
+<span class="line"><span>    是否边充边玩；</span></span>
+<span class="line"><span>    是否手机壳影响散热。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>再看证据：</span></span>
+<span class="line"><span>    temp是否持续上升；</span></span>
+<span class="line"><span>    current_now是否下降；</span></span>
+<span class="line"><span>    cooling_device是否变化；</span></span>
+<span class="line"><span>    CPU/GPU负载是否叠加；</span></span>
+<span class="line"><span>    屏幕亮度是否高。</span></span></code></pre>
+<h3 id="修复方向-3">修复方向</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>如果是业务负载叠加：</span></span>
+<span class="line"><span>    降低后台任务；</span></span>
+<span class="line"><span>    降低亮屏期间的刷新和计算；</span></span>
+<span class="line"><span>    避免充电时跑重任务。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>如果是策略问题：</span></span>
+<span class="line"><span>    检查thermal阈值；</span></span>
+<span class="line"><span>    检查charge cooling映射；</span></span>
+<span class="line"><span>    检查恢复曲线；</span></span>
+<span class="line"><span>    检查Health HAL上报是否准确。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>如果是硬件条件：</span></span>
+<span class="line"><span>    说明充电器、线材、环境温度和散热条件。</span></span></code></pre>
+<h3 id="我会这样说明-10">我会这样说明</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>充电慢我会先区分供电能力、电池状态和热限流。</span></span>
+<span class="line"><span>如果current_now在温度上升后下降，并且cooling_device状态同步变化，</span></span>
+<span class="line"><span>我会倾向判断是热策略限制充电电流，而不是单纯充电器问题。</span></span>
+<span class="line"><span>同时还要看是否边充边用导致CPU、GPU、屏幕和充电热叠加。</span></span></code></pre>
+<h2 id="十五case-12batterystats-显示-system_server-耗电高真正根因却在-app">十五、Case 12：BatteryStats 显示 system_server 耗电高，真正根因却在 App</h2>
+<p>BatteryStats 是功耗归因工具，但它不是万能真相。尤其是很多系统服务代 App 工作时，如果 WorkSource 或归因链不清晰，容易看到 system_server 或 Android OS 耗电高。</p>
+<h3 id="现象-11">现象</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>电池页面显示Android系统或system_server耗电高；</span></span>
+<span class="line"><span>但用户实际是在某个App场景后出现掉电；</span></span>
+<span class="line"><span>Perfetto里能看到系统服务线程替App处理任务；</span></span>
+<span class="line"><span>BatteryStats归因不够细。</span></span></code></pre>
+<h3 id="命令-8">命令</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --charged</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --history</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> power</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> alarm</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> jobscheduler</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> dumpsys</span><span style="color:#9ECBFF"> location</span></span></code></pre>
+<h3 id="分析链路-7">分析链路</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[电池页面显示system_server高] --> B[查看BatteryStats明细]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C[查wakelock alarm job location]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> D[Perfetto看调用时序]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E{是否代App执行}</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> F[检查WorkSource或调用方]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> G[系统服务自身异常]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F --> H[修正归因或限制App行为]</span></span>
+<span class="line"><span style="color:#E1E4E8">    G --> I[修复Framework服务]</span></span></code></pre>
+<h3 id="关键理解-1">关键理解</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>BatteryStats适合做长周期归因：</span></span>
+<span class="line"><span>    可以发现哪个UID、哪类资源、哪个时间段异常。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>但它不是电流仪：</span></span>
+<span class="line"><span>    不能直接等价于真实瞬时功耗。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>它也依赖归因：</span></span>
+<span class="line"><span>    如果系统服务替App执行任务，归因可能集中到system_server或Android OS。</span></span></code></pre>
+<h3 id="修复方向-4">修复方向</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>归因问题：</span></span>
+<span class="line"><span>    补WorkSource；</span></span>
+<span class="line"><span>    让系统服务记录调用方；</span></span>
+<span class="line"><span>    优化BatteryStats note接口使用。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>真实系统服务问题：</span></span>
+<span class="line"><span>    定位服务内部循环、锁、异常重试；</span></span>
+<span class="line"><span>    修复状态机；</span></span>
+<span class="line"><span>    增加限频和退避。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>App触发问题：</span></span>
+<span class="line"><span>    限制频率；</span></span>
+<span class="line"><span>    合并请求；</span></span>
+<span class="line"><span>    前后台差异化策略。</span></span></code></pre>
+<h3 id="我会这样说明-11">我会这样说明</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>BatteryStats显示system_server高时，我不会马上判断Framework有bug。</span></span>
+<span class="line"><span>我会继续看是哪类资源高，比如wakelock、alarm、job、location还是network。</span></span>
+<span class="line"><span>很多时候系统服务是在代App执行任务，需要结合WorkSource、dumpsys明细和Perfetto时序，</span></span>
+<span class="line"><span>区分是真正system_server内部异常，还是App请求通过系统服务放大了功耗。</span></span></code></pre>
+<h2 id="十六case-13qcom-平台上-vendor-服务或节点导致功耗异常">十六、Case 13：QCOM 平台上 vendor 服务或节点导致功耗异常</h2>
+<p>QCOM 平台分析时，除了 AOSP Framework，还要看 vendor 服务、kernel节点和平台特有唤醒源。</p>
+<h3 id="常见线索">常见线索</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>进程：</span></span>
+<span class="line"><span>    qcrild、netmgrd、imsdatadaemon、loc_launcher、vendor.qti.hardware相关服务。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>wakeup_sources：</span></span>
+<span class="line"><span>    qcom_rx_wakelock、IPA_WS、wlan、alarmtimer、PowerManagerService.WakeLocks。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>thermal：</span></span>
+<span class="line"><span>    tsens、pm8998、battery、xo_therm、quiet_therm、cpu相关zone。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>power_supply：</span></span>
+<span class="line"><span>    battery、usb、dc、bms、parallel。</span></span></code></pre>
+<h3 id="命令-9">命令</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> getprop</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -Ei</span><span style="color:#9ECBFF"> 'ro.board|soc|platform|qcom|vendor'</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> ps</span><span style="color:#79B8FF"> -A</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> grep</span><span style="color:#79B8FF"> -Ei</span><span style="color:#9ECBFF"> 'qcril|netmgr|ims|loc|qti|vendor'</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> cat</span><span style="color:#9ECBFF"> /sys/kernel/debug/wakeup_sources</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> ls</span><span style="color:#9ECBFF"> /sys/class/power_supply</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> ls</span><span style="color:#9ECBFF"> /sys/class/thermal</span></span></code></pre>
+<h3 id="判断链路-1">判断链路</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart LR</span></span>
+<span class="line"><span style="color:#E1E4E8">    A[AOSP证据] --> B[Framework服务]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B --> C[HAL接口]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> D[QCOM vendor服务]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E[Kernel driver]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> F[硬件或射频条件]</span></span></code></pre>
+<h3 id="我会这样说明-12">我会这样说明</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>在QCOM平台上，我不会只停留在AOSP Framework。</span></span>
+<span class="line"><span>如果Framework侧只能看到结果，比如wakelock、网络请求、thermal状态，</span></span>
+<span class="line"><span>我会继续往vendor服务和kernel节点下钻，结合qcrild、netmgrd、loc服务、</span></span>
+<span class="line"><span>wakeup_sources、thermal_zone和power_supply节点确认底层事实。</span></span></code></pre>
+<h2 id="十七通用抓取命令包">十七、通用抓取命令包</h2>
+<p>实际处理问题时，我不想每次临时翻命令，所以整理了一个基础抓取包，再按场景补充。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#E1E4E8">OUT</span><span style="color:#F97583">=</span><span style="color:#9ECBFF">/data/local/tmp/power_case_</span><span style="color:#E1E4E8">$(</span><span style="color:#B392F0">date</span><span style="color:#9ECBFF"> +%Y%m%d_%H%M%S</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#B392F0">mkdir</span><span style="color:#79B8FF"> -p</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">"</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">getprop</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/getprop.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> power</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/dumpsys_power.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> battery</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/dumpsys_battery.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --charged</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/batterystats_charged.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> batterystats</span><span style="color:#79B8FF"> --history</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/batterystats_history.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> alarm</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/dumpsys_alarm.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> jobscheduler</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/dumpsys_jobscheduler.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> deviceidle</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/dumpsys_deviceidle.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> thermalservice</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/dumpsys_thermalservice.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> display</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/dumpsys_display.txt"</span></span>
+<span class="line"><span style="color:#B392F0">dumpsys</span><span style="color:#9ECBFF"> SurfaceFlinger</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/dumpsys_surfaceflinger.txt"</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">cat</span><span style="color:#9ECBFF"> /sys/kernel/debug/wakeup_sources</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/wakeup_sources.txt"</span><span style="color:#F97583"> 2></span><span style="color:#9ECBFF">/dev/null</span></span>
+<span class="line"><span style="color:#B392F0">ls</span><span style="color:#79B8FF"> -R</span><span style="color:#9ECBFF"> /sys/class/power_supply</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/power_supply_ls.txt"</span><span style="color:#F97583"> 2></span><span style="color:#9ECBFF">/dev/null</span></span>
+<span class="line"><span style="color:#B392F0">ls</span><span style="color:#79B8FF"> -R</span><span style="color:#9ECBFF"> /sys/class/thermal</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/thermal_ls.txt"</span><span style="color:#F97583"> 2></span><span style="color:#9ECBFF">/dev/null</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">for</span><span style="color:#E1E4E8"> z </span><span style="color:#F97583">in</span><span style="color:#9ECBFF"> /sys/class/thermal/thermal_zone*</span><span style="color:#E1E4E8">; </span><span style="color:#F97583">do</span></span>
+<span class="line"><span style="color:#79B8FF">  echo</span><span style="color:#9ECBFF"> "===== </span><span style="color:#E1E4E8">$z</span><span style="color:#9ECBFF"> ====="</span><span style="color:#F97583"> >></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/thermal_zones.txt"</span></span>
+<span class="line"><span style="color:#B392F0">  cat</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$z</span><span style="color:#9ECBFF">/type"</span><span style="color:#F97583"> >></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/thermal_zones.txt"</span><span style="color:#F97583"> 2></span><span style="color:#9ECBFF">/dev/null</span></span>
+<span class="line"><span style="color:#B392F0">  cat</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$z</span><span style="color:#9ECBFF">/temp"</span><span style="color:#F97583"> >></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/thermal_zones.txt"</span><span style="color:#F97583"> 2></span><span style="color:#9ECBFF">/dev/null</span></span>
+<span class="line"><span style="color:#F97583">done</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">for</span><span style="color:#E1E4E8"> c </span><span style="color:#F97583">in</span><span style="color:#9ECBFF"> /sys/class/thermal/cooling_device*</span><span style="color:#E1E4E8">; </span><span style="color:#F97583">do</span></span>
+<span class="line"><span style="color:#79B8FF">  echo</span><span style="color:#9ECBFF"> "===== </span><span style="color:#E1E4E8">$c</span><span style="color:#9ECBFF"> ====="</span><span style="color:#F97583"> >></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/cooling_devices.txt"</span></span>
+<span class="line"><span style="color:#B392F0">  cat</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$c</span><span style="color:#9ECBFF">/type"</span><span style="color:#F97583"> >></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/cooling_devices.txt"</span><span style="color:#F97583"> 2></span><span style="color:#9ECBFF">/dev/null</span></span>
+<span class="line"><span style="color:#B392F0">  cat</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$c</span><span style="color:#9ECBFF">/cur_state"</span><span style="color:#F97583"> >></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/cooling_devices.txt"</span><span style="color:#F97583"> 2></span><span style="color:#9ECBFF">/dev/null</span></span>
+<span class="line"><span style="color:#F97583">done</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">logcat</span><span style="color:#79B8FF"> -d</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/logcat.txt"</span></span>
+<span class="line"><span style="color:#B392F0">logcat</span><span style="color:#79B8FF"> -b</span><span style="color:#9ECBFF"> events</span><span style="color:#79B8FF"> -d</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/logcat_events.txt"</span></span>
+<span class="line"><span style="color:#B392F0">logcat</span><span style="color:#79B8FF"> -b</span><span style="color:#9ECBFF"> radio</span><span style="color:#79B8FF"> -d</span><span style="color:#F97583"> ></span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">/logcat_radio.txt"</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#79B8FF">echo</span><span style="color:#9ECBFF"> "</span><span style="color:#E1E4E8">$OUT</span><span style="color:#9ECBFF">"</span></span></code></pre>
+<p>拉取：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> shell</span><span style="color:#9ECBFF"> sh</span><span style="color:#9ECBFF"> /data/local/tmp/collect_power_case.sh</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> pull</span><span style="color:#9ECBFF"> /data/local/tmp/power_case_20260531_120000</span><span style="color:#9ECBFF"> ./</span></span>
+<span class="line"><span style="color:#B392F0">adb</span><span style="color:#9ECBFF"> bugreport</span><span style="color:#9ECBFF"> bugreport_power_case.zip</span></span></code></pre>
+<p>按场景补充：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>场景</th><th>额外抓取</th></tr></thead><tbody><tr><td>灭屏待机</td><td>wakeup_sources 前后快照、BatteryStats history、deviceidle</td></tr><tr><td>亮屏静置</td><td>Perfetto gfx/view/sched/freq、SurfaceFlinger、gfxinfo</td></tr><tr><td>充电发热</td><td>power_supply、thermal_zone、cooling_device、电池温度电流</td></tr><tr><td>弱网</td><td>radio log、telephony.registry、connectivity、netstats</td></tr><tr><td>定位</td><td>dumpsys location、GNSS日志、Wi-Fi scan信息</td></tr><tr><td>Job/Alarm</td><td>dumpsys jobscheduler、dumpsys alarm、BatteryStats wakeup alarm</td></tr></tbody></table>
+<h2 id="十八case-复盘报告写法">十八、case 复盘报告写法</h2>
+<p>我自己复盘问题时基本按这个结构写，周报、复盘和现场解释都能直接复用。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>问题标题：</span></span>
+<span class="line"><span>    灭屏待机掉电异常，定位到xxx周期唤醒。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>影响范围：</span></span>
+<span class="line"><span>    设备型号、版本、芯片平台、是否量产版本、复现概率。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>测试条件：</span></span>
+<span class="line"><span>    环境温度：</span></span>
+<span class="line"><span>    电量区间：</span></span>
+<span class="line"><span>    网络状态：</span></span>
+<span class="line"><span>    亮度/刷新率：</span></span>
+<span class="line"><span>    是否插USB：</span></span>
+<span class="line"><span>    是否充电：</span></span>
+<span class="line"><span>    测试时长：</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>现象数据：</span></span>
+<span class="line"><span>    修复前掉电：</span></span>
+<span class="line"><span>    修复前平均电流：</span></span>
+<span class="line"><span>    修复前温度：</span></span>
+<span class="line"><span>    异常唤醒次数：</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>证据链：</span></span>
+<span class="line"><span>    1. BatteryStats显示xxx；</span></span>
+<span class="line"><span>    2. Perfetto显示xxx；</span></span>
+<span class="line"><span>    3. wakeup_sources显示xxx；</span></span>
+<span class="line"><span>    4. sysfs或thermal节点显示xxx；</span></span>
+<span class="line"><span>    5. 电流仪显示xxx。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>根因：</span></span>
+<span class="line"><span>    xxx模块在xxx场景下没有xxx，导致xxx。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>修复：</span></span>
+<span class="line"><span>    xxx。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>验证结果：</span></span>
+<span class="line"><span>    修复后掉电：</span></span>
+<span class="line"><span>    修复后平均电流：</span></span>
+<span class="line"><span>    修复后温度：</span></span>
+<span class="line"><span>    修复后唤醒次数：</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>风险与回归：</span></span>
+<span class="line"><span>    是否影响功能实时性；</span></span>
+<span class="line"><span>    是否影响通知；</span></span>
+<span class="line"><span>    是否影响充电速度；</span></span>
+<span class="line"><span>    是否影响温控安全。</span></span></code></pre>
+<h2 id="十九项目经历沉淀">十九、项目经历沉淀</h2>
+<p>功耗经历不能只写“熟悉 Android 功耗优化”。我更倾向于写清楚处理过什么场景、用了哪些证据、最后拿到了什么收益。</p>
+<h3 id="灭屏待机方向">灭屏待机方向</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>负责Android设备灭屏待机功耗分析，建立BatteryStats、Perfetto、</span></span>
+<span class="line"><span>kernel wakeup_sources和电流仪联合分析流程，定位并推动修复</span></span>
+<span class="line"><span>partial wakelock长时间持锁、wakeup alarm周期唤醒、Doze状态异常等问题，</span></span>
+<span class="line"><span>将典型待机场景掉电从xx%降低到xx%。</span></span></code></pre>
+<h3 id="充电与热方向">充电与热方向</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>负责充电发热和thermal限流问题分析，结合Health HAL、BatteryService、</span></span>
+<span class="line"><span>power_supply节点、thermal_zone和cooling_device状态，定位充电电流下降、</span></span>
+<span class="line"><span>CPU限频和亮度热限制等问题，优化边充边用场景下的温升和充电体验。</span></span></code></pre>
+<h3 id="亮屏功耗方向">亮屏功耗方向</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>负责亮屏静置和高刷场景功耗优化，通过Perfetto分析RenderThread、</span></span>
+<span class="line"><span>SurfaceFlinger、CPU/GPU频率和刷新率策略，定位页面持续重绘、</span></span>
+<span class="line"><span>刷新率不降档和显示合成异常等问题，降低典型页面静置功耗。</span></span></code></pre>
+<h3 id="平台实战方向">平台实战方向</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>基于QCOM平台进行功耗问题实战分析，熟悉wakeup_sources、thermal_zone、</span></span>
+<span class="line"><span>power_supply、qcrild、netmgrd、location等vendor链路，能够从AOSP Framework</span></span>
+<span class="line"><span>下钻到HAL、Kernel和平台节点完成问题闭环。</span></span></code></pre>
+<h2 id="二十常见追问">二十、常见追问</h2>
+<h3 id="1-你怎么分析灭屏待机高耗电">1. 你怎么分析灭屏待机高耗电？</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>我会先确认测试条件，比如是否插USB、是否充电、是否开启Stay awake、</span></span>
+<span class="line"><span>网络和SIM状态是否一致。条件确认后，先用BatteryStats看长周期归因，</span></span>
+<span class="line"><span>比如wakelock、wakeup alarm、network、job等；再用Perfetto看时间线，</span></span>
+<span class="line"><span>确认灭屏后是否频繁唤醒或线程持续运行；最后用kernel wakeup_sources</span></span>
+<span class="line"><span>确认底层唤醒源。如果有电流仪，会把电流曲线和日志时间点对齐。</span></span></code></pre>
+<h3 id="2-usb-连接会破坏待机测试但命令又要-adb怎么办">2. USB 连接会破坏待机测试，但命令又要 adb，怎么办？</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>这不矛盾，但要区分准备阶段、测试阶段和取证阶段。</span></span>
+<span class="line"><span>准备阶段可以用USB下发脚本、清日志、设置条件；真正待机测试时拔掉USB，</span></span>
+<span class="line"><span>让设备处于自然状态；测试结束后再插USB拉取日志。</span></span>
+<span class="line"><span>如果必须在线观察，可以用无线ADB或本地脚本，但要说明Wi-Fi或脚本本身也会引入影响。</span></span></code></pre>
+<h3 id="3-batterystats-能不能代表真实功耗">3. BatteryStats 能不能代表真实功耗？</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>BatteryStats适合做归因，不等于电流仪。它可以告诉我哪个UID或哪类资源使用异常，</span></span>
+<span class="line"><span>比如wakelock、alarm、network、sensor等，但真实功耗还受硬件状态、</span></span>
+<span class="line"><span>温度、信号、亮度、刷新率和平台策略影响。所以我会把BatteryStats作为入口，</span></span>
+<span class="line"><span>再结合Perfetto、kernel节点和电流数据验证。</span></span></code></pre>
+<h3 id="4-thermalservice-没数据是不是没有温控">4. thermalservice 没数据是不是没有温控？</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>不是。thermalservice依赖Framework到Thermal HAL的链路。</span></span>
+<span class="line"><span>如果HAL Ready=false，只能说明Framework thermal信息不完整。</span></span>
+<span class="line"><span>Kernel thermal_zone和cooling_device仍可能正常工作，CPU限频、充电降流、</span></span>
+<span class="line"><span>亮度限制也可能继续发生。因此要继续看/sys/class/thermal下的节点。</span></span></code></pre>
+<h3 id="5-system_server-耗电高怎么查">5. system_server 耗电高怎么查？</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>我会先判断是真正system_server内部异常，还是系统服务代App执行任务导致归因集中。</span></span>
+<span class="line"><span>具体会看BatteryStats里的wakelock、alarm、job、location、network明细，</span></span>
+<span class="line"><span>再结合dumpsys power、alarm、jobscheduler、location和Perfetto时序。</span></span>
+<span class="line"><span>如果是代App执行，还要看WorkSource或调用方记录是否准确。</span></span></code></pre>
+<h3 id="6-亮屏静置功耗高怎么查">6. 亮屏静置功耗高怎么查？</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>亮屏问题先固定变量：亮度、刷新率、网络、温度。</span></span>
+<span class="line"><span>然后看Perfetto里的RenderThread、SurfaceFlinger、CPU/GPU频率，</span></span>
+<span class="line"><span>确认页面是否持续绘制或刷新率不降档。亮屏场景不能只套灭屏wakelock思路，</span></span>
+<span class="line"><span>显示链路和GPU通常更关键。</span></span></code></pre>
+<h3 id="7-充电慢怎么判断是不是热限流">7. 充电慢怎么判断是不是热限流？</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>我会同时看battery temp、current_now、thermal_zone和cooling_device。</span></span>
+<span class="line"><span>如果温度上升后current_now下降，并且相关cooling_device状态变化，</span></span>
+<span class="line"><span>就说明很可能是thermal策略限制了充电电流。还需要排除充电器、线材、</span></span>
+<span class="line"><span>电量区间、环境温度和边充边用负载。</span></span></code></pre>
+<h3 id="8-你怎么证明一个修复有效">8. 你怎么证明一个修复有效？</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>必须同条件复测。比如同样版本、同样环境温度、同样网络、同样亮度、</span></span>
+<span class="line"><span>同样测试时长，比较修复前后的掉电、电流、温升、wakelock时间、</span></span>
+<span class="line"><span>wakeup次数、CPU idle占比等指标。只说“感觉好多了”不算功耗验证。</span></span></code></pre>
+<h3 id="9-app-说自己没有高-cpu为什么还可能耗电">9. App 说自己没有高 CPU，为什么还可能耗电？</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>因为功耗不只看CPU平均占用。App可能通过alarm、定位、网络、wakelock</span></span>
+<span class="line"><span>频繁唤醒系统，导致设备进不了深睡。平均CPU不高，但suspend和cpuidle状态被破坏，</span></span>
+<span class="line"><span>待机电流仍然会上升。</span></span></code></pre>
+<h3 id="10-你做-qcom-平台功耗会看什么">10. 你做 QCOM 平台功耗会看什么？</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>我会先用AOSP工具确认Framework层现象，再看QCOM平台相关的vendor服务和kernel节点。</span></span>
+<span class="line"><span>比如qcrild、netmgrd、ims、loc相关进程，wakeup_sources里的qcom_rx_wakelock、</span></span>
+<span class="line"><span>IPA、wlan等项，thermal_zone里的tsens、pmic、电池温度，以及power_supply下的电池和USB节点。</span></span></code></pre>
+<h2 id="二十一收尾">二十一、收尾</h2>
+<p>功耗 case 的核心不是“命令大全”，而是证据链。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>灭屏待机：</span></span>
+<span class="line"><span>    看WakeLock、Alarm、Doze、Suspend、wakeup_sources。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>亮屏静置：</span></span>
+<span class="line"><span>    看亮度、刷新率、SurfaceFlinger、RenderThread、CPU/GPU频率。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>充电发热：</span></span>
+<span class="line"><span>    看Health HAL、BatteryService、power_supply、thermal_zone、cooling_device。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>弱网定位：</span></span>
+<span class="line"><span>    看radio、modem、location、Wi-Fi scan、vendor wakeup。</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>归因问题：</span></span>
+<span class="line"><span>    看BatteryStats、WorkSource、系统服务代执行关系。</span></span></code></pre>
+<p>我最后会把整套方法收成这句话：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>我先确认测试条件，再用BatteryStats做长周期归因，</span></span>
+<span class="line"><span>用Perfetto看时间线，用kernel节点确认底层唤醒或热限制，</span></span>
+<span class="line"><span>最后用同条件电流、掉电、温升数据验证修复收益。</span></span></code></pre>
+<p>这句话后面只要能接上两三个具体 case，就比单独写“熟悉 Android 功耗”更有说服力。</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

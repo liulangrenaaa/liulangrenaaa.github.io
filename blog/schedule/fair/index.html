@@ -1,0 +1,40 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>fair | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>fair</h1><div class="post-meta"><time datetime="2021-04-30T19:00:00.000Z">2021年4月30日</time><span> / linux kernel / linux schedule</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">linux kernel</span></div></header><div class="article-body"><h2 id="reweight_entity">reweight_entity</h2>
+<p>sched_init()->|
+|->set_load_weight(p, false)
+sched_fork()->|</p>
+<p>set_user_nice()--------->|
+|->set_load_weight(p, true)->reweight_task()->reweight_entity()
+__setscheduler_params()->|</p>
+<p>只会在 cfs task改变 task nice值 或者 改变调度参数的时候会 调用到 <code>reweight_entity()</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>static void reweight_entity(struct cfs_rq *cfs_rq, struct sched_entity *se,</span></span>
+<span class="line"><span>			    unsigned long weight, unsigned long runnable)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	if (se->on_rq) {</span></span>
+<span class="line"><span>		/* commit outstanding execution time */</span></span>
+<span class="line"><span>		if (cfs_rq->curr == se)</span></span>
+<span class="line"><span>			update_curr(cfs_rq);</span></span>
+<span class="line"><span>		account_entity_dequeue(cfs_rq, se);</span></span>
+<span class="line"><span>		dequeue_runnable_load_avg(cfs_rq, se);</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>	dequeue_load_avg(cfs_rq, se);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	se->runnable_weight = runnable;</span></span>
+<span class="line"><span>	update_load_set(&#x26;se->load, weight);</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>#ifdef CONFIG_SMP</span></span>
+<span class="line"><span>	do {</span></span>
+<span class="line"><span>		u32 divider = LOAD_AVG_MAX - 1024 + se->avg.period_contrib;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>		se->avg.load_avg = div_u64(se_weight(se) * se->avg.load_sum, divider);</span></span>
+<span class="line"><span>		se->avg.runnable_load_avg =</span></span>
+<span class="line"><span>			div_u64(se_runnable(se) * se->avg.runnable_load_sum, divider);</span></span>
+<span class="line"><span>	} while (0);</span></span>
+<span class="line"><span>#endif</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>	enqueue_load_avg(cfs_rq, se);</span></span>
+<span class="line"><span>	if (se->on_rq) {</span></span>
+<span class="line"><span>		account_entity_enqueue(cfs_rq, se);</span></span>
+<span class="line"><span>		enqueue_runnable_load_avg(cfs_rq, se);</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>由于重新计算 load_weight，所以需要 xx_dequeue() and xx_enqueue()。</p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>

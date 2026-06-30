@@ -1,0 +1,60 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Android、Linux 内核与系统性能分析笔记"><link rel="icon" href="/images/icons/image.png"><title>gnu built_in | liulangren Blog</title><link rel="stylesheet" href="/_astro/BaseLayout.CCb3vF-_.css"></head><body><div class="site-shell"><header class="site-header"><a class="brand" href="/" aria-label="返回首页"><img class="brand-mark" src="/images/icons/image.png" alt=""><span class="brand-copy"><span class="brand-title">liulangren Blog</span><span class="brand-subtitle">Android / Linux / Performance</span></span></a><nav class="nav" aria-label="主导航"><a href="/blog/">文章</a><a href="/reports/">专题</a><a href="/about/">关于</a></nav></header><main><article class="article"><header class="article-header"><h1>gnu built_in</h1><div class="post-meta"><time datetime="2021-09-14T19:00:00.000Z">2021年9月14日</time><span> / kernel debug</span></div><div class="tag-row" style="margin-top: 14px;"><span class="tag">tracepoint</span><span class="tag">aarch64</span></div></header><div class="article-body"><h2 id="简介">简介</h2>
+<p>__builtin_开头的符号其实是一些编译器内置的函数或者编译优化处理开关等，其作用类似于宏。宏是高级语言用于预编译时进行替换的源代码块，而内置函数则是用于在编译阶段进行替换的机器指令块。因此编译器的这些内置函数其实并不是真实的函数，而只是一段指令块，起到编译时的内联功能。</p>
+<h2 id="__builtin_types_compatible_p">__builtin_types_compatible_p</h2>
+<p>比较两个 变量类型是否相同，<code>__builtin_types_compatible_p</code>, 如果一致返回true否则返回false, 在编译阶段就出了结果。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>#include &#x3C;stdio.h></span></span>
+<span class="line"><span>#include &#x3C;stdbool.h></span></span>
+<span class="line"><span>#include &#x3C;stdlib.h></span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>int main(int argc, char **argv)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>        int a = 1, b = 2, c = 3;</span></span>
+<span class="line"><span>        char e = 4, d = 5;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>        bool f = false;</span></span>
+<span class="line"><span>        f = __builtin_types_compatible_p(int, typeof(a));</span></span>
+<span class="line"><span>        printf("a is int %d\n", f);</span></span>
+<span class="line"><span>        f = __builtin_types_compatible_p(typeof(e), typeof(a));</span></span>
+<span class="line"><span>        printf("a &#x26; e is same type %d\n", f);</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p><code>objdump -S a.out</code> 之后</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>0000000000001149 &#x3C;main>:</span></span>
+<span class="line"><span>    1149:       f3 0f 1e fa             endbr64</span></span>
+<span class="line"><span>    114d:       55                      push   %rbp</span></span>
+<span class="line"><span>    114e:       48 89 e5                mov    %rsp,%rbp</span></span>
+<span class="line"><span>    1151:       48 83 ec 20             sub    $0x20,%rsp</span></span>
+<span class="line"><span>    1155:       89 7d ec                mov    %edi,-0x14(%rbp)</span></span>
+<span class="line"><span>    1158:       48 89 75 e0             mov    %rsi,-0x20(%rbp)</span></span>
+<span class="line"><span>    115c:       c7 45 f4 01 00 00 00    movl   $0x1,-0xc(%rbp)</span></span>
+<span class="line"><span>    1163:       c7 45 f8 02 00 00 00    movl   $0x2,-0x8(%rbp)</span></span>
+<span class="line"><span>    116a:       c7 45 fc 03 00 00 00    movl   $0x3,-0x4(%rbp)</span></span>
+<span class="line"><span>    1171:       c6 45 f1 04             movb   $0x4,-0xf(%rbp)</span></span>
+<span class="line"><span>    1175:       c6 45 f2 05             movb   $0x5,-0xe(%rbp)</span></span>
+<span class="line"><span>    1179:       c6 45 f3 00             movb   $0x0,-0xd(%rbp)</span></span>
+<span class="line"><span>    117d:       c6 45 f3 01             movb   $0x1,-0xd(%rbp)</span></span>
+<span class="line"><span>    1181:       0f b6 45 f3             movzbl -0xd(%rbp),%eax</span></span>
+<span class="line"><span>    1185:       89 c6                   mov    %eax,%esi</span></span>
+<span class="line"><span>    1187:       48 8d 3d 76 0e 00 00    lea    0xe76(%rip),%rdi        # 2004 &#x3C;_IO_stdin_used+0x4></span></span>
+<span class="line"><span>    118e:       b8 00 00 00 00          mov    $0x0,%eax</span></span>
+<span class="line"><span>    1193:       e8 b8 fe ff ff          call   1050 &#x3C;printf@plt></span></span>
+<span class="line"><span>    1198:       c6 45 f3 00             movb   $0x0,-0xd(%rbp)</span></span>
+<span class="line"><span>    119c:       0f b6 45 f3             movzbl -0xd(%rbp),%eax</span></span>
+<span class="line"><span>    11a0:       89 c6                   mov    %eax,%esi</span></span>
+<span class="line"><span>    11a2:       48 8d 3d 68 0e 00 00    lea    0xe68(%rip),%rdi        # 2011 &#x3C;_IO_stdin_used+0x11></span></span>
+<span class="line"><span>    11a9:       b8 00 00 00 00          mov    $0x0,%eax</span></span>
+<span class="line"><span>    11ae:       e8 9d fe ff ff          call   1050 &#x3C;printf@plt></span></span>
+<span class="line"><span>    11b3:       b8 00 00 00 00          mov    $0x0,%eax</span></span>
+<span class="line"><span>    11b8:       c9                      leave</span></span>
+<span class="line"><span>    11b9:       c3                      ret</span></span>
+<span class="line"><span>    11ba:       66 0f 1f 44 00 00       nopw   0x0(%rax,%rax,1)</span></span></code></pre>
+<p>可以看到 <code>-0xd(%rbp)</code> 这个地址存放的就是 变量 <code>f</code> 的值，
+<code> f = __builtin_types_compatible_p(int, typeof(a));</code> 编译之后成为了 <code>117d:       c6 45 f3 01             movb   $0x1,-0xd(%rbp)</code></p>
+<p><code>f = __builtin_types_compatible_p(typeof(e), typeof(a));</code>  编译之后成为了 <code>    1198:       c6 45 f3 00             movb   $0x0,-0xd(%rbp)</code></p>
+<p>可以看出 <code>__builtin_types_compatible_p</code> 结果在编译时就已经确定了。</p>
+<p>这个在 static-key 机制中使用。</p>
+<h2 id="__builtin_constant_p">__builtin_constant_p</h2>
+<p>来判断某个表达式是否是一个常量，如果是常量返回true否则返回false</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span></span></span></code></pre>
+<p>后续补充。。</p>
+<p>参考<a href="https://cloud.tencent.com/developer/article/1425272">LLVM编译器中的内置(built-in)函数</a></p>
+<p>参考<a href="https://cloud.tencent.com/developer/inventory/533">llvm 编译器学习之路</a></p></div></article><script type="module" src="/_astro/PostLayout.astro_astro_type_script_index_0_lang.BKkAVCNB.js"></script></main><footer class="site-footer"><span>liulangren Blog · Android / Linux / Performance notes</span></footer></div></body></html>
