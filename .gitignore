@@ -9,10 +9,10 @@ db.json
 *.swp
 *~
 node_modules/
-public/
+dist/
+.astro/
 .deploy*/
 /tags
 source/generated/
 .tmp/
 .antigravitycli/
-

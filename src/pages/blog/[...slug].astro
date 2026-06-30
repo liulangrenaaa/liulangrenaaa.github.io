@@ -1,0 +1,30 @@
+---
+import { getCollection, render } from 'astro:content';
+import type { CollectionEntry } from 'astro:content';
+import PostLayout from '../../layouts/PostLayout.astro';
+
+type BlogPost = CollectionEntry<'blog'>;
+
+// 生成所有博客文章的静态路由。
+export async function getStaticPaths() {
+  const posts = (await getCollection('blog')).filter((post: BlogPost) => !post.data.draft);
+
+  return posts.map((post: BlogPost) => ({
+    params: { slug: post.data.slug },
+    props: { post }
+  }));
+}
+
+const { post } = Astro.props as { post: BlogPost };
+const { Content } = await render(post);
+---
+
+<PostLayout
+  title={post.data.title}
+  description={post.data.description}
+  date={post.data.date}
+  tags={post.data.tags}
+  categories={post.data.categories}
+>
+  <Content />
+</PostLayout>

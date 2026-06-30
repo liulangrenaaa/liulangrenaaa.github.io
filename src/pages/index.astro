@@ -1,0 +1,48 @@
+---
+import { getCollection } from 'astro:content';
+import type { CollectionEntry } from 'astro:content';
+import BaseLayout from '../layouts/BaseLayout.astro';
+
+type BlogPost = CollectionEntry<'blog'>;
+
+const posts = (await getCollection('blog')).filter((post: BlogPost) => !post.data.draft)
+  .sort((a: BlogPost, b: BlogPost) => b.data.date.valueOf() - a.data.date.valueOf());
+const latestPosts = posts.slice(0, 8);
+const tagCount = new Set(posts.flatMap((post: BlogPost) => post.data.tags)).size;
+---
+
+<BaseLayout>
+  <section class="hero">
+    <div>
+      <h1>系统问题分析笔记</h1>
+      <p>
+        面向 Android、Linux 内核、系统性能与稳定性问题的技术笔记，沉淀源码阅读、调试方法、问题复盘和专题报告。
+      </p>
+    </div>
+    <div class="stats" aria-label="站点统计">
+      <div class="stat">
+        <strong>{posts.length}</strong>
+        <span>文章</span>
+      </div>
+      <div class="stat">
+        <strong>{tagCount}</strong>
+        <span>标签</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="page-title">最新文章</h2>
+    <div class="post-grid">
+      {latestPosts.map((post: BlogPost) => (
+        <a class="post-card" href={`/blog/${post.data.slug}/`}>
+          <div class="post-meta">{post.data.date.toISOString().slice(0, 10)}</div>
+          <h3>{post.data.title}</h3>
+          <div class="tag-row">
+            {post.data.tags.slice(0, 4).map((tag: string) => <span class="tag">{tag}</span>)}
+          </div>
+        </a>
+      ))}
+    </div>
+  </section>
+</BaseLayout>

@@ -1,0 +1,47 @@
+---
+import '../styles/global.css';
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const siteTitle = 'liulangren Blog';
+const { title = siteTitle, description = 'Android、Linux 内核与系统性能分析笔记' } = Astro.props;
+const pageTitle = title === siteTitle ? siteTitle : `${title} | ${siteTitle}`;
+---
+
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={description} />
+    <link rel="icon" href="/images/icons/image.png" />
+    <title>{pageTitle}</title>
+  </head>
+  <body>
+    <div class="site-shell">
+      <header class="site-header">
+        <a class="brand" href="/" aria-label="返回首页">
+          <img class="brand-mark" src="/images/icons/image.png" alt="" />
+          <span class="brand-copy">
+            <span class="brand-title">liulangren Blog</span>
+            <span class="brand-subtitle">Android / Linux / Performance</span>
+          </span>
+        </a>
+        <nav class="nav" aria-label="主导航">
+          <a href="/blog/">文章</a>
+          <a href="/reports/">专题</a>
+          <a href="/about/">关于</a>
+        </nav>
+      </header>
+      <main>
+        <slot />
+      </main>
+      <footer class="site-footer">
+        <span>liulangren Blog · Android / Linux / Performance notes</span>
+      </footer>
+    </div>
+  </body>
+</html>

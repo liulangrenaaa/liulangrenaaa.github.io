@@ -1,0 +1,28 @@
+---
+import { getCollection } from 'astro:content';
+import type { CollectionEntry } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+
+type BlogPost = CollectionEntry<'blog'>;
+
+const posts = (await getCollection('blog')).filter((post: BlogPost) => !post.data.draft)
+  .sort((a: BlogPost, b: BlogPost) => b.data.date.valueOf() - a.data.date.valueOf());
+---
+
+<BaseLayout title="文章">
+  <h1 class="page-title">文章</h1>
+  <div class="post-grid">
+    {posts.map((post: BlogPost) => (
+      <a class="post-card" href={`/blog/${post.data.slug}/`}>
+        <div class="post-meta">
+          {post.data.date.toISOString().slice(0, 10)}
+          {post.data.categories.length > 0 && ` / ${post.data.categories.join(' / ')}`}
+        </div>
+        <h2>{post.data.title}</h2>
+        <div class="tag-row">
+          {post.data.tags.slice(0, 5).map((tag: string) => <span class="tag">{tag}</span>)}
+        </div>
+      </a>
+    ))}
+  </div>
+</BaseLayout>
