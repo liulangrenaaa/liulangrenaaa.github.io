@@ -50,29 +50,73 @@ thermalservice不可用时你怎么分析温控？
 
 功耗问题一上来把所有日志都抓一遍，最后很容易在日志里迷路。我现在更习惯先给场景归类，再决定抓哪些证据。
 
-```mermaid
-flowchart TD
-    A[发现功耗异常] --> B[确认测试条件]
-    B --> C{异常场景}
-    C --> D[灭屏待机]
-    C --> E[亮屏静置]
-    C --> F[充电发热]
-    C --> G[弱网或定位]
-    C --> H[游戏或重负载]
-    D --> I[WakeLock Alarm Doze Suspend]
-    E --> J[亮度 刷新 合成 CPU GPU]
-    F --> K[Health HAL Thermal current_now]
-    G --> L[Modem WiFi GNSS wakelock]
-    H --> M[CPU GPU thermal scheduler]
-    I --> N[形成证据链]
-    J --> N
-    K --> N
-    L --> N
-    M --> N
-    N --> O[定位责任层]
-    O --> P[修改策略或代码]
-    P --> Q[同条件复测]
-```
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 700" width="900" height="700">
+  <rect width="900" height="700" fill="#fdfcf8"/>
+  <defs>
+    <marker id="arr" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333"/>
+    </marker>
+  </defs>
+  <rect x="350" y="20" width="200" height="38" rx="4" fill="#e8ecf8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.2,450.0,39.0)"/>
+  <text x="450.0" y="44.0" textAnchor="middle" fontFamily="cursive" fontSize="13" fill="#1a1a1a">发现功耗异常</text>
+  <path d="M 450,58 C 450,78.0 450,78.0 450,98" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <rect x="350" y="98" width="200" height="38" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.2,450.0,117.0)"/>
+  <text x="450.0" y="122.0" textAnchor="middle" fontFamily="cursive" fontSize="13" fill="#1a1a1a">确认测试条件</text>
+  <path d="M 450,136 C 450,156.0 450,156.0 450,176" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <polygon points="450,176 350,210 450,244 550,210" fill="#fff3e0" stroke="#2d2d2d" strokeWidth="1.8"/>
+  <text x="450" y="215" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">异常场景</text>
+  <path d="M 450,244 C 450,270 150,270 150,290" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <path d="M 450,244 C 450,270 280,270 280,290" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <path d="M 450,244 C 450,270 410,270 410,290" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <path d="M 450,244 C 450,270 550,270 550,290" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <path d="M 450,244 C 450,270 700,270 700,290" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <rect x="90" y="290" width="120" height="38" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.3,150.0,309.0)"/>
+  <text x="150.0" y="314.0" textAnchor="middle" fontFamily="cursive" fontSize="13" fill="#1a1a1a">灭屏待机</text>
+  <rect x="220" y="290" width="120" height="38" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.3,280.0,309.0)"/>
+  <text x="280.0" y="314.0" textAnchor="middle" fontFamily="cursive" fontSize="13" fill="#1a1a1a">亮屏静置</text>
+  <rect x="350" y="290" width="120" height="38" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.3,410.0,309.0)"/>
+  <text x="410.0" y="314.0" textAnchor="middle" fontFamily="cursive" fontSize="13" fill="#1a1a1a">充电发热</text>
+  <rect x="490" y="290" width="140" height="38" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.3,560.0,309.0)"/>
+  <text x="560.0" y="314.0" textAnchor="middle" fontFamily="cursive" fontSize="13" fill="#1a1a1a">弱网或定位</text>
+  <rect x="640" y="290" width="140" height="38" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.3,710.0,309.0)"/>
+  <text x="710.0" y="314.0" textAnchor="middle" fontFamily="cursive" fontSize="13" fill="#1a1a1a">游戏或重负载</text>
+  <path d="M 150,328 C 150,348.0 150,348.0 150,368" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <rect x="90" y="368" width="120" height="44" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.2,150.0,390.0)"/>
+  <text x="150.0" y="387.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">WakeLock</text>
+  <text x="150.0" y="403.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">Alarm Doze</text>
+  <path d="M 280,328 C 280,348.0 280,348.0 280,368" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <rect x="220" y="368" width="120" height="44" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.2,280.0,390.0)"/>
+  <text x="280.0" y="387.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">亮度 刷新</text>
+  <text x="280.0" y="403.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">合成 CPU GPU</text>
+  <path d="M 410,328 C 410,348.0 410,348.0 410,368" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <rect x="350" y="368" width="120" height="44" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.2,410.0,390.0)"/>
+  <text x="410.0" y="387.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">Health HAL</text>
+  <text x="410.0" y="403.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">Thermal</text>
+  <path d="M 550,328 C 550,348.0 550,348.0 550,368" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <rect x="490" y="368" width="120" height="44" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.2,550.0,390.0)"/>
+  <text x="550.0" y="387.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">Modem WiFi</text>
+  <text x="550.0" y="403.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">GNSS wakelock</text>
+  <path d="M 700,328 C 700,348.0 700,348.0 700,368" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <rect x="640" y="368" width="120" height="44" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.2,700.0,390.0)"/>
+  <text x="700.0" y="387.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">CPU GPU</text>
+  <text x="700.0" y="403.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">thermal sched</text>
+  <path d="M 150,412 C 150,445 450,445 450,460" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <path d="M 280,412 C 280,445 450,445 450,460" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <path d="M 410,412 C 410,445 450,445 450,460" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <path d="M 550,412 C 550,445 450,445 450,460" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <path d="M 700,412 C 700,445 450,445 450,460" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <rect x="350" y="460" width="200" height="38" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.1,450.0,479.0)"/>
+  <text x="450.0" y="484.0" textAnchor="middle" fontFamily="cursive" fontSize="13" fill="#1a1a1a">形成证据链</text>
+  <path d="M 450,498 C 450,518.0 450,518.0 450,538" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <rect x="350" y="538" width="200" height="38" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.1,450.0,557.0)"/>
+  <text x="450.0" y="562.0" textAnchor="middle" fontFamily="cursive" fontSize="13" fill="#1a1a1a">定位责任层</text>
+  <path d="M 450,576 C 450,596.0 450,596.0 450,616" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <rect x="330" y="616" width="240" height="38" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.2,450.0,635.0)"/>
+  <text x="450.0" y="640.0" textAnchor="middle" fontFamily="cursive" fontSize="13" fill="#1a1a1a">修改策略或代码</text>
+  <path d="M 450,654 C 450,657.0 450,657.0 450,660" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <rect x="350" y="660" width="200" height="38" rx="4" fill="#e8f4e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.2,450.0,679.0)"/>
+  <text x="450.0" y="684.0" textAnchor="middle" fontFamily="cursive" fontSize="13" fill="#1a1a1a">同条件复测</text>
+</svg>
 
 我通常把功耗问题拆成下面几类。
 
@@ -129,15 +173,34 @@ flowchart TD
 
 我写 case 时不堆工具名，重点看证据能不能一层一层收敛。
 
-```mermaid
-flowchart LR
-    A[现象] --> B[用户可感指标]
-    B --> C[系统服务证据]
-    C --> D[Perfetto时间线]
-    D --> E[Kernel节点]
-    E --> F[代码或配置根因]
-    F --> G[修复前后对比]
-```
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 160" width="900" height="160">
+  <rect width="900" height="160" fill="#fdfcf8"/>
+  <defs>
+    <marker id="arr" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333"/>
+    </marker>
+  </defs>
+  <rect x="10" y="60" width="100" height="40" rx="4" fill="#e8ecf8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.2,60.0,80.0)"/>
+  <text x="60.0" y="85.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">现象</text>
+  <rect x="120" y="60" width="135" height="40" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.2,187.5,80.0)"/>
+  <text x="187.5" y="85.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">用户可感指标</text>
+  <rect x="265" y="60" width="145" height="40" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.2,337.5,80.0)"/>
+  <text x="337.5" y="85.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">系统服务证据</text>
+  <rect x="420" y="60" width="135" height="40" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.2,487.5,80.0)"/>
+  <text x="487.5" y="85.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">Perfetto时间线</text>
+  <rect x="565" y="60" width="110" height="40" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.2,620.0,80.0)"/>
+  <text x="620.0" y="85.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">Kernel节点</text>
+  <rect x="685" y="60" width="105" height="40" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.2,737.5,80.0)"/>
+  <text x="737.5" y="85.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">代码或配置根因</text>
+  <rect x="800" y="60" width="90" height="40" rx="4" fill="#e8f4e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.2,845.0,80.0)"/>
+  <text x="845.0" y="85.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">修复前后对比</text>
+  <path d="M 110,80 C 115,77 115,83 120,80" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <path d="M 255,80 C 260,77 260,83 265,80" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <path d="M 410,80 C 415,77 415,83 420,80" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <path d="M 555,80 C 560,77 560,83 565,80" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <path d="M 675,80 C 680,77 680,83 685,80" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <path d="M 790,80 C 795,77 795,83 800,80" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+</svg>
 
 ## 三、源码理解应该怎么嵌入 case
 
@@ -209,16 +272,38 @@ mStayOn=true
 
 ### 分析链路
 
-```mermaid
-flowchart TD
-    A[插USB抓日志] --> B[BatteryService检测plug type]
-    B --> C[PowerManagerService感知isPowered]
-    C --> D{是否开启Stay awake}
-    D --> E[屏幕或电源策略改变]
-    D --> F[充电状态改变]
-    E --> G[待机条件不干净]
-    F --> G
-```
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 440" width="600" height="440">
+  <rect width="600" height="440" fill="#fdfcf8"/>
+  <defs>
+    <marker id="arr" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333"/>
+    </marker>
+  </defs>
+  <rect x="200" y="20" width="200" height="38" rx="4" fill="#e8ecf8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.2,300.0,39.0)"/>
+  <text x="300.0" y="44.0" textAnchor="middle" fontFamily="cursive" fontSize="13" fill="#1a1a1a">插USB抓日志</text>
+  <path d="M 300,58 C 300,78.0 300,78.0 300,98" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <rect x="150" y="98" width="300" height="38" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.2,300.0,117.0)"/>
+  <text x="300.0" y="122.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">BatteryService检测plug type</text>
+  <path d="M 300,136 C 300,156.0 300,156.0 300,176" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <rect x="130" y="176" width="340" height="38" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.2,300.0,195.0)"/>
+  <text x="300.0" y="200.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">PowerManagerService感知isPowered</text>
+  <path d="M 300,214 C 300,234.0 300,234.0 300,254" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <polygon points="300,254 190,290 300,326 410,290" fill="#fff3e0" stroke="#2d2d2d" strokeWidth="1.8"/>
+  <text x="300" y="295" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">是否开启Stay awake</text>
+  <path d="M 190,290 C 150,290 120,330 120,350" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <text x="120" y="320" fontFamily="cursive" fontSize="11" fill="#555">是</text>
+  <path d="M 410,290 C 450,290 470,330 470,350" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <text x="450" y="320" fontFamily="cursive" fontSize="11" fill="#555">否</text>
+  <rect x="20" y="350" width="200" height="44" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.3,120.0,372.0)"/>
+  <text x="120.0" y="369.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">屏幕或电源</text>
+  <text x="120.0" y="385.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">策略改变</text>
+  <rect x="370" y="350" width="200" height="44" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.3,470.0,372.0)"/>
+  <text x="470.0" y="377.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">充电状态改变</text>
+  <path d="M 120,394 C 120,420 300,420 300,400" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <path d="M 470,394 C 470,420 300,420 300,400" stroke="#333" strokeWidth="1.5" fill="none"/>
+  <rect x="170" y="400" width="260" height="38" rx="4" fill="#fff3e0" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.1,300.0,419.0)"/>
+  <text x="300.0" y="424.0" textAnchor="middle" fontFamily="cursive" fontSize="13" fill="#1a1a1a">待机条件不干净</text>
+</svg>
 
 这时不能直接说“设备待机功耗高”。因为你测到的是“USB 连接条件下的功耗”，不是自然灭屏待机。
 
@@ -325,20 +410,40 @@ wakeup_sources:
 
 在 Framework 层，PowerManagerService 会根据当前 WakeLock、显示状态、wakefulness 等信息更新 SuspendBlocker。partial wakelock 的关键点是：它不一定点亮屏幕，但可以保持 CPU 运行。
 
-```mermaid
-sequenceDiagram
-    participant App as App或系统服务
-    participant PMS as PowerManagerService
-    participant BS as BatteryStats
-    participant Kernel as Kernel suspend
-    App->>PMS: acquireWakeLock(PARTIAL_WAKE_LOCK)
-    PMS->>BS: noteStartWakelock
-    PMS->>PMS: updateSuspendBlockerLocked
-    PMS->>Kernel: acquire suspend blocker
-    Kernel-->>Kernel: suspend被阻止或变少
-    App->>PMS: releaseWakeLock
-    PMS->>Kernel: release suspend blocker
-```
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 490" width="800" height="490">
+  <rect width="800" height="490" fill="#fdfcf8"/>
+  <defs>
+    <marker id="arr" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333"/>
+    </marker>
+  </defs>
+  <line x1="90" y1="50" x2="90" y2="470" stroke="#ccc" strokeWidth="1" strokeDasharray="4,3"/>
+  <line x1="270" y1="50" x2="270" y2="470" stroke="#ccc" strokeWidth="1" strokeDasharray="4,3"/>
+  <line x1="470" y1="50" x2="470" y2="470" stroke="#ccc" strokeWidth="1" strokeDasharray="4,3"/>
+  <line x1="660" y1="50" x2="660" y2="470" stroke="#ccc" strokeWidth="1" strokeDasharray="4,3"/>
+  <rect x="15" y="10" width="150" height="36" rx="4" fill="#e8ecf8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.2,90.0,28.0)"/>
+  <text x="90.0" y="33.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">App或系统服务</text>
+  <rect x="195" y="10" width="150" height="36" rx="4" fill="#e8ecf8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.2,270.0,28.0)"/>
+  <text x="270.0" y="33.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">PowerManagerService</text>
+  <rect x="395" y="10" width="150" height="36" rx="4" fill="#e8ecf8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.2,470.0,28.0)"/>
+  <text x="470.0" y="33.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">BatteryStats</text>
+  <rect x="585" y="10" width="150" height="36" rx="4" fill="#e8ecf8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.2,660.0,28.0)"/>
+  <text x="660.0" y="33.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">Kernel suspend</text>
+  <line x1="90" y1="110" x2="270" y2="110" stroke="#333" strokeWidth="1.4"  markerEnd="url(#arr)"/>
+  <text x="180.0" y="105" textAnchor="middle" fontFamily="cursive" fontSize="11" fill="#1a1a1a">1. acquireWakeLock</text>
+  <line x1="270" y1="155" x2="470" y2="155" stroke="#333" strokeWidth="1.4"  markerEnd="url(#arr)"/>
+  <text x="370.0" y="150" textAnchor="middle" fontFamily="cursive" fontSize="11" fill="#1a1a1a">2. noteStartWakelock</text>
+  <line x1="270" y1="200" x2="270" y2="200" stroke="#333" strokeWidth="1.4"  markerEnd="url(#arr)"/>
+  <text x="270.0" y="195" textAnchor="middle" fontFamily="cursive" fontSize="11" fill="#1a1a1a">3. updateSuspendBlockerLocked</text>
+  <line x1="270" y1="245" x2="660" y2="245" stroke="#333" strokeWidth="1.4"  markerEnd="url(#arr)"/>
+  <text x="465.0" y="240" textAnchor="middle" fontFamily="cursive" fontSize="11" fill="#1a1a1a">4. acquire suspend blocker</text>
+  <path d="M 660,290 C 720,290 720,320 660,320" stroke="#333" strokeWidth="1.4" fill="none" strokeDasharray="5,3" markerEnd="url(#arr)"/>
+  <text x="725" y="308" fontFamily="cursive" fontSize="11" fill="#1a1a1a">5. suspend被阻止</text>
+  <line x1="90" y1="340" x2="270" y2="340" stroke="#333" strokeWidth="1.4"  markerEnd="url(#arr)"/>
+  <text x="180.0" y="335" textAnchor="middle" fontFamily="cursive" fontSize="11" fill="#1a1a1a">6. releaseWakeLock</text>
+  <line x1="270" y1="385" x2="660" y2="385" stroke="#333" strokeWidth="1.4"  markerEnd="url(#arr)"/>
+  <text x="465.0" y="380" textAnchor="middle" fontFamily="cursive" fontSize="11" fill="#1a1a1a">7. release suspend blocker</text>
+</svg>
 
 ### 错误结论
 
@@ -418,16 +523,41 @@ wakeup_sources:
 
 ### 流程
 
-```mermaid
-flowchart TD
-    A[App设置wakeup alarm] --> B[AlarmManagerService入队]
-    B --> C{是否进入idle}
-    C --> D[被延后或批处理]
-    C --> E[允许唤醒]
-    E --> F[Kernel alarmtimer唤醒AP]
-    F --> G[Broadcast或Service运行]
-    G --> H[可能继续申请wakelock]
-```
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 550 520" width="550" height="520">
+  <rect width="550" height="520" fill="#fdfcf8"/>
+  <defs>
+    <marker id="arr" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333"/>
+    </marker>
+  </defs>
+  <rect x="175" y="20" width="200" height="38" rx="4" fill="#e8ecf8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.2,275.0,39.0)"/>
+  <text x="275.0" y="44.0" textAnchor="middle" fontFamily="cursive" fontSize="13" fill="#1a1a1a">App设置wakeup alarm</text>
+  <path d="M 275,58 C 275,78.0 275,78.0 275,98" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <rect x="150" y="98" width="250" height="38" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.2,275.0,117.0)"/>
+  <text x="275.0" y="122.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">AlarmManagerService入队</text>
+  <path d="M 275,136 C 275,156.0 275,156.0 275,176" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <polygon points="275,176 185,212 275,248 365,212" fill="#fff3e0" stroke="#2d2d2d" strokeWidth="1.8"/>
+  <text x="275" y="217" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">是否进入idle</text>
+  <path d="M 185,212 C 140,212 110,252 110,272" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <text x="120" y="242" fontFamily="cursive" fontSize="11" fill="#555">是</text>
+  <path d="M 365,212 C 410,212 430,252 430,272" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <text x="390" y="242" fontFamily="cursive" fontSize="11" fill="#555">否</text>
+  <rect x="20" y="272" width="180" height="44" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.3,110.0,294.0)"/>
+  <text x="110.0" y="291.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">被延后或</text>
+  <text x="110.0" y="307.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">批处理</text>
+  <rect x="350" y="272" width="160" height="44" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.3,430.0,294.0)"/>
+  <text x="430.0" y="299.0" textAnchor="middle" fontFamily="cursive" fontSize="13" fill="#1a1a1a">允许唤醒</text>
+  <path d="M 110,316 C 110,350 275,350 275,366" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <path d="M 430,316 C 430,350 275,350 275,366" stroke="#333" strokeWidth="1.5" fill="none"/>
+  <rect x="155" y="366" width="240" height="38" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.1,275.0,385.0)"/>
+  <text x="275.0" y="390.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">Kernel alarmtimer唤醒AP</text>
+  <path d="M 275,404 C 275,424.0 275,424.0 275,444" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <rect x="155" y="444" width="240" height="38" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.1,275.0,463.0)"/>
+  <text x="275.0" y="468.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">Broadcast或Service运行</text>
+  <path d="M 275,482 C 275,487.0 275,487.0 275,492" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <rect x="155" y="492" width="240" height="26" rx="4" fill="#fff3e0" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.1,275.0,505.0)"/>
+  <text x="275.0" y="510.0" textAnchor="middle" fontFamily="cursive" fontSize="11" fill="#1a1a1a">可能继续申请wakelock</text>
+</svg>
 
 ### 源码理解
 
@@ -482,19 +612,43 @@ adb shell dumpsys alarm
 
 ### 判断逻辑
 
-```mermaid
-flowchart TD
-    A[Doze未进入] --> B{是否充电或USB供电}
-    B --> C[是: 条件不成立]
-    B --> D[否]
-    D --> E{屏幕是否关闭}
-    E --> F[否: 条件不成立]
-    E --> G[是]
-    G --> H{是否运动或传感器触发}
-    H --> I[是: 等待静止]
-    H --> J[否]
-    J --> K[检查白名单 Alarm Job 网络]
-```
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 750 540" width="750" height="540">
+  <rect width="750" height="540" fill="#fdfcf8"/>
+  <defs>
+    <marker id="arr" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333"/>
+    </marker>
+  </defs>
+  <rect x="275" y="20" width="200" height="38" rx="4" fill="#e8ecf8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.2,375.0,39.0)"/>
+  <text x="375.0" y="44.0" textAnchor="middle" fontFamily="cursive" fontSize="13" fill="#1a1a1a">Doze未进入</text>
+  <path d="M 375,58 C 375,78.0 375,78.0 375,98" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <polygon points="375,96 255,132 375,168 495,132" fill="#fff3e0" stroke="#2d2d2d" strokeWidth="1.8"/>
+  <text x="375" y="137" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">是否充电或USB供电</text>
+  <path d="M 255,132 C 180,132 150,162 150,182" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <text x="180" y="152" fontFamily="cursive" fontSize="11" fill="#555">是</text>
+  <rect x="50" y="182" width="190" height="38" rx="4" fill="#fff3e0" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.3,145.0,201.0)"/>
+  <text x="145.0" y="206.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">条件不成立</text>
+  <path d="M 375,168 C 375,198 375,198 375,218" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <text x="385" y="192" fontFamily="cursive" fontSize="11" fill="#555">否</text>
+  <polygon points="375,218 265,254 375,290 485,254" fill="#fff3e0" stroke="#2d2d2d" strokeWidth="1.8"/>
+  <text x="375" y="259" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">屏幕是否关闭</text>
+  <path d="M 265,254 C 200,254 175,282 175,302" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <text x="200" y="272" fontFamily="cursive" fontSize="11" fill="#555">否</text>
+  <rect x="80" y="302" width="190" height="38" rx="4" fill="#fff3e0" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.3,175.0,321.0)"/>
+  <text x="175.0" y="326.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">条件不成立</text>
+  <path d="M 375,290 C 375,320 375,320 375,340" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <text x="385" y="315" fontFamily="cursive" fontSize="11" fill="#555">是</text>
+  <polygon points="375,340 255,376 375,412 495,376" fill="#fff3e0" stroke="#2d2d2d" strokeWidth="1.8"/>
+  <text x="375" y="381" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">是否运动或传感器触发</text>
+  <path d="M 255,376 C 185,376 160,406 160,426" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <text x="185" y="394" fontFamily="cursive" fontSize="11" fill="#555">是</text>
+  <rect x="60" y="426" width="190" height="38" rx="4" fill="#fff3e0" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.3,155.0,445.0)"/>
+  <text x="155.0" y="450.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">等待静止</text>
+  <path d="M 375,412 C 375,442 375,442 375,462" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <text x="385" y="436" fontFamily="cursive" fontSize="11" fill="#555">否</text>
+  <rect x="200" y="462" width="350" height="38" rx="4" fill="#e8f4e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.1,375.0,481.0)"/>
+  <text x="375.0" y="486.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">检查白名单 Alarm Job 网络</text>
+</svg>
 
 ### 常见误判
 
@@ -551,14 +705,34 @@ adb shell ps -A | grep -Ei 'loc|gnss|gps|wifi|wpa|lowi'
 
 ### 分析链路
 
-```mermaid
-flowchart LR
-    A[App请求定位] --> B[LocationManagerService]
-    B --> C[GNSS HAL或Network Location]
-    C --> D[WiFi Scan GNSS Modem]
-    D --> E[Kernel wakeup_sources增长]
-    E --> F[灭屏电流升高]
-```
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 160" width="900" height="160">
+  <rect width="900" height="160" fill="#fdfcf8"/>
+  <defs>
+    <marker id="arr" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333"/>
+    </marker>
+  </defs>
+  <rect x="5" y="55" width="120" height="40" rx="4" fill="#e8ecf8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.2,65.0,75.0)"/>
+  <text x="65.0" y="80.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">App请求定位</text>
+  <rect x="135" y="55" width="150" height="40" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.2,210.0,75.0)"/>
+  <text x="210.0" y="80.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">LocationManagerService</text>
+  <rect x="295" y="55" width="155" height="50" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.2,372.5,80.0)"/>
+  <text x="372.5" y="77.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">GNSS HAL</text>
+  <text x="372.5" y="93.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">或Network Location</text>
+  <rect x="465" y="55" width="140" height="50" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.2,535.0,80.0)"/>
+  <text x="535.0" y="77.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">WiFi Scan</text>
+  <text x="535.0" y="93.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">GNSS Modem</text>
+  <rect x="615" y="55" width="145" height="50" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.2,687.5,80.0)"/>
+  <text x="687.5" y="77.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">Kernel</text>
+  <text x="687.5" y="93.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">wakeup_sources增长</text>
+  <rect x="770" y="55" width="120" height="40" rx="4" fill="#fff3e0" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.2,830.0,75.0)"/>
+  <text x="830.0" y="80.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">灭屏电流升高</text>
+  <path d="M 125,80 C 130,77 130,83 135,80" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <path d="M 285,80 C 290,77 290,83 295,80" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <path d="M 450,80 C 455,77 460,83 465,80" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <path d="M 605,80 C 610,77 610,83 615,80" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <path d="M 760,80 C 765,77 765,83 770,80" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+</svg>
 
 ### 判断重点
 
@@ -627,14 +801,31 @@ adb shell ps -A | grep -Ei 'ril|qcril|netmgr|data|ims|modem'
 
 ### 判断链路
 
-```mermaid
-flowchart TD
-    A[弱网环境] --> B[信号差或频繁切网]
-    B --> C[Modem重传与重选增加]
-    C --> D[Radio和vendor服务活跃]
-    D --> E[Kernel wakeup_sources增长]
-    E --> F[灭屏电流升高]
-```
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 540" width="500" height="540">
+  <rect width="500" height="540" fill="#fdfcf8"/>
+  <defs>
+    <marker id="arr" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333"/>
+    </marker>
+  </defs>
+  <rect x="100" y="20" width="300" height="40" rx="4" fill="#e8ecf8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.2,250.0,40.0)"/>
+  <text x="250.0" y="45.0" textAnchor="middle" fontFamily="cursive" fontSize="13" fill="#1a1a1a">弱网环境</text>
+  <rect x="100" y="108" width="300" height="40" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.2,250.0,128.0)"/>
+  <text x="250.0" y="133.0" textAnchor="middle" fontFamily="cursive" fontSize="13" fill="#1a1a1a">信号差或频繁切网</text>
+  <rect x="100" y="196" width="300" height="40" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.2,250.0,216.0)"/>
+  <text x="250.0" y="221.0" textAnchor="middle" fontFamily="cursive" fontSize="13" fill="#1a1a1a">Modem重传与重选增加</text>
+  <rect x="100" y="284" width="300" height="40" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.3,250.0,304.0)"/>
+  <text x="250.0" y="309.0" textAnchor="middle" fontFamily="cursive" fontSize="13" fill="#1a1a1a">Radio和vendor服务活跃</text>
+  <rect x="100" y="372" width="300" height="40" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.1,250.0,392.0)"/>
+  <text x="250.0" y="397.0" textAnchor="middle" fontFamily="cursive" fontSize="13" fill="#1a1a1a">Kernel wakeup_sources增长</text>
+  <rect x="100" y="460" width="300" height="40" rx="4" fill="#fff3e0" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.2,250.0,480.0)"/>
+  <text x="250.0" y="485.0" textAnchor="middle" fontFamily="cursive" fontSize="13" fill="#1a1a1a">灭屏电流升高</text>
+  <path d="M 250,60 C 250,84.0 250,84.0 250,108" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <path d="M 250,148 C 250,172.0 250,172.0 250,196" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <path d="M 250,236 C 250,260.0 250,260.0 250,284" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <path d="M 250,324 C 250,348.0 250,348.0 250,372" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <path d="M 250,412 C 250,436.0 250,436.0 250,460" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+</svg>
 
 ### 错误结论
 
@@ -707,19 +898,48 @@ adb pull /data/misc/perfetto-traces/screen_idle.pftrace .
 
 ### 分析链路
 
-```mermaid
-flowchart TD
-    A[亮屏静置电流高] --> B{亮度是否固定}
-    B --> C[否: 先固定亮度]
-    B --> D[是]
-    D --> E{刷新率是否固定}
-    E --> F[否: 对比60Hz和高刷]
-    E --> G[是]
-    G --> H[看SurfaceFlinger和RenderThread]
-    H --> I{是否持续绘制}
-    I --> J[是: App动画或无效invalidate]
-    I --> K[否: 看CPU GPU频率和温控]
-```
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 750 600" width="750" height="600">
+  <rect width="750" height="600" fill="#fdfcf8"/>
+  <defs>
+    <marker id="arr" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333"/>
+    </marker>
+  </defs>
+  <rect x="275" y="20" width="200" height="38" rx="4" fill="#e8ecf8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.2,375.0,39.0)"/>
+  <text x="375.0" y="44.0" textAnchor="middle" fontFamily="cursive" fontSize="13" fill="#1a1a1a">亮屏静置电流高</text>
+  <path d="M 375,58 C 375,78.0 375,78.0 375,98" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <polygon points="375,96 275,132 375,168 475,132" fill="#fff3e0" stroke="#2d2d2d" strokeWidth="1.8"/>
+  <text x="375" y="137" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">亮度是否固定</text>
+  <path d="M 275,132 C 200,132 160,162 160,182" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <text x="200" y="152" fontFamily="cursive" fontSize="11" fill="#555">否</text>
+  <rect x="50" y="182" width="200" height="38" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.3,150.0,201.0)"/>
+  <text x="150.0" y="206.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">先固定亮度</text>
+  <path d="M 375,168 C 375,198 375,198 375,218" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <text x="385" y="192" fontFamily="cursive" fontSize="11" fill="#555">是</text>
+  <polygon points="375,218 265,254 375,290 485,254" fill="#fff3e0" stroke="#2d2d2d" strokeWidth="1.8"/>
+  <text x="375" y="259" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">刷新率是否固定</text>
+  <path d="M 265,254 C 190,254 160,282 160,302" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <text x="185" y="272" fontFamily="cursive" fontSize="11" fill="#555">否</text>
+  <rect x="50" y="302" width="220" height="38" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.3,160.0,321.0)"/>
+  <text x="160.0" y="326.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">对比60Hz和高刷</text>
+  <path d="M 375,290 C 375,322 375,322 375,342" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <text x="385" y="316" fontFamily="cursive" fontSize="11" fill="#555">是</text>
+  <rect x="200" y="342" width="350" height="38" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.1,375.0,361.0)"/>
+  <text x="375.0" y="366.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">看SurfaceFlinger和RenderThread</text>
+  <path d="M 375,380 C 375,400.0 375,400.0 375,420" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <polygon points="375,420 275,456 375,492 475,456" fill="#fff3e0" stroke="#2d2d2d" strokeWidth="1.8"/>
+  <text x="375" y="461" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">是否持续绘制</text>
+  <path d="M 275,456 C 190,456 150,486 150,506" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <text x="185" y="476" fontFamily="cursive" fontSize="11" fill="#555">是</text>
+  <rect x="20" y="506" width="260" height="44" rx="4" fill="#fff3e0" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.3,150.0,528.0)"/>
+  <text x="150.0" y="525.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">App动画或</text>
+  <text x="150.0" y="541.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">无效invalidate</text>
+  <path d="M 475,456 C 540,456 560,486 560,506" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <text x="500" y="476" fontFamily="cursive" fontSize="11" fill="#555">否</text>
+  <rect x="470" y="506" width="250" height="44" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.3,595.0,528.0)"/>
+  <text x="595.0" y="525.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">看CPU GPU频率</text>
+  <text x="595.0" y="541.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">和温控</text>
+</svg>
 
 ### 常见根因
 
@@ -776,14 +996,32 @@ adb shell 'for c in /sys/class/thermal/cooling_device*; do echo $c; cat $c/type;
 
 ### 分析链路
 
-```mermaid
-flowchart LR
-    A[高亮或HDR] --> B[显示功耗升高]
-    B --> C[面板与PMIC温度上升]
-    C --> D[Thermal策略触发]
-    D --> E[限制亮度或刷新率]
-    E --> F[用户感知亮度下降]
-```
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 160" width="900" height="160">
+  <rect width="900" height="160" fill="#fdfcf8"/>
+  <defs>
+    <marker id="arr" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333"/>
+    </marker>
+  </defs>
+  <rect x="5" y="55" width="115" height="40" rx="4" fill="#e8ecf8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.2,62.5,75.0)"/>
+  <text x="62.5" y="80.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">高亮或HDR</text>
+  <rect x="130" y="55" width="130" height="40" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.2,195.0,75.0)"/>
+  <text x="195.0" y="80.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">显示功耗升高</text>
+  <rect x="270" y="55" width="155" height="50" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.2,347.5,80.0)"/>
+  <text x="347.5" y="77.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">面板与PMIC</text>
+  <text x="347.5" y="93.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">温度上升</text>
+  <rect x="435" y="55" width="155" height="40" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.2,512.5,75.0)"/>
+  <text x="512.5" y="80.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">Thermal策略触发</text>
+  <rect x="600" y="55" width="150" height="40" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.2,675.0,75.0)"/>
+  <text x="675.0" y="80.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">限制亮度或刷新率</text>
+  <rect x="760" y="55" width="130" height="40" rx="4" fill="#fff3e0" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.2,825.0,75.0)"/>
+  <text x="825.0" y="80.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">用户感知亮度下降</text>
+  <path d="M 120,80 C 125,77 125,83 130,80" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <path d="M 260,80 C 265,77 265,83 270,80" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <path d="M 425,80 C 430,77 430,83 435,80" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <path d="M 590,80 C 595,77 595,83 600,80" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <path d="M 750,80 C 755,77 755,83 760,80" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+</svg>
 
 ### 判断重点
 
@@ -833,15 +1071,34 @@ adb shell 'cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_cur_freq 2>/dev/null
 
 ### 分析链路
 
-```mermaid
-flowchart TD
-    A[平均CPU不高] --> B{是否频繁唤醒}
-    B --> C[看Perfetto sched idle]
-    B --> D[看wakeup_sources]
-    C --> E[深idle被打断]
-    D --> E
-    E --> F[待机电流升高]
-```
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 460" width="620" height="460">
+  <rect width="620" height="460" fill="#fdfcf8"/>
+  <defs>
+    <marker id="arr" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333"/>
+    </marker>
+  </defs>
+  <rect x="210" y="20" width="200" height="38" rx="4" fill="#e8ecf8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.2,310.0,39.0)"/>
+  <text x="310.0" y="44.0" textAnchor="middle" fontFamily="cursive" fontSize="13" fill="#1a1a1a">平均CPU不高</text>
+  <path d="M 310,58 C 310,78.0 310,78.0 310,98" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <polygon points="310,96 200,132 310,168 420,132" fill="#fff3e0" stroke="#2d2d2d" strokeWidth="1.8"/>
+  <text x="310" y="137" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">是否频繁唤醒</text>
+  <path d="M 200,132 C 140,132 110,162 110,182" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <rect x="10" y="182" width="200" height="44" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.3,110.0,204.0)"/>
+  <text x="110.0" y="201.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">看Perfetto</text>
+  <text x="110.0" y="217.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">sched idle</text>
+  <path d="M 420,132 C 480,132 500,162 500,182" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <rect x="400" y="182" width="200" height="44" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.3,500.0,204.0)"/>
+  <text x="500.0" y="201.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">看wakeup</text>
+  <text x="500.0" y="217.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">_sources</text>
+  <path d="M 110,226 C 110,268 310,268 310,288" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <path d="M 500,226 C 500,268 310,268 310,288" stroke="#333" strokeWidth="1.5" fill="none"/>
+  <rect x="160" y="288" width="300" height="38" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.1,310.0,307.0)"/>
+  <text x="310.0" y="312.0" textAnchor="middle" fontFamily="cursive" fontSize="13" fill="#1a1a1a">深idle被打断</text>
+  <path d="M 310,326 C 310,346.0 310,346.0 310,366" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <rect x="160" y="366" width="300" height="38" rx="4" fill="#fff3e0" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.1,310.0,385.0)"/>
+  <text x="310.0" y="390.0" textAnchor="middle" fontFamily="cursive" fontSize="13" fill="#1a1a1a">待机电流升高</text>
+</svg>
 
 ### 关键理解
 
@@ -893,16 +1150,39 @@ adb shell 'cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_cur_freq 2>/dev/null
 
 ### 分析链路
 
-```mermaid
-flowchart TD
-    A[thermalservice HAL Ready false] --> B[Framework热信息缺失]
-    B --> C{Kernel thermal是否存在}
-    C --> D[thermal_zone有温度]
-    C --> E[cooling_device状态变化]
-    D --> F[Kernel仍可执行温控]
-    E --> F
-    F --> G[CPU GPU 充电或亮度被限制]
-```
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 520" width="700" height="520">
+  <rect width="700" height="520" fill="#fdfcf8"/>
+  <defs>
+    <marker id="arr" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333"/>
+    </marker>
+  </defs>
+  <rect x="200" y="20" width="300" height="38" rx="4" fill="#e8ecf8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.2,350.0,39.0)"/>
+  <text x="350.0" y="44.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">thermalservice HAL Ready false</text>
+  <path d="M 350,58 C 350,78.0 350,78.0 350,98" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <rect x="200" y="98" width="300" height="38" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.2,350.0,117.0)"/>
+  <text x="350.0" y="122.0" textAnchor="middle" fontFamily="cursive" fontSize="13" fill="#1a1a1a">Framework热信息缺失</text>
+  <path d="M 350,136 C 350,156.0 350,156.0 350,176" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <polygon points="350,176 230,212 350,248 470,212" fill="#fff3e0" stroke="#2d2d2d" strokeWidth="1.8"/>
+  <text x="350" y="217" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">Kernel thermal是否存在</text>
+  <path d="M 230,212 C 160,212 120,242 120,262" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <text x="130" y="235" fontFamily="cursive" fontSize="11" fill="#555">是</text>
+  <rect x="20" y="262" width="200" height="44" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.3,120.0,284.0)"/>
+  <text x="120.0" y="281.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">thermal_zone</text>
+  <text x="120.0" y="297.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">有温度</text>
+  <path d="M 470,212 C 540,212 570,242 570,262" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <text x="510" y="235" fontFamily="cursive" fontSize="11" fill="#555">否</text>
+  <rect x="480" y="262" width="200" height="44" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.3,580.0,284.0)"/>
+  <text x="580.0" y="281.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">cooling_device</text>
+  <text x="580.0" y="297.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">状态变化</text>
+  <path d="M 120,306 C 120,348 350,348 350,368" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <path d="M 580,306 C 580,348 350,348 350,368" stroke="#333" strokeWidth="1.5" fill="none"/>
+  <rect x="160" y="368" width="380" height="38" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.1,350.0,387.0)"/>
+  <text x="350.0" y="392.0" textAnchor="middle" fontFamily="cursive" fontSize="13" fill="#1a1a1a">Kernel仍可执行温控</text>
+  <path d="M 350,406 C 350,426.0 350,426.0 350,446" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <rect x="130" y="446" width="440" height="44" rx="4" fill="#e8f4e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.1,350.0,468.0)"/>
+  <text x="350.0" y="473.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">CPU GPU 充电或亮度被限制</text>
+</svg>
 
 ### 正确结论
 
@@ -953,19 +1233,39 @@ adb shell 'for c in /sys/class/thermal/cooling_device*; do echo $c; cat $c/type;
 
 ### 分析链路
 
-```mermaid
-sequenceDiagram
-    participant Charger as 充电器
-    participant PMIC as PMIC和电池
-    participant Health as Health HAL
-    participant Thermal as Thermal策略
-    participant User as 用户感知
-    Charger->>PMIC: 输入电流
-    PMIC->>Health: 上报电池电压电流温度
-    PMIC->>Thermal: 温度达到阈值
-    Thermal->>PMIC: 降低充电电流
-    Health->>User: 充电速度变慢
-```
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 480" width="900" height="480">
+  <rect width="900" height="480" fill="#fdfcf8"/>
+  <defs>
+    <marker id="arr" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333"/>
+    </marker>
+  </defs>
+  <line x1="75" y1="50" x2="75" y2="460" stroke="#ccc" strokeWidth="1" strokeDasharray="4,3"/>
+  <line x1="225" y1="50" x2="225" y2="460" stroke="#ccc" strokeWidth="1" strokeDasharray="4,3"/>
+  <line x1="400" y1="50" x2="400" y2="460" stroke="#ccc" strokeWidth="1" strokeDasharray="4,3"/>
+  <line x1="575" y1="50" x2="575" y2="460" stroke="#ccc" strokeWidth="1" strokeDasharray="4,3"/>
+  <line x1="750" y1="50" x2="750" y2="460" stroke="#ccc" strokeWidth="1" strokeDasharray="4,3"/>
+  <rect x="15" y="10" width="120" height="36" rx="4" fill="#e8ecf8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.2,75.0,28.0)"/>
+  <text x="75.0" y="33.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">充电器</text>
+  <rect x="165" y="10" width="120" height="36" rx="4" fill="#e8ecf8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.2,225.0,28.0)"/>
+  <text x="225.0" y="33.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">PMIC和电池</text>
+  <rect x="340" y="10" width="120" height="36" rx="4" fill="#e8ecf8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.2,400.0,28.0)"/>
+  <text x="400.0" y="33.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">Health HAL</text>
+  <rect x="515" y="10" width="120" height="36" rx="4" fill="#e8ecf8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.2,575.0,28.0)"/>
+  <text x="575.0" y="33.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">Thermal策略</text>
+  <rect x="690" y="10" width="120" height="36" rx="4" fill="#e8ecf8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.2,750.0,28.0)"/>
+  <text x="750.0" y="33.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">用户感知</text>
+  <line x1="75" y1="100" x2="225" y2="100" stroke="#333" strokeWidth="1.4" markerEnd="url(#arr)"/>
+  <text x="150.0" y="95" textAnchor="middle" fontFamily="cursive" fontSize="11" fill="#1a1a1a">1. 输入电流</text>
+  <line x1="225" y1="150" x2="400" y2="150" stroke="#333" strokeWidth="1.4" markerEnd="url(#arr)"/>
+  <text x="312.5" y="145" textAnchor="middle" fontFamily="cursive" fontSize="11" fill="#1a1a1a">2. 上报电压电流温度</text>
+  <line x1="225" y1="210" x2="575" y2="210" stroke="#333" strokeWidth="1.4" markerEnd="url(#arr)"/>
+  <text x="400.0" y="205" textAnchor="middle" fontFamily="cursive" fontSize="11" fill="#1a1a1a">3. 温度达到阈值</text>
+  <line x1="575" y1="270" x2="225" y2="270" stroke="#333" strokeWidth="1.4" markerEnd="url(#arr)"/>
+  <text x="400.0" y="265" textAnchor="middle" fontFamily="cursive" fontSize="11" fill="#1a1a1a">4. 降低充电电流</text>
+  <line x1="400" y1="340" x2="750" y2="340" stroke="#333" strokeWidth="1.4" markerEnd="url(#arr)"/>
+  <text x="575.0" y="335" textAnchor="middle" fontFamily="cursive" fontSize="11" fill="#1a1a1a">5. 充电速度变慢</text>
+</svg>
 
 ### 判断重点
 
@@ -1039,17 +1339,44 @@ adb shell dumpsys location
 
 ### 分析链路
 
-```mermaid
-flowchart TD
-    A[电池页面显示system_server高] --> B[查看BatteryStats明细]
-    B --> C[查wakelock alarm job location]
-    C --> D[Perfetto看调用时序]
-    D --> E{是否代App执行}
-    E --> F[检查WorkSource或调用方]
-    E --> G[系统服务自身异常]
-    F --> H[修正归因或限制App行为]
-    G --> I[修复Framework服务]
-```
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 750 600" width="750" height="600">
+  <rect width="750" height="600" fill="#fdfcf8"/>
+  <defs>
+    <marker id="arr" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333"/>
+    </marker>
+  </defs>
+  <rect x="225" y="20" width="300" height="38" rx="4" fill="#e8ecf8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.2,375.0,39.0)"/>
+  <text x="375.0" y="44.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">电池页面显示system_server高</text>
+  <path d="M 375,58 C 375,78.0 375,78.0 375,98" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <rect x="200" y="98" width="350" height="38" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.2,375.0,117.0)"/>
+  <text x="375.0" y="122.0" textAnchor="middle" fontFamily="cursive" fontSize="13" fill="#1a1a1a">查看BatteryStats明细</text>
+  <path d="M 375,136 C 375,156.0 375,156.0 375,176" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <rect x="150" y="176" width="450" height="38" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.2,375.0,195.0)"/>
+  <text x="375.0" y="200.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">查wakelock alarm job location</text>
+  <path d="M 375,214 C 375,234.0 375,234.0 375,254" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <rect x="175" y="254" width="400" height="38" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.2,375.0,273.0)"/>
+  <text x="375.0" y="278.0" textAnchor="middle" fontFamily="cursive" fontSize="13" fill="#1a1a1a">Perfetto看调用时序</text>
+  <path d="M 375,292 C 375,312.0 375,312.0 375,332" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <polygon points="375,332 265,368 375,404 485,368" fill="#fff3e0" stroke="#2d2d2d" strokeWidth="1.8"/>
+  <text x="375" y="373" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">是否代App执行</text>
+  <path d="M 265,368 C 185,368 145,398 145,418" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <text x="180" y="386" fontFamily="cursive" fontSize="11" fill="#555">是</text>
+  <rect x="20" y="418" width="240" height="44" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.3,140.0,440.0)"/>
+  <text x="140.0" y="437.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">检查WorkSource</text>
+  <text x="140.0" y="453.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">或调用方</text>
+  <path d="M 140,462 C 140,482.0 140,482.0 140,502" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <rect x="20" y="502" width="240" height="44" rx="4" fill="#e8f4e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.1,140.0,524.0)"/>
+  <text x="140.0" y="521.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">修正归因或</text>
+  <text x="140.0" y="537.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">限制App行为</text>
+  <path d="M 485,368 C 560,368 590,398 590,418" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <text x="540" y="386" fontFamily="cursive" fontSize="11" fill="#555">否</text>
+  <rect x="480" y="418" width="240" height="38" rx="4" fill="#fff3e0" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.3,600.0,437.0)"/>
+  <text x="600.0" y="442.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">系统服务自身异常</text>
+  <path d="M 600,456 C 600,479.0 600,479.0 600,502" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <rect x="480" y="502" width="240" height="38" rx="4" fill="#e8f4e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.1,600.0,521.0)"/>
+  <text x="600.0" y="526.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">修复Framework服务</text>
+</svg>
 
 ### 关键理解
 
@@ -1124,14 +1451,31 @@ adb shell ls /sys/class/thermal
 
 ### 判断链路
 
-```mermaid
-flowchart LR
-    A[AOSP证据] --> B[Framework服务]
-    B --> C[HAL接口]
-    C --> D[QCOM vendor服务]
-    D --> E[Kernel driver]
-    E --> F[硬件或射频条件]
-```
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 160" width="900" height="160">
+  <rect width="900" height="160" fill="#fdfcf8"/>
+  <defs>
+    <marker id="arr" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333"/>
+    </marker>
+  </defs>
+  <rect x="5" y="60" width="115" height="40" rx="4" fill="#e8ecf8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.2,62.5,80.0)"/>
+  <text x="62.5" y="85.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">AOSP证据</text>
+  <rect x="130" y="60" width="140" height="40" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.2,200.0,80.0)"/>
+  <text x="200.0" y="85.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">Framework服务</text>
+  <rect x="280" y="60" width="125" height="40" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.2,342.5,80.0)"/>
+  <text x="342.5" y="85.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">HAL接口</text>
+  <rect x="415" y="60" width="155" height="40" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.2,492.5,80.0)"/>
+  <text x="492.5" y="85.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">QCOM vendor服务</text>
+  <rect x="580" y="60" width="145" height="40" rx="4" fill="#f5f0e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(0.2,652.5,80.0)"/>
+  <text x="652.5" y="85.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">Kernel driver</text>
+  <rect x="735" y="60" width="150" height="40" rx="4" fill="#e8f4e8" stroke="#2d2d2d" strokeWidth="1.8" transform="rotate(-0.2,810.0,80.0)"/>
+  <text x="810.0" y="85.0" textAnchor="middle" fontFamily="cursive" fontSize="12" fill="#1a1a1a">硬件或射频条件</text>
+  <path d="M 120,80 C 125,77 125,83 130,80" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <path d="M 270,80 C 275,77 275,83 280,80" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <path d="M 405,80 C 410,77 410,83 415,80" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <path d="M 570,80 C 575,77 575,83 580,80" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+  <path d="M 725,80 C 730,77 730,83 735,80" stroke="#333" strokeWidth="1.5" fill="none" markerEnd="url(#arr)"/>
+</svg>
 
 ### 我会这样说明
 
