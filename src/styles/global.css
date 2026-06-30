@@ -367,12 +367,49 @@ a:hover {
   background: var(--surface-soft);
 }
 
-.article-body .mermaid {
+.article-body .diagram {
   overflow-x: auto;
-  padding: 16px;
+  margin: 1.8rem 0;
+  padding: 22px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: var(--surface-soft);
+  background:
+    linear-gradient(rgba(226, 232, 240, 0.42) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(226, 232, 240, 0.42) 1px, transparent 1px),
+    #ffffff;
+  background-size: 40px 40px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+  text-align: center;
+}
+
+.article-body .diagram svg,
+.article-body .diagram img {
+  height: auto;
+  max-width: 100%;
+}
+
+.article-body .diagram-mermaid svg {
+  min-width: 760px;
+}
+
+.article-body .diagram .node rect,
+.article-body .diagram .node polygon,
+.article-body .diagram .node circle,
+.article-body .diagram .node ellipse {
+  filter: drop-shadow(0 1px 2px rgba(15, 23, 42, 0.08));
+}
+
+.article-body .diagram .edgePath path {
+  stroke-width: 1.4px;
+}
+
+.article-body .diagram-error {
+  background: #fff7ed;
+  color: #9a3412;
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.86rem;
+  text-align: left;
+  white-space: pre;
 }
 
 .site-footer {

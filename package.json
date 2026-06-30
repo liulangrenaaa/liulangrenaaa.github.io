@@ -11,7 +11,14 @@
   },
   "dependencies": {
     "@astrojs/mdx": "^7.0.0",
+    "@hpcc-js/wasm": "^2.34.2",
+    "@terrastruct/d2": "^0.1.33",
     "astro": "^7.0.3",
+    "katex": "^0.17.0",
+    "mermaid": "^11.16.0",
+    "plantuml-encoder": "^1.4.0",
+    "rehype-katex": "^7.0.1",
+    "remark-math": "^6.0.0",
     "sharp": "^0.35.2"
   },
   "devDependencies": {
